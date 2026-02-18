@@ -5,15 +5,21 @@ import XCTest
 final class CodexModsGoldenTests: XCTestCase {
     func testThemeOverrideMergeMatchesGoldenJSON() throws {
         let decoder = JSONDecoder()
-        let base = try decoder.decode(ModThemeOverride.self, from: try fixtureData("theme-base.json"))
-        let overlay = try decoder.decode(ModThemeOverride.self, from: try fixtureData("theme-overlay.json"))
+        let baseData = try fixtureData("theme-base.json")
+        let overlayData = try fixtureData("theme-overlay.json")
+
+        let base = try decoder.decode(ModThemeOverride.self, from: baseData)
+        let overlay = try decoder.decode(ModThemeOverride.self, from: overlayData)
 
         let merged = base.merged(with: overlay)
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let actual = String(decoding: try encoder.encode(merged), as: UTF8.self)
-        let expected = String(decoding: try fixtureData("theme-merged.json"), as: UTF8.self)
+        let actualData = try encoder.encode(merged)
+        let expectedData = try fixtureData("theme-merged.json")
+
+        let actual = try XCTUnwrap(String(data: actualData, encoding: .utf8))
+        let expected = try XCTUnwrap(String(data: expectedData, encoding: .utf8))
 
         let normalizedActual = actual.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
         let normalizedExpected = expected.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"

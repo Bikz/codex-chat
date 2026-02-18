@@ -10,7 +10,7 @@ final class CodexChatAppArchiveGoldenTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let threadID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let threadID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
 
         let turn = ArchivedTurnSummary(
