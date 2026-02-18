@@ -96,7 +96,8 @@ public actor CodexRuntime {
     public func startTurn(
         threadID: String,
         text: String,
-        safetyConfiguration: RuntimeSafetyConfiguration? = nil
+        safetyConfiguration: RuntimeSafetyConfiguration? = nil,
+        skillInputs: [RuntimeSkillInput] = []
     ) async throws -> String {
         try await start()
 
@@ -104,6 +105,7 @@ public actor CodexRuntime {
             threadID: threadID,
             text: text,
             safetyConfiguration: safetyConfiguration,
+            skillInputs: skillInputs,
             includeWebSearch: true
         )
         let result: JSONValue
@@ -114,7 +116,17 @@ public actor CodexRuntime {
                 threadID: threadID,
                 text: text,
                 safetyConfiguration: safetyConfiguration,
+                skillInputs: skillInputs,
                 includeWebSearch: false
+            )
+            result = try await sendRequest(method: "turn/start", params: params)
+        } catch let error as CodexRuntimeError where Self.shouldRetryWithoutSkillInput(error: error) && !skillInputs.isEmpty {
+            params = Self.makeTurnStartParams(
+                threadID: threadID,
+                text: text,
+                safetyConfiguration: safetyConfiguration,
+                skillInputs: [],
+                includeWebSearch: true
             )
             result = try await sendRequest(method: "turn/start", params: params)
         }
@@ -483,16 +495,30 @@ public actor CodexRuntime {
         threadID: String,
         text: String,
         safetyConfiguration: RuntimeSafetyConfiguration?,
+        skillInputs: [RuntimeSkillInput],
         includeWebSearch: Bool
     ) -> JSONValue {
+        var inputItems: [JSONValue] = [
+            .object([
+                "type": .string("text"),
+                "text": .string(text)
+            ])
+        ]
+        if !skillInputs.isEmpty {
+            inputItems.append(
+                contentsOf: skillInputs.map { input in
+                    .object([
+                        "type": .string("skill"),
+                        "name": .string(input.name),
+                        "path": .string(input.path)
+                    ])
+                }
+            )
+        }
+
         var params: [String: JSONValue] = [
             "threadId": .string(threadID),
-            "input": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(text)
-                ])
-            ])
+            "input": .array(inputItems)
         ]
 
         if let safetyConfiguration {
@@ -537,6 +563,15 @@ public actor CodexRuntime {
         }
         let lowered = message.lowercased()
         return (lowered.contains("websearch") || lowered.contains("web_search"))
+            && (lowered.contains("unknown") || lowered.contains("invalid"))
+    }
+
+    private static func shouldRetryWithoutSkillInput(error: CodexRuntimeError) -> Bool {
+        guard case .rpcError(_, let message) = error else {
+            return false
+        }
+        let lowered = message.lowercased()
+        return lowered.contains("skill")
             && (lowered.contains("unknown") || lowered.contains("invalid"))
     }
 

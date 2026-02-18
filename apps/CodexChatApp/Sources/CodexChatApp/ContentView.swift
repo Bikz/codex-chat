@@ -1,18 +1,20 @@
 import CodexChatCore
 import CodexChatUI
 import CodexKit
+import CodexSkills
 import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
+    @State private var isInstallSkillSheetVisible = false
 
     var body: some View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 260, ideal: 320)
         } detail: {
-            conversationCanvas
+            detailSurface
         }
         .background(Color(hex: tokens.palette.backgroundHex))
         .sheet(isPresented: $model.isDiagnosticsVisible) {
@@ -28,6 +30,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.isReviewChangesVisible) {
             ReviewChangesSheet(model: model)
         }
+        .sheet(isPresented: $isInstallSkillSheetVisible) {
+            InstallSkillSheet(model: model, isPresented: $isInstallSkillSheetVisible)
+        }
         .sheet(item: Binding(get: {
             model.activeApprovalRequest
         }, set: { _ in })) { request in
@@ -37,23 +42,30 @@ struct ContentView: View {
         .onAppear {
             model.onAppear()
         }
+        .onChange(of: model.navigationSection) { newValue in
+            if newValue == .skills {
+                model.refreshSkillsSurface()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var detailSurface: some View {
+        switch model.navigationSection {
+        case .chats:
+            conversationCanvas
+        case .skills:
+            skillsCanvas
+        }
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: tokens.spacing.medium) {
-            TextField(
-                "Search threads and archived messages",
-                text: Binding(
-                    get: { model.searchQuery },
-                    set: { model.updateSearchQuery($0) }
-                )
-            )
-            .textFieldStyle(.roundedBorder)
-
-            if !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                searchSurface
-                    .frame(minHeight: 120, maxHeight: 220)
+            Picker("Navigation", selection: $model.navigationSection) {
+                Text("Chats").tag(AppModel.NavigationSection.chats)
+                Text("Skills").tag(AppModel.NavigationSection.skills)
             }
+            .pickerStyle(.segmented)
 
             HStack {
                 Text("Projects")
@@ -75,18 +87,44 @@ struct ContentView: View {
             projectsSurface
                 .frame(minHeight: 180)
 
-            HStack {
-                Text("Threads")
-                    .font(.system(size: tokens.typography.titleSize, weight: .semibold))
-                Spacer()
-                Button(action: model.createThread) {
-                    Label("New Thread", systemImage: "plus")
-                }
-                .buttonStyle(.borderless)
-                .disabled(model.selectedProjectID == nil)
-            }
+            if model.navigationSection == .chats {
+                TextField(
+                    "Search threads and archived messages",
+                    text: Binding(
+                        get: { model.searchQuery },
+                        set: { model.updateSearchQuery($0) }
+                    )
+                )
+                .textFieldStyle(.roundedBorder)
 
-            threadsSurface
+                if !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    searchSurface
+                        .frame(minHeight: 120, maxHeight: 220)
+                }
+
+                HStack {
+                    Text("Threads")
+                        .font(.system(size: tokens.typography.titleSize, weight: .semibold))
+                    Spacer()
+                    Button(action: model.createThread) {
+                        Label("New Thread", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(model.selectedProjectID == nil)
+                }
+
+                threadsSurface
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Skills are enabled per selected project.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Select a project, then manage installed skills in the main panel.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
 
             if let projectStatusMessage = model.projectStatusMessage {
                 Text(projectStatusMessage)
@@ -226,34 +264,65 @@ struct ContentView: View {
 
             Divider()
 
-            HStack(spacing: tokens.spacing.small) {
-                TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: tokens.spacing.small) {
+                    TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...4)
 
-                Button("Send") {
-                    model.sendMessage()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(hex: tokens.palette.accentHex))
-                .disabled(!model.canSendMessages)
+                    Button("Send") {
+                        model.sendMessage()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(hex: tokens.palette.accentHex))
+                    .disabled(!model.canSendMessages)
 
-                Button("Reveal Chat File") {
-                    model.revealSelectedThreadArchiveInFinder()
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.selectedThreadID == nil)
+                    Menu {
+                        if model.enabledSkillsForSelectedProject.isEmpty {
+                            Text("No enabled skills")
+                        } else {
+                            ForEach(model.enabledSkillsForSelectedProject) { item in
+                                Button(item.skill.name) {
+                                    model.selectSkillForComposer(item)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Skill", systemImage: "wand.and.stars")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .disabled(model.enabledSkillsForSelectedProject.isEmpty)
 
-                Button("Review Changes") {
-                    model.openReviewChanges()
-                }
-                .buttonStyle(.bordered)
-                .disabled(!model.canReviewChanges)
+                    Button("Reveal Chat File") {
+                        model.revealSelectedThreadArchiveInFinder()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.selectedThreadID == nil)
 
-                Button(model.isLogsDrawerVisible ? "Hide Logs" : "Terminal / Logs") {
-                    model.toggleLogsDrawer()
+                    Button("Review Changes") {
+                        model.openReviewChanges()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.canReviewChanges)
+
+                    Button(model.isLogsDrawerVisible ? "Hide Logs" : "Terminal / Logs") {
+                        model.toggleLogsDrawer()
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
+
+                if let selectedSkill = model.selectedSkillForComposer {
+                    HStack {
+                        Label("Using \(selectedSkill.skill.name)", systemImage: "checkmark.seal")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("Clear") {
+                            model.clearSelectedSkillForComposer()
+                        }
+                        .buttonStyle(.borderless)
+                        Spacer()
+                    }
+                }
             }
             .padding(tokens.spacing.medium)
             .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
@@ -325,6 +394,79 @@ struct ContentView: View {
                 }
                 .listStyle(.plain)
             }
+        }
+    }
+
+    private var skillsCanvas: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Skills")
+                    .font(.system(size: tokens.typography.titleSize, weight: .semibold))
+                Spacer()
+
+                Button("Refresh") {
+                    model.refreshSkillsSurface()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Install Skill…") {
+                    isInstallSkillSheetVisible = true
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.selectedProjectID == nil)
+            }
+            .padding(tokens.spacing.medium)
+
+            if let skillStatusMessage = model.skillStatusMessage {
+                Text(skillStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, tokens.spacing.medium)
+            }
+
+            skillsSurface
+                .padding(tokens.spacing.medium)
+
+            Spacer(minLength: 0)
+        }
+        .navigationTitle("Skills")
+    }
+
+    @ViewBuilder
+    private var skillsSurface: some View {
+        switch model.skillsState {
+        case .idle, .loading:
+            LoadingStateView(title: "Scanning installed skills…")
+        case .failed(let message):
+            ErrorStateView(title: "Couldn’t load skills", message: message, actionLabel: "Retry") {
+                model.refreshSkillsSurface()
+            }
+        case .loaded(let skills) where skills.isEmpty:
+            EmptyStateView(
+                title: "No skills discovered",
+                message: "Install a skill from git or npx, then enable it for this project.",
+                systemImage: "square.stack.3d.up"
+            )
+        case .loaded(let skills):
+            List(skills) { item in
+                SkillRow(
+                    item: item,
+                    hasSelectedProject: model.selectedProjectID != nil,
+                    onToggle: { enabled in
+                        model.setSkillEnabled(item, enabled: enabled)
+                    },
+                    onInsert: {
+                        model.selectSkillForComposer(item)
+                        model.navigationSection = .chats
+                    },
+                    onUpdate: {
+                        model.updateSkill(item)
+                    }
+                )
+            }
+            .listStyle(.plain)
+            .clipShape(RoundedRectangle(cornerRadius: tokens.radius.medium))
         }
     }
 }
@@ -864,6 +1006,151 @@ private struct ThreadLogsDrawer: View {
                     .padding(.bottom, 8)
                 }
             }
+        }
+    }
+}
+
+private struct SkillRow: View {
+    let item: AppModel.SkillListItem
+    let hasSelectedProject: Bool
+    let onToggle: (Bool) -> Void
+    let onInsert: () -> Void
+    let onUpdate: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(item.skill.name)
+                    .font(.headline)
+                Spacer()
+                Text(item.skill.scope.rawValue.capitalized)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.thinMaterial, in: Capsule())
+            }
+
+            Text(item.skill.description)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            if item.skill.hasScripts {
+                Label("Risk: scripts/ detected", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Text(item.skill.skillPath)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .textSelection(.enabled)
+
+            HStack {
+                Toggle("Enabled for project", isOn: Binding(
+                    get: { item.isEnabledForProject },
+                    set: { onToggle($0) }
+                ))
+                .toggleStyle(.switch)
+                .disabled(!hasSelectedProject)
+
+                Spacer()
+
+                Button("Use in Composer") {
+                    onInsert()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!item.isEnabledForProject)
+
+                Button("Update") {
+                    onUpdate()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct InstallSkillSheet: View {
+    @ObservedObject var model: AppModel
+    @Binding var isPresented: Bool
+
+    @State private var source = ""
+    @State private var scope: SkillInstallScope = .project
+    @State private var installer: SkillInstallerKind = .git
+    @State private var trustConfirmed = false
+
+    private var isTrustedSource: Bool {
+        model.isTrustedSkillSource(source)
+    }
+
+    private var canSubmit: Bool {
+        !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (isTrustedSource || trustConfirmed)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Install Skill")
+                .font(.title3.weight(.semibold))
+
+            Text("Install from a git source or run the optional npx installer. Project installs go to `.agents/skills`.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            TextField("https://github.com/org/skill-repo.git", text: $source)
+                .textFieldStyle(.roundedBorder)
+
+            Picker("Scope", selection: $scope) {
+                Text("Project").tag(SkillInstallScope.project)
+                Text("Global").tag(SkillInstallScope.global)
+            }
+            .pickerStyle(.segmented)
+
+            Picker("Installer", selection: $installer) {
+                Text("Git Clone").tag(SkillInstallerKind.git)
+                if model.isNodeSkillInstallerAvailable {
+                    Text("npx skills add").tag(SkillInstallerKind.npx)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if !isTrustedSource {
+                Toggle("I trust this source and want to install it anyway.", isOn: $trustConfirmed)
+                    .toggleStyle(.switch)
+                Text("Unknown source detected. Installing may run unreviewed scripts.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            if let status = model.skillStatusMessage {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    isPresented = false
+                }
+
+                Button("Install") {
+                    model.installSkill(
+                        source: source,
+                        scope: scope,
+                        installer: installer
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSubmit || model.isSkillOperationInProgress)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 560)
+        .onChange(of: source) { _ in
+            trustConfirmed = false
         }
     }
 }

@@ -180,6 +180,16 @@ public struct RuntimeSafetyConfiguration: Hashable, Sendable, Codable {
     }
 }
 
+public struct RuntimeSkillInput: Hashable, Sendable, Codable {
+    public let name: String
+    public let path: String
+
+    public init(name: String, path: String) {
+        self.name = name
+        self.path = path
+    }
+}
+
 public enum RuntimeApprovalKind: String, Hashable, Sendable, Codable {
     case commandExecution
     case fileChange

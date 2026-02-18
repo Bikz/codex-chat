@@ -33,6 +33,12 @@ struct CodexChatApplication: App {
                     model.createThread()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+
+                Button("Show Skills") {
+                    model.navigationSection = .skills
+                    model.refreshSkillsSurface()
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
             }
 
             CommandMenu("Developer") {

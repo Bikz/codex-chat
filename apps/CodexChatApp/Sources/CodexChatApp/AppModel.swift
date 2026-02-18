@@ -2,10 +2,23 @@ import AppKit
 import CodexChatCore
 import CodexChatInfra
 import CodexKit
+import CodexSkills
 import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
+    enum NavigationSection: String, CaseIterable {
+        case chats
+        case skills
+    }
+
+    struct SkillListItem: Identifiable, Hashable {
+        let skill: DiscoveredSkill
+        var isEnabledForProject: Bool
+
+        var id: String { skill.id }
+    }
+
     enum SurfaceState<Value> {
         case idle
         case loading
@@ -43,11 +56,14 @@ final class AppModel: ObservableObject {
     @Published var threadsState: SurfaceState<[ThreadRecord]> = .idle
     @Published var conversationState: SurfaceState<[TranscriptEntry]> = .idle
     @Published var searchState: SurfaceState<[ChatSearchResult]> = .idle
+    @Published var skillsState: SurfaceState<[SkillListItem]> = .idle
 
     @Published var selectedProjectID: UUID?
     @Published var selectedThreadID: UUID?
+    @Published var navigationSection: NavigationSection = .chats
     @Published var composerText = ""
     @Published var searchQuery = ""
+    @Published var selectedSkillIDForComposer: String?
 
     @Published var isDiagnosticsVisible = false
     @Published var isProjectSettingsVisible = false
@@ -59,22 +75,27 @@ final class AppModel: ObservableObject {
     @Published var accountStatusMessage: String?
     @Published var approvalStatusMessage: String?
     @Published var projectStatusMessage: String?
+    @Published var skillStatusMessage: String?
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
+    @Published var isSkillOperationInProgress = false
     @Published var isAPIKeyPromptVisible = false
     @Published var pendingAPIKey = ""
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
     @Published private(set) var logs: [LogEntry] = []
     @Published private(set) var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
     @Published private(set) var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
+    @Published private(set) var isNodeSkillInstallerAvailable = false
 
     private let projectRepository: (any ProjectRepository)?
     private let threadRepository: (any ThreadRepository)?
     private let preferenceRepository: (any PreferenceRepository)?
     private let runtimeThreadMappingRepository: (any RuntimeThreadMappingRepository)?
     private let projectSecretRepository: (any ProjectSecretRepository)?
+    private let projectSkillEnablementRepository: (any ProjectSkillEnablementRepository)?
     private let chatSearchRepository: (any ChatSearchRepository)?
     private let runtime: CodexRuntime?
+    private let skillCatalogService: SkillCatalogService
     private let keychainStore: APIKeychainStore
 
     private var transcriptStore: [UUID: [TranscriptEntry]] = [:]
@@ -87,20 +108,29 @@ final class AppModel: ObservableObject {
     private var runtimeEventTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
 
-    init(repositories: MetadataRepositories?, runtime: CodexRuntime?, bootError: String?) {
+    init(
+        repositories: MetadataRepositories?,
+        runtime: CodexRuntime?,
+        bootError: String?,
+        skillCatalogService: SkillCatalogService = SkillCatalogService()
+    ) {
         self.projectRepository = repositories?.projectRepository
         self.threadRepository = repositories?.threadRepository
         self.preferenceRepository = repositories?.preferenceRepository
         self.runtimeThreadMappingRepository = repositories?.runtimeThreadMappingRepository
         self.projectSecretRepository = repositories?.projectSecretRepository
+        self.projectSkillEnablementRepository = repositories?.projectSkillEnablementRepository
         self.chatSearchRepository = repositories?.chatSearchRepository
         self.runtime = runtime
+        self.skillCatalogService = skillCatalogService
         self.keychainStore = APIKeychainStore()
+        self.isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
 
         if let bootError {
             self.projectsState = .failed(bootError)
             self.threadsState = .failed(bootError)
             self.conversationState = .failed(bootError)
+            self.skillsState = .failed(bootError)
             runtimeStatus = .error
             runtimeIssue = .recoverable(bootError)
             appendLog(.error, bootError)
@@ -160,6 +190,22 @@ final class AppModel: ObservableObject {
         default:
             return account.type
         }
+    }
+
+    var skills: [SkillListItem] {
+        if case .loaded(let skills) = skillsState {
+            return skills
+        }
+        return []
+    }
+
+    var enabledSkillsForSelectedProject: [SkillListItem] {
+        skills.filter(\.isEnabledForProject)
+    }
+
+    var selectedSkillForComposer: SkillListItem? {
+        guard let selectedSkillIDForComposer else { return nil }
+        return skills.first(where: { $0.id == selectedSkillIDForComposer })
     }
 
     var selectedThreadLogs: [ThreadLogEntry] {
@@ -333,6 +379,7 @@ final class AppModel: ObservableObject {
             try await refreshProjects()
             try await restoreLastOpenedContext()
             try await refreshThreads()
+            try await refreshSkills()
             refreshConversationState()
             appendLog(.info, "Initial metadata load completed")
         } catch {
@@ -340,6 +387,7 @@ final class AppModel: ObservableObject {
             projectsState = .failed(message)
             threadsState = .failed(message)
             conversationState = .failed(message)
+            skillsState = .failed(message)
             runtimeStatus = .error
             runtimeIssue = .recoverable(message)
             appendLog(.error, "Failed to load initial data: \(message)")
@@ -372,6 +420,7 @@ final class AppModel: ObservableObject {
                     selectedProjectID = existing.id
                     try await persistSelection()
                     try await refreshThreads()
+                    try await refreshSkills()
                     refreshConversationState()
                     projectStatusMessage = "Opened existing project at \(path)."
                     appendLog(.info, "Opened existing project \(existing.name)")
@@ -389,6 +438,7 @@ final class AppModel: ObservableObject {
                 selectedProjectID = project.id
                 try await persistSelection()
                 try await refreshThreads()
+                try await refreshSkills()
                 refreshConversationState()
                 projectStatusMessage = trustState == .trusted
                     ? "Project opened and trusted (Git repository detected)."
@@ -601,6 +651,7 @@ final class AppModel: ObservableObject {
             do {
                 try await persistSelection()
                 try await refreshThreads()
+                try await refreshSkills()
                 refreshConversationState()
             } catch {
                 appendLog(.error, "Failed to open search result: \(error.localizedDescription)")
@@ -632,6 +683,7 @@ final class AppModel: ObservableObject {
             do {
                 try await persistSelection()
                 try await refreshThreads()
+                try await refreshSkills()
                 refreshConversationState()
             } catch {
                 threadsState = .failed(error.localizedDescription)
@@ -680,6 +732,112 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func refreshSkillsSurface() {
+        Task {
+            do {
+                try await refreshSkills()
+            } catch {
+                skillsState = .failed(error.localizedDescription)
+                skillStatusMessage = "Failed to refresh skills: \(error.localizedDescription)"
+                appendLog(.error, "Refresh skills failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func isTrustedSkillSource(_ source: String) -> Bool {
+        skillCatalogService.isTrustedSource(source)
+    }
+
+    func installSkill(
+        source: String,
+        scope: SkillInstallScope,
+        installer: SkillInstallerKind
+    ) {
+        isSkillOperationInProgress = true
+        skillStatusMessage = nil
+
+        let request = SkillInstallRequest(
+            source: source,
+            scope: mapSkillScope(scope),
+            projectPath: selectedProject?.path,
+            installer: installer
+        )
+
+        Task {
+            defer { isSkillOperationInProgress = false }
+            do {
+                let result = try skillCatalogService.installSkill(request)
+                try await refreshSkills()
+                skillStatusMessage = "Installed skill to \(result.installedPath)."
+                appendLog(.info, "Installed skill from \(source)")
+            } catch {
+                skillStatusMessage = "Skill install failed: \(error.localizedDescription)"
+                appendLog(.error, "Skill install failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func updateSkill(_ item: SkillListItem) {
+        isSkillOperationInProgress = true
+        skillStatusMessage = nil
+
+        Task {
+            defer { isSkillOperationInProgress = false }
+            do {
+                _ = try skillCatalogService.updateSkill(at: item.skill.skillPath)
+                try await refreshSkills()
+                skillStatusMessage = "Updated \(item.skill.name)."
+                appendLog(.info, "Updated skill \(item.skill.name)")
+            } catch {
+                skillStatusMessage = "Skill update failed: \(error.localizedDescription)"
+                appendLog(.error, "Skill update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func setSkillEnabled(_ item: SkillListItem, enabled: Bool) {
+        guard let selectedProjectID,
+              let projectSkillEnablementRepository else {
+            skillStatusMessage = "Select a project before enabling skills."
+            return
+        }
+
+        Task {
+            do {
+                try await projectSkillEnablementRepository.setSkillEnabled(
+                    projectID: selectedProjectID,
+                    skillPath: item.skill.skillPath,
+                    enabled: enabled
+                )
+                try await refreshSkills()
+                if !enabled, selectedSkillIDForComposer == item.id {
+                    selectedSkillIDForComposer = nil
+                }
+            } catch {
+                skillStatusMessage = "Failed to update skill enablement: \(error.localizedDescription)"
+                appendLog(.error, "Skill enablement update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func selectSkillForComposer(_ item: SkillListItem) {
+        guard item.isEnabledForProject else {
+            skillStatusMessage = "Enable the skill for this project first."
+            return
+        }
+
+        selectedSkillIDForComposer = item.id
+        let trigger = "$\(item.skill.name)"
+        let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.contains(trigger) {
+            composerText = trimmed.isEmpty ? trigger : "\(trimmed)\n\(trigger)"
+        }
+    }
+
+    func clearSelectedSkillForComposer() {
+        selectedSkillIDForComposer = nil
+    }
+
     func sendMessage() {
         guard let selectedThreadID,
               let selectedProjectID,
@@ -697,6 +855,9 @@ final class AppModel: ObservableObject {
         composerText = ""
         appendEntry(.message(ChatMessage(threadId: selectedThreadID, role: .user, text: trimmedText)), to: selectedThreadID)
         let safetyConfiguration = runtimeSafetyConfiguration(for: project)
+        let selectedSkillInput = selectedSkillForComposer.map {
+            RuntimeSkillInput(name: $0.skill.name, path: $0.skill.skillPath)
+        }
 
         Task {
             do {
@@ -720,7 +881,8 @@ final class AppModel: ObservableObject {
                 let turnID = try await runtime.startTurn(
                     threadID: runtimeThreadID,
                     text: trimmedText,
-                    safetyConfiguration: safetyConfiguration
+                    safetyConfiguration: safetyConfiguration,
+                    skillInputs: selectedSkillInput.map { [$0] } ?? []
                 )
                 activeTurnContext?.turnID = turnID
                 appendLog(.info, "Started turn \(turnID) for local thread \(selectedThreadID.uuidString)")
@@ -1197,6 +1359,30 @@ final class AppModel: ObservableObject {
         self.selectedThreadID = loadedThreads.first?.id
     }
 
+    private func refreshSkills() async throws {
+        skillsState = .loading
+
+        let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
+        let enabledPaths: Set<String>
+        if let selectedProjectID,
+           let projectSkillEnablementRepository {
+            enabledPaths = try await projectSkillEnablementRepository.enabledSkillPaths(projectID: selectedProjectID)
+        } else {
+            enabledPaths = []
+        }
+
+        let items = discovered.map { skill in
+            SkillListItem(skill: skill, isEnabledForProject: enabledPaths.contains(skill.skillPath))
+        }
+
+        skillsState = .loaded(items)
+
+        if let selectedSkillIDForComposer,
+           !items.contains(where: { $0.id == selectedSkillIDForComposer && $0.isEnabledForProject }) {
+            self.selectedSkillIDForComposer = nil
+        }
+    }
+
     private func restoreLastOpenedContext() async throws {
         guard let preferenceRepository else { return }
 
@@ -1283,6 +1469,15 @@ final class AppModel: ObservableObject {
             return .workspaceWrite
         case .dangerFullAccess:
             return .dangerFullAccess
+        }
+    }
+
+    private func mapSkillScope(_ scope: SkillInstallScope) -> SkillScope {
+        switch scope {
+        case .project:
+            return .project
+        case .global:
+            return .global
         }
     }
 
