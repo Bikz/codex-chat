@@ -509,13 +509,18 @@ struct ContentView: View {
                         MessageRow(message: message, tokens: tokens)
                             .padding(.vertical, tokens.spacing.xSmall)
                             .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 0, leading: tokens.spacing.medium, bottom: 0, trailing: tokens.spacing.medium))
                     case let .actionCard(card):
                         ActionCardRow(card: card)
                             .padding(.vertical, tokens.spacing.xSmall)
                             .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 0, leading: tokens.spacing.medium, bottom: 0, trailing: tokens.spacing.medium))
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
     }
