@@ -2,6 +2,7 @@ import AppKit
 import CodexChatCore
 import CodexChatInfra
 import CodexKit
+import CodexMemory
 import CodexSkills
 import Foundation
 
@@ -1263,6 +1264,35 @@ final class AppModel: ObservableObject {
             }
         } catch {
             appendLog(.error, "Failed to archive turn: \(error.localizedDescription)")
+        }
+
+        await appendMemorySummaryIfEnabled(context: context, assistantText: assistantText)
+    }
+
+    private func appendMemorySummaryIfEnabled(context: ActiveTurnContext, assistantText: String) async {
+        guard let projectRepository else { return }
+
+        do {
+            let project = try await projectRepository.getProject(id: context.projectID) ?? selectedProject
+            guard let project, project.memoryWriteMode != .off else {
+                return
+            }
+
+            let store = ProjectMemoryStore(projectPath: context.projectPath)
+            try await store.ensureStructure()
+            let markdown = MemoryAutoSummary.markdown(
+                timestamp: context.startedAt,
+                threadID: context.localThreadID,
+                userText: context.userText,
+                assistantText: assistantText,
+                actions: context.actions,
+                mode: project.memoryWriteMode
+            )
+
+            try await store.appendToSummaryLog(markdown: markdown)
+            appendLog(.info, "Appended memory summary for thread \(context.localThreadID.uuidString)")
+        } catch {
+            appendLog(.error, "Failed to append memory summary: \(error.localizedDescription)")
         }
     }
 

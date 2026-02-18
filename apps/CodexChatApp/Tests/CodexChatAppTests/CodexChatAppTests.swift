@@ -1,3 +1,4 @@
+import CodexChatCore
 import CodexKit
 import XCTest
 @testable import CodexChatApp
@@ -65,6 +66,40 @@ final class CodexChatAppTests: XCTestCase {
 
         XCTAssertEqual(state.activeRequest?.id, 42)
         XCTAssertTrue(state.queuedRequests.isEmpty)
+    }
+
+    func testMemoryAutoSummaryFormattingRespectsMode() {
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let threadID = UUID()
+        let userText = "Remember that I prefer SwiftUI."
+        let assistantText = """
+        Sure.
+        - Prefer SwiftUI for UI work
+        - Keep docs private
+        """
+
+        let markdownSummariesOnly = MemoryAutoSummary.markdown(
+            timestamp: timestamp,
+            threadID: threadID,
+            userText: userText,
+            assistantText: assistantText,
+            actions: [
+                ActionCard(threadID: threadID, method: "tool/run", title: "Ran command", detail: "echo hello")
+            ],
+            mode: .summariesOnly
+        )
+        XCTAssertFalse(markdownSummariesOnly.contains("Key facts"))
+
+        let markdownWithFacts = MemoryAutoSummary.markdown(
+            timestamp: timestamp,
+            threadID: threadID,
+            userText: userText,
+            assistantText: assistantText,
+            actions: [],
+            mode: .summariesAndKeyFacts
+        )
+        XCTAssertTrue(markdownWithFacts.contains("Key facts"))
+        XCTAssertTrue(markdownWithFacts.contains("Prefer SwiftUI"))
     }
 
     private func makeApprovalRequest(id: Int) -> RuntimeApprovalRequest {
