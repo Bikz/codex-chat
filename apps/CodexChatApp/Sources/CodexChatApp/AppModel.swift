@@ -29,23 +29,33 @@ final class AppModel: ObservableObject {
 
     private struct ActiveTurnContext {
         var localThreadID: UUID
+        var projectID: UUID
+        var projectPath: String
         var runtimeThreadID: String
         var turnID: String?
+        var userText: String
+        var assistantText: String
+        var actions: [ActionCard]
+        var startedAt: Date
     }
 
     @Published var projectsState: SurfaceState<[ProjectRecord]> = .loading
     @Published var threadsState: SurfaceState<[ThreadRecord]> = .idle
     @Published var conversationState: SurfaceState<[TranscriptEntry]> = .idle
+    @Published var searchState: SurfaceState<[ChatSearchResult]> = .idle
 
     @Published var selectedProjectID: UUID?
     @Published var selectedThreadID: UUID?
     @Published var composerText = ""
+    @Published var searchQuery = ""
 
     @Published var isDiagnosticsVisible = false
+    @Published var isProjectSettingsVisible = false
     @Published var runtimeStatus: RuntimeStatus = .idle
     @Published var runtimeIssue: RuntimeIssue?
     @Published var accountState: RuntimeAccountState = .signedOut
     @Published var accountStatusMessage: String?
+    @Published var projectStatusMessage: String?
     @Published var isAccountOperationInProgress = false
     @Published var isAPIKeyPromptVisible = false
     @Published var pendingAPIKey = ""
@@ -56,6 +66,7 @@ final class AppModel: ObservableObject {
     private let preferenceRepository: (any PreferenceRepository)?
     private let runtimeThreadMappingRepository: (any RuntimeThreadMappingRepository)?
     private let projectSecretRepository: (any ProjectSecretRepository)?
+    private let chatSearchRepository: (any ChatSearchRepository)?
     private let runtime: CodexRuntime?
     private let keychainStore: APIKeychainStore
 
@@ -63,6 +74,7 @@ final class AppModel: ObservableObject {
     private var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
     private var activeTurnContext: ActiveTurnContext?
     private var runtimeEventTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
 
     init(repositories: MetadataRepositories?, runtime: CodexRuntime?, bootError: String?) {
         self.projectRepository = repositories?.projectRepository
@@ -70,6 +82,7 @@ final class AppModel: ObservableObject {
         self.preferenceRepository = repositories?.preferenceRepository
         self.runtimeThreadMappingRepository = repositories?.runtimeThreadMappingRepository
         self.projectSecretRepository = repositories?.projectSecretRepository
+        self.chatSearchRepository = repositories?.chatSearchRepository
         self.runtime = runtime
         self.keychainStore = APIKeychainStore()
 
@@ -87,6 +100,7 @@ final class AppModel: ObservableObject {
 
     deinit {
         runtimeEventTask?.cancel()
+        searchTask?.cancel()
     }
 
     var projects: [ProjectRecord] {
@@ -105,6 +119,15 @@ final class AppModel: ObservableObject {
 
     var canSendMessages: Bool {
         selectedThreadID != nil && runtimeIssue == nil && runtimeStatus == .connected
+    }
+
+    var selectedProject: ProjectRecord? {
+        guard let selectedProjectID else { return nil }
+        return projects.first(where: { $0.id == selectedProjectID })
+    }
+
+    var isSelectedProjectTrusted: Bool {
+        selectedProject?.trustState == .trusted
     }
 
     var accountSummaryText: String {
@@ -301,24 +324,136 @@ final class AppModel: ObservableObject {
         await startRuntimeSession()
     }
 
-    func createProject() {
+    func openProjectFolder() {
+        guard let projectRepository else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = "Open Project Folder"
+        panel.prompt = "Open Project"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK,
+              let url = panel.url else {
+            return
+        }
+
         Task {
-            guard let projectRepository else { return }
             do {
-                let name = "Project \(projects.count + 1)"
-                let project = try await projectRepository.createProject(named: name)
-                appendLog(.info, "Created project \(project.name)")
+                let path = url.standardizedFileURL.path
+                if let existing = try await projectRepository.getProject(path: path) {
+                    selectedProjectID = existing.id
+                    try await persistSelection()
+                    try await refreshThreads()
+                    refreshConversationState()
+                    projectStatusMessage = "Opened existing project at \(path)."
+                    appendLog(.info, "Opened existing project \(existing.name)")
+                    return
+                }
+
+                let trustState: ProjectTrustState = Self.isGitProject(path: path) ? .trusted : .untrusted
+                let project = try await projectRepository.createProject(
+                    named: url.lastPathComponent,
+                    path: path,
+                    trustState: trustState
+                )
 
                 try await refreshProjects()
                 selectedProjectID = project.id
                 try await persistSelection()
                 try await refreshThreads()
                 refreshConversationState()
+                projectStatusMessage = trustState == .trusted
+                    ? "Project opened and trusted (Git repository detected)."
+                    : "Project opened in untrusted mode. Read-only is recommended until you trust this project."
+                appendLog(.info, "Opened project \(project.name) at \(path)")
             } catch {
                 projectsState = .failed(error.localizedDescription)
-                appendLog(.error, "Create project failed: \(error.localizedDescription)")
+                appendLog(.error, "Open project failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    func showProjectSettings() {
+        isProjectSettingsVisible = true
+    }
+
+    func closeProjectSettings() {
+        isProjectSettingsVisible = false
+    }
+
+    func trustSelectedProject() {
+        setSelectedProjectTrustState(.trusted)
+    }
+
+    func untrustSelectedProject() {
+        setSelectedProjectTrustState(.untrusted)
+    }
+
+    func updateSearchQuery(_ query: String) {
+        searchQuery = query
+        searchTask?.cancel()
+
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            searchState = .idle
+            return
+        }
+
+        guard let chatSearchRepository else {
+            searchState = .failed("Search index is unavailable.")
+            return
+        }
+
+        searchState = .loading
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                try await Task.sleep(nanoseconds: 180_000_000)
+                if Task.isCancelled { return }
+
+                let results = try await chatSearchRepository.search(query: trimmed, projectID: nil, limit: 50)
+                if Task.isCancelled { return }
+                self.searchState = .loaded(results)
+            } catch is CancellationError {
+                return
+            } catch {
+                self.searchState = .failed(error.localizedDescription)
+                self.appendLog(.error, "Search failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func selectSearchResult(_ result: ChatSearchResult) {
+        Task {
+            selectedProjectID = result.projectID
+            selectedThreadID = result.threadID
+            do {
+                try await persistSelection()
+                try await refreshThreads()
+                refreshConversationState()
+            } catch {
+                appendLog(.error, "Failed to open search result: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func revealSelectedThreadArchiveInFinder() {
+        guard let threadID = selectedThreadID,
+              let project = selectedProject else {
+            return
+        }
+
+        guard let archiveURL = ChatArchiveStore.latestArchiveURL(projectPath: project.path, threadID: threadID) else {
+            projectStatusMessage = "No archived chat file found for the selected thread yet."
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting([archiveURL])
+        projectStatusMessage = "Revealed \(archiveURL.lastPathComponent) in Finder."
     }
 
     func selectProject(_ projectID: UUID?) {
@@ -340,11 +475,18 @@ final class AppModel: ObservableObject {
 
     func createThread() {
         Task {
-            guard let projectID = selectedProjectID, let threadRepository else { return }
+            guard let projectID = selectedProjectID,
+                  let threadRepository else { return }
             do {
                 let title = "Thread \(threads.count + 1)"
                 let thread = try await threadRepository.createThread(projectID: projectID, title: title)
                 appendLog(.info, "Created thread \(thread.title)")
+
+                try await chatSearchRepository?.indexThreadTitle(
+                    threadID: thread.id,
+                    projectID: projectID,
+                    title: thread.title
+                )
 
                 try await refreshThreads()
                 selectedThreadID = thread.id
@@ -373,6 +515,8 @@ final class AppModel: ObservableObject {
 
     func sendMessage() {
         guard let selectedThreadID,
+              let selectedProjectID,
+              let project = selectedProject,
               let runtime,
               canSendMessages else {
             return
@@ -388,11 +532,20 @@ final class AppModel: ObservableObject {
 
         Task {
             do {
-                let runtimeThreadID = try await ensureRuntimeThreadID(for: selectedThreadID)
+                let runtimeThreadID = try await ensureRuntimeThreadID(
+                    for: selectedThreadID,
+                    projectPath: project.path
+                )
                 activeTurnContext = ActiveTurnContext(
                     localThreadID: selectedThreadID,
+                    projectID: selectedProjectID,
+                    projectPath: project.path,
                     runtimeThreadID: runtimeThreadID,
-                    turnID: nil
+                    turnID: nil,
+                    userText: trimmedText,
+                    assistantText: "",
+                    actions: [],
+                    startedAt: Date()
                 )
 
                 let turnID = try await runtime.startTurn(threadID: runtimeThreadID, text: trimmedText)
@@ -498,6 +651,9 @@ final class AppModel: ObservableObject {
             }
 
             appendAssistantDelta(delta, itemID: itemID, to: context.localThreadID)
+            var updatedContext = context
+            updatedContext.assistantText += delta
+            activeTurnContext = updatedContext
 
         case .action(let action):
             if action.method == "runtime/stderr" {
@@ -520,6 +676,17 @@ final class AppModel: ObservableObject {
                 ),
                 to: context.localThreadID
             )
+
+            var updatedContext = context
+            updatedContext.actions.append(
+                ActionCard(
+                    threadID: context.localThreadID,
+                    method: action.method,
+                    title: action.title,
+                    detail: action.detail
+                )
+            )
+            activeTurnContext = updatedContext
 
         case .turnCompleted(let completion):
             if let context = activeTurnContext {
@@ -544,6 +711,10 @@ final class AppModel: ObservableObject {
 
                 assistantMessageIDsByItemID[context.localThreadID] = [:]
                 activeTurnContext = nil
+
+                Task {
+                    await persistCompletedTurn(context: context)
+                }
             }
 
         case .accountUpdated(let authMode):
@@ -567,7 +738,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func ensureRuntimeThreadID(for localThreadID: UUID) async throws -> String {
+    private func ensureRuntimeThreadID(for localThreadID: UUID, projectPath: String) async throws -> String {
         if let runtimeThreadMappingRepository,
            let existingRuntimeThreadID = try await runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: localThreadID) {
             return existingRuntimeThreadID
@@ -577,7 +748,7 @@ final class AppModel: ObservableObject {
             throw CodexRuntimeError.processNotRunning
         }
 
-        let runtimeThreadID = try await runtime.startThread()
+        let runtimeThreadID = try await runtime.startThread(cwd: projectPath)
         try await runtimeThreadMappingRepository?.setRuntimeThreadID(
             localThreadID: localThreadID,
             runtimeThreadID: runtimeThreadID
@@ -585,6 +756,42 @@ final class AppModel: ObservableObject {
 
         appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
         return runtimeThreadID
+    }
+
+    private func persistCompletedTurn(context: ActiveTurnContext) async {
+        let assistantText = context.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let summary = ArchivedTurnSummary(
+            timestamp: context.startedAt,
+            userText: context.userText,
+            assistantText: assistantText,
+            actions: context.actions
+        )
+
+        do {
+            let archiveURL = try ChatArchiveStore.appendTurn(
+                projectPath: context.projectPath,
+                threadID: context.localThreadID,
+                turn: summary
+            )
+            projectStatusMessage = "Archived chat turn to \(archiveURL.lastPathComponent)."
+
+            try await chatSearchRepository?.indexMessageExcerpt(
+                threadID: context.localThreadID,
+                projectID: context.projectID,
+                text: context.userText
+            )
+
+            if !assistantText.isEmpty {
+                try await chatSearchRepository?.indexMessageExcerpt(
+                    threadID: context.localThreadID,
+                    projectID: context.projectID,
+                    text: assistantText
+                )
+            }
+        } catch {
+            appendLog(.error, "Failed to archive turn: \(error.localizedDescription)")
+        }
     }
 
     private func refreshAccountState() async throws {
@@ -607,6 +814,26 @@ final class AppModel: ObservableObject {
             name: "OPENAI_API_KEY",
             keychainAccount: APIKeychainStore.runtimeAPIKeyAccount
         )
+    }
+
+    private func setSelectedProjectTrustState(_ trustState: ProjectTrustState) {
+        guard let selectedProjectID,
+              let projectRepository else {
+            return
+        }
+
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectTrustState(id: selectedProjectID, trustState: trustState)
+                try await refreshProjects()
+                projectStatusMessage = trustState == .trusted
+                    ? "Project trusted. Runtime can act with normal settings."
+                    : "Project marked untrusted. Read-only is recommended."
+            } catch {
+                projectStatusMessage = "Failed to update trust state: \(error.localizedDescription)"
+                appendLog(.error, "Failed to update trust state: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func appendEntry(_ entry: TranscriptEntry, to threadID: UUID) {
@@ -670,6 +897,14 @@ final class AppModel: ObservableObject {
         threadsState = .loading
         let loadedThreads = try await threadRepository.listThreads(projectID: selectedProjectID)
         threadsState = .loaded(loadedThreads)
+
+        for thread in loadedThreads {
+            try await chatSearchRepository?.indexThreadTitle(
+                threadID: thread.id,
+                projectID: selectedProjectID,
+                title: thread.title
+            )
+        }
 
         if let selectedThreadID,
            loadedThreads.contains(where: { $0.id == selectedThreadID }) {
@@ -761,5 +996,12 @@ final class AppModel: ObservableObject {
         }
 
         return sanitized
+    }
+
+    private static func isGitProject(path: String) -> Bool {
+        let gitDirectory = URL(fileURLWithPath: path, isDirectory: true)
+            .appendingPathComponent(".git", isDirectory: true)
+            .path
+        return FileManager.default.fileExists(atPath: gitDirectory)
     }
 }

@@ -9,7 +9,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 250, ideal: 300)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 320)
         } detail: {
             conversationCanvas
         }
@@ -21,6 +21,9 @@ struct ContentView: View {
                 onClose: model.closeDiagnostics
             )
         }
+        .sheet(isPresented: $model.isProjectSettingsVisible) {
+            ProjectSettingsSheet(model: model)
+        }
         .onAppear {
             model.onAppear()
         }
@@ -28,14 +31,35 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: tokens.spacing.medium) {
+            TextField(
+                "Search threads and archived messages",
+                text: Binding(
+                    get: { model.searchQuery },
+                    set: { model.updateSearchQuery($0) }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+
+            if !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                searchSurface
+                    .frame(minHeight: 120, maxHeight: 220)
+            }
+
             HStack {
                 Text("Projects")
                     .font(.system(size: tokens.typography.titleSize, weight: .semibold))
                 Spacer()
-                Button(action: model.createProject) {
-                    Label("New Project", systemImage: "plus")
+
+                Button(action: model.openProjectFolder) {
+                    Label("Open Folder", systemImage: "folder.badge.plus")
                 }
                 .buttonStyle(.borderless)
+
+                Button(action: model.showProjectSettings) {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.selectedProjectID == nil)
             }
 
             projectsSurface
@@ -54,10 +78,59 @@ struct ContentView: View {
 
             threadsSurface
 
+            if let projectStatusMessage = model.projectStatusMessage {
+                Text(projectStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Spacer()
         }
         .padding(tokens.spacing.medium)
         .background(Color(hex: tokens.palette.panelHex).opacity(0.6))
+    }
+
+    @ViewBuilder
+    private var searchSurface: some View {
+        switch model.searchState {
+        case .idle:
+            EmptyStateView(
+                title: "Search ready",
+                message: "Results appear as you type.",
+                systemImage: "magnifyingglass"
+            )
+        case .loading:
+            LoadingStateView(title: "Searching archives…")
+        case .failed(let message):
+            ErrorStateView(title: "Search unavailable", message: message, actionLabel: "Retry") {
+                model.updateSearchQuery(model.searchQuery)
+            }
+        case .loaded(let results) where results.isEmpty:
+            EmptyStateView(
+                title: "No results",
+                message: "Try a different keyword.",
+                systemImage: "magnifyingglass"
+            )
+        case .loaded(let results):
+            List(results) { result in
+                Button {
+                    model.selectSearchResult(result)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(result.source.capitalized)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(result.excerpt)
+                            .font(.caption)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+            }
+            .listStyle(.plain)
+            .clipShape(RoundedRectangle(cornerRadius: tokens.radius.medium))
+        }
     }
 
     @ViewBuilder
@@ -72,7 +145,7 @@ struct ContentView: View {
         case .loaded(let projects) where projects.isEmpty:
             EmptyStateView(
                 title: "No projects yet",
-                message: "Create a project to start organizing chats.",
+                message: "Open a folder to start organizing chats.",
                 systemImage: "folder"
             )
         case .loaded:
@@ -81,8 +154,14 @@ struct ContentView: View {
             }, set: { selection in
                 model.selectProject(selection)
             })) { project in
-                Text(project.name)
-                    .tag(project.id)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name)
+                    Text(project.path)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .tag(project.id)
             }
             .clipShape(RoundedRectangle(cornerRadius: tokens.radius.medium))
         }
@@ -124,6 +203,15 @@ struct ContentView: View {
 
     private var conversationCanvas: some View {
         VStack(spacing: 0) {
+            if !model.isSelectedProjectTrusted, model.selectedProjectID != nil {
+                ProjectTrustBanner(
+                    onTrust: model.trustSelectedProject,
+                    onSettings: model.showProjectSettings
+                )
+                .padding(.horizontal, tokens.spacing.medium)
+                .padding(.top, tokens.spacing.small)
+            }
+
             runtimeAwareConversationSurface
 
             Divider()
@@ -139,6 +227,12 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color(hex: tokens.palette.accentHex))
                 .disabled(!model.canSendMessages)
+
+                Button("Reveal Chat File") {
+                    model.revealSelectedThreadArchiveInFinder()
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.selectedThreadID == nil)
             }
             .padding(tokens.spacing.medium)
             .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
@@ -273,5 +367,94 @@ private struct InstallCodexGuidanceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+}
+
+private struct ProjectTrustBanner: View {
+    let onTrust: () -> Void
+    let onSettings: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.trianglebadge.exclamationmark")
+                .foregroundStyle(.orange)
+
+            Text("Project is untrusted. Read-only behavior is recommended until you trust this folder.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Button("Trust") {
+                onTrust()
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button("Settings") {
+                onSettings()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct ProjectSettingsSheet: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Project Settings")
+                .font(.title3.weight(.semibold))
+
+            if let project = model.selectedProject {
+                LabeledContent("Name") { Text(project.name) }
+                LabeledContent("Path") {
+                    Text(project.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                LabeledContent("Trust") {
+                    Text(project.trustState.rawValue.capitalized)
+                        .foregroundStyle(project.trustState == .trusted ? .green : .orange)
+                }
+
+                HStack {
+                    Button("Trust Project") {
+                        model.trustSelectedProject()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(project.trustState == .trusted)
+
+                    Button("Mark Untrusted") {
+                        model.untrustSelectedProject()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(project.trustState == .untrusted)
+                }
+            } else {
+                Text("Select a project first.")
+                    .foregroundStyle(.secondary)
+            }
+
+            if let status = model.projectStatusMessage {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            HStack {
+                Spacer()
+                Button("Done") {
+                    model.closeProjectSettings()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(18)
+        .frame(minWidth: 560, minHeight: 300)
     }
 }

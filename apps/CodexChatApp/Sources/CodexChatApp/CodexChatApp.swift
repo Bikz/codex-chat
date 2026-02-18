@@ -24,10 +24,10 @@ struct CodexChatApplication: App {
         }
         .commands {
             CommandGroup(after: .newItem) {
-                Button("New Project") {
-                    model.createProject()
+                Button("Open Project Folder…") {
+                    model.openProjectFolder()
                 }
-                .keyboardShortcut("n", modifiers: [.command])
+                .keyboardShortcut("o", modifiers: [.command])
 
                 Button("New Thread") {
                     model.createThread()
