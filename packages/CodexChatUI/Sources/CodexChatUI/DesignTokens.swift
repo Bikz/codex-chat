@@ -59,10 +59,47 @@ public struct DesignTokens: Hashable, Sendable {
         }
     }
 
+    public struct Surfaces: Hashable, Sendable {
+        public var baseOpacity: Double
+        public var raisedOpacity: Double
+        public var activeOpacity: Double
+        public var hairlineOpacity: Double
+
+        public init(
+            baseOpacity: Double = 0.04,
+            raisedOpacity: Double = 0.06,
+            activeOpacity: Double = 0.12,
+            hairlineOpacity: Double = 0.10
+        ) {
+            self.baseOpacity = baseOpacity
+            self.raisedOpacity = raisedOpacity
+            self.activeOpacity = activeOpacity
+            self.hairlineOpacity = hairlineOpacity
+        }
+    }
+
+    public struct Motion: Hashable, Sendable {
+        public var hoverDuration: Double
+        public var pressDuration: Double
+        public var transitionDuration: Double
+
+        public init(
+            hoverDuration: Double = 0.14,
+            pressDuration: Double = 0.10,
+            transitionDuration: Double = 0.22
+        ) {
+            self.hoverDuration = hoverDuration
+            self.pressDuration = pressDuration
+            self.transitionDuration = transitionDuration
+        }
+    }
+
     public var typography: Typography
     public var spacing: Spacing
     public var radius: Radius
     public var palette: Palette
+    public var surfaces: Surfaces
+    public var motion: Motion
     public var materials: Materials
     public var bubbles: Bubbles
     public var iconography: Iconography
@@ -72,6 +109,8 @@ public struct DesignTokens: Hashable, Sendable {
         spacing: Spacing = Spacing(),
         radius: Radius = Radius(),
         palette: Palette = Palette(),
+        surfaces: Surfaces = Surfaces(),
+        motion: Motion = Motion(),
         materials: Materials = Materials(),
         bubbles: Bubbles = Bubbles(),
         iconography: Iconography = Iconography()
@@ -80,6 +119,8 @@ public struct DesignTokens: Hashable, Sendable {
         self.spacing = spacing
         self.radius = radius
         self.palette = palette
+        self.surfaces = surfaces
+        self.motion = motion
         self.materials = materials
         self.bubbles = bubbles
         self.iconography = iconography

@@ -26,8 +26,8 @@ struct SkillsModsCanvasView: View {
                     .transition(.opacity)
             }
         }
-        .background(SkillsModsTheme.canvasBackground)
-        .animation(.easeInOut(duration: 0.18), value: selectedTab)
+        .background(SkillsModsTheme.canvasBackground(tokens: tokens))
+        .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: selectedTab)
         .onChange(of: selectedTab) { _, newTab in
             switch newTab {
             case .skills:

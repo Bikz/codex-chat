@@ -100,8 +100,14 @@ enum DiagnosticsBundleExporter {
         var sanitized = text
         let patterns = [
             "sk-[A-Za-z0-9_-]{16,}",
+            "rnd_[A-Za-z0-9_-]{16,}",
+            "xox[baprs]-[A-Za-z0-9-]{10,}",
+            "(?i)ghp_[A-Za-z0-9]{20,}",
+            "(?i)pat_[A-Za-z0-9_]{20,}",
             "(?i)api[_-]?key\\s*[:=]\\s*[^\\s]+",
             "(?i)authorization\\s*:\\s*bearer\\s+[^\\s]+",
+            "(?i)bearer\\s+[A-Za-z0-9._=-]{16,}",
+            "(?i)(token|secret|password)\\s*[:=]\\s*[^\\s]+",
         ]
 
         for pattern in patterns {

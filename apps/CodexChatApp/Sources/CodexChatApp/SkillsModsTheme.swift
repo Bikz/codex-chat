@@ -2,31 +2,49 @@ import CodexChatUI
 import SwiftUI
 
 enum SkillsModsTheme {
-    static let canvasBackground = Color.primary.opacity(0.03)
-    static let sidebarBackground = Color.primary.opacity(0.04)
-    static let sidebarRowActive = Color.primary.opacity(0.08)
-
-    static let headerBackground = Color.primary.opacity(0.05)
-    static let cardBackground = Color.primary.opacity(0.06)
-
-    static let border = Color.primary.opacity(0.08)
-    static let subtleBorder = Color.primary.opacity(0.05)
-    static let mutedText = Color.primary.opacity(0.55)
-
     static let pageHorizontalInset: CGFloat = 24
     static let pageVerticalInset: CGFloat = 18
     static let cardRadius: CGFloat = 16
+
+    static func canvasBackground(tokens: DesignTokens) -> Color {
+        Color.primary.opacity(tokens.surfaces.baseOpacity * 0.8)
+    }
+
+    static func headerBackground(tokens: DesignTokens) -> Color {
+        Color.primary.opacity(tokens.surfaces.baseOpacity)
+    }
+
+    static func cardBackground(tokens: DesignTokens) -> Color {
+        Color.primary.opacity(tokens.surfaces.raisedOpacity)
+    }
+
+    static func activeBackground(tokens: DesignTokens) -> Color {
+        Color.primary.opacity(tokens.surfaces.activeOpacity)
+    }
+
+    static func border(tokens: DesignTokens) -> Color {
+        Color.primary.opacity(tokens.surfaces.hairlineOpacity)
+    }
+
+    static func subtleBorder(tokens: DesignTokens) -> Color {
+        Color.primary.opacity(tokens.surfaces.hairlineOpacity * 0.7)
+    }
+
+    static func mutedText(tokens: DesignTokens) -> Color {
+        Color.primary.opacity(tokens.surfaces.activeOpacity * 4.5)
+    }
 }
 
 struct SkillsModsSearchField: View {
     @Binding var text: String
     var placeholder: String
+    @Environment(\.designTokens) private var tokens
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.subheadline)
-                .foregroundStyle(SkillsModsTheme.mutedText)
+                .foregroundStyle(SkillsModsTheme.mutedText(tokens: tokens))
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
@@ -47,11 +65,11 @@ struct SkillsModsSearchField: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(SkillsModsTheme.cardBackground)
+                .fill(SkillsModsTheme.cardBackground(tokens: tokens))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(SkillsModsTheme.subtleBorder)
+                .strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens))
         )
         .frame(minWidth: 220, maxWidth: 280)
     }
@@ -62,26 +80,25 @@ struct SkillsModsCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     @State private var isHovered = false
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.designTokens) private var tokens
 
     var body: some View {
         content
             .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: SkillsModsTheme.cardRadius, style: .continuous)
-                    .fill(SkillsModsTheme.cardBackground)
+                    .fill(SkillsModsTheme.cardBackground(tokens: tokens))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: SkillsModsTheme.cardRadius, style: .continuous)
-                    .strokeBorder(SkillsModsTheme.border)
+                    .strokeBorder(SkillsModsTheme.border(tokens: tokens))
             )
-            .shadow(
-                color: .black.opacity((colorScheme == .dark ? 0.25 : 0.10) * (isHovered ? 1 : 0.5)),
-                radius: isHovered ? 12 : 6,
-                y: isHovered ? 3 : 1
-            )
-            .scaleEffect(isHovered ? 1.006 : 1)
-            .animation(.easeOut(duration: 0.18), value: isHovered)
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: SkillsModsTheme.cardRadius, style: .continuous)
+                    .strokeBorder(SkillsModsTheme.activeBackground(tokens: tokens), lineWidth: 1)
+                    .opacity(isHovered ? 0.55 : 0)
+            }
+            .animation(.easeOut(duration: tokens.motion.hoverDuration), value: isHovered)
             .onHover { hovering in
                 isHovered = hovering
             }

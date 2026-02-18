@@ -269,14 +269,14 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
-    func testLoadRuntimeDefaultsFromPreferencesRestoresValues() async throws {
+    func testLoadCodexConfigMigratesLegacyRuntimeDefaults() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-runtime-defaults-\(UUID().uuidString)", isDirectory: true)
-        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storagePaths = CodexChatStoragePaths(rootURL: root)
+        try storagePaths.ensureRootStructure()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let database = try MetadataDatabase(databaseURL: dbURL)
+        let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
         let repositories = MetadataRepositories(database: database)
         let safety = ProjectSafetySettings(
             sandboxMode: .workspaceWrite,
@@ -302,20 +302,34 @@ final class CodexChatAppTests: XCTestCase {
             key: .runtimeDefaultSafety,
             value: String(decoding: encodedSafety, as: UTF8.self)
         )
-        let encodedFlags = try JSONEncoder().encode([AppModel.ExperimentalFlag.parallelToolCalls.rawValue])
-        try await repositories.preferenceRepository.setPreference(
-            key: .runtimeExperimentalFlags,
-            value: String(decoding: encodedFlags, as: UTF8.self)
-        )
 
-        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
-        try await model.loadRuntimeDefaultsFromPreferences()
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            storagePaths: storagePaths
+        )
+        try await model.loadCodexConfig()
 
         XCTAssertEqual(model.defaultModel, "gpt-5")
         XCTAssertEqual(model.defaultReasoning, .high)
         XCTAssertEqual(model.defaultWebSearch, .disabled)
         XCTAssertEqual(model.defaultSafetySettings, safety)
-        XCTAssertTrue(model.experimentalFlags.contains(.parallelToolCalls))
+        let migrationMarker = try await repositories.preferenceRepository.getPreference(key: .runtimeConfigMigrationV1)
+        XCTAssertEqual(migrationMarker, "1")
+
+        let migratedDocument = try CodexConfigDocument.parse(
+            rawText: String(contentsOf: storagePaths.codexConfigURL, encoding: .utf8)
+        )
+        XCTAssertEqual(migratedDocument.value(at: [.key("model")])?.stringValue, "gpt-5")
+        XCTAssertEqual(migratedDocument.value(at: [.key("model_reasoning_effort")])?.stringValue, "high")
+        XCTAssertEqual(migratedDocument.value(at: [.key("web_search")])?.stringValue, "disabled")
+        XCTAssertEqual(migratedDocument.value(at: [.key("sandbox_mode")])?.stringValue, "workspace-write")
+        XCTAssertEqual(migratedDocument.value(at: [.key("approval_policy")])?.stringValue, "on-request")
+        XCTAssertEqual(
+            migratedDocument.value(at: [.key("sandbox_workspace_write"), .key("network_access")])?.booleanValue,
+            true
+        )
     }
 
     @MainActor

@@ -1,5 +1,5 @@
 {
-  "originHash" : "803adb7e74e35a577caf0f76f4a72f415c36cedba9392de168cf625fe8dea702",
+  "originHash" : "86f72a366dbbc43c3ff3a3a9d4efe82075b94da511b254f368ace6c9c3a390f7",
   "pins" : [
     {
       "identity" : "grdb.swift",
@@ -53,6 +53,15 @@
       "state" : {
         "revision" : "5c83a9d214e7354697624c11deb4e488bdcfabad",
         "version" : "1.10.1"
+      }
+    },
+    {
+      "identity" : "tomlkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/LebJe/TOMLKit.git",
+      "state" : {
+        "revision" : "ec6198d37d495efc6acd4dffbd262cdca7ff9b3f",
+        "version" : "0.6.0"
       }
     }
   ],

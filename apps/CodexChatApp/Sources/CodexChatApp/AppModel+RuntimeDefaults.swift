@@ -17,45 +17,6 @@ extension AppModel {
         ["gpt-5-codex", "gpt-5", "o4-mini"]
     }
 
-    func loadRuntimeDefaultsFromPreferences() async throws {
-        guard let preferenceRepository else {
-            return
-        }
-
-        if let rawModel = try await preferenceRepository.getPreference(key: .runtimeDefaultModel),
-           !rawModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            defaultModel = rawModel
-        }
-
-        if let rawReasoning = try await preferenceRepository.getPreference(key: .runtimeDefaultReasoning),
-           let reasoning = ReasoningLevel(rawValue: rawReasoning)
-        {
-            defaultReasoning = reasoning
-        }
-
-        if let rawWebSearch = try await preferenceRepository.getPreference(key: .runtimeDefaultWebSearch),
-           let webSearch = ProjectWebSearchMode(rawValue: rawWebSearch)
-        {
-            defaultWebSearch = webSearch
-        }
-
-        if let rawSafety = try await preferenceRepository.getPreference(key: .runtimeDefaultSafety),
-           let data = rawSafety.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode(ProjectSafetySettings.self, from: data)
-        {
-            defaultSafetySettings = decoded
-        }
-
-        if let rawFlags = try await preferenceRepository.getPreference(key: .runtimeExperimentalFlags),
-           let data = rawFlags.data(using: .utf8),
-           let rawValues = try? JSONDecoder().decode([String].self, from: data)
-        {
-            let mapped = Set(rawValues.compactMap(ExperimentalFlag.init(rawValue:)))
-            experimentalFlags = mapped
-        }
-    }
-
     func setDefaultModel(_ model: String) {
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -66,8 +27,10 @@ extension AppModel {
         }
 
         defaultModel = trimmed
+        updateCodexConfigValue(path: [.key("model")], value: .string(trimmed))
+
         Task {
-            try? await persistRuntimePreference(key: .runtimeDefaultModel, value: trimmed)
+            await saveCodexConfig(restartRuntime: false)
         }
     }
 
@@ -77,8 +40,10 @@ extension AppModel {
         }
 
         defaultReasoning = reasoning
+        updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: .string(reasoning.rawValue))
+
         Task {
-            try? await persistRuntimePreference(key: .runtimeDefaultReasoning, value: reasoning.rawValue)
+            await saveCodexConfig(restartRuntime: false)
         }
     }
 
@@ -88,39 +53,27 @@ extension AppModel {
         }
 
         defaultWebSearch = webSearch
+        updateCodexConfigValue(path: [.key("web_search")], value: .string(webSearch.rawValue))
+
         Task {
-            try? await persistRuntimePreference(key: .runtimeDefaultWebSearch, value: webSearch.rawValue)
-        }
-    }
-
-    func setExperimentalFlag(_ flag: ExperimentalFlag, enabled: Bool) {
-        var updated = experimentalFlags
-        if enabled {
-            updated.insert(flag)
-        } else {
-            updated.remove(flag)
-        }
-
-        guard updated != experimentalFlags else {
-            return
-        }
-
-        experimentalFlags = updated
-        Task {
-            try? await persistRuntimePreference(
-                key: .runtimeExperimentalFlags,
-                value: encodedExperimentalFlags(updated)
-            )
+            await saveCodexConfig(restartRuntime: false)
         }
     }
 
     func saveGlobalSafetyDefaults(_ settings: ProjectSafetySettings, applyToExistingProjects: Bool) {
         defaultSafetySettings = settings
 
+        updateCodexConfigValue(path: [.key("sandbox_mode")], value: .string(mapSandboxModeString(settings.sandboxMode)))
+        updateCodexConfigValue(path: [.key("approval_policy")], value: .string(mapApprovalPolicyString(settings.approvalPolicy)))
+        updateCodexConfigValue(path: [.key("web_search")], value: .string(settings.webSearch.rawValue))
+        updateCodexConfigValue(
+            path: [.key("sandbox_workspace_write"), .key("network_access")],
+            value: .boolean(settings.networkAccess)
+        )
+
         Task {
             do {
-                let encoded = try encodedSafetySettings(settings)
-                try await persistRuntimePreference(key: .runtimeDefaultSafety, value: encoded)
+                await saveCodexConfig(restartRuntime: false)
 
                 if applyToExistingProjects {
                     let summary = try await applyGlobalSafetyDefaultsToExistingProjects()
@@ -199,12 +152,11 @@ extension AppModel {
     func runtimeTurnOptions() -> RuntimeTurnOptions {
         let model = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveModel = model.isEmpty ? nil : model
-        let experimental = Dictionary(uniqueKeysWithValues: experimentalFlags.map { ($0.rawValue, true) })
 
         return RuntimeTurnOptions(
             model: effectiveModel,
             reasoningEffort: defaultReasoning.rawValue,
-            experimental: experimental
+            experimental: [:]
         )
     }
 
@@ -240,25 +192,5 @@ extension AppModel {
         case .live:
             2
         }
-    }
-
-    private func persistRuntimePreference(key: AppPreferenceKey, value: String) async throws {
-        guard let preferenceRepository else {
-            return
-        }
-        try await preferenceRepository.setPreference(key: key, value: value)
-    }
-
-    private func encodedSafetySettings(_ settings: ProjectSafetySettings) throws -> String {
-        let data = try JSONEncoder().encode(settings)
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    private func encodedExperimentalFlags(_ flags: Set<ExperimentalFlag>) -> String {
-        let rawValues = flags.map(\.rawValue).sorted()
-        guard let data = try? JSONEncoder().encode(rawValues) else {
-            return "[]"
-        }
-        return String(decoding: data, as: UTF8.self)
     }
 }

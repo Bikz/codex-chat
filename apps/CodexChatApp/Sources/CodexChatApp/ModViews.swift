@@ -17,7 +17,7 @@ struct ModsCanvas: View {
             header
             modsSurface
         }
-        .background(SkillsModsTheme.canvasBackground)
+        .background(SkillsModsTheme.canvasBackground(tokens: tokens))
         .navigationTitle("")
         .onAppear {
             model.refreshModsSurface()
@@ -156,7 +156,7 @@ struct ModsCanvas: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
+                        .background(SkillsModsTheme.headerBackground(tokens: tokens), in: Capsule())
                 }
 
                 if let sharingGuideURL {
@@ -274,11 +274,19 @@ struct ModsCanvas: View {
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isSelected ? Color(hex: tokens.palette.accentHex).opacity(0.16) : SkillsModsTheme.cardBackground)
+                    .fill(
+                        isSelected
+                            ? Color(hex: tokens.palette.accentHex).opacity(0.14)
+                            : SkillsModsTheme.cardBackground(tokens: tokens)
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isSelected ? Color(hex: tokens.palette.accentHex).opacity(0.42) : SkillsModsTheme.subtleBorder)
+                    .strokeBorder(
+                        isSelected
+                            ? Color(hex: tokens.palette.accentHex).opacity(0.36)
+                            : SkillsModsTheme.subtleBorder(tokens: tokens)
+                    )
             )
         }
         .buttonStyle(.plain)
@@ -303,11 +311,11 @@ struct ModsCanvas: View {
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(SkillsModsTheme.cardBackground)
+                .fill(SkillsModsTheme.cardBackground(tokens: tokens))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(SkillsModsTheme.subtleBorder)
+                .strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens))
         )
     }
 

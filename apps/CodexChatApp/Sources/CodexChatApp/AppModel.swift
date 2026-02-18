@@ -60,6 +60,14 @@ final class AppModel: ObservableObject {
         }
     }
 
+    enum VoiceCaptureState: Equatable {
+        case idle
+        case requestingPermission
+        case recording(startedAt: Date)
+        case transcribing
+        case failed(message: String)
+    }
+
     enum ReasoningLevel: String, CaseIterable, Codable, Sendable {
         case low
         case medium
@@ -73,23 +81,6 @@ final class AppModel: ObservableObject {
                 "Medium"
             case .high:
                 "High"
-            }
-        }
-    }
-
-    enum ExperimentalFlag: String, CaseIterable, Codable, Sendable, Hashable {
-        case parallelToolCalls
-        case strictToolSchema
-        case streamToolEvents
-
-        var title: String {
-            switch self {
-            case .parallelToolCalls:
-                "Parallel Tool Calls"
-            case .strictToolSchema:
-                "Strict Tool Schema"
-            case .streamToolEvents:
-                "Stream Tool Events"
             }
         }
     }
@@ -133,7 +124,12 @@ final class AppModel: ObservableObject {
         networkAccess: false,
         webSearch: .cached
     )
-    @Published var experimentalFlags: Set<ExperimentalFlag> = []
+    @Published var codexConfigDocument: CodexConfigDocument = .empty()
+    @Published var codexConfigSchema: CodexConfigSchemaNode = .object
+    @Published var codexConfigSchemaSource: CodexConfigSchemaSource = .bundled
+    @Published var codexConfigValidationIssues: [CodexConfigValidationIssue] = []
+    @Published var codexConfigStatusMessage: String?
+    @Published var isCodexConfigBusy = false
 
     @Published var isDiagnosticsVisible = false
     @Published var isProjectSettingsVisible = false
@@ -152,6 +148,7 @@ final class AppModel: ObservableObject {
     @Published var modStatusMessage: String?
     @Published var storageStatusMessage: String?
     @Published var runtimeDefaultsStatusMessage: String?
+    @Published var voiceCaptureState: VoiceCaptureState = .idle
     @Published var storageRootPath: String
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
@@ -188,6 +185,10 @@ final class AppModel: ObservableObject {
     let modDiscoveryService: UIModDiscoveryService
     let keychainStore: APIKeychainStore
     let storagePaths: CodexChatStoragePaths
+    let voiceCaptureService: any VoiceCaptureService
+    let codexConfigFileStore: CodexConfigFileStore
+    let codexConfigSchemaLoader: CodexConfigSchemaLoader
+    let codexConfigValidator = CodexConfigValidator()
 
     var transcriptStore: [UUID: [TranscriptEntry]] = [:]
     var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
@@ -207,6 +208,8 @@ final class AppModel: ObservableObject {
     var modsDebounceTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
+    var voiceAutoStopTask: Task<Void, Never>?
+    var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
 
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
@@ -220,6 +223,7 @@ final class AppModel: ObservableObject {
         bootError: String?,
         skillCatalogService: SkillCatalogService = SkillCatalogService(),
         modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService(),
+        voiceCaptureService: (any VoiceCaptureService)? = nil,
         storagePaths: CodexChatStoragePaths = .current()
     ) {
         projectRepository = repositories?.projectRepository
@@ -234,9 +238,21 @@ final class AppModel: ObservableObject {
         self.skillCatalogService = skillCatalogService
         self.modDiscoveryService = modDiscoveryService
         self.storagePaths = storagePaths
+        self.voiceCaptureService = voiceCaptureService ?? AppleSpeechVoiceCaptureService()
         storageRootPath = storagePaths.rootURL.path
         keychainStore = APIKeychainStore()
         isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
+        codexConfigFileStore = CodexConfigFileStore(fileURL: storagePaths.codexConfigURL)
+        let bundledSchemaURL = Bundle.module.url(forResource: "codex-config-schema", withExtension: "json")
+            ?? Bundle.module.url(
+                forResource: "codex-config-schema",
+                withExtension: "json",
+                subdirectory: "Resources"
+            )
+        codexConfigSchemaLoader = CodexConfigSchemaLoader(
+            cacheURL: storagePaths.systemURL.appendingPathComponent("codex-config-schema.json", isDirectory: false),
+            bundledSchemaURL: bundledSchemaURL
+        )
 
         if let bootError {
             projectsState = .failed(bootError)
@@ -266,6 +282,7 @@ final class AppModel: ObservableObject {
         followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
+        voiceAutoStopTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
     }

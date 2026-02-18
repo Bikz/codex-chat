@@ -26,7 +26,8 @@ extension AppModel {
         do {
             try await refreshProjects()
             try await applyStartupStorageFixups()
-            try await loadRuntimeDefaultsFromPreferences()
+            try await loadCodexConfig()
+            await reloadCodexConfigSchema()
             try await ensureGeneralProject()
             try await restoreLastOpenedContext()
             try await validateAndRepairProjectsOnLaunch()

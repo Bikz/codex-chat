@@ -30,6 +30,10 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         globalURL.appendingPathComponent("codex-home", isDirectory: true)
     }
 
+    var codexConfigURL: URL {
+        codexHomeURL.appendingPathComponent("config.toml", isDirectory: false)
+    }
+
     var agentsHomeURL: URL {
         globalURL.appendingPathComponent("agents-home", isDirectory: true)
     }

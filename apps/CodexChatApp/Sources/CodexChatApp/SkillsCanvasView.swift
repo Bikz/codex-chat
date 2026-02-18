@@ -19,7 +19,7 @@ struct SkillsCanvasView: View {
             header
             skillsSurface
         }
-        .background(SkillsModsTheme.canvasBackground)
+        .background(SkillsModsTheme.canvasBackground(tokens: tokens))
         .navigationTitle("")
     }
 
@@ -97,11 +97,11 @@ struct SkillsCanvasView: View {
                                 .padding(.vertical, 10)
                                 .background(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(SkillsModsTheme.cardBackground)
+                                        .fill(SkillsModsTheme.cardBackground(tokens: tokens))
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .strokeBorder(SkillsModsTheme.subtleBorder)
+                                        .strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens))
                                 )
                         }
 
@@ -123,7 +123,10 @@ struct SkillsCanvasView: View {
                                 )
                                 .opacity(animateCards ? 1 : 0)
                                 .offset(y: animateCards ? 0 : 8)
-                                .animation(.easeOut(duration: 0.24).delay(Double(index) * 0.02), value: animateCards)
+                                .animation(
+                                    .easeOut(duration: tokens.motion.transitionDuration).delay(Double(index) * 0.02),
+                                    value: animateCards
+                                )
                             }
                         }
                     }
