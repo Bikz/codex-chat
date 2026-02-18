@@ -214,4 +214,17 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(update.changes.count, 1)
         XCTAssertEqual(update.changes.first?.path, "README.md")
     }
+
+    func testExecutableCandidatesIncludeCommonFallbackPaths() {
+        let homeDirectory = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+        let candidates = CodexRuntime.executableCandidates(
+            pathEnv: "/usr/bin:/bin",
+            homeDirectory: homeDirectory
+        )
+
+        XCTAssertTrue(candidates.contains("/opt/homebrew/bin/codex"))
+        XCTAssertTrue(candidates.contains("/usr/local/bin/codex"))
+        XCTAssertTrue(candidates.contains("/Users/tester/.local/bin/codex"))
+        XCTAssertTrue(candidates.contains("/Users/tester/bin/codex"))
+    }
 }
