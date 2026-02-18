@@ -46,7 +46,7 @@ public struct DesignTokens: Hashable, Sendable {
         public var panelHex: String
 
         public init(
-            accentHex: String = "#2E7D32",
+            accentHex: String = "#10A37F",
             backgroundHex: String = "#F7F8F7",
             panelHex: String = "#FFFFFF"
         ) {
@@ -209,7 +209,7 @@ public extension DesignTokens {
 
         public init(
             style: BubbleStyle = .glass,
-            userBackgroundHex: String = "#2E7D32",
+            userBackgroundHex: String = "#10A37F",
             assistantBackgroundHex: String = "#FFFFFF"
         ) {
             self.style = style

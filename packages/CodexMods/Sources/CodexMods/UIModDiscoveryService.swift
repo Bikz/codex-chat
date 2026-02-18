@@ -106,9 +106,9 @@ public final class UIModDiscoveryService: @unchecked Sendable {
             typography: .init(titleSize: 21, bodySize: 14, captionSize: 12),
             spacing: .init(xSmall: 6, small: 10, medium: 16, large: 24),
             radius: .init(small: 8, medium: 14, large: 20),
-            palette: .init(accentHex: "#2E7D32", backgroundHex: "#F7F8F7", panelHex: "#FFFFFF"),
+            palette: .init(accentHex: "#10A37F", backgroundHex: "#F7F8F7", panelHex: "#FFFFFF"),
             materials: .init(panelMaterial: "thin", cardMaterial: "regular"),
-            bubbles: .init(style: "glass", userBackgroundHex: "#2E7D32", assistantBackgroundHex: "#FFFFFF"),
+            bubbles: .init(style: "glass", userBackgroundHex: "#10A37F", assistantBackgroundHex: "#FFFFFF"),
             iconography: .init(style: "sf-symbols")
         )
 
