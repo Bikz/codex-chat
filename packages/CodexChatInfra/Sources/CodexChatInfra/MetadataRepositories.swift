@@ -35,6 +35,7 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
     var webSearch: String
     var memoryWriteMode: String
     var memoryEmbeddingsEnabled: Bool
+    var uiModPath: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -49,6 +50,7 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
         self.webSearch = record.webSearch.rawValue
         self.memoryWriteMode = record.memoryWriteMode.rawValue
         self.memoryEmbeddingsEnabled = record.memoryEmbeddingsEnabled
+        self.uiModPath = record.uiModPath
         self.createdAt = record.createdAt
         self.updatedAt = record.updatedAt
     }
@@ -65,6 +67,7 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
             webSearch: ProjectWebSearchMode(rawValue: webSearch) ?? .cached,
             memoryWriteMode: ProjectMemoryWriteMode(rawValue: memoryWriteMode) ?? .off,
             memoryEmbeddingsEnabled: memoryEmbeddingsEnabled,
+            uiModPath: uiModPath?.isEmpty == false ? uiModPath : nil,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -285,6 +288,19 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
 
             entity.memoryWriteMode = settings.writeMode.rawValue
             entity.memoryEmbeddingsEnabled = settings.embeddingsEnabled
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func updateProjectUIModPath(id: UUID, uiModPath: String?) async throws -> ProjectRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ProjectEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
+
+            entity.uiModPath = uiModPath
             entity.updatedAt = Date()
             try entity.update(db)
             return entity.record

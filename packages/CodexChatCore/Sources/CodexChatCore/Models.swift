@@ -88,6 +88,7 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
     public var webSearch: ProjectWebSearchMode
     public var memoryWriteMode: ProjectMemoryWriteMode
     public var memoryEmbeddingsEnabled: Bool
+    public var uiModPath: String?
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -102,6 +103,7 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         webSearch: ProjectWebSearchMode = .cached,
         memoryWriteMode: ProjectMemoryWriteMode = .off,
         memoryEmbeddingsEnabled: Bool = false,
+        uiModPath: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -115,6 +117,7 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         self.webSearch = webSearch
         self.memoryWriteMode = memoryWriteMode
         self.memoryEmbeddingsEnabled = memoryEmbeddingsEnabled
+        self.uiModPath = uiModPath
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -213,6 +216,7 @@ public struct AppPreferenceRecord: Hashable, Sendable, Codable {
 public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case lastOpenedProjectID = "last_opened_project_id"
     case lastOpenedThreadID = "last_opened_thread_id"
+    case globalUIModPath = "global_ui_mod_path"
 }
 
 public enum ChatMessageRole: String, Codable, Hashable, Sendable {

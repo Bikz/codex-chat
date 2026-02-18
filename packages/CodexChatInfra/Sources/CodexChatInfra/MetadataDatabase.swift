@@ -150,6 +150,12 @@ public final class MetadataDatabase: @unchecked Sendable {
             }
         }
 
+        migrator.registerMigration("v9_add_project_ui_mod_path") { db in
+            try db.alter(table: "projects") { table in
+                table.add(column: "uiModPath", .text)
+            }
+        }
+
         return migrator
     }
 }

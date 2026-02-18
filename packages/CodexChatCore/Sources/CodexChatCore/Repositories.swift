@@ -9,6 +9,7 @@ public protocol ProjectRepository: Sendable {
     func updateProjectTrustState(id: UUID, trustState: ProjectTrustState) async throws -> ProjectRecord
     func updateProjectSafetySettings(id: UUID, settings: ProjectSafetySettings) async throws -> ProjectRecord
     func updateProjectMemorySettings(id: UUID, settings: ProjectMemorySettings) async throws -> ProjectRecord
+    func updateProjectUIModPath(id: UUID, uiModPath: String?) async throws -> ProjectRecord
 }
 
 public protocol ThreadRepository: Sendable {

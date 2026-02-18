@@ -40,6 +40,7 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertEqual(project.webSearch, .cached)
         XCTAssertEqual(project.memoryWriteMode, .off)
         XCTAssertEqual(project.memoryEmbeddingsEnabled, false)
+        XCTAssertNil(project.uiModPath)
 
         let thread = try await repositories.threadRepository.createThread(projectID: project.id, title: "First")
         XCTAssertEqual(thread.projectId, project.id)
@@ -89,6 +90,12 @@ final class CodexChatInfraTests: XCTestCase {
         )
         XCTAssertEqual(updatedMemory.memoryWriteMode, .summariesOnly)
         XCTAssertEqual(updatedMemory.memoryEmbeddingsEnabled, true)
+
+        let updatedMod = try await repositories.projectRepository.updateProjectUIModPath(
+            id: project.id,
+            uiModPath: "/tmp/inbox/mods/glass-green"
+        )
+        XCTAssertEqual(updatedMod.uiModPath, "/tmp/inbox/mods/glass-green")
 
         let secret = try await repositories.projectSecretRepository.upsertSecret(
             projectID: project.id,
