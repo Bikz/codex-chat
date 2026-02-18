@@ -98,7 +98,7 @@ struct ChatsCanvasView: View {
                                 .labelStyle(.iconOnly)
                         }
                         .accessibilityLabel("Toggle inspector")
-                        .help("Toggle inspector")
+                        .help(SkillsModsPresentation.inspectorHelpText(isInspectorAvailable: model.isInspectorAvailableForSelectedThread) ?? "")
                     }
                 }
             }

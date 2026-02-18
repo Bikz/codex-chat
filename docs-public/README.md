@@ -13,8 +13,8 @@ This folder contains contributor-facing documentation tracked in git.
 ## Feature Docs
 
 - `MODS.md` — UI mod format and precedence.
-- `EXTENSIONS.md` — extension hooks, automations, inspector slot protocol (experimental).
-- `MODS_SHARING.md` — creating and sharing Skills/Mods.
+- `MODS_SHARING.md` — canonical builder guide for creating/sharing Skills/Mods, including extension schema/protocol (experimental).
+- `EXTENSIONS.md` — compatibility landing page linking to canonical `MODS_SHARING.md` sections.
 - `ADR-EXTENSIONS-RUNTIME.md` — extension runtime architecture decision.
 
 ## Notes

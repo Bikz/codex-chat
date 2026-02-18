@@ -65,6 +65,78 @@ final class SkillsModsPresentationTests: XCTestCase {
         XCTAssertEqual(SkillsModsPresentation.modDirectoryName(mod), "(unknown)")
     }
 
+    func testModStatusThemeOnlyForSchemaV1WithoutExtensions() {
+        let mod = makeMod(path: "/tmp/mods/ThemeOnly")
+        XCTAssertEqual(SkillsModsPresentation.modStatus(mod), .themeOnly)
+        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme])
+    }
+
+    func testModStatusExtensionEnabledForHooks() {
+        let mod = makeMod(
+            path: "/tmp/mods/Hooked",
+            definition: makeDefinition(
+                schemaVersion: 2,
+                hooks: [
+                    ModHookDefinition(
+                        id: "turn-summary",
+                        event: .turnCompleted,
+                        handler: ModExtensionHandler(command: ["node", "hook.js"])
+                    ),
+                ]
+            )
+        )
+
+        XCTAssertEqual(SkillsModsPresentation.modStatus(mod), .extensionEnabled)
+        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .hooks])
+    }
+
+    func testModCapabilitiesIncludeAutomationsAndInspector() {
+        let mod = makeMod(
+            path: "/tmp/mods/AutoInspect",
+            definition: makeDefinition(
+                schemaVersion: 2,
+                automations: [
+                    ModAutomationDefinition(
+                        id: "daily-notes",
+                        schedule: "0 9 * * *",
+                        handler: ModExtensionHandler(command: ["python3", "automation.py"])
+                    ),
+                ],
+                uiSlots: ModUISlots(
+                    rightInspector: .init(
+                        enabled: true,
+                        title: "Summary",
+                        source: .init(type: "handlerOutput", hookID: "turn-summary")
+                    )
+                )
+            )
+        )
+
+        XCTAssertEqual(SkillsModsPresentation.modStatus(mod), .extensionEnabled)
+        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .automations, .inspector])
+    }
+
+    func testInspectorHelpTextRequiresInspectorAvailability() {
+        XCTAssertNil(SkillsModsPresentation.inspectorHelpText(isInspectorAvailable: false))
+        XCTAssertEqual(
+            SkillsModsPresentation.inspectorHelpText(isInspectorAvailable: true),
+            "Inspector content comes from the active mod. Hidden by default each launch/thread unless toggled."
+        )
+    }
+
+    func testInstallModDescriptionCallsOutAutoEnableAndPermissions() {
+        XCTAssertTrue(SkillsModsPresentation.installModDescription.localizedCaseInsensitiveContains("enabled immediately"))
+        XCTAssertTrue(SkillsModsPresentation.installModDescription.localizedCaseInsensitiveContains("permission-gated"))
+    }
+
+    func testModArchetypesCoverDiscoverabilitySurface() {
+        let titles = SkillsModsPresentation.modArchetypes.map(\.title)
+        XCTAssertEqual(
+            titles,
+            ["Theme Packs", "Turn/Thread Hooks", "Scheduled Automations", "Right Inspector Panels"]
+        )
+    }
+
     private func makeSkillItem(
         name: String,
         description: String,
@@ -84,15 +156,31 @@ final class SkillsModsPresentationTests: XCTestCase {
         return AppModel.SkillListItem(skill: skill, isEnabledForProject: true)
     }
 
-    private func makeMod(path: String) -> DiscoveredUIMod {
+    private func makeMod(path: String, definition: UIModDefinition? = nil) -> DiscoveredUIMod {
         let manifest = UIModManifest(id: UUID().uuidString, name: "Test Mod", version: "1.0.0")
-        let definition = UIModDefinition(schemaVersion: 1, manifest: manifest, theme: ModThemeOverride())
+        let resolvedDefinition = definition ?? UIModDefinition(schemaVersion: 1, manifest: manifest, theme: ModThemeOverride())
         return DiscoveredUIMod(
             scope: .global,
             directoryPath: path,
             definitionPath: "\(path)/ui.mod.json",
-            definition: definition,
+            definition: resolvedDefinition,
             computedChecksum: nil
+        )
+    }
+
+    private func makeDefinition(
+        schemaVersion: Int = 1,
+        hooks: [ModHookDefinition] = [],
+        automations: [ModAutomationDefinition] = [],
+        uiSlots: ModUISlots? = nil
+    ) -> UIModDefinition {
+        UIModDefinition(
+            schemaVersion: schemaVersion,
+            manifest: UIModManifest(id: UUID().uuidString, name: "Test Mod", version: "1.0.0"),
+            theme: ModThemeOverride(),
+            hooks: hooks,
+            automations: automations,
+            uiSlots: uiSlots
         )
     }
 }

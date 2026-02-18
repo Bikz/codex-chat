@@ -1,80 +1,21 @@
 # Extensions API (Experimental)
 
-CodexChat exposes an experimental extension runtime on top of `ui.mod.json` (`schemaVersion: 2`).
+This page is a compatibility landing page.
 
-## Supported Extension Surfaces
+The canonical builder guide for extension authoring is:
 
-- `hooks`: run handlers on runtime/thread/turn lifecycle events
-- `automations`: run scheduled handlers using cron expressions
-- `uiSlots.rightInspector`: optional right inspector pane (collapsed by default)
+- [`MODS_SHARING.md`](./MODS_SHARING.md)
 
-## Hook Events (v1)
+Use these sections in the canonical guide:
 
-- `thread.started`
-- `turn.started`
-- `assistant.delta`
-- `action.card`
-- `approval.requested`
-- `turn.completed`
-- `turn.failed`
-- `transcript.persisted`
+- Schema (`schemaVersion: 1/2`): [`MODS_SHARING.md#ui.modjson-schema`](./MODS_SHARING.md#ui-modjson-schema)
+- Hook events: [`MODS_SHARING.md#hook-events-v1`](./MODS_SHARING.md#hook-events-v1)
+- Worker protocol: [`MODS_SHARING.md#worker-protocol-stdio-jsonl`](./MODS_SHARING.md#worker-protocol-stdio-jsonl)
+- Permissions and safety: [`MODS_SHARING.md#permissions-and-safety`](./MODS_SHARING.md#permissions-and-safety)
+- Background automations: [`MODS_SHARING.md#automations-and-background-execution`](./MODS_SHARING.md#automations-and-background-execution)
+- Inspector slot contract: [`MODS_SHARING.md#inspector-slot-contract`](./MODS_SHARING.md#inspector-slot-contract)
+- Packaging/sharing/install: [`MODS_SHARING.md#packaging-sharing-and-install`](./MODS_SHARING.md#packaging-sharing-and-install)
 
-## Worker Protocol (stdio JSONL)
+Stability:
 
-Input line shape:
-
-```json
-{"protocol":"codexchat.extension.v1","event":"turn.completed","timestamp":"...","project":{"id":"...","path":"..."},"thread":{"id":"..."},"turn":{"id":"...","status":"completed"},"payload":{}}
-```
-
-Output line shape:
-
-```json
-{"ok":true,"inspector":{"title":"Current turn","markdown":"One-line summary..."},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}],"log":"..."}
-```
-
-Rules:
-
-- one request event per process invocation
-- non-zero exit or malformed JSON marks execution as failed
-- unknown output fields are ignored
-
-## Permissions
-
-Per-hook/per-automation permission keys:
-
-- `projectRead`
-- `projectWrite`
-- `network`
-- `runtimeControl`
-- `runWhenAppClosed`
-
-Auto-enable on install does not bypass permission prompts.
-
-## Scheduling
-
-- App-open execution uses in-app scheduler.
-- App-closed execution uses launchd only when:
-  - extension requests `runWhenAppClosed`
-  - global background permission is granted
-  - per-mod permission is granted
-
-## Catalog
-
-Mods UI can consume an optional remote catalog index provider. Supported listing fields include:
-
-- `id`, `name`, `version`, `summary`
-- `repositoryURL`, `downloadURL`, `checksum`
-- `rankingScore`, `trustMetadata`
-
-## Inspector Slot Contract
-
-`uiSlots.rightInspector` is optional and non-persistent by default:
-
-- toolbar toggle: `Inspector`
-- collapsed on launch
-- rendered only when active mod enables it
-
-## Stability
-
-This API is experimental and may change across minor versions.
+- Extension APIs are experimental and may change across minor versions.

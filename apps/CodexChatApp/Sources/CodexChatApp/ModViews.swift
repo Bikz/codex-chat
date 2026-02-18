@@ -34,6 +34,14 @@ struct ModsCanvas: View {
             Text("Mods")
                 .font(.title3.weight(.semibold))
 
+            Text(SkillsModsPresentation.extensionExperimentalBadge)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.orange.opacity(0.12), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.orange.opacity(0.24)))
+
             Button {
                 model.refreshModsSurface()
             } label: {
@@ -95,6 +103,7 @@ struct ModsCanvas: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    whatYouCanBuildSection
                     modGuideSection
                     globalSection(surface: surface)
                     projectSection(surface: surface)
@@ -159,12 +168,12 @@ struct ModsCanvas: View {
         SkillsModsCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
-                    Label("Create and Share Mods", systemImage: "sparkles.rectangle.stack")
+                    Label("Builder Guide", systemImage: "sparkles.rectangle.stack")
                         .font(.title3.weight(.semibold))
 
                     Spacer()
 
-                    Text("ui.mod.json")
+                    Text("Canonical")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
@@ -185,7 +194,7 @@ struct ModsCanvas: View {
                 )
                 guideStep(
                     number: 2,
-                    text: "Edit the generated `ui.mod.json` and set manifest fields, then tune theme tokens."
+                    text: "Edit `ui.mod.json`: theme tokens (`schemaVersion: 1/2`) and optional hooks/automations/inspector (`schemaVersion: 2`)."
                 )
                 guideStep(
                     number: 3,
@@ -195,6 +204,19 @@ struct ModsCanvas: View {
                     number: 4,
                     text: "Others can clone that folder into Global Mods or into `<project>/mods`, then select it here."
                 )
+            }
+        }
+    }
+
+    private var whatYouCanBuildSection: some View {
+        SkillsModsCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("What You Can Build", systemImage: "hammer.fill")
+                    .font(.title3.weight(.semibold))
+
+                ForEach(Array(SkillsModsPresentation.modArchetypes.enumerated()), id: \.offset) { index, archetype in
+                    guideStep(number: index + 1, text: "\(archetype.title): \(archetype.detail)")
+                }
             }
         }
     }
@@ -276,6 +298,18 @@ struct ModsCanvas: View {
                         .lineLimit(1)
                 }
 
+                HStack(spacing: 6) {
+                    ForEach(SkillsModsPresentation.modCapabilities(mod), id: \.rawValue) { capability in
+                        modCapabilityBadge(capability.rawValue)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 8) {
+                    modStatusPill(SkillsModsPresentation.modStatus(mod).rawValue)
+                    Spacer(minLength: 0)
+                }
+
                 Text(SkillsModsPresentation.modDirectoryName(mod))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
@@ -303,6 +337,25 @@ struct ModsCanvas: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private func modCapabilityBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
+    }
+
+    private func modStatusPill(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(SkillsModsTheme.headerBackground(tokens: tokens), in: Capsule())
+            .overlay(Capsule().strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens)))
     }
 
     private func compactEmpty(title: String, message: String, systemImage: String) -> some View {
@@ -449,7 +502,7 @@ struct InstallModSheet: View {
             Text("Install Mod")
                 .font(.title3.weight(.semibold))
 
-            Text("Install from a git URL or a local folder containing `ui.mod.json`. Installed mods are enabled immediately.")
+            Text(SkillsModsPresentation.installModDescription)
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
