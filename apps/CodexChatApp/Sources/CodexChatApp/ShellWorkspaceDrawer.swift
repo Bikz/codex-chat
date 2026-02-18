@@ -15,7 +15,8 @@ struct ShellWorkspaceDrawer: View {
 
                     HStack(spacing: tokens.spacing.small) {
                         sessionsSidebar(workspace: workspace)
-                            .frame(width: 240, maxHeight: .infinity)
+                            .frame(width: 240)
+                            .frame(maxHeight: .infinity)
                             .tokenCard(style: .card, radius: tokens.radius.small, strokeOpacity: 0.08)
 
                         sessionSurface(projectName: project.name, projectID: project.id, workspace: workspace)
