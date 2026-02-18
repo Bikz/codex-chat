@@ -1,0 +1,59 @@
+import Foundation
+import GRDB
+
+public final class MetadataDatabase: @unchecked Sendable {
+    public let dbQueue: DatabaseQueue
+
+    public init(databaseURL: URL) throws {
+        var configuration = Configuration()
+        configuration.foreignKeysEnabled = true
+        self.dbQueue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
+        try Self.migrator.migrate(dbQueue)
+    }
+
+    public static func appSupportDatabaseURL(
+        fileManager: FileManager = .default,
+        bundleIdentifier: String = "app.codexchat"
+    ) throws -> URL {
+        let base = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let appDirectory = base.appendingPathComponent("CodexChat", isDirectory: true)
+        try fileManager.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        return appDirectory.appendingPathComponent("metadata.sqlite", isDirectory: false)
+    }
+
+    private static var migrator: DatabaseMigrator {
+        var migrator = DatabaseMigrator()
+
+        migrator.registerMigration("v1_create_metadata_tables") { db in
+            try db.create(table: "projects") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("name", .text).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "threads") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("projectId", .text).notNull()
+                    .references("projects", onDelete: .cascade)
+                table.column("title", .text).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(index: "idx_threads_project_id", on: "threads", columns: ["projectId"])
+
+            try db.create(table: "preferences") { table in
+                table.column("key", .text).notNull().primaryKey()
+                table.column("value", .text).notNull()
+            }
+        }
+
+        return migrator
+    }
+}
