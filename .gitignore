@@ -14,7 +14,6 @@ DerivedData/
 
 # Package manager
 node_modules/
-pnpm-lock.yaml
 
 # Logs and temp
 *.log
