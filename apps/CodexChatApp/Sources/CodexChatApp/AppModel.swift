@@ -51,15 +51,22 @@ final class AppModel: ObservableObject {
 
     @Published var isDiagnosticsVisible = false
     @Published var isProjectSettingsVisible = false
+    @Published var isLogsDrawerVisible = false
+    @Published var isReviewChangesVisible = false
     @Published var runtimeStatus: RuntimeStatus = .idle
     @Published var runtimeIssue: RuntimeIssue?
     @Published var accountState: RuntimeAccountState = .signedOut
     @Published var accountStatusMessage: String?
+    @Published var approvalStatusMessage: String?
     @Published var projectStatusMessage: String?
     @Published var isAccountOperationInProgress = false
+    @Published var isApprovalDecisionInProgress = false
     @Published var isAPIKeyPromptVisible = false
     @Published var pendingAPIKey = ""
+    @Published var activeApprovalRequest: RuntimeApprovalRequest?
     @Published private(set) var logs: [LogEntry] = []
+    @Published private(set) var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
+    @Published private(set) var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
 
     private let projectRepository: (any ProjectRepository)?
     private let threadRepository: (any ThreadRepository)?
@@ -72,6 +79,10 @@ final class AppModel: ObservableObject {
 
     private var transcriptStore: [UUID: [TranscriptEntry]] = [:]
     private var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
+    private var runtimeThreadIDByLocalThreadID: [UUID: String] = [:]
+    private var localThreadIDByRuntimeThreadID: [String: UUID] = [:]
+    private var localThreadIDByCommandItemID: [String: UUID] = [:]
+    private var approvalStateMachine = ApprovalStateMachine()
     private var activeTurnContext: ActiveTurnContext?
     private var runtimeEventTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
@@ -149,6 +160,20 @@ final class AppModel: ObservableObject {
         default:
             return account.type
         }
+    }
+
+    var selectedThreadLogs: [ThreadLogEntry] {
+        guard let selectedThreadID else { return [] }
+        return threadLogsByThreadID[selectedThreadID, default: []]
+    }
+
+    var selectedThreadChanges: [RuntimeFileChange] {
+        guard let selectedThreadID else { return [] }
+        return reviewChangesByThreadID[selectedThreadID, default: []]
+    }
+
+    var canReviewChanges: Bool {
+        !selectedThreadChanges.isEmpty
     }
 
     func onAppear() {
@@ -384,6 +409,146 @@ final class AppModel: ObservableObject {
         isProjectSettingsVisible = false
     }
 
+    func toggleLogsDrawer() {
+        isLogsDrawerVisible.toggle()
+    }
+
+    func openReviewChanges() {
+        guard canReviewChanges else { return }
+        isReviewChangesVisible = true
+    }
+
+    func closeReviewChanges() {
+        isReviewChangesVisible = false
+    }
+
+    func acceptReviewChanges() {
+        guard let selectedThreadID else { return }
+        reviewChangesByThreadID[selectedThreadID] = []
+        isReviewChangesVisible = false
+        projectStatusMessage = "Accepted reviewed changes for this thread."
+    }
+
+    func revertReviewChanges() {
+        guard let project = selectedProject else { return }
+        let paths = Array(Set(selectedThreadChanges.map(\.path))).sorted()
+
+        guard !paths.isEmpty else {
+            projectStatusMessage = "No file paths available to revert."
+            return
+        }
+
+        guard Self.isGitProject(path: project.path) else {
+            projectStatusMessage = "Revert is available for Git projects only."
+            return
+        }
+
+        do {
+            try restorePathsWithGit(paths, projectPath: project.path)
+            if let selectedThreadID {
+                reviewChangesByThreadID[selectedThreadID] = []
+            }
+            isReviewChangesVisible = false
+            projectStatusMessage = "Reverted \(paths.count) file(s) with git restore."
+        } catch {
+            projectStatusMessage = "Failed to revert files: \(error.localizedDescription)"
+            appendLog(.error, "Revert failed: \(error.localizedDescription)")
+        }
+    }
+
+    func approvePendingApprovalOnce() {
+        submitApprovalDecision(.approveOnce)
+    }
+
+    func approvePendingApprovalForSession() {
+        submitApprovalDecision(.approveForSession)
+    }
+
+    func declinePendingApproval() {
+        submitApprovalDecision(.decline)
+    }
+
+    func cancelPendingApproval() {
+        submitApprovalDecision(.cancel)
+    }
+
+    func requiresDangerConfirmation(
+        sandboxMode: ProjectSandboxMode,
+        approvalPolicy: ProjectApprovalPolicy
+    ) -> Bool {
+        sandboxMode == .dangerFullAccess || approvalPolicy == .never
+    }
+
+    var dangerConfirmationPhrase: String {
+        "ENABLE UNSAFE MODE"
+    }
+
+    func updateSelectedProjectSafetySettings(
+        sandboxMode: ProjectSandboxMode,
+        approvalPolicy: ProjectApprovalPolicy,
+        networkAccess: Bool,
+        webSearch: ProjectWebSearchMode
+    ) {
+        guard let selectedProjectID,
+              let projectRepository else {
+            return
+        }
+
+        let settings = ProjectSafetySettings(
+            sandboxMode: sandboxMode,
+            approvalPolicy: approvalPolicy,
+            networkAccess: networkAccess,
+            webSearch: webSearch
+        )
+
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectSafetySettings(
+                    id: selectedProjectID,
+                    settings: settings
+                )
+                try await refreshProjects()
+                projectStatusMessage = "Updated safety settings for this project."
+            } catch {
+                projectStatusMessage = "Failed to update safety settings: \(error.localizedDescription)"
+                appendLog(.error, "Failed to update safety settings: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func openSafetyPolicyDocument() {
+        guard let url = Bundle.module.url(forResource: "SafetyPolicy", withExtension: "md") else {
+            projectStatusMessage = "Local safety document is unavailable."
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func submitApprovalDecision(_ decision: RuntimeApprovalDecision) {
+        guard let request = activeApprovalRequest,
+              let runtime else {
+            return
+        }
+
+        isApprovalDecisionInProgress = true
+        approvalStatusMessage = nil
+
+        Task {
+            defer { isApprovalDecisionInProgress = false }
+
+            do {
+                try await runtime.respondToApproval(requestID: request.id, decision: decision)
+                _ = approvalStateMachine.resolve(id: request.id)
+                activeApprovalRequest = approvalStateMachine.activeRequest
+                approvalStatusMessage = "Sent decision: \(approvalDecisionLabel(decision))."
+                appendLog(.info, "Approval decision sent for request \(request.id): \(approvalDecisionLabel(decision))")
+            } catch {
+                approvalStatusMessage = "Failed to send approval decision: \(error.localizedDescription)"
+                appendLog(.error, "Approval decision failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func trustSelectedProject() {
         setSelectedProjectTrustState(.trusted)
     }
@@ -529,12 +694,14 @@ final class AppModel: ObservableObject {
 
         composerText = ""
         appendEntry(.message(ChatMessage(threadId: selectedThreadID, role: .user, text: trimmedText)), to: selectedThreadID)
+        let safetyConfiguration = runtimeSafetyConfiguration(for: project)
 
         Task {
             do {
                 let runtimeThreadID = try await ensureRuntimeThreadID(
                     for: selectedThreadID,
-                    projectPath: project.path
+                    projectPath: project.path,
+                    safetyConfiguration: safetyConfiguration
                 )
                 activeTurnContext = ActiveTurnContext(
                     localThreadID: selectedThreadID,
@@ -548,7 +715,11 @@ final class AppModel: ObservableObject {
                     startedAt: Date()
                 )
 
-                let turnID = try await runtime.startTurn(threadID: runtimeThreadID, text: trimmedText)
+                let turnID = try await runtime.startTurn(
+                    threadID: runtimeThreadID,
+                    text: trimmedText,
+                    safetyConfiguration: safetyConfiguration
+                )
                 activeTurnContext?.turnID = turnID
                 appendLog(.info, "Started turn \(turnID) for local thread \(selectedThreadID.uuidString)")
             } catch {
@@ -582,6 +753,8 @@ final class AppModel: ObservableObject {
             try await runtime.start()
             runtimeStatus = .connected
             runtimeIssue = nil
+            approvalStateMachine.clear()
+            activeApprovalRequest = nil
             appendLog(.info, "Runtime connected")
             try await refreshAccountState()
         } catch {
@@ -599,6 +772,8 @@ final class AppModel: ObservableObject {
             try await runtime.restart()
             runtimeStatus = .connected
             runtimeIssue = nil
+            approvalStateMachine.clear()
+            activeApprovalRequest = nil
             appendLog(.info, "Runtime restarted")
             try await refreshAccountState()
         } catch {
@@ -655,38 +830,17 @@ final class AppModel: ObservableObject {
             updatedContext.assistantText += delta
             activeTurnContext = updatedContext
 
+        case .commandOutputDelta(let output):
+            handleCommandOutputDelta(output)
+
+        case .fileChangesUpdated(let update):
+            handleFileChangesUpdate(update)
+
+        case .approvalRequested(let request):
+            handleApprovalRequest(request)
+
         case .action(let action):
-            if action.method == "runtime/stderr" {
-                appendLog(.warning, action.detail)
-            }
-
-            guard let context = activeTurnContext else {
-                appendLog(.debug, "Runtime action without active turn: \(action.method)")
-                return
-            }
-
-            appendEntry(
-                .actionCard(
-                    ActionCard(
-                        threadID: context.localThreadID,
-                        method: action.method,
-                        title: action.title,
-                        detail: action.detail
-                    )
-                ),
-                to: context.localThreadID
-            )
-
-            var updatedContext = context
-            updatedContext.actions.append(
-                ActionCard(
-                    threadID: context.localThreadID,
-                    method: action.method,
-                    title: action.title,
-                    detail: action.detail
-                )
-            )
-            activeTurnContext = updatedContext
+            handleRuntimeAction(action)
 
         case .turnCompleted(let completion):
             if let context = activeTurnContext {
@@ -710,11 +864,14 @@ final class AppModel: ObservableObject {
                 )
 
                 assistantMessageIDsByItemID[context.localThreadID] = [:]
+                localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != context.localThreadID }
                 activeTurnContext = nil
 
                 Task {
                     await persistCompletedTurn(context: context)
                 }
+            } else {
+                appendLog(.debug, "Turn completed without active context: \(completion.status)")
             }
 
         case .accountUpdated(let authMode):
@@ -738,9 +895,128 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func ensureRuntimeThreadID(for localThreadID: UUID, projectPath: String) async throws -> String {
+    private func handleRuntimeAction(_ action: RuntimeAction) {
+        if action.method == "runtime/stderr" {
+            appendLog(.warning, action.detail)
+        }
+
+        let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: action.threadID,
+            itemID: action.itemID
+        ) ?? activeTurnContext?.localThreadID
+
+        guard let localThreadID else {
+            appendLog(.debug, "Runtime action without thread mapping: \(action.method)")
+            return
+        }
+
+        if action.itemType == "commandExecution",
+           let itemID = action.itemID {
+            localThreadIDByCommandItemID[itemID] = localThreadID
+        }
+
+        let card = ActionCard(
+            threadID: localThreadID,
+            method: action.method,
+            title: action.title,
+            detail: action.detail
+        )
+        appendEntry(.actionCard(card), to: localThreadID)
+
+        if var context = activeTurnContext,
+           context.localThreadID == localThreadID {
+            context.actions.append(card)
+            activeTurnContext = context
+        }
+    }
+
+    private func handleCommandOutputDelta(_ output: RuntimeCommandOutputDelta) {
+        let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: output.threadID,
+            itemID: output.itemID
+        ) ?? activeTurnContext?.localThreadID
+
+        guard let localThreadID else {
+            appendLog(.debug, "Command output delta without thread mapping")
+            return
+        }
+
+        appendThreadLog(
+            level: .info,
+            text: output.delta,
+            to: localThreadID
+        )
+    }
+
+    private func handleFileChangesUpdate(_ update: RuntimeFileChangeUpdate) {
+        let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: update.threadID,
+            itemID: update.itemID
+        ) ?? activeTurnContext?.localThreadID
+
+        guard let localThreadID else {
+            appendLog(.debug, "File changes update without thread mapping")
+            return
+        }
+
+        reviewChangesByThreadID[localThreadID] = update.changes
+    }
+
+    private func handleApprovalRequest(_ request: RuntimeApprovalRequest) {
+        approvalStateMachine.enqueue(request)
+        activeApprovalRequest = approvalStateMachine.activeRequest
+        approvalStatusMessage = nil
+
+        let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: request.threadID,
+            itemID: request.itemID
+        ) ?? activeTurnContext?.localThreadID
+
+        guard let localThreadID else {
+            appendLog(.warning, "Approval request arrived without local thread mapping")
+            return
+        }
+
+        let summary = approvalSummary(for: request)
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: localThreadID,
+                    method: request.method,
+                    title: "Approval requested",
+                    detail: summary
+                )
+            ),
+            to: localThreadID
+        )
+    }
+
+    private func resolveLocalThreadID(runtimeThreadID: String?, itemID: String?) -> UUID? {
+        if let itemID, let threadID = localThreadIDByCommandItemID[itemID] {
+            return threadID
+        }
+
+        if let runtimeThreadID {
+            if let mapped = localThreadIDByRuntimeThreadID[runtimeThreadID] {
+                return mapped
+            }
+            if let activeTurnContext, activeTurnContext.runtimeThreadID == runtimeThreadID {
+                return activeTurnContext.localThreadID
+            }
+        }
+
+        return nil
+    }
+
+    private func ensureRuntimeThreadID(
+        for localThreadID: UUID,
+        projectPath: String,
+        safetyConfiguration: RuntimeSafetyConfiguration
+    ) async throws -> String {
         if let runtimeThreadMappingRepository,
            let existingRuntimeThreadID = try await runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: localThreadID) {
+            runtimeThreadIDByLocalThreadID[localThreadID] = existingRuntimeThreadID
+            localThreadIDByRuntimeThreadID[existingRuntimeThreadID] = localThreadID
             return existingRuntimeThreadID
         }
 
@@ -748,11 +1024,16 @@ final class AppModel: ObservableObject {
             throw CodexRuntimeError.processNotRunning
         }
 
-        let runtimeThreadID = try await runtime.startThread(cwd: projectPath)
+        let runtimeThreadID = try await runtime.startThread(
+            cwd: projectPath,
+            safetyConfiguration: safetyConfiguration
+        )
         try await runtimeThreadMappingRepository?.setRuntimeThreadID(
             localThreadID: localThreadID,
             runtimeThreadID: runtimeThreadID
         )
+        runtimeThreadIDByLocalThreadID[localThreadID] = runtimeThreadID
+        localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
 
         appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
         return runtimeThreadID
@@ -954,6 +1235,9 @@ final class AppModel: ObservableObject {
 
     private func handleRuntimeError(_ error: Error) {
         runtimeStatus = .error
+        approvalStateMachine.clear()
+        activeApprovalRequest = nil
+        isApprovalDecisionInProgress = false
 
         if let runtimeError = error as? CodexRuntimeError {
             switch runtimeError {
@@ -970,6 +1254,151 @@ final class AppModel: ObservableObject {
 
         runtimeIssue = .recoverable(error.localizedDescription)
         appendLog(.error, error.localizedDescription)
+    }
+
+    func approvalDangerWarning(for request: RuntimeApprovalRequest) -> String? {
+        guard isPotentiallyRiskyApproval(request) else {
+            return nil
+        }
+        return "This action appears risky. Review command/file details carefully before approving."
+    }
+
+    private func runtimeSafetyConfiguration(for project: ProjectRecord) -> RuntimeSafetyConfiguration {
+        RuntimeSafetyConfiguration(
+            sandboxMode: mapSandboxMode(project.sandboxMode),
+            approvalPolicy: mapApprovalPolicy(project.approvalPolicy),
+            networkAccess: project.networkAccess,
+            webSearch: mapWebSearchMode(project.webSearch),
+            writableRoots: [project.path]
+        )
+    }
+
+    private func mapSandboxMode(_ mode: ProjectSandboxMode) -> RuntimeSandboxMode {
+        switch mode {
+        case .readOnly:
+            return .readOnly
+        case .workspaceWrite:
+            return .workspaceWrite
+        case .dangerFullAccess:
+            return .dangerFullAccess
+        }
+    }
+
+    private func mapApprovalPolicy(_ policy: ProjectApprovalPolicy) -> RuntimeApprovalPolicy {
+        switch policy {
+        case .untrusted:
+            return .untrusted
+        case .onRequest:
+            return .onRequest
+        case .never:
+            return .never
+        }
+    }
+
+    private func mapWebSearchMode(_ mode: ProjectWebSearchMode) -> RuntimeWebSearchMode {
+        switch mode {
+        case .cached:
+            return .cached
+        case .live:
+            return .live
+        case .disabled:
+            return .disabled
+        }
+    }
+
+    private func approvalSummary(for request: RuntimeApprovalRequest) -> String {
+        var lines: [String] = []
+        if let reason = request.reason, !reason.isEmpty {
+            lines.append("reason: \(reason)")
+        }
+        if let risk = request.risk, !risk.isEmpty {
+            lines.append("risk: \(risk)")
+        }
+        if let cwd = request.cwd, !cwd.isEmpty {
+            lines.append("cwd: \(cwd)")
+        }
+        if !request.command.isEmpty {
+            lines.append("command: \(request.command.joined(separator: " "))")
+        }
+        if !request.changes.isEmpty {
+            lines.append("changes: \(request.changes.count) file(s)")
+        }
+        if lines.isEmpty {
+            lines.append(request.detail)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func approvalDecisionLabel(_ decision: RuntimeApprovalDecision) -> String {
+        switch decision {
+        case .approveOnce:
+            return "Approve once"
+        case .approveForSession:
+            return "Approve for session"
+        case .decline:
+            return "Decline"
+        case .cancel:
+            return "Cancel"
+        }
+    }
+
+    private func isPotentiallyRiskyApproval(_ request: RuntimeApprovalRequest) -> Bool {
+        let commandText = request.command.joined(separator: " ").lowercased()
+        let riskyPatterns = [
+            "rm -rf",
+            "sudo ",
+            "chmod ",
+            "chown ",
+            "mkfs",
+            "dd ",
+            "git reset --hard"
+        ]
+
+        if riskyPatterns.contains(where: { commandText.contains($0) }) {
+            return true
+        }
+
+        if request.kind == .fileChange {
+            return request.changes.contains(where: {
+                $0.path.contains(".git/") || $0.path.contains(".codex/")
+            })
+        }
+
+        return false
+    }
+
+    private func appendThreadLog(level: LogLevel, text: String, to threadID: UUID) {
+        let sanitized = redactSensitiveText(in: text)
+        var logs = threadLogsByThreadID[threadID, default: []]
+        logs.append(ThreadLogEntry(threadID: threadID, level: level, text: sanitized))
+        if logs.count > 1_000 {
+            logs.removeFirst(logs.count - 1_000)
+        }
+        threadLogsByThreadID[threadID] = logs
+    }
+
+    private func restorePathsWithGit(_ paths: [String], projectPath: String) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["git", "-C", projectPath, "restore", "--"] + paths
+
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            let errorText = String(
+                decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+                as: UTF8.self
+            )
+            throw NSError(
+                domain: "CodexChatApp.GitRestore",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: errorText.trimmingCharacters(in: .whitespacesAndNewlines)]
+            )
+        }
     }
 
     private func appendLog(_ level: LogLevel, _ message: String) {

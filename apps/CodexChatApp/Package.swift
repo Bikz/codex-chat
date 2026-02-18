@@ -27,6 +27,9 @@ let package = Package(
                 "CodexSkills",
                 "CodexMemory",
                 "CodexMods"
+            ],
+            resources: [
+                .copy("Resources")
             ]
         ),
         .testTarget(

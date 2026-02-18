@@ -40,6 +40,11 @@ struct CodexChatApplication: App {
                     model.toggleDiagnostics()
                 }
                 .keyboardShortcut("d", modifiers: [.command, .option])
+
+                Button("Toggle Terminal / Logs") {
+                    model.toggleLogsDrawer()
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
             }
         }
     }

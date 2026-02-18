@@ -1,5 +1,6 @@
 import CodexChatCore
 import CodexChatUI
+import CodexKit
 import SwiftUI
 
 struct ContentView: View {
@@ -23,6 +24,15 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.isProjectSettingsVisible) {
             ProjectSettingsSheet(model: model)
+        }
+        .sheet(isPresented: $model.isReviewChangesVisible) {
+            ReviewChangesSheet(model: model)
+        }
+        .sheet(item: Binding(get: {
+            model.activeApprovalRequest
+        }, set: { _ in })) { request in
+            ApprovalRequestSheet(model: model, request: request)
+                .interactiveDismissDisabled(model.isApprovalDecisionInProgress)
         }
         .onAppear {
             model.onAppear()
@@ -233,9 +243,27 @@ struct ContentView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.selectedThreadID == nil)
+
+                Button("Review Changes") {
+                    model.openReviewChanges()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!model.canReviewChanges)
+
+                Button(model.isLogsDrawerVisible ? "Hide Logs" : "Terminal / Logs") {
+                    model.toggleLogsDrawer()
+                }
+                .buttonStyle(.bordered)
             }
             .padding(tokens.spacing.medium)
             .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
+
+            if model.isLogsDrawerVisible {
+                Divider()
+                ThreadLogsDrawer(entries: model.selectedThreadLogs)
+                    .frame(height: 180)
+                    .background(Color(hex: tokens.palette.panelHex).opacity(0.82))
+            }
         }
         .navigationTitle("Conversation")
     }
@@ -402,6 +430,14 @@ private struct ProjectTrustBanner: View {
 
 private struct ProjectSettingsSheet: View {
     @ObservedObject var model: AppModel
+    @State private var sandboxMode: ProjectSandboxMode = .readOnly
+    @State private var approvalPolicy: ProjectApprovalPolicy = .untrusted
+    @State private var networkAccess = false
+    @State private var webSearchMode: ProjectWebSearchMode = .cached
+    @State private var confirmationInput = ""
+    @State private var confirmationError: String?
+    @State private var isDangerConfirmationVisible = false
+    @State private var pendingSafetySettings: ProjectSafetySettings?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -419,6 +455,54 @@ private struct ProjectSettingsSheet: View {
                     Text(project.trustState.rawValue.capitalized)
                         .foregroundStyle(project.trustState == .trusted ? .green : .orange)
                 }
+
+                Divider()
+
+                Text("Safety Controls")
+                    .font(.headline)
+
+                Picker("Sandbox mode", selection: $sandboxMode) {
+                    Text("Read-only").tag(ProjectSandboxMode.readOnly)
+                    Text("Workspace-write").tag(ProjectSandboxMode.workspaceWrite)
+                    Text("Danger full access").tag(ProjectSandboxMode.dangerFullAccess)
+                }
+                .pickerStyle(.menu)
+
+                Picker("Approval policy", selection: $approvalPolicy) {
+                    Text("Untrusted").tag(ProjectApprovalPolicy.untrusted)
+                    Text("On request").tag(ProjectApprovalPolicy.onRequest)
+                    Text("Never").tag(ProjectApprovalPolicy.never)
+                }
+                .pickerStyle(.menu)
+
+                Toggle("Allow network access in workspace-write", isOn: $networkAccess)
+                    .disabled(sandboxMode != .workspaceWrite)
+                    .onChange(of: sandboxMode) { newValue in
+                        if newValue != .workspaceWrite {
+                            networkAccess = false
+                        }
+                    }
+
+                Picker("Web search mode", selection: $webSearchMode) {
+                    Text("Cached").tag(ProjectWebSearchMode.cached)
+                    Text("Live").tag(ProjectWebSearchMode.live)
+                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                }
+                .pickerStyle(.menu)
+
+                Text("Use read-only + untrusted for unknown projects. Danger full access or never-approve mode requires explicit confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button("Open Local Safety Docs") {
+                    model.openSafetyPolicyDocument()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Save Safety Settings") {
+                    saveSafetySettings()
+                }
+                .buttonStyle(.borderedProminent)
 
                 HStack {
                     Button("Trust Project") {
@@ -455,6 +539,331 @@ private struct ProjectSettingsSheet: View {
             }
         }
         .padding(18)
-        .frame(minWidth: 560, minHeight: 300)
+        .frame(minWidth: 620, minHeight: 420)
+        .onAppear {
+            syncSafetyStateFromSelectedProject()
+        }
+        .onChange(of: model.selectedProject?.id) { _ in
+            syncSafetyStateFromSelectedProject()
+        }
+        .sheet(isPresented: $isDangerConfirmationVisible) {
+            DangerConfirmationSheet(
+                phrase: model.dangerConfirmationPhrase,
+                input: $confirmationInput,
+                errorText: confirmationError,
+                onCancel: {
+                    confirmationInput = ""
+                    confirmationError = nil
+                    pendingSafetySettings = nil
+                    isDangerConfirmationVisible = false
+                },
+                onConfirm: {
+                    guard confirmationInput.trimmingCharacters(in: .whitespacesAndNewlines) == model.dangerConfirmationPhrase else {
+                        confirmationError = "Phrase did not match."
+                        return
+                    }
+                    if let pendingSafetySettings {
+                        applySafetySettings(pendingSafetySettings)
+                    }
+                    confirmationInput = ""
+                    confirmationError = nil
+                    pendingSafetySettings = nil
+                    isDangerConfirmationVisible = false
+                }
+            )
+        }
+    }
+
+    private func saveSafetySettings() {
+        let settings = ProjectSafetySettings(
+            sandboxMode: sandboxMode,
+            approvalPolicy: approvalPolicy,
+            networkAccess: networkAccess,
+            webSearch: webSearchMode
+        )
+
+        if model.requiresDangerConfirmation(
+            sandboxMode: settings.sandboxMode,
+            approvalPolicy: settings.approvalPolicy
+        ) {
+            pendingSafetySettings = settings
+            confirmationInput = ""
+            confirmationError = nil
+            isDangerConfirmationVisible = true
+            return
+        }
+
+        applySafetySettings(settings)
+    }
+
+    private func applySafetySettings(_ settings: ProjectSafetySettings) {
+        model.updateSelectedProjectSafetySettings(
+            sandboxMode: settings.sandboxMode,
+            approvalPolicy: settings.approvalPolicy,
+            networkAccess: settings.networkAccess,
+            webSearch: settings.webSearch
+        )
+    }
+
+    private func syncSafetyStateFromSelectedProject() {
+        guard let project = model.selectedProject else { return }
+        sandboxMode = project.sandboxMode
+        approvalPolicy = project.approvalPolicy
+        networkAccess = project.networkAccess
+        webSearchMode = project.webSearch
+    }
+}
+
+private struct DangerConfirmationSheet: View {
+    let phrase: String
+    @Binding var input: String
+    let errorText: String?
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Confirm Dangerous Settings")
+                .font(.title3.weight(.semibold))
+
+            Text("Type the confirmation phrase to enable dangerous project settings.")
+                .foregroundStyle(.secondary)
+
+            Text(phrase)
+                .font(.system(.body, design: .monospaced))
+                .padding(8)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+
+            TextField("Type phrase exactly", text: $input)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+
+            if let errorText {
+                Text(errorText)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    onCancel()
+                }
+                Button("Confirm") {
+                    onConfirm()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 460)
+        .onAppear {
+            isFocused = true
+        }
+    }
+}
+
+private struct ApprovalRequestSheet: View {
+    @ObservedObject var model: AppModel
+    let request: RuntimeApprovalRequest
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Approval Required")
+                .font(.title3.weight(.semibold))
+
+            if let warning = model.approvalDangerWarning(for: request) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.callout)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            LabeledContent("Type") {
+                Text(request.kind.rawValue)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let reason = request.reason, !reason.isEmpty {
+                LabeledContent("Reason") {
+                    Text(reason)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let cwd = request.cwd, !cwd.isEmpty {
+                LabeledContent("Working dir") {
+                    Text(cwd)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+
+            if !request.command.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Command")
+                        .font(.subheadline.weight(.semibold))
+                    Text(request.command.joined(separator: " "))
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+
+            if !request.changes.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("File changes")
+                        .font(.subheadline.weight(.semibold))
+                    ForEach(request.changes, id: \.path) { change in
+                        Text("\(change.kind): \(change.path)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if let status = model.approvalStatusMessage {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("Decline") {
+                    model.declinePendingApproval()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Approve Once") {
+                    model.approvePendingApprovalOnce()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Approve for Session") {
+                    model.approvePendingApprovalForSession()
+                }
+                .buttonStyle(.bordered)
+            }
+            .disabled(model.isApprovalDecisionInProgress)
+        }
+        .padding(18)
+        .frame(minWidth: 620, minHeight: 360)
+    }
+}
+
+private struct ReviewChangesSheet: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Review Changes")
+                .font(.title3.weight(.semibold))
+
+            if model.selectedThreadChanges.isEmpty {
+                EmptyStateView(
+                    title: "No changes to review",
+                    message: "Run a turn that produces file changes, then review here.",
+                    systemImage: "doc.text.magnifyingglass"
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(model.selectedThreadChanges.enumerated()), id: \.offset) { _, change in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("\(change.kind): \(change.path)")
+                                    .font(.callout.weight(.semibold))
+
+                                if let diff = change.diff, !diff.isEmpty {
+                                    Text(diff)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(8)
+                                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Button("Revert") {
+                    model.revertReviewChanges()
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.selectedThreadChanges.isEmpty)
+
+                Button("Accept") {
+                    model.acceptReviewChanges()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.selectedThreadChanges.isEmpty)
+
+                Spacer()
+
+                Button("Close") {
+                    model.closeReviewChanges()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(18)
+        .frame(minWidth: 760, minHeight: 480)
+    }
+}
+
+private struct ThreadLogsDrawer: View {
+    let entries: [ThreadLogEntry]
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Terminal / Logs")
+                .font(.headline)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+
+            if entries.isEmpty {
+                EmptyStateView(
+                    title: "No command output yet",
+                    message: "Runtime command output for this thread will appear here.",
+                    systemImage: "terminal"
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(entries) { entry in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(Self.dateFormatter.string(from: entry.timestamp))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                Text(entry.text)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(.horizontal, 12)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+        }
     }
 }
