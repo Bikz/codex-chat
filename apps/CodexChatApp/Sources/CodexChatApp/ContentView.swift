@@ -99,9 +99,12 @@ struct ContentView: View {
                 .buttonStyle(.borderless)
 
                 Button(action: model.showProjectSettings) {
-                    Image(systemName: "slider.horizontal.3")
+                    Label("Project Settings", systemImage: "slider.horizontal.3")
+                        .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("Project settings")
+                .help("Project settings")
                 .disabled(model.selectedProjectID == nil)
             }
 
