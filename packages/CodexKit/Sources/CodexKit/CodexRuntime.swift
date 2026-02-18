@@ -280,6 +280,25 @@ public actor CodexRuntime {
                 let message = try decoder.decode(JSONRPCMessageEnvelope.self, from: frame)
                 try await handleIncomingMessage(message)
             }
+        } catch let error as JSONLFramerError {
+            eventContinuation.yield(
+                .action(
+                    RuntimeAction(
+                        method: "runtime/stdout/decode_error",
+                        itemID: nil,
+                        itemType: nil,
+                        threadID: nil,
+                        turnID: nil,
+                        title: "Runtime stream framing error",
+                        detail: error.localizedDescription
+                    )
+                )
+            )
+
+            // Buffer overflow means we can't safely resynchronize; stop and require restart.
+            if case .bufferOverflow = error {
+                await stopProcess()
+            }
         } catch {
             eventContinuation.yield(
                 .action(

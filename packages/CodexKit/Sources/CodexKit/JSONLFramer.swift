@@ -31,10 +31,14 @@ struct JSONLFramer {
 
         var frames: [Data] = []
         while let newlineRange = buffered.range(of: Data([0x0A])) {
-            let line = buffered[..<newlineRange.lowerBound]
+            var line = Data(buffered[..<newlineRange.lowerBound])
             buffered.removeSubrange(..<newlineRange.upperBound)
+
+            if line.last == 0x0D {
+                line.removeLast()
+            }
             if !line.isEmpty {
-                frames.append(Data(line))
+                frames.append(line)
             }
         }
 

@@ -16,6 +16,15 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(completed.method, "turn/completed")
     }
 
+    func testJSONLFramerStripsCarriageReturnForCRLF() throws {
+        var framer = JSONLFramer()
+        let frames = try framer.append(Data("{\"method\":\"turn/started\"}\r\n".utf8))
+        XCTAssertEqual(frames.count, 1)
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(JSONRPCMessageEnvelope.self, from: frames[0])
+        XCTAssertEqual(decoded.method, "turn/started")
+    }
+
     func testRequestCorrelatorResolvesMatchingResponse() async throws {
         let correlator = RequestCorrelator()
         let requestID = await correlator.makeRequestID()
