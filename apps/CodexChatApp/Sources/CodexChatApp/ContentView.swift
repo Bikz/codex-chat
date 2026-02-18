@@ -183,7 +183,7 @@ struct ContentView: View {
             Spacer()
         }
         .padding(tokens.spacing.medium)
-        .background(Color(hex: tokens.palette.panelHex).opacity(0.6))
+        .background(tokens.materials.panelMaterial.material)
     }
 
     @ViewBuilder
@@ -394,7 +394,7 @@ struct ContentView: View {
                     Divider()
                     ThreadLogsDrawer(entries: model.selectedThreadLogs)
                         .frame(height: 180)
-                        .background(Color(hex: tokens.palette.panelHex).opacity(0.82))
+                        .background(tokens.materials.panelMaterial.material)
                 }
             }
         }
