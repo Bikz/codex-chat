@@ -45,6 +45,29 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         XCTAssertTrue(archiveContent.contains("Hello from fake runtime."))
     }
 
+    func testSendDisablesDuringTurnAndReenablesAfterCompletion() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        XCTAssertTrue(harness.model.canSendMessages)
+
+        harness.model.composerText = "Hello"
+        harness.model.sendMessage()
+
+        XCTAssertFalse(harness.model.canSendMessages)
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        harness.model.approvePendingApprovalOnce()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.canSendMessages
+        }
+    }
+
     func testSafeEscalationUpdatesSafetySettingsButApprovalsStillAppear() async throws {
         let harness = try await Harness.make(trustState: .untrusted)
         defer { harness.cleanup() }

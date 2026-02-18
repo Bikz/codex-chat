@@ -110,6 +110,7 @@ final class AppModel: ObservableObject {
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
     @Published var pendingModReview: PendingModReview?
     @Published var isModReviewDecisionInProgress = false
+    @Published private(set) var isTurnInProgress = false
     @Published private(set) var logs: [LogEntry] = []
     @Published private(set) var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
     @Published private(set) var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
@@ -207,6 +208,9 @@ final class AppModel: ObservableObject {
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && pendingModReview == nil
+            && activeApprovalRequest == nil
+            && !isApprovalDecisionInProgress
+            && !isTurnInProgress
     }
 
     var selectedProject: ProjectRecord? {
@@ -1257,6 +1261,7 @@ final class AppModel: ObservableObject {
         }
 
         composerText = ""
+        isTurnInProgress = true
         appendEntry(.message(ChatMessage(threadId: selectedThreadID, role: .user, text: trimmedText)), to: selectedThreadID)
         let safetyConfiguration = runtimeSafetyConfiguration(for: project)
         let selectedSkillInput = selectedSkillForComposer.map {
@@ -1337,6 +1342,7 @@ final class AppModel: ObservableObject {
             runtimeIssue = nil
             approvalStateMachine.clear()
             activeApprovalRequest = nil
+            clearActiveTurnState()
             appendLog(.info, "Runtime connected")
             try await refreshAccountState()
         } catch {
@@ -1356,6 +1362,7 @@ final class AppModel: ObservableObject {
             runtimeIssue = nil
             approvalStateMachine.clear()
             activeApprovalRequest = nil
+            clearActiveTurnState()
             appendLog(.info, "Runtime restarted")
             try await refreshAccountState()
         } catch {
@@ -1426,6 +1433,7 @@ final class AppModel: ObservableObject {
             handleRuntimeAction(action)
 
         case let .turnCompleted(completion):
+            isTurnInProgress = false
             if let context = activeTurnContext {
                 let detail = if let errorMessage = completion.errorMessage {
                     "status=\(completion.status), error=\(errorMessage)"
@@ -1487,6 +1495,10 @@ final class AppModel: ObservableObject {
             runtimeThreadID: action.threadID,
             itemID: action.itemID
         ) ?? activeTurnContext?.localThreadID
+
+        if action.method == "runtime/terminated" {
+            handleRuntimeTermination(detail: action.detail)
+        }
 
         guard let localThreadID else {
             appendLog(.debug, "Runtime action without thread mapping: \(action.method)")
@@ -1931,11 +1943,37 @@ final class AppModel: ObservableObject {
         conversationState = .loaded(entries)
     }
 
+    private func clearActiveTurnState() {
+        if let context = activeTurnContext {
+            assistantMessageIDsByItemID[context.localThreadID] = [:]
+            localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != context.localThreadID }
+            activeTurnContext = nil
+        }
+
+        isTurnInProgress = false
+
+        // If a mod review is pending, keep the snapshot so the user can still revert.
+        if pendingModReview == nil {
+            discardModSnapshotIfPresent()
+        }
+    }
+
+    private func handleRuntimeTermination(detail: String) {
+        runtimeStatus = .error
+        approvalStateMachine.clear()
+        activeApprovalRequest = nil
+        isApprovalDecisionInProgress = false
+        runtimeIssue = .recoverable(detail)
+        clearActiveTurnState()
+        appendLog(.error, detail)
+    }
+
     private func handleRuntimeError(_ error: Error) {
         runtimeStatus = .error
         approvalStateMachine.clear()
         activeApprovalRequest = nil
         isApprovalDecisionInProgress = false
+        clearActiveTurnState()
 
         if let runtimeError = error as? CodexRuntimeError {
             switch runtimeError {
