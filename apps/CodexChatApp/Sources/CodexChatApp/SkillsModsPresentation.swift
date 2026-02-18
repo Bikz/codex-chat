@@ -24,7 +24,10 @@ enum SkillsModsPresentation {
     Install from a git URL or a local folder containing `ui.mod.json`. Installed mods are enabled immediately. \
     Privileged hook or automation actions are permission-gated and prompted on first use.
     """
-    static let inspectorToolbarHelp = "Inspector content comes from the active mod. Hidden by default each launch/thread unless toggled."
+    static let inspectorToolbarHelp = """
+    Inspector content comes from the active mod. Hidden by default, and opens automatically when new inspector output arrives.
+    """
+    static let inspectorToolbarEmptyHelp = "No active inspector mod. Install one in Skills & Mods > Mods."
     static let modArchetypes: [ModArchetype] = [
         .init(title: "Theme Packs", detail: "Visual token overrides (`schemaVersion: 1/2`)."),
         .init(title: "Turn/Thread Hooks", detail: "Event-driven summaries and side effects."),
@@ -61,7 +64,7 @@ enum SkillsModsPresentation {
         if !mod.definition.automations.isEmpty {
             capabilities.append(.automations)
         }
-        if mod.definition.uiSlots?.rightInspector != nil {
+        if mod.definition.uiSlots?.rightInspector?.enabled == true {
             capabilities.append(.inspector)
         }
 
@@ -72,14 +75,13 @@ enum SkillsModsPresentation {
         hasExtensionFeatures(mod.definition) ? .extensionEnabled : .themeOnly
     }
 
-    static func inspectorHelpText(isInspectorAvailable: Bool) -> String? {
-        guard isInspectorAvailable else { return nil }
-        return inspectorToolbarHelp
+    static func inspectorHelpText(hasActiveInspectorSource: Bool) -> String {
+        hasActiveInspectorSource ? inspectorToolbarHelp : inspectorToolbarEmptyHelp
     }
 
     private static func hasExtensionFeatures(_ definition: UIModDefinition) -> Bool {
         !definition.hooks.isEmpty
             || !definition.automations.isEmpty
-            || definition.uiSlots?.rightInspector != nil
+            || definition.uiSlots?.rightInspector?.enabled == true
     }
 }

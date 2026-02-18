@@ -79,12 +79,6 @@ extension AppModel {
             activeRightInspectorSlot = globalMod?.definition.uiSlots?.rightInspector
         }
 
-        if !(activeRightInspectorSlot?.enabled ?? false),
-           let selectedThreadID
-        {
-            extensionInspectorVisibilityByThreadID[selectedThreadID] = false
-        }
-
         Task {
             await refreshAutomationScheduler()
             await loadInspectorCacheForSelectedThread()
@@ -400,6 +394,11 @@ extension AppModel {
                 )
             } catch {
                 appendLog(.warning, "Failed to persist extension inspector output: \(error.localizedDescription)")
+            }
+
+            if extensionInspectorVisibilityByThreadID[threadID] != true {
+                extensionInspectorVisibilityByThreadID[threadID] = true
+                try? await persistInspectorVisibilityPreference()
             }
         }
 

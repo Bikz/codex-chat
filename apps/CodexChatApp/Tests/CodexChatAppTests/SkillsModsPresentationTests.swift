@@ -116,11 +116,32 @@ final class SkillsModsPresentationTests: XCTestCase {
         XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .automations, .inspector])
     }
 
-    func testInspectorHelpTextRequiresInspectorAvailability() {
-        XCTAssertNil(SkillsModsPresentation.inspectorHelpText(isInspectorAvailable: false))
+    func testModCapabilitiesDoNotIncludeDisabledInspectorSlot() {
+        let mod = makeMod(
+            path: "/tmp/mods/DisabledInspector",
+            definition: makeDefinition(
+                schemaVersion: 2,
+                uiSlots: ModUISlots(
+                    rightInspector: .init(
+                        enabled: false,
+                        title: "Disabled"
+                    )
+                )
+            )
+        )
+
+        XCTAssertEqual(SkillsModsPresentation.modStatus(mod), .themeOnly)
+        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme])
+    }
+
+    func testInspectorHelpTextVariesByActiveInspectorSource() {
         XCTAssertEqual(
-            SkillsModsPresentation.inspectorHelpText(isInspectorAvailable: true),
-            "Inspector content comes from the active mod. Hidden by default each launch/thread unless toggled."
+            SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: true),
+            "Inspector content comes from the active mod. Hidden by default, and opens automatically when new inspector output arrives."
+        )
+        XCTAssertEqual(
+            SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: false),
+            "No active inspector mod. Install one in Skills & Mods > Mods."
         )
     }
 

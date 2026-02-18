@@ -32,7 +32,21 @@ struct ExtensionInspectorView: View {
             Divider()
 
             Group {
-                if let state = model.selectedExtensionInspectorState {
+                if model.selectedThreadID == nil {
+                    EmptyStateView(
+                        title: "No thread selected",
+                        message: "Select a thread to view inspector content.",
+                        systemImage: "sidebar.right"
+                    )
+                    .padding(tokens.spacing.medium)
+                } else if !model.isInspectorAvailableForSelectedThread {
+                    EmptyStateView(
+                        title: "Install an inspector mod",
+                        message: "No active mod exposes inspector content for this thread. Open Skills & Mods > Mods to install or enable one.",
+                        systemImage: "puzzlepiece.extension"
+                    )
+                    .padding(tokens.spacing.medium)
+                } else if let state = model.selectedExtensionInspectorState {
                     ScrollView {
                         MarkdownMessageView(
                             text: state.markdown,
@@ -42,13 +56,6 @@ struct ExtensionInspectorView: View {
                         .padding(.horizontal, tokens.spacing.medium)
                         .padding(.vertical, tokens.spacing.small)
                     }
-                } else if model.selectedThreadID == nil {
-                    EmptyStateView(
-                        title: "No thread selected",
-                        message: "Select a thread to view extension output.",
-                        systemImage: "sidebar.right"
-                    )
-                    .padding(tokens.spacing.medium)
                 } else {
                     LoadingStateView(title: "Waiting for extension output…")
                         .padding(tokens.spacing.medium)

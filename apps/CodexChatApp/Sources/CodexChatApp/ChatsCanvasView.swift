@@ -90,7 +90,7 @@ struct ChatsCanvasView: View {
                     .accessibilityLabel("Toggle shell workspace")
                     .help("Toggle shell workspace")
 
-                    if model.isInspectorAvailableForSelectedThread {
+                    if model.canToggleInspectorForSelectedThread {
                         Button {
                             model.toggleExtensionInspector()
                         } label: {
@@ -98,7 +98,7 @@ struct ChatsCanvasView: View {
                                 .labelStyle(.iconOnly)
                         }
                         .accessibilityLabel("Toggle inspector")
-                        .help(SkillsModsPresentation.inspectorHelpText(isInspectorAvailable: model.isInspectorAvailableForSelectedThread) ?? "")
+                        .help(SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: model.isInspectorAvailableForSelectedThread))
                     }
                 }
             }
@@ -441,7 +441,7 @@ struct ChatsCanvasView: View {
     private func conversationWithInspector(
         @ViewBuilder _ content: () -> some View
     ) -> some View {
-        if model.isInspectorAvailableForSelectedThread {
+        if model.canToggleInspectorForSelectedThread {
             HStack(spacing: 0) {
                 content()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

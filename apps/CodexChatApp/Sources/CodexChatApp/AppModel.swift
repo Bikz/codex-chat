@@ -482,6 +482,10 @@ final class AppModel: ObservableObject {
         return extensionInspectorVisibilityByThreadID[selectedThreadID, default: false]
     }
 
+    var canToggleInspectorForSelectedThread: Bool {
+        selectedThreadID != nil
+    }
+
     var isInspectorAvailableForSelectedThread: Bool {
         selectedThreadID != nil && (activeRightInspectorSlot?.enabled ?? false)
     }
