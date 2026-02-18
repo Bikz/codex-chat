@@ -8,6 +8,7 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
     @State private var isInstallSkillSheetVisible = false
+    @State private var isInsertMemorySheetVisible = false
 
     var body: some View {
         NavigationSplitView {
@@ -33,6 +34,9 @@ struct ContentView: View {
         .sheet(isPresented: $isInstallSkillSheetVisible) {
             InstallSkillSheet(model: model, isPresented: $isInstallSkillSheetVisible)
         }
+        .sheet(isPresented: $isInsertMemorySheetVisible) {
+            MemorySnippetInsertSheet(model: model, isPresented: $isInsertMemorySheetVisible)
+        }
         .sheet(item: Binding(get: {
             model.activeApprovalRequest
         }, set: { _ in })) { request in
@@ -43,8 +47,11 @@ struct ContentView: View {
             model.onAppear()
         }
         .onChange(of: model.navigationSection) { newValue in
-            if newValue == .skills {
+            switch newValue {
+            case .skills:
                 model.refreshSkillsSurface()
+            case .chats, .memory:
+                break
             }
         }
     }
@@ -56,6 +63,8 @@ struct ContentView: View {
             conversationCanvas
         case .skills:
             skillsCanvas
+        case .memory:
+            MemoryCanvas(model: model)
         }
     }
 
@@ -64,6 +73,7 @@ struct ContentView: View {
             Picker("Navigation", selection: $model.navigationSection) {
                 Text("Chats").tag(AppModel.NavigationSection.chats)
                 Text("Skills").tag(AppModel.NavigationSection.skills)
+                Text("Memory").tag(AppModel.NavigationSection.memory)
             }
             .pickerStyle(.segmented)
 
@@ -87,7 +97,8 @@ struct ContentView: View {
             projectsSurface
                 .frame(minHeight: 180)
 
-            if model.navigationSection == .chats {
+            switch model.navigationSection {
+            case .chats:
                 TextField(
                     "Search threads and archived messages",
                     text: Binding(
@@ -114,12 +125,22 @@ struct ContentView: View {
                 }
 
                 threadsSurface
-            } else {
+            case .skills:
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Skills are enabled per selected project.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Select a project, then manage installed skills in the main panel.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            case .memory:
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Memory is stored as editable markdown in the project.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Use the Memory panel to manage `memory/*.md` and control auto-summaries.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -292,6 +313,16 @@ struct ContentView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .disabled(model.enabledSkillsForSelectedProject.isEmpty)
+
+                    Button {
+                        isInsertMemorySheetVisible = true
+                    } label: {
+                        Label("Insert memory snippet", systemImage: "brain")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Insert memory snippet")
+                    .disabled(model.selectedProjectID == nil)
 
                     Button("Reveal Chat File") {
                         model.revealSelectedThreadArchiveInFinder()

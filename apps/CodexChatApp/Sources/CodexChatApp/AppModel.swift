@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     enum NavigationSection: String, CaseIterable {
         case chats
         case skills
+        case memory
     }
 
     struct SkillListItem: Identifiable, Hashable {
@@ -76,6 +77,7 @@ final class AppModel: ObservableObject {
     @Published var approvalStatusMessage: String?
     @Published var projectStatusMessage: String?
     @Published var skillStatusMessage: String?
+    @Published var memoryStatusMessage: String?
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
     @Published var isSkillOperationInProgress = false
@@ -562,6 +564,31 @@ final class AppModel: ObservableObject {
             } catch {
                 projectStatusMessage = "Failed to update safety settings: \(error.localizedDescription)"
                 appendLog(.error, "Failed to update safety settings: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func updateSelectedProjectMemorySettings(
+        writeMode: ProjectMemoryWriteMode,
+        embeddingsEnabled: Bool
+    ) {
+        guard let selectedProjectID,
+              let projectRepository else {
+            return
+        }
+
+        let settings = ProjectMemorySettings(writeMode: writeMode, embeddingsEnabled: embeddingsEnabled)
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectMemorySettings(
+                    id: selectedProjectID,
+                    settings: settings
+                )
+                try await refreshProjects()
+                memoryStatusMessage = "Updated memory settings for this project."
+            } catch {
+                memoryStatusMessage = "Failed to update memory settings: \(error.localizedDescription)"
+                appendLog(.error, "Failed to update memory settings: \(error.localizedDescription)")
             }
         }
     }
