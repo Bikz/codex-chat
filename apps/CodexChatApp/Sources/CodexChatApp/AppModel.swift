@@ -275,182 +275,6 @@ final class AppModel: ObservableObject {
         !selectedThreadChanges.isEmpty
     }
 
-    func onAppear() {
-        Task {
-            await loadInitialData()
-        }
-    }
-
-    func toggleDiagnostics() {
-        isDiagnosticsVisible.toggle()
-        appendLog(.debug, "Diagnostics toggled: \(isDiagnosticsVisible)")
-    }
-
-    func closeDiagnostics() {
-        isDiagnosticsVisible = false
-    }
-
-    func retryLoad() {
-        Task {
-            await loadInitialData()
-        }
-    }
-
-    func restartRuntime() {
-        Task {
-            await restartRuntimeSession()
-        }
-    }
-
-    func signInWithChatGPT() {
-        guard let runtime else { return }
-
-        isAccountOperationInProgress = true
-        accountStatusMessage = nil
-
-        Task {
-            defer { isAccountOperationInProgress = false }
-
-            do {
-                let loginStart = try await runtime.startChatGPTLogin()
-                NSWorkspace.shared.open(loginStart.authURL)
-                accountStatusMessage = "Complete sign-in in your browser."
-                appendLog(.info, "Started ChatGPT login flow")
-            } catch {
-                accountStatusMessage = "ChatGPT sign-in failed: \(error.localizedDescription)"
-                handleRuntimeError(error)
-            }
-        }
-    }
-
-    func presentAPIKeyPrompt() {
-        pendingAPIKey = ""
-        isAPIKeyPromptVisible = true
-    }
-
-    func cancelAPIKeyPrompt() {
-        pendingAPIKey = ""
-        isAPIKeyPromptVisible = false
-    }
-
-    func submitAPIKeyLogin() {
-        let apiKey = pendingAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        pendingAPIKey = ""
-        isAPIKeyPromptVisible = false
-
-        guard !apiKey.isEmpty else {
-            accountStatusMessage = "API key was empty."
-            return
-        }
-
-        signInWithAPIKey(apiKey)
-    }
-
-    func signInWithAPIKey(_ apiKey: String) {
-        guard let runtime else { return }
-
-        isAccountOperationInProgress = true
-        accountStatusMessage = nil
-
-        Task {
-            defer { isAccountOperationInProgress = false }
-
-            do {
-                try await runtime.startAPIKeyLogin(apiKey: apiKey)
-                try keychainStore.saveSecret(apiKey, account: APIKeychainStore.runtimeAPIKeyAccount)
-                try await upsertProjectAPIKeyReferenceIfNeeded()
-                try await refreshAccountState()
-                accountStatusMessage = "Signed in with API key."
-                appendLog(.info, "Signed in with API key")
-            } catch {
-                accountStatusMessage = "API key sign-in failed: \(error.localizedDescription)"
-                handleRuntimeError(error)
-            }
-        }
-    }
-
-    func logoutAccount() {
-        guard let runtime else { return }
-
-        isAccountOperationInProgress = true
-        accountStatusMessage = nil
-
-        Task {
-            defer { isAccountOperationInProgress = false }
-
-            do {
-                try await runtime.logoutAccount()
-                try keychainStore.deleteSecret(account: APIKeychainStore.runtimeAPIKeyAccount)
-                try await refreshAccountState()
-                accountStatusMessage = "Logged out."
-                appendLog(.info, "Account logged out")
-            } catch {
-                accountStatusMessage = "Logout failed: \(error.localizedDescription)"
-                handleRuntimeError(error)
-            }
-        }
-    }
-
-    func launchDeviceCodeLogin() {
-        do {
-            try CodexRuntime.launchDeviceAuthInTerminal()
-            accountStatusMessage = "Device-auth started in Terminal. Availability depends on workspace settings."
-            appendLog(.info, "Launched device-auth login in Terminal")
-        } catch {
-            accountStatusMessage = "Unable to start device-auth login: \(error.localizedDescription)"
-            handleRuntimeError(error)
-        }
-    }
-
-    func copyDiagnosticsBundle() {
-        do {
-            let snapshot = DiagnosticsBundleSnapshot(
-                generatedAt: Date(),
-                runtimeStatus: runtimeStatus,
-                runtimeIssue: runtimeIssue?.message,
-                accountSummary: accountSummaryText,
-                logs: logs
-            )
-            let bundleURL = try DiagnosticsBundleExporter.export(snapshot: snapshot)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(bundleURL.path, forType: .string)
-            accountStatusMessage = "Diagnostics bundle created and copied: \(bundleURL.lastPathComponent)"
-            appendLog(.info, "Diagnostics bundle exported")
-        } catch DiagnosticsBundleExporterError.cancelled {
-            appendLog(.debug, "Diagnostics export cancelled")
-        } catch {
-            accountStatusMessage = "Failed to export diagnostics: \(error.localizedDescription)"
-            appendLog(.error, "Diagnostics export failed: \(error.localizedDescription)")
-        }
-    }
-
-    func loadInitialData() async {
-        appendLog(.info, "Loading initial metadata")
-        projectsState = .loading
-
-        do {
-            try await refreshProjects()
-            try await restoreLastOpenedContext()
-            try await refreshThreads()
-            try await refreshSkills()
-            refreshModsSurface()
-            refreshConversationState()
-            appendLog(.info, "Initial metadata load completed")
-        } catch {
-            let message = error.localizedDescription
-            projectsState = .failed(message)
-            threadsState = .failed(message)
-            conversationState = .failed(message)
-            skillsState = .failed(message)
-            runtimeStatus = .error
-            runtimeIssue = .recoverable(message)
-            appendLog(.error, "Failed to load initial data: \(message)")
-            return
-        }
-
-        await startRuntimeSession()
-    }
-
     func openProjectFolder() {
         guard let projectRepository else { return }
 
@@ -1324,7 +1148,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func startRuntimeSession() async {
+    func startRuntimeSession() async {
         guard let runtime else {
             runtimeStatus = .error
             runtimeIssue = .recoverable("Runtime is unavailable.")
@@ -1349,7 +1173,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func restartRuntimeSession() async {
+    func restartRuntimeSession() async {
         guard let runtime else { return }
 
         runtimeStatus = .starting
@@ -1749,7 +1573,7 @@ final class AppModel: ObservableObject {
         activeModSnapshot = nil
     }
 
-    private func refreshAccountState() async throws {
+    func refreshAccountState() async throws {
         guard let runtime else {
             accountState = .signedOut
             return
@@ -1758,7 +1582,7 @@ final class AppModel: ObservableObject {
         accountState = try await runtime.readAccount()
     }
 
-    private func upsertProjectAPIKeyReferenceIfNeeded() async throws {
+    func upsertProjectAPIKeyReferenceIfNeeded() async throws {
         guard let projectID = selectedProjectID,
               let projectSecretRepository
         else {
@@ -1827,7 +1651,7 @@ final class AppModel: ObservableObject {
         refreshConversationState()
     }
 
-    private func refreshProjects() async throws {
+    func refreshProjects() async throws {
         guard let projectRepository else {
             projectsState = .failed("Project repository is unavailable.")
             return
@@ -1841,7 +1665,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func refreshThreads() async throws {
+    func refreshThreads() async throws {
         guard let threadRepository else {
             threadsState = .failed("Thread repository is unavailable.")
             return
@@ -1873,7 +1697,7 @@ final class AppModel: ObservableObject {
         selectedThreadID = loadedThreads.first?.id
     }
 
-    private func refreshSkills() async throws {
+    func refreshSkills() async throws {
         skillsState = .loading
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
@@ -1898,7 +1722,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func restoreLastOpenedContext() async throws {
+    func restoreLastOpenedContext() async throws {
         guard let preferenceRepository else { return }
 
         if let projectIDString = try await preferenceRepository.getPreference(key: .lastOpenedProjectID),
@@ -1916,7 +1740,7 @@ final class AppModel: ObservableObject {
         appendLog(.debug, "Restored last-opened context")
     }
 
-    private func persistSelection() async throws {
+    func persistSelection() async throws {
         guard let preferenceRepository else { return }
 
         if let selectedProjectID {
@@ -1984,7 +1808,7 @@ final class AppModel: ObservableObject {
         appendLog(.info, "Created default thread for project \(selectedProjectID.uuidString)")
     }
 
-    private func refreshConversationState() {
+    func refreshConversationState() {
         guard let selectedThreadID else {
             conversationState = .idle
             return
@@ -2026,7 +1850,7 @@ final class AppModel: ObservableObject {
         appendLog(.error, detail)
     }
 
-    private func handleRuntimeError(_ error: Error) {
+    func handleRuntimeError(_ error: Error) {
         runtimeStatus = .error
         approvalStateMachine.clear()
         activeApprovalRequest = nil
@@ -2203,7 +2027,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func appendLog(_ level: LogLevel, _ message: String) {
+    func appendLog(_ level: LogLevel, _ message: String) {
         logs.append(LogEntry(level: level, message: redactSensitiveText(in: message)))
         if logs.count > 500 {
             logs.removeFirst(logs.count - 500)
