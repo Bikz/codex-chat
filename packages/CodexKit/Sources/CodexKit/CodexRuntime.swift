@@ -15,6 +15,11 @@ public actor CodexRuntime {
     private var framer = JSONLFramer()
     private var pendingApprovalRequests: [Int: RuntimeApprovalRequest] = [:]
 
+    private var stdoutPumpTask: Task<Void, Never>?
+    private var stderrPumpTask: Task<Void, Never>?
+    private var stdoutPumpContinuation: AsyncStream<Data>.Continuation?
+    private var stderrPumpContinuation: AsyncStream<Data>.Continuation?
+
     private let eventStream: AsyncStream<CodexRuntimeEvent>
     private let eventContinuation: AsyncStream<CodexRuntimeEvent>.Continuation
 
@@ -29,6 +34,10 @@ public actor CodexRuntime {
     deinit {
         stdoutHandle?.readabilityHandler = nil
         stderrHandle?.readabilityHandler = nil
+        stdoutPumpContinuation?.finish()
+        stderrPumpContinuation?.finish()
+        stdoutPumpTask?.cancel()
+        stderrPumpTask?.cancel()
         process?.terminate()
     }
 
@@ -254,18 +263,55 @@ public actor CodexRuntime {
             return
         }
 
-        stdoutHandle.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            Task {
-                await self?.consumeStdout(data)
+        stdoutPumpContinuation?.finish()
+        stderrPumpContinuation?.finish()
+        stdoutPumpTask?.cancel()
+        stderrPumpTask?.cancel()
+
+        var stdoutContinuation: AsyncStream<Data>.Continuation?
+        let stdoutStream = AsyncStream<Data>(bufferingPolicy: .bufferingNewest(64)) { continuation in
+            stdoutContinuation = continuation
+        }
+        let resolvedStdoutContinuation = stdoutContinuation!
+        stdoutPumpContinuation = resolvedStdoutContinuation
+        stdoutPumpTask = Task { [weak self] in
+            guard let self else { return }
+            for await chunk in stdoutStream {
+                await consumeStdout(chunk)
             }
         }
 
-        stderrHandle.readabilityHandler = { [weak self] handle in
+        stdoutHandle.readabilityHandler = { handle in
             let data = handle.availableData
-            Task {
-                await self?.consumeStderr(data)
+            guard !data.isEmpty else {
+                resolvedStdoutContinuation.finish()
+                handle.readabilityHandler = nil
+                return
             }
+            resolvedStdoutContinuation.yield(data)
+        }
+
+        var stderrContinuation: AsyncStream<Data>.Continuation?
+        let stderrStream = AsyncStream<Data>(bufferingPolicy: .bufferingNewest(64)) { continuation in
+            stderrContinuation = continuation
+        }
+        let resolvedStderrContinuation = stderrContinuation!
+        stderrPumpContinuation = resolvedStderrContinuation
+        stderrPumpTask = Task { [weak self] in
+            guard let self else { return }
+            for await chunk in stderrStream {
+                await consumeStderr(chunk)
+            }
+        }
+
+        stderrHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                resolvedStderrContinuation.finish()
+                handle.readabilityHandler = nil
+                return
+            }
+            resolvedStderrContinuation.yield(data)
         }
     }
 
@@ -451,6 +497,14 @@ public actor CodexRuntime {
     private func stopProcess() async {
         stdoutHandle?.readabilityHandler = nil
         stderrHandle?.readabilityHandler = nil
+        stdoutPumpContinuation?.finish()
+        stderrPumpContinuation?.finish()
+        stdoutPumpTask?.cancel()
+        stderrPumpTask?.cancel()
+        stdoutPumpContinuation = nil
+        stderrPumpContinuation = nil
+        stdoutPumpTask = nil
+        stderrPumpTask = nil
 
         if let process, process.isRunning {
             process.terminate()
@@ -468,6 +522,14 @@ public actor CodexRuntime {
     private func handleProcessTermination(status: Int32) async {
         stdoutHandle?.readabilityHandler = nil
         stderrHandle?.readabilityHandler = nil
+        stdoutPumpContinuation?.finish()
+        stderrPumpContinuation?.finish()
+        stdoutPumpTask?.cancel()
+        stderrPumpTask?.cancel()
+        stdoutPumpContinuation = nil
+        stderrPumpContinuation = nil
+        stdoutPumpTask = nil
+        stderrPumpTask = nil
 
         process = nil
         stdinHandle = nil
