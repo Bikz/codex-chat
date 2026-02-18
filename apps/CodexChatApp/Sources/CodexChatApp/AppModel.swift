@@ -4,12 +4,20 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var projects: [ProjectRecord] = []
-    @Published var threads: [ThreadRecord] = []
+    enum SurfaceState<Value> {
+        case idle
+        case loading
+        case loaded(Value)
+        case failed(String)
+    }
+
+    @Published var projectsState: SurfaceState<[ProjectRecord]> = .loading
+    @Published var threadsState: SurfaceState<[ThreadRecord]> = .idle
+    @Published var conversationState: SurfaceState<[ChatMessage]> = .idle
+
     @Published var selectedProjectID: UUID?
     @Published var selectedThreadID: UUID?
     @Published var composerText = ""
-    @Published var bootError: String?
 
     private let projectRepository: (any ProjectRepository)?
     private let threadRepository: (any ThreadRepository)?
@@ -21,7 +29,26 @@ final class AppModel: ObservableObject {
         self.projectRepository = repositories?.projectRepository
         self.threadRepository = repositories?.threadRepository
         self.preferenceRepository = repositories?.preferenceRepository
-        self.bootError = bootError
+
+        if let bootError {
+            self.projectsState = .failed(bootError)
+            self.threadsState = .failed(bootError)
+            self.conversationState = .failed(bootError)
+        }
+    }
+
+    var projects: [ProjectRecord] {
+        if case .loaded(let projects) = projectsState {
+            return projects
+        }
+        return []
+    }
+
+    var threads: [ThreadRecord] {
+        if case .loaded(let threads) = threadsState {
+            return threads
+        }
+        return []
     }
 
     func onAppear() {
@@ -30,13 +57,24 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func retryLoad() {
+        Task {
+            await loadInitialData()
+        }
+    }
+
     func loadInitialData() async {
+        projectsState = .loading
         do {
             try await refreshProjects()
             try await restoreLastOpenedContext()
             try await refreshThreads()
+            refreshConversationState()
         } catch {
-            bootError = error.localizedDescription
+            let message = error.localizedDescription
+            projectsState = .failed(message)
+            threadsState = .failed(message)
+            conversationState = .failed(message)
         }
     }
 
@@ -50,8 +88,9 @@ final class AppModel: ObservableObject {
                 selectedProjectID = project.id
                 try await persistSelection()
                 try await refreshThreads()
+                refreshConversationState()
             } catch {
-                bootError = error.localizedDescription
+                projectsState = .failed(error.localizedDescription)
             }
         }
     }
@@ -63,8 +102,9 @@ final class AppModel: ObservableObject {
             do {
                 try await persistSelection()
                 try await refreshThreads()
+                refreshConversationState()
             } catch {
-                bootError = error.localizedDescription
+                threadsState = .failed(error.localizedDescription)
             }
         }
     }
@@ -78,8 +118,9 @@ final class AppModel: ObservableObject {
                 try await refreshThreads()
                 selectedThreadID = thread.id
                 try await persistSelection()
+                refreshConversationState()
             } catch {
-                bootError = error.localizedDescription
+                threadsState = .failed(error.localizedDescription)
             }
         }
     }
@@ -89,19 +130,16 @@ final class AppModel: ObservableObject {
             selectedThreadID = threadID
             do {
                 try await persistSelection()
+                refreshConversationState()
             } catch {
-                bootError = error.localizedDescription
+                conversationState = .failed(error.localizedDescription)
             }
         }
     }
 
-    func messagesForSelectedThread() -> [ChatMessage] {
-        guard let selectedThreadID else { return [] }
-        return messageStore[selectedThreadID, default: []]
-    }
-
     func sendMessage() {
-        guard let selectedThreadID, !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let selectedThreadID,
+              !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
 
@@ -117,31 +155,44 @@ final class AppModel: ObservableObject {
 
         messageStore[selectedThreadID, default: []].append(userMessage)
         messageStore[selectedThreadID, default: []].append(assistantMessage)
-        objectWillChange.send()
+        refreshConversationState()
     }
 
     private func refreshProjects() async throws {
-        guard let projectRepository else { return }
-        projects = try await projectRepository.listProjects()
+        guard let projectRepository else {
+            projectsState = .failed("Project repository is unavailable.")
+            return
+        }
+
+        let loadedProjects = try await projectRepository.listProjects()
+        projectsState = .loaded(loadedProjects)
 
         if selectedProjectID == nil {
-            selectedProjectID = projects.first?.id
+            selectedProjectID = loadedProjects.first?.id
         }
     }
 
     private func refreshThreads() async throws {
-        guard let threadRepository, let selectedProjectID else {
-            threads = []
+        guard let threadRepository else {
+            threadsState = .failed("Thread repository is unavailable.")
             return
         }
 
-        threads = try await threadRepository.listThreads(projectID: selectedProjectID)
-
-        if let selectedThreadID, threads.contains(where: { $0.id == selectedThreadID }) {
+        guard let selectedProjectID else {
+            threadsState = .loaded([])
             return
         }
 
-        selectedThreadID = threads.first?.id
+        threadsState = .loading
+        let loadedThreads = try await threadRepository.listThreads(projectID: selectedProjectID)
+        threadsState = .loaded(loadedThreads)
+
+        if let selectedThreadID,
+           loadedThreads.contains(where: { $0.id == selectedThreadID }) {
+            return
+        }
+
+        self.selectedThreadID = loadedThreads.first?.id
     }
 
     private func restoreLastOpenedContext() async throws {
@@ -168,5 +219,15 @@ final class AppModel: ObservableObject {
         if let selectedThreadID {
             try await preferenceRepository.setPreference(key: .lastOpenedThreadID, value: selectedThreadID.uuidString)
         }
+    }
+
+    private func refreshConversationState() {
+        guard let selectedThreadID else {
+            conversationState = .idle
+            return
+        }
+
+        let messages = messageStore[selectedThreadID, default: []]
+        conversationState = .loaded(messages)
     }
 }

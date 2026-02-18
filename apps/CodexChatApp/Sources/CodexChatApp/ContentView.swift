@@ -1,4 +1,5 @@
 import CodexChatCore
+import CodexChatUI
 import SwiftUI
 
 struct ContentView: View {
@@ -28,15 +29,8 @@ struct ContentView: View {
                 .buttonStyle(.borderless)
             }
 
-            List(model.projects, selection: Binding(get: {
-                model.selectedProjectID
-            }, set: { selection in
-                model.selectProject(selection)
-            })) { project in
-                Text(project.name)
-                    .tag(project.id)
-            }
-            .frame(minHeight: 180)
+            projectsSurface
+                .frame(minHeight: 180)
 
             HStack {
                 Text("Threads")
@@ -49,6 +43,62 @@ struct ContentView: View {
                 .disabled(model.selectedProjectID == nil)
             }
 
+            threadsSurface
+
+            Spacer()
+        }
+        .padding()
+    }
+
+    @ViewBuilder
+    private var projectsSurface: some View {
+        switch model.projectsState {
+        case .idle, .loading:
+            LoadingStateView(title: "Loading projects…")
+        case .failed(let message):
+            ErrorStateView(title: "Couldn’t load projects", message: message, actionLabel: "Retry") {
+                model.retryLoad()
+            }
+        case .loaded(let projects) where projects.isEmpty:
+            EmptyStateView(
+                title: "No projects yet",
+                message: "Create a project to start organizing chats.",
+                systemImage: "folder"
+            )
+        case .loaded:
+            List(model.projects, selection: Binding(get: {
+                model.selectedProjectID
+            }, set: { selection in
+                model.selectProject(selection)
+            })) { project in
+                Text(project.name)
+                    .tag(project.id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var threadsSurface: some View {
+        switch model.threadsState {
+        case .idle:
+            EmptyStateView(
+                title: "Select a project",
+                message: "Threads appear after you select a project.",
+                systemImage: "sidebar.left"
+            )
+        case .loading:
+            LoadingStateView(title: "Loading threads…")
+        case .failed(let message):
+            ErrorStateView(title: "Couldn’t load threads", message: message, actionLabel: "Retry") {
+                model.retryLoad()
+            }
+        case .loaded(let threads) where threads.isEmpty:
+            EmptyStateView(
+                title: "No threads yet",
+                message: "Create a thread to start the conversation.",
+                systemImage: "bubble.left.and.bubble.right"
+            )
+        case .loaded:
             List(model.threads, selection: Binding(get: {
                 model.selectedThreadID
             }, set: { selection in
@@ -57,32 +107,32 @@ struct ContentView: View {
                 Text(thread.title)
                     .tag(thread.id)
             }
-
-            Spacer()
         }
-        .padding()
     }
 
     private var conversationCanvas: some View {
         VStack(spacing: 0) {
-            if let error = model.bootError {
-                Text(error)
-                    .foregroundStyle(.red)
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if model.selectedThreadID == nil {
-                VStack(spacing: 8) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 30))
-                        .foregroundStyle(.secondary)
-                    Text("Choose or create a thread to start chatting.")
-                        .foregroundStyle(.secondary)
+            switch model.conversationState {
+            case .idle:
+                EmptyStateView(
+                    title: "No active thread",
+                    message: "Choose or create a thread to start chatting.",
+                    systemImage: "bubble.left.and.bubble.right"
+                )
+            case .loading:
+                LoadingStateView(title: "Preparing conversation…")
+            case .failed(let message):
+                ErrorStateView(title: "Conversation unavailable", message: message, actionLabel: "Retry") {
+                    model.retryLoad()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(model.messagesForSelectedThread()) { message in
+            case .loaded(let messages) where messages.isEmpty:
+                EmptyStateView(
+                    title: "Thread is empty",
+                    message: "Use the composer below to send the first message.",
+                    systemImage: "text.cursor"
+                )
+            case .loaded(let messages):
+                List(messages) { message in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(message.role.rawValue.capitalized)
                             .font(.caption)
