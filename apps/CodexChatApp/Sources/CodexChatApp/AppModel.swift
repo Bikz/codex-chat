@@ -1343,6 +1343,7 @@ final class AppModel: ObservableObject {
             approvalStateMachine.clear()
             activeApprovalRequest = nil
             clearActiveTurnState()
+            resetRuntimeThreadCaches()
             appendLog(.info, "Runtime connected")
             try await refreshAccountState()
         } catch {
@@ -1363,6 +1364,7 @@ final class AppModel: ObservableObject {
             approvalStateMachine.clear()
             activeApprovalRequest = nil
             clearActiveTurnState()
+            resetRuntimeThreadCaches()
             appendLog(.info, "Runtime restarted")
             try await refreshAccountState()
         } catch {
@@ -1610,12 +1612,8 @@ final class AppModel: ObservableObject {
         projectPath: String,
         safetyConfiguration: RuntimeSafetyConfiguration
     ) async throws -> String {
-        if let runtimeThreadMappingRepository,
-           let existingRuntimeThreadID = try await runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: localThreadID)
-        {
-            runtimeThreadIDByLocalThreadID[localThreadID] = existingRuntimeThreadID
-            localThreadIDByRuntimeThreadID[existingRuntimeThreadID] = localThreadID
-            return existingRuntimeThreadID
+        if let cached = runtimeThreadIDByLocalThreadID[localThreadID] {
+            return cached
         }
 
         guard let runtime else {
@@ -1958,6 +1956,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func resetRuntimeThreadCaches() {
+        runtimeThreadIDByLocalThreadID.removeAll()
+        localThreadIDByRuntimeThreadID.removeAll()
+        localThreadIDByCommandItemID.removeAll()
+    }
+
     private func handleRuntimeTermination(detail: String) {
         runtimeStatus = .error
         approvalStateMachine.clear()
@@ -1965,6 +1969,7 @@ final class AppModel: ObservableObject {
         isApprovalDecisionInProgress = false
         runtimeIssue = .recoverable(detail)
         clearActiveTurnState()
+        resetRuntimeThreadCaches()
         appendLog(.error, detail)
     }
 
@@ -1974,6 +1979,7 @@ final class AppModel: ObservableObject {
         activeApprovalRequest = nil
         isApprovalDecisionInProgress = false
         clearActiveTurnState()
+        resetRuntimeThreadCaches()
 
         if let runtimeError = error as? CodexRuntimeError {
             switch runtimeError {

@@ -68,6 +68,32 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         }
     }
 
+    func testStaleRuntimeThreadMappingIsOverriddenOnFirstUse() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        try await harness.repositories.runtimeThreadMappingRepository
+            .setRuntimeThreadID(localThreadID: harness.thread.id, runtimeThreadID: "thr_stale")
+
+        await harness.model.loadInitialData()
+        harness.model.composerText = "Hello"
+        harness.model.sendMessage()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
+            .getRuntimeThreadID(localThreadID: harness.thread.id)
+        XCTAssertEqual(mappedRuntimeThreadID, "thr_test")
+
+        harness.model.approvePendingApprovalOnce()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.canSendMessages
+        }
+    }
+
     func testSafeEscalationUpdatesSafetySettingsButApprovalsStillAppear() async throws {
         let harness = try await Harness.make(trustState: .untrusted)
         defer { harness.cleanup() }

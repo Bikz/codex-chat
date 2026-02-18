@@ -20,6 +20,7 @@ def _main() -> int:
     turn_id = "turn_test"
     pending_approval_id: Optional[int] = None
     is_initialized = False
+    is_thread_started = False
 
     for raw_line in sys.stdin:
         line = raw_line.strip()
@@ -70,11 +71,27 @@ def _main() -> int:
                 continue
 
             if method == "thread/start":
+                is_thread_started = True
                 _send({"jsonrpc": "2.0", "id": msg_id, "result": {"thread": {"id": thread_id}}})
                 _send({"jsonrpc": "2.0", "method": "thread/started", "params": {"thread": {"id": thread_id}}})
                 continue
 
             if method == "turn/start":
+                requested_thread_id = params.get("threadId")
+                if not is_thread_started or requested_thread_id != thread_id:
+                    _send(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {
+                                "code": -32010,
+                                "message": f"unknown threadId: {requested_thread_id}",
+                                "data": None,
+                            },
+                        }
+                    )
+                    continue
+
                 _send({"jsonrpc": "2.0", "id": msg_id, "result": {"turn": {"id": turn_id}}})
                 _send(
                     {
