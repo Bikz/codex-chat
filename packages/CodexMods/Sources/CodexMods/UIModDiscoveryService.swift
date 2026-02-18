@@ -111,8 +111,17 @@ public final class UIModDiscoveryService: @unchecked Sendable {
             bubbles: .init(style: "glass", userBackgroundHex: "#10A37F", assistantBackgroundHex: "#FFFFFF"),
             iconography: .init(style: "sf-symbols")
         )
+        let darkTheme = ModThemeOverride(
+            palette: .init(accentHex: "#10A37F", backgroundHex: "#000000", panelHex: "#121212"),
+            bubbles: .init(style: "glass", userBackgroundHex: "#10A37F", assistantBackgroundHex: "#1C1C1E")
+        )
 
-        let definition = UIModDefinition(schemaVersion: 1, manifest: manifest, theme: theme)
+        let definition = UIModDefinition(
+            schemaVersion: 1,
+            manifest: manifest,
+            theme: theme,
+            darkTheme: darkTheme
+        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(definition)

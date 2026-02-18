@@ -1,0 +1,21 @@
+{
+  "bubbles": {
+    "assistantBackgroundHex": "#FFFFFF",
+    "style": "solid",
+    "userBackgroundHex": "#10A37F"
+  },
+  "materials": {
+    "cardMaterial": "regular",
+    "panelMaterial": "thin"
+  },
+  "palette": {
+    "accentHex": "#10A37F",
+    "backgroundHex": "#F7F8F7",
+    "panelHex": "#FFFFFF"
+  },
+  "typography": {
+    "bodySize": 14,
+    "captionSize": 12,
+    "titleSize": 20
+  }
+}

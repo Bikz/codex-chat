@@ -730,7 +730,7 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
-    func testCreateGlobalNewChatAlwaysTargetsGeneralProject() async throws {
+    func testCreateGlobalNewChatStartsDraftInGeneralProjectWithoutPersistingThread() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-global-chat-\(UUID().uuidString)", isDirectory: true)
         let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
@@ -759,9 +759,29 @@ final class CodexChatAppTests: XCTestCase {
 
         try await waitUntil {
             model.selectedProjectID == generalID
-                && model.generalThreads.count == baseline + 1
-                && model.selectedThreadID != nil
+                && model.generalThreads.count == baseline
+                && model.selectedThreadID == nil
+                && model.draftChatProjectID == generalID
+                && model.detailDestination == .thread
         }
+    }
+
+    func testAutoTitleFromFirstTurnPrefersAssistantAndCleansPreamble() {
+        let title = AppModel.autoTitleFromFirstTurn(
+            userText: "Need help with CI.",
+            assistantText: "Sure, set up CI workflow for iOS builds and tests."
+        )
+
+        XCTAssertEqual(title, "Set up CI workflow for iOS builds and tests")
+    }
+
+    func testAutoTitleFromFirstTurnFallsBackToUserTextWhenAssistantIsEmpty() {
+        let title = AppModel.autoTitleFromFirstTurn(
+            userText: "Fix flaky sidebar hover in dark mode",
+            assistantText: "   "
+        )
+
+        XCTAssertEqual(title, "Fix flaky sidebar hover in dark mode")
     }
 
     func testStoragePathsUniqueProjectDirectoryAddsNumericSuffix() throws {

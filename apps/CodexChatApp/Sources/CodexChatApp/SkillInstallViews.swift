@@ -190,7 +190,7 @@ struct InstallSkillSheet: View {
         }
         .padding(22)
         .frame(minWidth: 560)
-        .onChange(of: source) { _ in
+        .onChange(of: source) { _, _ in
             trustConfirmed = false
         }
     }

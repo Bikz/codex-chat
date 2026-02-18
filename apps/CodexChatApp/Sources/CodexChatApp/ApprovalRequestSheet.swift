@@ -1,3 +1,4 @@
+import CodexChatUI
 import CodexKit
 import SwiftUI
 
@@ -50,7 +51,7 @@ struct ApprovalRequestSheet: View {
                         .textSelection(.enabled)
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .tokenCard(style: .panel, radius: 8, strokeOpacity: 0.06)
                 }
             }
 

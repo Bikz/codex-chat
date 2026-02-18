@@ -145,6 +145,161 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         XCTAssertTrue(content.contains("notes.txt"))
     }
 
+    func testRuntimeAutoRecoveryAfterUnexpectedTermination() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        XCTAssertEqual(harness.model.runtimeStatus, .connected)
+
+        harness.model.handleRuntimeTermination(detail: "Simulated unexpected runtime exit.")
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.runtimeStatus == .connected && harness.model.runtimeIssue == nil
+        }
+    }
+
+    func testBusyComposerSubmissionQueuesAndAutoDrains() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+
+        harness.model.composerText = "First turn"
+        harness.model.submitComposerWithQueuePolicy()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        harness.model.composerText = "Queued follow-up"
+        harness.model.submitComposerWithQueuePolicy()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.selectedFollowUpQueueItems.contains(where: { $0.text == "Queued follow-up" })
+        }
+
+        harness.model.approvePendingApprovalOnce()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.activeApprovalRequest != nil
+                && !harness.model.selectedFollowUpQueueItems.contains(where: { $0.text == "Queued follow-up" })
+        }
+    }
+
+    func testCapabilityRuntimeSuggestionsQueueAsManual() async throws {
+        let steerFixture = try Self.resolveFakeCodexSteerPath()
+        let harness = try await Harness.make(trustState: .trusted, fakeCodexPath: steerFixture)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        XCTAssertTrue(harness.model.runtimeCapabilities.supportsFollowUpSuggestions)
+
+        harness.model.composerText = "Kick off"
+        harness.model.submitComposerWithQueuePolicy()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.selectedFollowUpQueueItems.count >= 2
+        }
+
+        XCTAssertTrue(harness.model.selectedFollowUpQueueItems.allSatisfy { $0.dispatchMode == .manual })
+        XCTAssertTrue(harness.model.selectedFollowUpQueueItems.allSatisfy { $0.source == .assistantSuggestion })
+    }
+
+    func testSteerWhileBusyUsesInFlightSteerWhenSupported() async throws {
+        let steerFixture = try Self.resolveFakeCodexSteerPath()
+        let harness = try await Harness.make(trustState: .trusted, fakeCodexPath: steerFixture)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        harness.model.composerText = "Start turn"
+        harness.model.submitComposerWithQueuePolicy()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            !harness.model.selectedFollowUpQueueItems.isEmpty && harness.model.isTurnInProgress
+        }
+
+        let item = try XCTUnwrap(harness.model.selectedFollowUpQueueItems.first)
+        harness.model.steerFollowUp(item.id)
+
+        try await eventually(timeoutSeconds: 3.0) {
+            !harness.model.selectedFollowUpQueueItems.contains(where: { $0.id == item.id })
+                && harness.model.canSendMessages
+        }
+    }
+
+    func testSteerWhileBusyWithoutCapabilityQueuesAsNextAuto() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        harness.model.composerText = "Start legacy turn"
+        harness.model.submitComposerWithQueuePolicy()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        harness.model.composerText = "queue-a"
+        harness.model.submitComposerWithQueuePolicy()
+        harness.model.composerText = "queue-b"
+        harness.model.submitComposerWithQueuePolicy()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.selectedFollowUpQueueItems.count == 2
+        }
+
+        let target = harness.model.selectedFollowUpQueueItems[1]
+        harness.model.steerFollowUp(target.id)
+
+        try await eventually(timeoutSeconds: 3.0) {
+            guard let head = harness.model.selectedFollowUpQueueItems.first else {
+                return false
+            }
+            return head.id == target.id && head.dispatchMode == .auto
+        }
+    }
+
+    func testAutoDrainContinuesAfterSwitchingThreads() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        let firstThreadID = harness.thread.id
+
+        harness.model.composerText = "first-thread-start"
+        harness.model.submitComposerWithQueuePolicy()
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        harness.model.composerText = "first-thread-queued"
+        harness.model.submitComposerWithQueuePolicy()
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.selectedFollowUpQueueItems.contains(where: { $0.text == "first-thread-queued" })
+        }
+
+        let secondThread = try await harness.repositories.threadRepository.createThread(
+            projectID: harness.project.id,
+            title: "Second Thread"
+        )
+        try await harness.model.refreshThreads()
+        harness.model.selectThread(secondThread.id)
+        try await eventually(timeoutSeconds: 3.0) {
+            harness.model.selectedThreadID == secondThread.id
+        }
+
+        harness.model.approvePendingApprovalOnce()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            let entries = harness.model.transcriptStore[firstThreadID, default: []]
+            return entries.contains { entry in
+                guard case let .message(message) = entry else { return false }
+                return message.role == .user && message.text == "first-thread-queued"
+            }
+        }
+    }
+
     @MainActor
     private struct Harness {
         let rootURL: URL
@@ -155,6 +310,11 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         let model: AppModel
 
         static func make(trustState: ProjectTrustState) async throws -> Harness {
+            let fakeCodexPath = try resolveFakeCodexPath()
+            return try await make(trustState: trustState, fakeCodexPath: fakeCodexPath)
+        }
+
+        static func make(trustState: ProjectTrustState, fakeCodexPath: String) async throws -> Harness {
             let rootURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("codexchat-runtime-smoke-\(UUID().uuidString)", isDirectory: true)
             let projectURL = rootURL.appendingPathComponent("Project", isDirectory: true)
@@ -167,14 +327,14 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
             let project = try await repositories.projectRepository.createProject(
                 named: "Fixture Project",
                 path: projectURL.path,
-                trustState: trustState
+                trustState: trustState,
+                isGeneralProject: false
             )
             let thread = try await repositories.threadRepository.createThread(
                 projectID: project.id,
                 title: "Fixture Thread"
             )
 
-            let fakeCodexPath = try resolveFakeCodexPath()
             let runtime = CodexRuntime(executableResolver: { fakeCodexPath })
 
             let model = AppModel(repositories: repositories, runtime: runtime, bootError: nil)
@@ -205,6 +365,20 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         while url.path != "/" {
             if fileManager.fileExists(atPath: url.appendingPathComponent("pnpm-workspace.yaml").path) {
                 return url.appendingPathComponent("tests/fixtures/fake-codex").path
+            }
+            url.deleteLastPathComponent()
+        }
+
+        throw XCTSkip("Unable to locate repo root from \(filePath)")
+    }
+
+    private static func resolveFakeCodexSteerPath(filePath: String = #filePath) throws -> String {
+        var url = URL(fileURLWithPath: filePath).deletingLastPathComponent()
+        let fileManager = FileManager.default
+
+        while url.path != "/" {
+            if fileManager.fileExists(atPath: url.appendingPathComponent("pnpm-workspace.yaml").path) {
+                return url.appendingPathComponent("tests/fixtures/fake-codex-steer").path
             }
             url.deleteLastPathComponent()
         }

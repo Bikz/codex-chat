@@ -24,6 +24,7 @@ extension AppModel {
             ),
             to: review.threadID
         )
+        requestAutoDrain(reason: "mod review accepted")
     }
 
     func revertPendingModReview() {
@@ -54,6 +55,7 @@ extension AppModel {
                     ),
                     to: review.threadID
                 )
+                requestAutoDrain(reason: "mod review reverted")
             } catch {
                 modStatusMessage = "Failed to revert mod changes: \(error.localizedDescription)"
                 appendLog(.error, "Revert mod changes failed: \(error.localizedDescription)")

@@ -66,7 +66,7 @@ struct ContentView: View {
         .onAppear {
             model.onAppear()
         }
-        .onChange(of: model.detailDestination) { newValue in
+        .onChange(of: model.detailDestination) { _, newValue in
             switch newValue {
             case .skillsAndMods:
                 model.refreshModsSurface()

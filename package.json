@@ -8,14 +8,10 @@
     "ci": "make ci",
     "swift:build": "bash scripts/swift-build-all.sh",
     "swift:test": "bash scripts/swift-test-all.sh",
-    "biome:check": "biome ci .",
-    "biome:fix": "biome check --write .",
-    "knip": "bash scripts/knip.sh",
-    "lint:web": "pnpm run biome:check && pnpm run knip",
-    "check": "pnpm run swift:build && pnpm run swift:test && pnpm run lint:web"
+    "check": "pnpm run swift:build && pnpm run swift:test",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.2",
-    "knip": "^5.83.1"
+    "husky": "^9.1.7"
   }
 }

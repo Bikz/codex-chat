@@ -1,0 +1,24 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Run Swift checks
+# If these fail, the commit will be aborted.
+
+echo "Running pre-commit checks..."
+
+# Check formatting
+if [ -f "scripts/swiftformat-check.sh" ]; then
+    ./scripts/swiftformat-check.sh || exit 1
+fi
+
+# Check for secrets
+if [ -f "scripts/gitleaks-check.sh" ]; then
+    ./scripts/gitleaks-check.sh || exit 1
+fi
+
+# Check linting
+if [ -f "scripts/swiftlint.sh" ]; then
+    ./scripts/swiftlint.sh || exit 1
+fi
+
+echo "Checks passed!"

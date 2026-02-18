@@ -29,12 +29,12 @@ struct ReviewChangesSheet: View {
                                         .textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .padding(8)
-                                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                                        .tokenCard(style: .panel, radius: 8, strokeOpacity: 0.06)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                            .tokenCard(style: .card, radius: 10, strokeOpacity: 0.06)
                         }
                     }
                 }

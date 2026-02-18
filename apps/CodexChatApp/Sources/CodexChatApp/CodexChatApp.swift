@@ -10,6 +10,9 @@ struct CodexChatApplication: App {
     @StateObject private var model: AppModel
 
     init() {
+        // SwiftPM executable runs can have no main bundle identifier; disable
+        // automatic tab indexing to avoid AppKit tab-index warnings.
+        NSWindow.allowsAutomaticWindowTabbing = false
         let bootstrap = Self.bootstrapModel()
         _model = StateObject(wrappedValue: bootstrap)
     }

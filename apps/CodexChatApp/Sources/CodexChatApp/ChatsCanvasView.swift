@@ -27,56 +27,7 @@ struct ChatsCanvasView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     FollowUpQueueView(model: model)
-
-                    ComposerControlBar(model: model)
-                        .padding(.horizontal, tokens.spacing.medium)
-
-                    HStack(alignment: .bottom, spacing: tokens.spacing.small) {
-                        Button {
-                            isInsertMemorySheetVisible = true
-                        } label: {
-                            Image(systemName: "brain")
-                                .foregroundStyle(.secondary)
-                                .symbolRenderingMode(.hierarchical)
-                                .frame(width: 22, height: 22)
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("Insert memory snippet")
-                        .help("Insert memory snippet")
-                        .disabled(model.selectedProjectID == nil)
-
-                        TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: tokens.typography.bodySize))
-                            .lineLimit(1 ... 6)
-                            .padding(.vertical, 10)
-                            .onSubmit {
-                                model.submitComposerWithQueuePolicy()
-                            }
-                            .accessibilityLabel("Message input")
-
-                        Button {
-                            model.submitComposerWithQueuePolicy()
-                        } label: {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(Color(hex: tokens.palette.accentHex))
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("Send message")
-                        .help("Send")
-                        .keyboardShortcut(.return, modifiers: [.command])
-                        .disabled(!model.canSubmitComposer)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(tokens.materials.panelMaterial.material, in: RoundedRectangle(cornerRadius: tokens.radius.large))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: tokens.radius.large)
-                            .strokeBorder(Color.primary.opacity(0.05))
-                    )
-                    .padding(.horizontal, tokens.spacing.medium)
-                    .padding(.vertical, tokens.spacing.small)
+                    composerSurface
 
                     if let followUpStatus = model.followUpStatusMessage {
                         Text(followUpStatus)
@@ -149,11 +100,76 @@ struct ChatsCanvasView: View {
             return true
         }
 
-        if model.selectedProjectID == nil || model.selectedThreadID == nil {
+        if model.selectedProjectID == nil {
+            return true
+        }
+
+        if model.selectedThreadID == nil, !model.hasActiveDraftChatForSelectedProject {
             return true
         }
 
         return false
+    }
+
+    private var composerSurface: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ComposerControlBar(model: model)
+
+            Divider()
+                .opacity(0.55)
+
+            HStack(alignment: .bottom, spacing: tokens.spacing.small) {
+                Button {
+                    isInsertMemorySheetVisible = true
+                } label: {
+                    Image(systemName: "brain")
+                        .foregroundStyle(.secondary)
+                        .symbolRenderingMode(.hierarchical)
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Insert memory snippet")
+                .help("Insert memory snippet")
+                .disabled(model.selectedProjectID == nil)
+
+                TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: tokens.typography.bodySize + 0.5, weight: .medium))
+                    .lineLimit(1 ... 6)
+                    .padding(.vertical, 10)
+                    .onSubmit {
+                        model.submitComposerWithQueuePolicy()
+                    }
+                    .accessibilityLabel("Message input")
+
+                Button {
+                    model.submitComposerWithQueuePolicy()
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            Circle()
+                                .fill(model.canSubmitComposer ? Color.blue : Color.blue.opacity(0.35))
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Send message")
+                .help("Send")
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(!model.canSubmitComposer)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(tokens.materials.panelMaterial.material, in: RoundedRectangle(cornerRadius: tokens.radius.large))
+        .overlay(
+            RoundedRectangle(cornerRadius: tokens.radius.large)
+                .strokeBorder(Color.primary.opacity(0.08))
+        )
+        .padding(.horizontal, tokens.spacing.medium)
+        .padding(.vertical, tokens.spacing.small)
     }
 
     private var composerPlaceholder: String {
@@ -235,7 +251,7 @@ struct ChatsCanvasView: View {
                     .onAppear {
                         scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: false)
                     }
-                    .onChange(of: entries.last?.id) { _ in
+                    .onChange(of: entries.last?.id) { _, _ in
                         scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: true)
                     }
                 }
@@ -289,7 +305,7 @@ private struct ComposerControlBar: View {
                         value: model.defaultModel,
                         systemImage: "cpu",
                         tint: Color(hex: tokens.palette.accentHex),
-                        minWidth: 220
+                        minWidth: 180
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -308,7 +324,7 @@ private struct ComposerControlBar: View {
                         value: model.defaultReasoning.title,
                         systemImage: "brain.head.profile",
                         tint: Color.blue.opacity(0.9),
-                        minWidth: 160
+                        minWidth: 140
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -327,7 +343,7 @@ private struct ComposerControlBar: View {
                         value: webSearchLabel(model.defaultWebSearch),
                         systemImage: "globe",
                         tint: webSearchTint(model.defaultWebSearch),
-                        minWidth: 140
+                        minWidth: 110
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -336,8 +352,6 @@ private struct ComposerControlBar: View {
 
                 Spacer()
             }
-            .padding(8)
-            .tokenCard(style: .panel, radius: tokens.radius.medium, strokeOpacity: 0.06)
 
             if model.isDefaultWebSearchClampedForSelectedProject() {
                 Text("Web mode is clamped by project safety policy for this thread.")
@@ -368,7 +382,7 @@ private struct ComposerControlBar: View {
     ) -> some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 12, weight: .bold))
                 .frame(width: 14, height: 14)
                 .foregroundStyle(tint)
 
@@ -379,7 +393,7 @@ private struct ComposerControlBar: View {
                     .textCase(.uppercase)
 
                 Text(value)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -394,10 +408,10 @@ private struct ComposerControlBar: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .frame(minWidth: minWidth, alignment: .leading)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08))
+                .strokeBorder(Color.primary.opacity(0.12))
         )
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }

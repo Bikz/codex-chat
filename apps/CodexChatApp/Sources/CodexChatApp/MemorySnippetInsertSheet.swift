@@ -25,8 +25,8 @@ struct MemorySnippetInsertSheet: View {
                 Text("Insert Memory Snippet")
                     .font(.title3.weight(.semibold))
                 Spacer()
-                Button("Open Memory") {
-                    model.navigationSection = .memory
+                Button("Open Memory Settings") {
+                    model.showProjectSettings()
                     isPresented = false
                 }
                 .buttonStyle(.bordered)
@@ -41,7 +41,7 @@ struct MemorySnippetInsertSheet: View {
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("Search memory files", text: $query)
                         .textFieldStyle(.roundedBorder)
-                        .onChange(of: query) { _ in
+                        .onChange(of: query) { _, _ in
                             scheduleSearch(project: project)
                         }
 
@@ -52,7 +52,7 @@ struct MemorySnippetInsertSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: mode) { _ in
+                    .onChange(of: mode) { _, _ in
                         scheduleSearch(project: project)
                     }
 

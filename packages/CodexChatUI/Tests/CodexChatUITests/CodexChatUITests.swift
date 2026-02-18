@@ -27,4 +27,18 @@ final class CodexChatUITests: XCTestCase {
         provider.reset()
         XCTAssertEqual(provider.tokens, .default)
     }
+
+    func testSystemBaselinesExposeExpectedPaletteAndBubbleDefaults() {
+        XCTAssertEqual(DesignTokens.systemLight.palette.backgroundHex, "#F9F9F9")
+        XCTAssertEqual(DesignTokens.systemLight.palette.panelHex, "#FFFFFF")
+        XCTAssertEqual(DesignTokens.systemLight.bubbles.assistantBackgroundHex, "#FFFFFF")
+
+        XCTAssertEqual(DesignTokens.systemDark.palette.backgroundHex, "#000000")
+        XCTAssertEqual(DesignTokens.systemDark.palette.panelHex, "#121212")
+        XCTAssertEqual(DesignTokens.systemDark.bubbles.assistantBackgroundHex, "#1C1C1E")
+    }
+
+    func testDefaultTokensAliasSystemLightForCompatibility() {
+        XCTAssertEqual(DesignTokens.default, DesignTokens.systemLight)
+    }
 }

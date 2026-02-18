@@ -62,7 +62,8 @@ extension CodexRuntime {
             ]),
         ])
 
-        _ = try await sendRequest(method: "initialize", params: params, timeoutSeconds: 10)
+        let result = try await sendRequest(method: "initialize", params: params, timeoutSeconds: 10)
+        runtimeCapabilities = Self.decodeCapabilities(from: result)
         try sendNotification(method: "initialized", params: .object([:]))
     }
 
@@ -115,5 +116,24 @@ extension CodexRuntime {
         var data = try encoder.encode(payload)
         data.append(0x0A)
         stdinHandle.write(data)
+    }
+
+    private static func decodeCapabilities(from initializeResult: JSONValue) -> RuntimeCapabilities {
+        let capabilities = initializeResult.value(at: ["capabilities"])
+        let supportsTurnSteer = capabilities?.value(at: ["turnSteer"])?.boolValue ?? false
+
+        let followUpCapability = capabilities?.value(at: ["followUpSuggestions"])
+        let supportsFollowUpSuggestions = if let boolValue = followUpCapability?.boolValue {
+            boolValue
+        } else if followUpCapability?.objectValue != nil {
+            true
+        } else {
+            false
+        }
+
+        return RuntimeCapabilities(
+            supportsTurnSteer: supportsTurnSteer,
+            supportsFollowUpSuggestions: supportsFollowUpSuggestions
+        )
     }
 }

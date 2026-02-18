@@ -6,6 +6,8 @@ import SwiftUI
 struct SidebarView: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openSettings) private var openSettings
     @FocusState private var isSearchFocused: Bool
 
     @State private var hoveredProjectID: UUID?
@@ -16,7 +18,7 @@ struct SidebarView: View {
     private let projectsPreviewCount = 3
     private let iconColumnWidth: CGFloat = 18
     private let rowHorizontalPadding: CGFloat = 10
-    private let rowVerticalPadding: CGFloat = 8
+    private let rowVerticalPadding: CGFloat = 6
     private let rowMinimumHeight: CGFloat = 34
     private let controlIconWidth: CGFloat = 18
     private let controlSlotSpacing: CGFloat = 8
@@ -31,23 +33,23 @@ struct SidebarView: View {
     }
 
     private var sidebarBodyFont: Font {
-        .callout
+        .system(size: 14.5, weight: .medium)
     }
 
     private var sidebarMetaFont: Font {
-        .footnote
+        .system(size: 12.5, weight: .medium)
     }
 
     private var sidebarSectionFont: Font {
-        .footnote.weight(.semibold)
+        .system(size: 11.5, weight: .semibold)
     }
 
     private var sidebarBodyIconFont: Font {
-        .subheadline
+        .system(size: 13.5, weight: .semibold)
     }
 
     private var sidebarMetaIconFont: Font {
-        .caption
+        .system(size: 11, weight: .semibold)
     }
 
     private var sidebarBackgroundColor: Color {
@@ -93,24 +95,17 @@ struct SidebarView: View {
             .listRowSeparator(.hidden)
 
             Section {
-                SidebarActionRow(
-                    icon: "folder.badge.plus",
-                    title: "New Project",
-                    iconColumnWidth: iconColumnWidth,
-                    horizontalPadding: rowHorizontalPadding,
-                    verticalPadding: rowVerticalPadding,
-                    minimumHeight: rowMinimumHeight,
-                    bodyFont: sidebarBodyFont,
-                    iconFont: sidebarBodyIconFont,
-                    iconColor: .secondary,
-                    action: model.presentNewProjectSheet
-                )
-
                 projectRows
             } header: {
                 VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: tokens.spacing.small)
-                    SidebarSectionHeader(title: "Projects", font: sidebarSectionFont)
+                    Color.clear.frame(height: tokens.spacing.xSmall)
+                    SidebarSectionHeader(
+                        title: "Projects",
+                        font: sidebarSectionFont,
+                        actionSystemImage: "plus",
+                        actionAccessibilityLabel: "New project",
+                        action: model.presentNewProjectSheet
+                    )
                 }
             }
             .listRowSeparator(.hidden)
@@ -119,8 +114,14 @@ struct SidebarView: View {
                 generalThreadRows
             } header: {
                 VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: tokens.spacing.small)
-                    SidebarSectionHeader(title: "General", font: sidebarSectionFont)
+                    Color.clear.frame(height: tokens.spacing.xSmall)
+                    SidebarSectionHeader(
+                        title: "General",
+                        font: sidebarSectionFont,
+                        actionSystemImage: "plus",
+                        actionAccessibilityLabel: "New chat",
+                        action: model.createGlobalNewChat
+                    )
                 }
             }
             .listRowSeparator(.hidden)
@@ -128,7 +129,7 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(sidebarBackgroundColor)
-        .listRowInsets(EdgeInsets(top: 4, leading: 14, bottom: 4, trailing: 14))
+        .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
         .safeAreaInset(edge: .bottom) {
             accountRow
         }
@@ -170,15 +171,15 @@ struct SidebarView: View {
             }
         }
         .padding(.horizontal, rowHorizontalPadding)
-        .padding(.vertical, rowVerticalPadding - 1)
+        .padding(.vertical, rowVerticalPadding - 2)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(isSearchFocused ? 0.85 : 0.72))
+                .fill(searchFieldFillColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isSearchFocused ? Color.primary.opacity(0.18) : Color.primary.opacity(0.08),
+                    searchFieldBorderColor,
                     lineWidth: 1
                 )
         )
@@ -196,7 +197,7 @@ struct SidebarView: View {
 
             if model.expandedProjectIDs.contains(project.id), model.selectedProjectID == project.id {
                 ForEach(model.threads) { thread in
-                    threadRow(thread, leadingInset: iconColumnWidth + 8)
+                    threadRow(thread)
                 }
             }
         }
@@ -329,18 +330,16 @@ struct SidebarView: View {
             EmptyView()
         case let .loaded(threads):
             ForEach(threads) { thread in
-                threadRow(thread, leadingInset: iconColumnWidth + 8)
+                threadRow(thread)
             }
         }
     }
 
-    private func threadRow(_ thread: ThreadRecord, leadingInset: CGFloat) -> some View {
+    private func threadRow(_ thread: ThreadRecord) -> some View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
 
         return HStack(spacing: 8) {
-            Spacer().frame(width: leadingInset)
-
             Text(thread.title)
                 .font(sidebarBodyFont)
                 .lineLimit(1)
@@ -498,7 +497,7 @@ struct SidebarView: View {
                         .font(sidebarBodyFont)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Account and settings")
@@ -508,8 +507,22 @@ struct SidebarView: View {
     }
 
     private func openSettingsWindow() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        openSettings()
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private var searchFieldFillColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(isSearchFocused ? 0.18 : 0.13)
+        }
+        return Color.black.opacity(isSearchFocused ? 0.07 : 0.05)
+    }
+
+    private var searchFieldBorderColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(isSearchFocused ? 0.24 : 0.14)
+        }
+        return Color.black.opacity(isSearchFocused ? 0.16 : 0.08)
     }
 }
 

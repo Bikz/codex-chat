@@ -24,51 +24,38 @@ struct SkillsCanvasView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Skills")
-                        .font(.system(size: 48, weight: .semibold, design: .rounded))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Text("Skills")
+                    .font(.title3.weight(.semibold))
 
-                    Text("Give Codex superpowers.")
-                        .font(.title3.weight(.regular))
-                        .foregroundStyle(SkillsModsTheme.mutedText)
+                SkillsModsSearchField(text: $query, placeholder: "Search skills")
+
+                Button {
+                    model.refreshSkillsSurface()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
                 }
+                .buttonStyle(.bordered)
 
-                Spacer(minLength: 12)
-
-                HStack(spacing: 10) {
-                    Button {
-                        model.refreshSkillsSurface()
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-
-                    SkillsModsSearchField(text: $query, placeholder: "Search skills")
-
-                    Button {
-                        isInstallSkillSheetVisible = true
-                    } label: {
-                        Label("New skill", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.selectedProjectID == nil)
+                Button {
+                    isInstallSkillSheetVisible = true
+                } label: {
+                    Label("Install", systemImage: "plus")
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.selectedProjectID == nil)
+
+                Spacer(minLength: 0)
             }
 
-            Text("Installed")
-                .font(.title3.weight(.semibold))
+            Text("Installed skills")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, SkillsModsTheme.pageHorizontalInset)
-        .padding(.top, SkillsModsTheme.pageVerticalInset)
-        .padding(.bottom, 14)
-        .background(SkillsModsTheme.headerBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(SkillsModsTheme.border)
-                .frame(height: 1)
-        }
+        .padding(.top, tokens.spacing.small)
+        .padding(.bottom, tokens.spacing.xSmall)
     }
 
     @ViewBuilder
@@ -110,7 +97,7 @@ struct SkillsCanvasView: View {
                                 .padding(.vertical, 10)
                                 .background(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color.white.opacity(0.65))
+                                        .fill(SkillsModsTheme.cardBackground)
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)

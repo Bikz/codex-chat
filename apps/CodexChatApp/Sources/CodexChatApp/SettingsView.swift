@@ -46,10 +46,10 @@ struct SettingsView: View {
             syncSafetyDefaultsFromModel()
             syncGeneralProjectFromModel()
         }
-        .onChange(of: model.defaultSafetySettings) { _ in
+        .onChange(of: model.defaultSafetySettings) { _, _ in
             syncSafetyDefaultsFromModel()
         }
-        .onChange(of: model.defaultModel) { newValue in
+        .onChange(of: model.defaultModel) { _, newValue in
             runtimeModelDraft = newValue
         }
         .onReceive(model.$projectsState) { _ in
@@ -289,7 +289,7 @@ struct SettingsView: View {
 
                     Toggle("Allow network access in workspace-write", isOn: $generalNetworkAccess)
                         .disabled(generalSandboxMode != .workspaceWrite)
-                        .onChange(of: generalSandboxMode) { newValue in
+                        .onChange(of: generalSandboxMode) { _, newValue in
                             if newValue != .workspaceWrite {
                                 generalNetworkAccess = false
                             }
@@ -397,7 +397,7 @@ struct SettingsView: View {
 
                 Toggle("Allow network access in workspace-write", isOn: $safetyNetworkAccess)
                     .disabled(safetySandboxMode != .workspaceWrite)
-                    .onChange(of: safetySandboxMode) { newValue in
+                    .onChange(of: safetySandboxMode) { _, newValue in
                         if newValue != .workspaceWrite {
                             safetyNetworkAccess = false
                         }

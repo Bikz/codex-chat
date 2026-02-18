@@ -7,6 +7,8 @@
 - Prefer small, atomic commits with descriptive messages.
 - Keep the repo steerable: when a Swift file grows beyond ~500 LOC, split it into focused types or `TypeName+Feature.swift` extensions.
 - Do not log secrets. Never print API keys/tokens to stdout, logs, or test snapshots.
+- Keep UI surfaces token-driven: for rounded panel/card containers, prefer `tokenCard(...)` from `CodexChatUI` over hardcoded `.thinMaterial` / `.regularMaterial` so mod overrides apply consistently.
+- **Git Hooks**: We use `husky` to enforce `SwiftFormat` and `SwiftLint` on commit. Ensure you have these installed.
 
 ## Development
 

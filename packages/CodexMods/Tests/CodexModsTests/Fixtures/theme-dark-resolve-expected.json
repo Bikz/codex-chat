@@ -1,0 +1,14 @@
+{
+  "bubbles": {
+    "style": "solid"
+  },
+  "materials": {
+    "cardMaterial": "regular",
+    "panelMaterial": "thin"
+  },
+  "typography": {
+    "bodySize": 14,
+    "captionSize": 12,
+    "titleSize": 20
+  }
+}

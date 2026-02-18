@@ -1,5 +1,6 @@
 import AppKit
 import CodexChatCore
+import CodexKit
 import CodexMemory
 import Foundation
 
@@ -24,6 +25,9 @@ extension AppModel {
         Task {
             selectedProjectID = projectID
             selectedThreadID = nil
+            if draftChatProjectID != projectID {
+                draftChatProjectID = nil
+            }
             appendLog(.debug, "Selected project: \(projectID?.uuidString ?? "none")")
 
             do {
@@ -44,77 +48,16 @@ extension AppModel {
 
     func createThread() {
         guard let projectID = selectedProjectID else { return }
-        createThread(in: projectID)
+        beginDraftChat(in: projectID)
     }
 
     func createThread(in projectID: UUID) {
-        Task {
-            guard let threadRepository else { return }
-            do {
-                let baseCount = if selectedProjectID == projectID {
-                    threads.count
-                } else if generalProject?.id == projectID {
-                    generalThreads.count
-                } else {
-                    try await threadRepository.listThreads(projectID: projectID).count
-                }
-
-                let title = "Thread \(baseCount + 1)"
-                let thread = try await threadRepository.createThread(projectID: projectID, title: title)
-                appendLog(.info, "Created thread \(thread.title)")
-
-                try await chatSearchRepository?.indexThreadTitle(
-                    threadID: thread.id,
-                    projectID: projectID,
-                    title: thread.title
-                )
-
-                selectedProjectID = projectID
-                detailDestination = .thread
-
-                if generalProject?.id == projectID {
-                    try await refreshGeneralThreads(generalProjectID: projectID)
-                } else {
-                    try await refreshThreads()
-                }
-                try await refreshArchivedThreads()
-                selectedThreadID = thread.id
-                try await persistSelection()
-                try await refreshFollowUpQueue(threadID: thread.id)
-                refreshConversationState()
-            } catch {
-                threadsState = .failed(error.localizedDescription)
-                appendLog(.error, "Create thread failed: \(error.localizedDescription)")
-            }
-        }
+        beginDraftChat(in: projectID)
     }
 
     func createGeneralThread() {
-        Task {
-            guard let generalProjectID = generalProject?.id,
-                  let threadRepository else { return }
-            do {
-                let title = "New chat"
-                let thread = try await threadRepository.createThread(projectID: generalProjectID, title: title)
-                appendLog(.info, "Created general thread \(thread.title)")
-
-                try await chatSearchRepository?.indexThreadTitle(
-                    threadID: thread.id,
-                    projectID: generalProjectID,
-                    title: thread.title
-                )
-
-                selectedProjectID = generalProjectID
-                try await refreshGeneralThreads()
-                selectedThreadID = thread.id
-                detailDestination = .thread
-                try await persistSelection()
-                try await refreshFollowUpQueue(threadID: thread.id)
-                refreshConversationState()
-            } catch {
-                appendLog(.error, "Create general thread failed: \(error.localizedDescription)")
-            }
-        }
+        guard let generalProjectID = generalProject?.id else { return }
+        beginDraftChat(in: generalProjectID)
     }
 
     func createGlobalNewChat() {
@@ -153,7 +96,7 @@ extension AppModel {
         Task {
             guard let threadRepository else { return }
             do {
-                guard let thread = try await threadRepository.getThread(id: threadID) else {
+                guard try await threadRepository.getThread(id: threadID) != nil else {
                     return
                 }
 
@@ -193,6 +136,9 @@ extension AppModel {
     func selectThread(_ threadID: UUID?) {
         Task {
             selectedThreadID = threadID
+            if threadID != nil {
+                draftChatProjectID = nil
+            }
             if threadID != nil {
                 detailDestination = .thread
             }
@@ -249,5 +195,67 @@ extension AppModel {
         }
         let store = ProjectMemoryStore(projectPath: project.path)
         _ = try await store.restoreArchivedSummaryEntries(for: thread.id)
+    }
+
+    func beginDraftChat(in projectID: UUID) {
+        selectedProjectID = projectID
+        selectedThreadID = nil
+        draftChatProjectID = projectID
+        detailDestination = .thread
+        appendLog(.info, "Started draft chat for project \(projectID.uuidString)")
+
+        Task {
+            do {
+                if generalProject?.id == projectID {
+                    try await refreshGeneralThreads(generalProjectID: projectID)
+                } else {
+                    try await refreshThreads()
+                }
+                try await refreshSkills()
+                refreshModsSurface()
+                try await persistSelection()
+                refreshConversationState()
+            } catch {
+                appendLog(.error, "Start draft chat failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func materializeDraftThreadIfNeeded() async throws -> UUID {
+        if let selectedThreadID {
+            return selectedThreadID
+        }
+
+        guard let selectedProjectID,
+              draftChatProjectID == selectedProjectID,
+              let threadRepository
+        else {
+            throw CodexRuntimeError.invalidResponse("No draft chat is active.")
+        }
+
+        let title = "New chat"
+        let thread = try await threadRepository.createThread(projectID: selectedProjectID, title: title)
+        pendingFirstTurnTitleThreadIDs.insert(thread.id)
+
+        try await chatSearchRepository?.indexThreadTitle(
+            threadID: thread.id,
+            projectID: selectedProjectID,
+            title: title
+        )
+
+        if generalProject?.id == selectedProjectID {
+            try await refreshGeneralThreads(generalProjectID: selectedProjectID)
+        } else {
+            try await refreshThreads()
+        }
+        try await refreshArchivedThreads()
+        selectedThreadID = thread.id
+        draftChatProjectID = nil
+        detailDestination = .thread
+        try await persistSelection()
+        try await refreshFollowUpQueue(threadID: thread.id)
+        refreshConversationState()
+        appendLog(.info, "Created thread from draft chat \(thread.id.uuidString)")
+        return thread.id
     }
 }

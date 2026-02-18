@@ -3,9 +3,14 @@ import CodexKit
 import Foundation
 
 extension AppModel {
+    func cancelPendingChatGPTLoginForTeardown() {
+        stopChatGPTLoginPolling(cancelRuntimeLogin: true)
+    }
+
     func signInWithChatGPT() {
         guard let runtime else { return }
 
+        stopChatGPTLoginPolling(cancelRuntimeLogin: true)
         isAccountOperationInProgress = true
         accountStatusMessage = nil
 
@@ -14,10 +19,13 @@ extension AppModel {
 
             do {
                 let loginStart = try await runtime.startChatGPTLogin()
+                pendingChatGPTLoginID = loginStart.loginID
                 NSWorkspace.shared.open(loginStart.authURL)
-                accountStatusMessage = "Complete sign-in in your browser."
+                accountStatusMessage = "Complete sign-in in your browser. Waiting for runtime confirmation…"
                 appendLog(.info, "Started ChatGPT login flow")
+                startChatGPTLoginPolling(loginID: loginStart.loginID)
             } catch {
+                stopChatGPTLoginPolling()
                 accountStatusMessage = "ChatGPT sign-in failed: \(error.localizedDescription)"
                 handleRuntimeError(error)
             }
@@ -50,6 +58,7 @@ extension AppModel {
     func signInWithAPIKey(_ apiKey: String) {
         guard let runtime else { return }
 
+        stopChatGPTLoginPolling(cancelRuntimeLogin: true)
         isAccountOperationInProgress = true
         accountStatusMessage = nil
 
@@ -63,6 +72,7 @@ extension AppModel {
                 try await refreshAccountState()
                 accountStatusMessage = "Signed in with API key."
                 appendLog(.info, "Signed in with API key")
+                requestAutoDrain(reason: "account signed in")
             } catch {
                 accountStatusMessage = "API key sign-in failed: \(error.localizedDescription)"
                 handleRuntimeError(error)
@@ -73,6 +83,7 @@ extension AppModel {
     func logoutAccount() {
         guard let runtime else { return }
 
+        stopChatGPTLoginPolling(cancelRuntimeLogin: true)
         isAccountOperationInProgress = true
         accountStatusMessage = nil
 
@@ -101,5 +112,93 @@ extension AppModel {
             accountStatusMessage = "Unable to start device-auth login: \(error.localizedDescription)"
             handleRuntimeError(error)
         }
+    }
+
+    func stopChatGPTLoginPolling(
+        clearPendingLoginID: Bool = true,
+        cancelRuntimeLogin: Bool = false
+    ) {
+        let loginID = pendingChatGPTLoginID
+        chatGPTLoginPollingTask?.cancel()
+        chatGPTLoginPollingTask = nil
+        if clearPendingLoginID {
+            pendingChatGPTLoginID = nil
+        }
+
+        guard cancelRuntimeLogin,
+              let runtime,
+              let loginID
+        else {
+            return
+        }
+
+        Task {
+            do {
+                try await runtime.cancelChatGPTLogin(loginID: loginID)
+                appendLog(.debug, "Cancelled pending ChatGPT login session")
+            } catch {
+                appendLog(.debug, "Unable to cancel pending ChatGPT login session: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func startChatGPTLoginPolling(loginID: String?) {
+        chatGPTLoginPollingTask?.cancel()
+
+        guard let runtime else { return }
+
+        chatGPTLoginPollingTask = Task {
+            defer {
+                chatGPTLoginPollingTask = nil
+            }
+
+            for attempt in 1 ... 90 {
+                if Task.isCancelled {
+                    return
+                }
+
+                do {
+                    let state = try await runtime.readAccount(refreshToken: true)
+                    accountState = state
+
+                    if isChatGPTSignedIn(state) {
+                        pendingChatGPTLoginID = nil
+                        accountStatusMessage = "Signed in with ChatGPT."
+                        appendLog(.info, "ChatGPT login confirmed by account polling")
+                        return
+                    }
+                } catch {
+                    appendLog(.debug, "Waiting for ChatGPT login (\(attempt)/90): \(error.localizedDescription)")
+                }
+
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+
+            if let loginID {
+                do {
+                    try await runtime.cancelChatGPTLogin(loginID: loginID)
+                } catch {
+                    appendLog(.debug, "Unable to cancel stale ChatGPT login \(loginID): \(error.localizedDescription)")
+                }
+            }
+
+            pendingChatGPTLoginID = nil
+            accountStatusMessage = """
+            Browser sign-in finished, but Codex runtime did not confirm login. Restart Runtime and retry, or use Device-Code Login.
+            """
+            appendLog(.warning, "Timed out waiting for account/login/completed")
+        }
+    }
+
+    private func isChatGPTSignedIn(_ state: RuntimeAccountState) -> Bool {
+        if state.authMode == .chatGPT, state.account != nil {
+            return true
+        }
+
+        guard let account = state.account else {
+            return false
+        }
+
+        return account.type.caseInsensitiveCompare("chatgpt") == .orderedSame
     }
 }

@@ -42,11 +42,11 @@ struct MemoryCanvas: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle("Memory")
+        .navigationTitle("")
         .onAppear {
             syncSettingsFromSelectedProject()
         }
-        .onChange(of: model.selectedProject?.id) { _ in
+        .onChange(of: model.selectedProject?.id) { _, _ in
             syncSettingsFromSelectedProject()
         }
         .alert("Unsaved changes", isPresented: $isUnsavedAlertVisible) {
@@ -145,13 +145,13 @@ struct MemoryCanvas: View {
                 Text("Summaries + key facts").tag(ProjectMemoryWriteMode.summariesAndKeyFacts)
             }
             .pickerStyle(.menu)
-            .onChange(of: writeMode) { newValue in
+            .onChange(of: writeMode) { _, newValue in
                 guard !isSyncingSettings else { return }
                 model.updateSelectedProjectMemorySettings(writeMode: newValue, embeddingsEnabled: embeddingsEnabled)
             }
 
             Toggle("Enable semantic retrieval (advanced)", isOn: $embeddingsEnabled)
-                .onChange(of: embeddingsEnabled) { newValue in
+                .onChange(of: embeddingsEnabled) { _, newValue in
                     guard !isSyncingSettings else { return }
                     model.updateSelectedProjectMemorySettings(writeMode: writeMode, embeddingsEnabled: newValue)
                 }
@@ -161,7 +161,7 @@ struct MemoryCanvas: View {
                 .foregroundStyle(.secondary)
         }
         .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: tokens.radius.medium))
+        .tokenCard(style: .panel)
     }
 
     @ViewBuilder
@@ -182,9 +182,6 @@ struct MemoryCanvas: View {
                     RoundedRectangle(cornerRadius: tokens.radius.medium)
                         .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
-                .onChange(of: draftText) { _ in
-                    // Update dirty state via lastSavedText.
-                }
         }
     }
 
@@ -195,6 +192,7 @@ struct MemoryCanvas: View {
                     Task { await loadFile(for: project, kind: selectedFileKind) }
                 }
                 .buttonStyle(.bordered)
+                .help("Reload the memory file from disk, discarding unsaved changes")
 
                 Button(isSaving ? "Saving…" : "Save") {
                     Task { await saveDraft(for: project, kind: selectedFileKind) }
@@ -206,6 +204,7 @@ struct MemoryCanvas: View {
                     Task { await revealSelectedFile(project: project, kind: selectedFileKind) }
                 }
                 .buttonStyle(.bordered)
+                .help("Show the memory file in Finder")
 
                 Spacer()
 

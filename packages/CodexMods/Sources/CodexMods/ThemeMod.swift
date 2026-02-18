@@ -171,6 +171,27 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
         )
     }
 
+    public func withoutColorOverrides() -> ModThemeOverride {
+        ModThemeOverride(
+            typography: typography,
+            spacing: spacing,
+            radius: radius,
+            materials: materials,
+            bubbles: bubbles.map {
+                Bubbles(
+                    style: $0.style,
+                    userBackgroundHex: nil,
+                    assistantBackgroundHex: nil
+                )
+            },
+            iconography: iconography
+        )
+    }
+
+    public func resolvedDarkOverride(using darkTheme: ModThemeOverride) -> ModThemeOverride {
+        withoutColorOverrides().merged(with: darkTheme)
+    }
+
     public var resolvedPaletteAccentHex: String? {
         palette?.accentHex ?? accentHex
     }

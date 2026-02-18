@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 struct ModsCanvas: View {
     @ObservedObject var model: AppModel
+    @Environment(\.designTokens) private var tokens
     private let sharingGuideURL = URL(string: "https://github.com/bikz/codexchat/blob/main/docs-public/MODS_SHARING.md")
     private let modCardColumns = [
         GridItem(.flexible(minimum: 220), spacing: 10, alignment: .top),
@@ -24,53 +25,37 @@ struct ModsCanvas: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Mods")
-                        .font(.system(size: 48, weight: .semibold, design: .rounded))
+        HStack(spacing: 10) {
+            Text("Mods")
+                .font(.title3.weight(.semibold))
 
-                    Text("Theme and behavior overlays for global or project scope.")
-                        .font(.title3)
-                        .foregroundStyle(SkillsModsTheme.mutedText)
-                }
-
-                Spacer(minLength: 12)
-
-                HStack(spacing: 10) {
-                    Button {
-                        model.refreshModsSurface()
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        model.revealGlobalModsFolder()
-                    } label: {
-                        Label("Open Global Folder", systemImage: "folder.badge.gearshape")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        model.revealProjectModsFolder()
-                    } label: {
-                        Label("Open Project Folder", systemImage: "folder")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.selectedProject == nil)
-                }
+            Button {
+                model.refreshModsSurface()
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
             }
+            .buttonStyle(.bordered)
+
+            Button {
+                model.revealGlobalModsFolder()
+            } label: {
+                Label("Global Folder", systemImage: "folder.badge.gearshape")
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                model.revealProjectModsFolder()
+            } label: {
+                Label("Project Folder", systemImage: "folder")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.selectedProject == nil)
+
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, SkillsModsTheme.pageHorizontalInset)
-        .padding(.top, SkillsModsTheme.pageVerticalInset)
-        .padding(.bottom, 14)
-        .background(SkillsModsTheme.headerBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(SkillsModsTheme.border)
-                .frame(height: 1)
-        }
+        .padding(.top, tokens.spacing.small)
+        .padding(.bottom, tokens.spacing.xSmall)
     }
 
     @ViewBuilder
@@ -263,7 +248,7 @@ struct ModsCanvas: View {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption)
-                            .foregroundStyle(Color(hex: "#0F9E79"))
+                            .foregroundStyle(Color(hex: tokens.palette.accentHex))
                     }
                 }
 
@@ -289,11 +274,11 @@ struct ModsCanvas: View {
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isSelected ? Color(hex: "#DDF3EC") : Color.white.opacity(0.62))
+                    .fill(isSelected ? Color(hex: tokens.palette.accentHex).opacity(0.16) : SkillsModsTheme.cardBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isSelected ? Color(hex: "#82CDB6") : SkillsModsTheme.subtleBorder)
+                    .strokeBorder(isSelected ? Color(hex: tokens.palette.accentHex).opacity(0.42) : SkillsModsTheme.subtleBorder)
             )
         }
         .buttonStyle(.plain)
@@ -303,7 +288,7 @@ struct ModsCanvas: View {
         VStack(spacing: 8) {
             Image(systemName: systemImage)
                 .font(.system(size: 30))
-                .foregroundStyle(Color(hex: "#57B79F"))
+                .foregroundStyle(Color(hex: tokens.palette.accentHex))
 
             Text(title)
                 .font(.headline)
@@ -318,7 +303,7 @@ struct ModsCanvas: View {
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.45))
+                .fill(SkillsModsTheme.cardBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)

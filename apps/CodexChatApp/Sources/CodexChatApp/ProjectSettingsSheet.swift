@@ -63,7 +63,7 @@ struct ProjectSettingsSheet: View {
 
                 Toggle("Allow network access in workspace-write", isOn: $networkAccess)
                     .disabled(sandboxMode != .workspaceWrite)
-                    .onChange(of: sandboxMode) { newValue in
+                    .onChange(of: sandboxMode) { _, newValue in
                         if newValue != .workspaceWrite {
                             networkAccess = false
                         }
@@ -139,7 +139,7 @@ struct ProjectSettingsSheet: View {
                 try? await model.refreshArchivedThreads()
             }
         }
-        .onChange(of: model.selectedProject?.id) { _ in
+        .onChange(of: model.selectedProject?.id) { _, _ in
             syncSafetyStateFromSelectedProject()
             Task {
                 try? await model.refreshArchivedThreads()

@@ -63,8 +63,8 @@ struct ModChangesReviewSheet: View {
 
                 Spacer()
 
-                Button("Open Mods") {
-                    model.navigationSection = .mods
+                Button("Open Skills & Mods") {
+                    model.openSkillsAndMods()
                 }
                 .buttonStyle(.bordered)
             }

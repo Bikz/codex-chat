@@ -59,12 +59,20 @@ public struct UIModDefinition: Hashable, Sendable, Codable {
     public var schemaVersion: Int
     public var manifest: UIModManifest
     public var theme: ModThemeOverride
+    public var darkTheme: ModThemeOverride?
     public var future: Future?
 
-    public init(schemaVersion: Int = 1, manifest: UIModManifest, theme: ModThemeOverride, future: Future? = nil) {
+    public init(
+        schemaVersion: Int = 1,
+        manifest: UIModManifest,
+        theme: ModThemeOverride,
+        darkTheme: ModThemeOverride? = nil,
+        future: Future? = nil
+    ) {
         self.schemaVersion = schemaVersion
         self.manifest = manifest
         self.theme = theme
+        self.darkTheme = darkTheme
         self.future = future
     }
 }

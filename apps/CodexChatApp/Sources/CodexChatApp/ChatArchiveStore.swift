@@ -25,10 +25,12 @@ enum ChatArchiveStore {
         try fileManager.createDirectory(at: threadDirectory, withIntermediateDirectories: true)
 
         let archiveURL = threadDirectory.appendingPathComponent("\(threadID.uuidString).md")
-        if !fileManager.fileExists(atPath: archiveURL.path) {
-            let header = "# Chat Archive for \(threadID.uuidString)\n\n"
-            let data = Data(header.utf8)
-            try data.write(to: archiveURL, options: [.atomic])
+        let fileExists = fileManager.fileExists(atPath: archiveURL.path)
+        let header = "# Chat Archive for \(threadID.uuidString)\n\n"
+        let existingData = if fileExists {
+            try Data(contentsOf: archiveURL)
+        } else {
+            Data(header.utf8)
         }
 
         let formatter = ISO8601DateFormatter()
@@ -55,11 +57,32 @@ enum ChatArchiveStore {
 
         block += "---\n\n"
 
-        let handle = try FileHandle(forWritingTo: archiveURL)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        if let data = block.data(using: .utf8) {
-            try handle.write(contentsOf: data)
+        let blockData = Data(block.utf8)
+        var updatedData = Data()
+        updatedData.reserveCapacity(existingData.count + blockData.count)
+        updatedData.append(existingData)
+        updatedData.append(blockData)
+
+        let tempURL = threadDirectory.appendingPathComponent(
+            "\(threadID.uuidString).tmp-\(UUID().uuidString)",
+            isDirectory: false
+        )
+
+        do {
+            try updatedData.write(to: tempURL, options: [.atomic])
+            if fileExists {
+                _ = try fileManager.replaceItemAt(
+                    archiveURL,
+                    withItemAt: tempURL,
+                    backupItemName: nil,
+                    options: [.usingNewMetadataOnly]
+                )
+            } else {
+                try fileManager.moveItem(at: tempURL, to: archiveURL)
+            }
+        } catch {
+            try? fileManager.removeItem(at: tempURL)
+            throw error
         }
 
         return archiveURL

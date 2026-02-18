@@ -19,7 +19,7 @@ struct MessageRow: View {
                 Spacer(minLength: 44)
             }
 
-            Text(message.text)
+            messageText(message: message)
                 .font(.system(size: tokens.typography.bodySize))
                 .foregroundStyle(foreground)
                 .textSelection(.enabled)
@@ -34,6 +34,18 @@ struct MessageRow: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func messageText(message: ChatMessage) -> some View {
+        if message.role == .assistant,
+           let attributed = try? AttributedString(markdown: message.text,
+                                                  options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        {
+            Text(attributed)
+        } else {
+            Text(message.text)
+        }
     }
 
     private func bubbleForeground(isUser: Bool, style: DesignTokens.BubbleStyle) -> Color {
@@ -78,17 +90,38 @@ struct ActionCardRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(card.title)
-                    .font(.callout.weight(.semibold))
-                Text(card.method)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .center, spacing: 8) {
+                Circle()
+                    .fill(methodColor(card.method))
+                    .frame(width: 8, height: 8)
+                    .accessibilityLabel("Action: \(card.method)")
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(card.title)
+                        .font(.callout.weight(.semibold))
+                    Text(card.method)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .accessibilityLabel("\(card.title) — \(card.method)")
         }
         .padding(10)
         .background(tokens.materials.cardMaterial.material, in: shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(0.06)))
+        .overlay(shape.strokeBorder(methodColor(card.method).opacity(0.25)))
+    }
+
+    private func methodColor(_ method: String) -> Color {
+        let lower = method.lowercased()
+        if lower.contains("write") || lower.contains("delete") || lower.contains("remove") {
+            return .orange
+        } else if lower.contains("exec") || lower.contains("run") || lower.contains("shell") {
+            return .red
+        } else if lower.contains("read") || lower.contains("search") || lower.contains("list") {
+            return .blue
+        } else {
+            return .secondary
+        }
     }
 }
 
@@ -139,14 +172,18 @@ struct ProjectTrustBanner: View {
                 onTrust()
             }
             .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Trust project")
+            .accessibilityHint("Marks this project folder as trusted, enabling full agent capabilities")
 
             Button("Settings") {
                 onSettings()
             }
             .buttonStyle(.bordered)
+            .accessibilityLabel("Project settings")
+            .accessibilityHint("Opens safety and permission settings for this project")
         }
         .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .tokenCard(style: .panel)
     }
 }
 
@@ -181,6 +218,7 @@ struct ThreadLogsDrawer: View {
                                     .fill(levelColor(entry.level))
                                     .frame(width: 6, height: 6)
                                     .padding(.top, 4)
+                                    .accessibilityLabel(entry.level.rawValue)
                                 Text(Self.dateFormatter.string(from: entry.timestamp))
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.secondary)

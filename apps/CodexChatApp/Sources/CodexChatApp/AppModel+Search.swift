@@ -41,11 +41,14 @@ extension AppModel {
         Task {
             selectedProjectID = result.projectID
             selectedThreadID = result.threadID
+            draftChatProjectID = nil
+            detailDestination = .thread
             do {
                 try await persistSelection()
                 try await refreshThreads()
                 try await refreshSkills()
                 refreshModsSurface()
+                try await refreshFollowUpQueue(threadID: result.threadID)
                 refreshConversationState()
             } catch {
                 appendLog(.error, "Failed to open search result: \(error.localizedDescription)")

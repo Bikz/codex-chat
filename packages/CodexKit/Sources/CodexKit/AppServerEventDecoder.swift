@@ -56,6 +56,35 @@ enum AppServerEventDecoder {
             )
             return [.commandOutputDelta(output)]
 
+        case "turn/followUpsSuggested":
+            let suggestionValues: [JSONValue] = params.value(at: ["suggestions"])?.arrayValue ?? []
+            let suggestions: [RuntimeFollowUpSuggestion] = suggestionValues.compactMap { value in
+                guard let rawText = value.value(at: ["text"])?.stringValue else {
+                    return nil
+                }
+                let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard
+                    !text.isEmpty
+                else { return nil }
+                return RuntimeFollowUpSuggestion(
+                    id: value.value(at: ["id"])?.stringValue,
+                    text: text,
+                    priority: value.value(at: ["priority"])?.intValue
+                )
+            }
+            guard !suggestions.isEmpty else {
+                return []
+            }
+            return [
+                .followUpSuggestions(
+                    RuntimeFollowUpSuggestionBatch(
+                        threadID: threadID,
+                        turnID: turnID,
+                        suggestions: suggestions
+                    )
+                ),
+            ]
+
         case "item/started", "item/completed":
             guard let item = params.value(at: ["item"]),
                   let itemType = item.value(at: ["type"])?.stringValue

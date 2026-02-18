@@ -20,7 +20,7 @@ public struct DesignTokens: Hashable, Sendable {
         public var medium: CGFloat
         public var large: CGFloat
 
-        public init(xSmall: CGFloat = 6, small: CGFloat = 10, medium: CGFloat = 16, large: CGFloat = 24) {
+        public init(xSmall: CGFloat = 4, small: CGFloat = 8, medium: CGFloat = 16, large: CGFloat = 24) {
             self.xSmall = xSmall
             self.small = small
             self.medium = medium
@@ -33,7 +33,7 @@ public struct DesignTokens: Hashable, Sendable {
         public var medium: CGFloat
         public var large: CGFloat
 
-        public init(small: CGFloat = 8, medium: CGFloat = 14, large: CGFloat = 20) {
+        public init(small: CGFloat = 6, medium: CGFloat = 14, large: CGFloat = 22) {
             self.small = small
             self.medium = medium
             self.large = large
@@ -44,15 +44,18 @@ public struct DesignTokens: Hashable, Sendable {
         public var accentHex: String
         public var backgroundHex: String
         public var panelHex: String
+        public var sidebarHex: String
 
         public init(
             accentHex: String = "#10A37F",
-            backgroundHex: String = "#F7F8F7",
-            panelHex: String = "#FFFFFF"
+            backgroundHex: String = "#F9F9F9",
+            panelHex: String = "#FFFFFF",
+            sidebarHex: String = "#F5F5F5"
         ) {
             self.accentHex = accentHex
             self.backgroundHex = backgroundHex
             self.panelHex = panelHex
+            self.sidebarHex = sidebarHex
         }
     }
 
@@ -82,7 +85,12 @@ public struct DesignTokens: Hashable, Sendable {
         self.iconography = iconography
     }
 
-    public static let `default` = DesignTokens()
+    public static let systemLight = DesignTokens()
+    public static let systemDark = DesignTokens(
+        palette: Palette(accentHex: "#10A37F", backgroundHex: "#000000", panelHex: "#121212", sidebarHex: "#0A0A0A"),
+        bubbles: Bubbles(style: .glass, userBackgroundHex: "#10A37F", assistantBackgroundHex: "#1C1C1E")
+    )
+    public static let `default` = systemLight
 
     public func applying(override: ModThemeOverride) -> DesignTokens {
         var copy = self
@@ -128,6 +136,7 @@ public struct DesignTokens: Hashable, Sendable {
         if let panelHex = override.resolvedPalettePanelHex {
             copy.palette.panelHex = panelHex
         }
+        // sidebarHex is not overridden by mods — intentional
 
         if let panel = override.materials?.panelMaterial,
            let material = DesignMaterial(rawValue: panel)

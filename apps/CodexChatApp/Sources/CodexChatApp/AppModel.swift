@@ -116,6 +116,7 @@ final class AppModel: ObservableObject {
 
     @Published var selectedProjectID: UUID?
     @Published var selectedThreadID: UUID?
+    @Published var draftChatProjectID: UUID?
     @Published var detailDestination: DetailDestination = .none
     @Published var expandedProjectIDs: Set<UUID> = []
     @Published var showAllProjects: Bool = false
@@ -204,6 +205,7 @@ final class AppModel: ObservableObject {
     var modsRefreshTask: Task<Void, Never>?
     var modsDebounceTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
+    var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
 
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
@@ -327,12 +329,17 @@ final class AppModel: ObservableObject {
     }
 
     var canSubmitComposer: Bool {
-        selectedThreadID != nil
-            && selectedProjectID != nil
+        selectedProjectID != nil
+            && (selectedThreadID != nil || hasActiveDraftChatForSelectedProject)
             && runtime != nil
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && isSignedInForRuntime
+    }
+
+    var hasActiveDraftChatForSelectedProject: Bool {
+        guard let selectedProjectID else { return false }
+        return selectedThreadID == nil && draftChatProjectID == selectedProjectID
     }
 
     var isSignedInForRuntime: Bool {
@@ -505,6 +512,10 @@ final class AppModel: ObservableObject {
             return
         }
 
+        if hasActiveDraftChatForSelectedProject {
+            return
+        }
+
         selectedThreadID = loadedThreads.first?.id
         if let selectedThreadID {
             try await refreshFollowUpQueue(threadID: selectedThreadID)
@@ -565,7 +576,7 @@ final class AppModel: ObservableObject {
 
     func refreshConversationState() {
         guard let selectedThreadID else {
-            conversationState = .idle
+            conversationState = hasActiveDraftChatForSelectedProject ? .loaded([]) : .idle
             return
         }
 

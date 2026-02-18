@@ -33,6 +33,7 @@ extension AppModel {
                 activeApprovalRequest = approvalStateMachine.activeRequest
                 approvalStatusMessage = "Sent decision: \(approvalDecisionLabel(decision))."
                 appendLog(.info, "Approval decision sent for request \(request.id): \(approvalDecisionLabel(decision))")
+                requestAutoDrain(reason: "approval resolved")
             } catch {
                 approvalStatusMessage = "Failed to send approval decision: \(error.localizedDescription)"
                 appendLog(.error, "Approval decision failed: \(error.localizedDescription)")

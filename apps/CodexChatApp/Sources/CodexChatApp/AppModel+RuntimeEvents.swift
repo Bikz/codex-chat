@@ -37,6 +37,9 @@ extension AppModel {
         case let .commandOutputDelta(output):
             handleCommandOutputDelta(output)
 
+        case let .followUpSuggestions(batch):
+            handleFollowUpSuggestions(batch)
+
         case let .fileChangesUpdated(update):
             handleFileChangesUpdate(update)
 
@@ -78,17 +81,21 @@ extension AppModel {
             } else {
                 appendLog(.debug, "Turn completed without active context: \(completion.status)")
             }
+            requestAutoDrain(reason: "turn completed")
 
         case let .accountUpdated(authMode):
             appendLog(.info, "Account mode updated: \(authMode.rawValue)")
             Task {
                 try? await refreshAccountState()
+                requestAutoDrain(reason: "account updated")
             }
 
         case let .accountLoginCompleted(completion):
+            stopChatGPTLoginPolling()
             if completion.success {
                 accountStatusMessage = "Login completed."
                 appendLog(.info, "Login completed")
+                requestAutoDrain(reason: "account login completed")
             } else {
                 let detail = completion.error ?? "Unknown error"
                 accountStatusMessage = "Login failed: \(detail)"
@@ -202,7 +209,7 @@ extension AppModel {
         )
     }
 
-    private func resolveLocalThreadID(runtimeThreadID: String?, itemID: String?) -> UUID? {
+    func resolveLocalThreadID(runtimeThreadID: String?, itemID: String?) -> UUID? {
         if let itemID, let threadID = localThreadIDByCommandItemID[itemID] {
             return threadID
         }

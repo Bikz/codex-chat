@@ -11,11 +11,14 @@ public struct EmptyStateView: View {
         self.systemImage = systemImage
     }
 
+    @Environment(\.designTokens) private var tokens
+
     public var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 32))
+                .foregroundStyle(Color(hex: tokens.palette.accentHex).opacity(0.6))
+                .symbolRenderingMode(.hierarchical)
             Text(title)
                 .font(.headline)
             Text(message)
@@ -35,11 +38,16 @@ public struct LoadingStateView: View {
         self.title = title
     }
 
+    @State private var isPulsing = false
+
     public var body: some View {
         VStack(spacing: 12) {
             ProgressView()
             Text(title)
                 .foregroundStyle(.secondary)
+                .opacity(isPulsing ? 0.5 : 1.0)
+                .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isPulsing)
+                .onAppear { isPulsing = true }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -61,9 +69,14 @@ public struct ErrorStateView: View {
 
     public var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 28))
-                .foregroundStyle(.orange)
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.1))
+                    .frame(width: 48, height: 48)
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.orange)
+            }
             Text(title)
                 .font(.headline)
             Text(message)

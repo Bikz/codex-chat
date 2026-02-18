@@ -48,6 +48,13 @@ extension AppModel {
                     text: assistantText
                 )
             }
+
+            await applyInitialThreadTitleIfNeeded(
+                threadID: context.localThreadID,
+                projectID: context.projectID,
+                userText: context.userText,
+                assistantText: assistantText
+            )
         } catch {
             appendLog(.error, "Failed to archive turn: \(error.localizedDescription)")
         }
@@ -56,6 +63,98 @@ extension AppModel {
             return
         }
         await appendMemorySummaryIfEnabled(context: context, assistantText: assistantText)
+    }
+
+    func applyInitialThreadTitleIfNeeded(
+        threadID: UUID,
+        projectID: UUID,
+        userText: String,
+        assistantText: String
+    ) async {
+        guard pendingFirstTurnTitleThreadIDs.contains(threadID) else {
+            return
+        }
+        pendingFirstTurnTitleThreadIDs.remove(threadID)
+
+        guard let threadRepository else {
+            return
+        }
+
+        let title = Self.autoTitleFromFirstTurn(userText: userText, assistantText: assistantText)
+        guard !title.isEmpty else {
+            return
+        }
+
+        do {
+            let updated = try await threadRepository.updateThreadTitle(id: threadID, title: title)
+            try await chatSearchRepository?.indexThreadTitle(
+                threadID: threadID,
+                projectID: projectID,
+                title: updated.title
+            )
+
+            if generalProject?.id == projectID {
+                try await refreshGeneralThreads(generalProjectID: projectID)
+            }
+            if selectedProjectID == projectID {
+                try await refreshThreads()
+            }
+        } catch {
+            appendLog(.error, "Failed to auto-title thread: \(error.localizedDescription)")
+        }
+    }
+
+    nonisolated static func autoTitleFromFirstTurn(userText: String, assistantText: String) -> String {
+        for source in [assistantText, userText] {
+            if let candidate = firstTitleCandidate(from: source) {
+                return candidate
+            }
+        }
+        return "New chat"
+    }
+
+    private nonisolated static func firstTitleCandidate(from source: String) -> String? {
+        let strippedCode = source.replacingOccurrences(
+            of: "```[\\s\\S]*?```",
+            with: " ",
+            options: .regularExpression
+        )
+        let normalized = strippedCode
+            .replacingOccurrences(of: "\\[(.*?)\\]\\((.*?)\\)", with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalized.isEmpty else { return nil }
+
+        let cleanedPreamble = normalized.replacingOccurrences(
+            of: "^(sure|certainly|absolutely|okay|ok|here(?:'s| is)|i(?:'ll| will)|let(?:'s| us))[,\\-:\\s]+",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        let cleanedMarkdown = cleanedPreamble
+            .replacingOccurrences(of: "^#+\\s*", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "^[-*\\d\\.)\\s]+", with: "", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+
+        guard cleanedMarkdown.count >= 3 else { return nil }
+
+        let maxLength = 52
+        let clipped: String
+        if cleanedMarkdown.count <= maxLength {
+            clipped = cleanedMarkdown
+        } else {
+            let prefix = String(cleanedMarkdown.prefix(maxLength))
+            clipped = prefix.replacingOccurrences(of: "\\s+\\S*$", with: "", options: .regularExpression)
+        }
+
+        let trimmed = clipped
+            .replacingOccurrences(of: "[\\.:;!?,]+$", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { return nil }
+
+        let first = trimmed.prefix(1).uppercased()
+        let remainder = trimmed.dropFirst()
+        return first + remainder
     }
 
     func processModChangesIfNeeded(context: ActiveTurnContext) {

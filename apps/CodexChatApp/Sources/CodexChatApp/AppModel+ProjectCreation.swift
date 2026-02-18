@@ -154,7 +154,6 @@ extension AppModel {
         try await prepareProjectFolderStructure(projectPath: project.path)
         try await persistSelection()
         try await refreshThreads()
-        try await ensureSelectedProjectHasDefaultThread()
         try await refreshSkills()
         refreshModsSurface()
         refreshConversationState()
