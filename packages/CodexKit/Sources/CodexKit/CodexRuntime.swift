@@ -217,6 +217,8 @@ public actor CodexRuntime {
     }
 
     private func spawnProcess(executablePath: String) async throws {
+        await correlator.resetTransport()
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = ["app-server"]

@@ -36,6 +36,55 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
     }
 
+    func testRequestCorrelatorBuffersEarlyResponseBeforeSuspending() async throws {
+        let correlator = RequestCorrelator()
+        let requestID = await correlator.makeRequestID()
+
+        let response = JSONRPCMessageEnvelope.response(
+            id: requestID,
+            result: .object(["ok": .bool(true)])
+        )
+        _ = await correlator.resolveResponse(response)
+
+        let resolved = try await correlator.suspendResponse(id: requestID)
+        XCTAssertEqual(resolved.id, requestID)
+        XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
+    }
+
+    func testRequestCorrelatorFailsSuspensionAfterFailAllEvenIfNotPending() async throws {
+        let correlator = RequestCorrelator()
+        let requestID = await correlator.makeRequestID()
+
+        await correlator.failAll(error: CodexRuntimeError.transportClosed)
+
+        do {
+            _ = try await correlator.suspendResponse(id: requestID)
+            XCTFail("Expected suspendResponse to throw after failAll")
+        } catch {
+            guard let runtimeError = error as? CodexRuntimeError else {
+                XCTFail("Expected CodexRuntimeError, got: \(type(of: error))")
+                return
+            }
+            XCTAssertEqual(runtimeError.errorDescription, CodexRuntimeError.transportClosed.errorDescription)
+        }
+
+        await correlator.resetTransport()
+
+        let waiter = Task {
+            try await correlator.suspendResponse(id: requestID)
+        }
+        await Task.yield()
+
+        let response = JSONRPCMessageEnvelope.response(
+            id: requestID,
+            result: .object(["ok": .bool(true)])
+        )
+        _ = await correlator.resolveResponse(response)
+
+        let resolved = try await waiter.value
+        XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
+    }
+
     func testEventDecoderAgentDeltaAndTurnCompletion() {
         let deltaNotification = JSONRPCMessageEnvelope.notification(
             method: "item/agentMessage/delta",
