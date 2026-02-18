@@ -34,7 +34,10 @@ let package = Package(
         ),
         .testTarget(
             name: "CodexChatAppTests",
-            dependencies: ["CodexChatApp"]
+            dependencies: ["CodexChatApp"],
+            resources: [
+                .process("Fixtures"),
+            ]
         ),
     ]
 )

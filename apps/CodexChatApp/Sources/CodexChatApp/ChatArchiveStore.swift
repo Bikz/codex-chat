@@ -31,7 +31,11 @@ enum ChatArchiveStore {
             try data.write(to: archiveURL, options: [.atomic])
         }
 
-        var block = "## Turn \(turn.timestamp.formatted(.dateTime.year().month().day().hour().minute().second()))\n\n"
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.formatOptions = [.withInternetDateTime]
+        let timestamp = formatter.string(from: turn.timestamp)
+        var block = "## Turn \(timestamp)\n\n"
         block += "### User\n\n"
         block += turn.userText.trimmingCharacters(in: .whitespacesAndNewlines)
         block += "\n\n"
