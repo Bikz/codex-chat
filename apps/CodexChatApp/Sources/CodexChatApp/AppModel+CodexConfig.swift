@@ -88,6 +88,12 @@ extension AppModel {
     }
 
     private func applyDerivedRuntimeDefaultsFromConfig() {
+        // Always start from built-in defaults so removing keys from config.toml
+        // deterministically falls back instead of keeping stale in-memory values.
+        defaultModel = "gpt-5-codex"
+        defaultReasoning = .medium
+        defaultWebSearch = .cached
+
         if let model = codexConfigDocument.value(at: [.key("model")])?.stringValue,
            !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {

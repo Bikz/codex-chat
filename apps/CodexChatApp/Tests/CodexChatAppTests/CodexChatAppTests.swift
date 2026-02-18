@@ -413,6 +413,58 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testConfigDerivedDefaultsResetWhenKeysRemoved() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        model.updateCodexConfigValue(path: [.key("model")], value: .string("gpt-5"))
+        model.updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: .string("high"))
+        model.updateCodexConfigValue(path: [.key("web_search")], value: .string("live"))
+
+        XCTAssertEqual(model.defaultModel, "gpt-5")
+        XCTAssertEqual(model.defaultReasoning, .high)
+        XCTAssertEqual(model.defaultWebSearch, .live)
+
+        model.updateCodexConfigValue(path: [.key("model")], value: nil)
+        model.updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: nil)
+        model.updateCodexConfigValue(path: [.key("web_search")], value: nil)
+
+        XCTAssertEqual(model.defaultModel, "gpt-5-codex")
+        XCTAssertEqual(model.defaultReasoning, .medium)
+        XCTAssertEqual(model.defaultWebSearch, .cached)
+    }
+
+    @MainActor
+    func testLoadInitialDataContinuesWhenConfigTomlInvalid() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-invalid-config-\(UUID().uuidString)", isDirectory: true)
+        let storagePaths = CodexChatStoragePaths(rootURL: root)
+        try storagePaths.ensureRootStructure()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try "model = [".write(to: storagePaths.codexConfigURL, atomically: true, encoding: .utf8)
+
+        let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            storagePaths: storagePaths
+        )
+
+        await model.loadInitialData()
+
+        if case let .failed(message) = model.projectsState {
+            XCTFail("Expected startup to continue with invalid config.toml, but projects failed: \(message)")
+        }
+
+        XCTAssertEqual(model.defaultModel, "gpt-5-codex")
+        XCTAssertEqual(model.defaultReasoning, .medium)
+        XCTAssertEqual(model.defaultWebSearch, .cached)
+        XCTAssertTrue(model.codexConfigStatusMessage?.contains("Failed to load config.toml. Using built-in defaults") ?? false)
+    }
+
+    @MainActor
     func testEffectiveWebSearchModeClampsToProjectPolicy() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
 

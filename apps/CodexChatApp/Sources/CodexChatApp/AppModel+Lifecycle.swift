@@ -26,7 +26,17 @@ extension AppModel {
         do {
             try await refreshProjects()
             try await applyStartupStorageFixups()
-            try await loadCodexConfig()
+            do {
+                try await loadCodexConfig()
+            } catch {
+                replaceCodexConfigDocument(.empty())
+                codexConfigValidationIssues = []
+                codexConfigStatusMessage = "Failed to load config.toml. Using built-in defaults: \(error.localizedDescription)"
+                appendLog(
+                    .warning,
+                    "Failed loading config.toml; continuing with built-in defaults: \(error.localizedDescription)"
+                )
+            }
             await reloadCodexConfigSchema()
             try await ensureGeneralProject()
             try await restoreLastOpenedContext()
