@@ -28,10 +28,36 @@ CodexChat is a local-first macOS SwiftUI chat app that integrates the local Code
 
 ## Build + Test
 
+### Requirements
+
+- macOS 13+
+- Xcode 16+ (Swift tools version `6.0`)
+- Homebrew (for SwiftFormat / SwiftLint)
+- Node 22+ (for `corepack` / `pnpm`; used only for workspace scripts)
+
+### Setup
+
+From the repo root:
+
+```sh
+corepack enable
+pnpm install
+
+brew install swiftformat swiftlint
+```
+
+### Full Checks
+
 From the repo root:
 
 ```sh
 pnpm -s run check
+```
+
+### Fast Checks
+
+```sh
+make quick
 ```
 
 ## Docs
@@ -40,3 +66,7 @@ pnpm -s run check
 - `docs-public/SECURITY_MODEL.md`
 - `docs-public/MODS.md`
 - `docs-public/CONTRIBUTING.md`
+
+## License
+
+MIT License. See `LICENSE`.

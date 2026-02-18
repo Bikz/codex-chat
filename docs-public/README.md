@@ -11,3 +11,11 @@ Private planning and internal memory docs live in `docs/` and are intentionally 
 - `MODS.md`: UI mod format, directories, and precedence.
 - `CONTRIBUTING.md`: contribution workflow and repo conventions.
 
+## Root-Level Meta Files
+
+GitHub also reads these from the repo root:
+
+- `CONTRIBUTING.md` (pointer to this folder)
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+- `LICENSE`
