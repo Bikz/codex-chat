@@ -23,3 +23,9 @@ public protocol RuntimeThreadMappingRepository: Sendable {
     func setRuntimeThreadID(localThreadID: UUID, runtimeThreadID: String) async throws
     func getRuntimeThreadID(localThreadID: UUID) async throws -> String?
 }
+
+public protocol ProjectSecretRepository: Sendable {
+    func listSecrets(projectID: UUID) async throws -> [ProjectSecretRecord]
+    func upsertSecret(projectID: UUID, name: String, keychainAccount: String) async throws -> ProjectSecretRecord
+    func deleteSecret(id: UUID) async throws
+}

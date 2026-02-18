@@ -69,6 +69,24 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v3_add_project_secrets") { db in
+            try db.create(table: "project_secrets") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("projectID", .text).notNull()
+                    .references("projects", onDelete: .cascade)
+                table.column("name", .text).notNull()
+                table.column("keychainAccount", .text).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_project_secrets_project_name",
+                on: "project_secrets",
+                columns: ["projectID", "name"],
+                unique: true
+            )
+        }
+
         return migrator
     }
 }

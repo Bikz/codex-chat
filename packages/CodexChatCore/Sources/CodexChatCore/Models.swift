@@ -48,6 +48,31 @@ public struct RuntimeThreadMappingRecord: Hashable, Sendable, Codable {
     }
 }
 
+public struct ProjectSecretRecord: Identifiable, Hashable, Sendable, Codable {
+    public let id: UUID
+    public let projectID: UUID
+    public var name: String
+    public var keychainAccount: String
+    public let createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        projectID: UUID,
+        name: String,
+        keychainAccount: String,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.projectID = projectID
+        self.name = name
+        self.keychainAccount = keychainAccount
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
 public struct AppPreferenceRecord: Hashable, Sendable, Codable {
     public var key: String
     public var value: String

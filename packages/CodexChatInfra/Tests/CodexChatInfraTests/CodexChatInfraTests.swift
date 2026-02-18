@@ -18,6 +18,7 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("threads"))
         XCTAssertTrue(tableNames.contains("preferences"))
         XCTAssertTrue(tableNames.contains("runtime_thread_mappings"))
+        XCTAssertTrue(tableNames.contains("project_secrets"))
     }
 
     func testProjectThreadAndPreferencePersistence() async throws {
@@ -52,6 +53,21 @@ final class CodexChatInfraTests: XCTestCase {
         )
         let runtimeThreadID = try await repositories.runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: thread.id)
         XCTAssertEqual(runtimeThreadID, "thr_123")
+
+        let secret = try await repositories.projectSecretRepository.upsertSecret(
+            projectID: project.id,
+            name: "OPENAI_API_KEY",
+            keychainAccount: "project-\(project.id.uuidString)-openai"
+        )
+        XCTAssertEqual(secret.projectID, project.id)
+
+        let secrets = try await repositories.projectSecretRepository.listSecrets(projectID: project.id)
+        XCTAssertEqual(secrets.count, 1)
+        XCTAssertEqual(secrets.first?.name, "OPENAI_API_KEY")
+
+        try await repositories.projectSecretRepository.deleteSecret(id: secret.id)
+        let afterDelete = try await repositories.projectSecretRepository.listSecrets(projectID: project.id)
+        XCTAssertTrue(afterDelete.isEmpty)
     }
 
     private func temporaryDatabaseURL() -> URL {
