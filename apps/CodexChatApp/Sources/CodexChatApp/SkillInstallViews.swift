@@ -18,8 +18,9 @@ struct SkillRow: View {
                 Text(item.skill.description)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
+                badgeRow
                 metadata
 
                 actions
@@ -40,18 +41,9 @@ struct SkillRow: View {
                 )
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(item.skill.name)
-                        .font(.headline)
-                        .lineLimit(1)
-
-                    Text(item.skill.scope.rawValue.capitalized)
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
-                }
+                Text(item.skill.name)
+                    .font(.headline)
+                    .lineLimit(1)
             }
 
             Spacer()
@@ -68,14 +60,30 @@ struct SkillRow: View {
         }
     }
 
-    private var metadata: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var badgeRow: some View {
+        HStack(spacing: 6) {
+            Text(item.skill.scope.rawValue.capitalized)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
+
             if item.skill.hasScripts {
-                Label("Scripts detected", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption2)
+                Label("Scripts", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.orange)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.10), in: Capsule())
             }
 
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text(item.skill.skillPath)
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
@@ -87,24 +95,31 @@ struct SkillRow: View {
 
     private var actions: some View {
         HStack(spacing: 8) {
-            Button {
-                onToggle(!item.isEnabledForProject)
-            } label: {
-                Label(
-                    item.isEnabledForProject ? "Enabled" : "Enable",
-                    systemImage: item.isEnabledForProject ? "checkmark.circle.fill" : "circle"
-                )
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(!hasSelectedProject)
+            if item.isEnabledForProject {
+                Button("Use in Composer") {
+                    onInsert()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
 
-            Button("Use in Composer") {
-                onInsert()
+                Button {
+                    onToggle(false)
+                } label: {
+                    Label("Disable", systemImage: "xmark.circle")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!hasSelectedProject)
+            } else {
+                Button {
+                    onToggle(true)
+                } label: {
+                    Label("Enable", systemImage: "checkmark.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(!hasSelectedProject)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(!item.isEnabledForProject)
 
             Spacer()
         }

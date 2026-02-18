@@ -1,3 +1,4 @@
+import CodexChatUI
 import SwiftUI
 
 struct SidebarRowButtonStyle: ButtonStyle {
@@ -16,6 +17,7 @@ struct SidebarRowButtonStyle: ButtonStyle {
     }
 
     @State private var isHoveredInternal = false
+    @Environment(\.designTokens) private var tokens
 
     func makeBody(configuration: Configuration) -> some View {
         let isHovered = isHoveredOverride ?? isHoveredInternal
@@ -23,13 +25,22 @@ struct SidebarRowButtonStyle: ButtonStyle {
         configuration.label
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(backgroundFill(isPressed: configuration.isPressed, isHovered: isHovered))
+            .overlay(alignment: .leading) {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(Color(hex: tokens.palette.accentHex).opacity(0.85))
+                        .frame(width: 2)
+                        .padding(.vertical, 5)
+                        .padding(.leading, 2)
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
-            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.988 : 1.0)
+            .animation(.easeInOut(duration: tokens.motion.pressDuration), value: configuration.isPressed)
             .onHover { hovering in
                 guard isHoveredOverride == nil else { return }
-                withAnimation(.easeInOut(duration: 0.15)) {
+                withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
                     isHoveredInternal = hovering
                 }
             }
@@ -39,11 +50,13 @@ struct SidebarRowButtonStyle: ButtonStyle {
     private func backgroundFill(isPressed: Bool, isHovered: Bool) -> some View {
         if isActive {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.primary.opacity(0.10))
+                .fill(Color.primary.opacity(tokens.surfaces.activeOpacity))
         } else if isPressed {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(Color.primary.opacity(0.12))
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.primary.opacity(tokens.surfaces.activeOpacity * 1.05))
         } else if isHovered {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(Color.primary.opacity(0.08))
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.primary.opacity(tokens.surfaces.raisedOpacity))
         } else {
             Color.clear
         }
@@ -86,6 +99,7 @@ struct SidebarSectionHeader: View {
     let font: Font
     let actionSystemImage: String?
     let actionAccessibilityLabel: String?
+    let trailingAlignmentWidth: CGFloat?
     let action: (() -> Void)?
 
     init(
@@ -93,12 +107,14 @@ struct SidebarSectionHeader: View {
         font: Font = .caption.weight(.semibold),
         actionSystemImage: String? = nil,
         actionAccessibilityLabel: String? = nil,
+        trailingAlignmentWidth: CGFloat? = nil,
         action: (() -> Void)? = nil
     ) {
         self.title = title
         self.font = font
         self.actionSystemImage = actionSystemImage
         self.actionAccessibilityLabel = actionAccessibilityLabel
+        self.trailingAlignmentWidth = trailingAlignmentWidth
         self.action = action
     }
 
@@ -120,6 +136,7 @@ struct SidebarSectionHeader: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(actionAccessibilityLabel ?? title)
+                .frame(width: trailingAlignmentWidth, alignment: .trailing)
             }
         }
         .padding(.top, 8)

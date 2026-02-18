@@ -4,6 +4,28 @@ import CodexMemory
 import Foundation
 
 extension AppModel {
+    func isProjectSidebarVisuallySelected(_ projectID: UUID) -> Bool {
+        guard selectedProjectID == projectID else {
+            return false
+        }
+
+        guard let selectedThreadID else {
+            return true
+        }
+
+        if let selectedThread = threads.first(where: { $0.id == selectedThreadID }) {
+            return selectedThread.projectId != projectID
+        }
+
+        if case let .loaded(generalThreads) = generalThreadsState,
+           let selectedThread = generalThreads.first(where: { $0.id == selectedThreadID })
+        {
+            return selectedThread.projectId != projectID
+        }
+
+        return false
+    }
+
     func validateAndRepairProjectsOnLaunch() async throws {
         let allProjects = projects
         guard !allProjects.isEmpty else {

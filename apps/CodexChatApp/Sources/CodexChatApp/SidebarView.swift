@@ -17,15 +17,14 @@ struct SidebarView: View {
 
     private let projectsPreviewCount = 3
     private let iconColumnWidth: CGFloat = 18
-    private let rowHorizontalPadding: CGFloat = 10
-    private let rowVerticalPadding: CGFloat = 6
-    private let rowMinimumHeight: CGFloat = 34
+    private let rowHorizontalPadding: CGFloat = 8
+    private let rowVerticalPadding: CGFloat = 3
+    private let rowMinimumHeight: CGFloat = 28
     private let controlIconWidth: CGFloat = 18
-    private let controlSlotSpacing: CGFloat = 8
-    private let projectChevronWidth: CGFloat = 14
+    private let controlSlotSpacing: CGFloat = 6
 
     private var projectTrailingWidth: CGFloat {
-        projectChevronWidth + (controlIconWidth * 2) + (controlSlotSpacing * 2)
+        (controlIconWidth * 2) + controlSlotSpacing
     }
 
     private var threadTrailingWidth: CGFloat {
@@ -33,11 +32,11 @@ struct SidebarView: View {
     }
 
     private var sidebarBodyFont: Font {
-        .system(size: 14.5, weight: .medium)
+        .system(size: 14, weight: .regular)
     }
 
     private var sidebarMetaFont: Font {
-        .system(size: 12.5, weight: .medium)
+        .system(size: 12, weight: .regular)
     }
 
     private var sidebarSectionFont: Font {
@@ -45,7 +44,7 @@ struct SidebarView: View {
     }
 
     private var sidebarBodyIconFont: Font {
-        .system(size: 13.5, weight: .semibold)
+        .system(size: 13, weight: .regular)
     }
 
     private var sidebarMetaIconFont: Font {
@@ -104,6 +103,7 @@ struct SidebarView: View {
                         font: sidebarSectionFont,
                         actionSystemImage: "plus",
                         actionAccessibilityLabel: "New project",
+                        trailingAlignmentWidth: threadTrailingWidth,
                         action: model.presentNewProjectSheet
                     )
                 }
@@ -120,6 +120,7 @@ struct SidebarView: View {
                         font: sidebarSectionFont,
                         actionSystemImage: "plus",
                         actionAccessibilityLabel: "New chat",
+                        trailingAlignmentWidth: threadTrailingWidth,
                         action: model.createGlobalNewChat
                     )
                 }
@@ -133,8 +134,8 @@ struct SidebarView: View {
         .safeAreaInset(edge: .bottom) {
             accountRow
         }
-        .animation(.easeInOut(duration: 0.2), value: model.expandedProjectIDs)
-        .animation(.easeInOut(duration: 0.2), value: model.showAllProjects)
+        .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.expandedProjectIDs)
+        .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.showAllProjects)
     }
 
     private var searchField: some View {
@@ -156,6 +157,13 @@ struct SidebarView: View {
             .focused($isSearchFocused)
             .accessibilityLabel("Search")
             .accessibilityHint("Searches thread titles and message history")
+            .onChange(of: isSearchFocused) { _, focused in
+                #if DEBUG
+                    if focused {
+                        NSLog("Sidebar search focused")
+                    }
+                #endif
+            }
 
             if !model.searchQuery.isEmpty {
                 Button {
@@ -171,7 +179,7 @@ struct SidebarView: View {
             }
         }
         .padding(.horizontal, rowHorizontalPadding)
-        .padding(.vertical, rowVerticalPadding - 2)
+        .padding(.vertical, rowVerticalPadding + 1)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(searchFieldFillColor)
@@ -183,7 +191,7 @@ struct SidebarView: View {
                     lineWidth: 1
                 )
         )
-        .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+        .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: isSearchFocused)
     }
 
     @ViewBuilder
@@ -204,7 +212,7 @@ struct SidebarView: View {
 
         if model.namedProjects.count > projectsPreviewCount {
             Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
+                withAnimation(.easeInOut(duration: tokens.motion.transitionDuration)) {
                     model.showAllProjects.toggle()
                 }
             } label: {
@@ -226,7 +234,7 @@ struct SidebarView: View {
                 isHovered: isSeeMoreHovered
             ))
             .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.15)) {
+                withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
                     isSeeMoreHovered = hovering
                 }
             }
@@ -235,12 +243,12 @@ struct SidebarView: View {
 
     private func projectRow(_ project: ProjectRecord) -> some View {
         let isExpanded = model.expandedProjectIDs.contains(project.id)
-        let isSelected = model.selectedProjectID == project.id
+        let isSelected = model.isProjectSidebarVisuallySelected(project.id)
         let isHovered = hoveredProjectID == project.id
         let isFlashed = flashedProjectID == project.id
 
         return HStack(spacing: 8) {
-            Image(systemName: "folder")
+            Image(systemName: projectLeadingIconName(isExpanded: isExpanded, isHovered: isHovered))
                 .font(sidebarBodyIconFont)
                 .foregroundStyle(.secondary)
                 .frame(width: iconColumnWidth, alignment: .leading)
@@ -253,12 +261,6 @@ struct SidebarView: View {
             Spacer(minLength: 6)
 
             HStack(spacing: controlSlotSpacing) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(sidebarMetaIconFont)
-                    .foregroundStyle(.secondary)
-                    .frame(width: projectChevronWidth, height: controlIconWidth, alignment: .center)
-                    .opacity(isHovered ? 1 : 0)
-
                 Button {
                     if model.selectedProjectID != project.id {
                         model.selectProject(project.id)
@@ -299,18 +301,27 @@ struct SidebarView: View {
         .padding(.vertical, rowVerticalPadding)
         .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(rowFillColor(isActive: isSelected, isHovered: isHovered || isFlashed))
         )
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(alignment: .leading) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(Color(hex: tokens.palette.accentHex).opacity(0.85))
+                    .frame(width: 2)
+                    .padding(.vertical, 5)
+                    .padding(.leading, 2)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
                 hoveredProjectID = hovering ? project.id : (hoveredProjectID == project.id ? nil : hoveredProjectID)
             }
         }
         .onTapGesture {
             flashedProjectID = project.id
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(.easeInOut(duration: tokens.motion.transitionDuration)) {
                 model.toggleProjectExpanded(project.id)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
@@ -386,15 +397,24 @@ struct SidebarView: View {
         .padding(.vertical, rowVerticalPadding)
         .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(rowFillColor(isActive: isSelected, isHovered: isHovered))
         )
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(alignment: .leading) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(Color(hex: tokens.palette.accentHex).opacity(0.85))
+                    .frame(width: 2)
+                    .padding(.vertical, 5)
+                    .padding(.leading, 2)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .onTapGesture {
             model.selectThread(thread.id)
         }
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
                 hoveredThreadID = hovering ? thread.id : (hoveredThreadID == thread.id ? nil : hoveredThreadID)
             }
         }
@@ -404,10 +424,10 @@ struct SidebarView: View {
 
     private func rowFillColor(isActive: Bool, isHovered: Bool) -> Color {
         if isActive {
-            return Color.primary.opacity(0.10)
+            return Color.primary.opacity(tokens.surfaces.activeOpacity)
         }
         if isHovered {
-            return Color.primary.opacity(0.08)
+            return Color.primary.opacity(tokens.surfaces.raisedOpacity)
         }
         return .clear
     }
@@ -513,16 +533,23 @@ struct SidebarView: View {
 
     private var searchFieldFillColor: Color {
         if colorScheme == .dark {
-            return Color.white.opacity(isSearchFocused ? 0.18 : 0.13)
+            return Color.white.opacity(isSearchFocused ? 0.14 : 0.10)
         }
-        return Color.black.opacity(isSearchFocused ? 0.07 : 0.05)
+        return Color.black.opacity(isSearchFocused ? 0.055 : 0.04)
     }
 
     private var searchFieldBorderColor: Color {
         if colorScheme == .dark {
-            return Color.white.opacity(isSearchFocused ? 0.24 : 0.14)
+            return Color.white.opacity(isSearchFocused ? 0.18 : 0.12)
         }
-        return Color.black.opacity(isSearchFocused ? 0.16 : 0.08)
+        return Color.black.opacity(isSearchFocused ? 0.12 : 0.07)
+    }
+
+    private func projectLeadingIconName(isExpanded: Bool, isHovered: Bool) -> String {
+        if isExpanded || isHovered {
+            return isExpanded ? "chevron.down" : "chevron.right"
+        }
+        return "folder"
     }
 }
 
@@ -540,6 +567,7 @@ private struct SidebarActionRow: View {
     let action: () -> Void
 
     @State private var isHovered = false
+    @Environment(\.designTokens) private var tokens
 
     init(
         icon: String,
@@ -591,7 +619,7 @@ private struct SidebarActionRow: View {
             isHovered: isHovered
         ))
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
                 isHovered = hovering
             }
         }
