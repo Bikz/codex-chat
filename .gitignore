@@ -1,0 +1,21 @@
+# Private planning and memory docs
+docs/
+
+# macOS / Xcode / Swift
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+# Package manager
+node_modules/
+pnpm-lock.yaml
+
+# Logs and temp
+*.log
+.tmp/
