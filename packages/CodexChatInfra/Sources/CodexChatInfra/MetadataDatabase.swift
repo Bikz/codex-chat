@@ -143,6 +143,13 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v8_add_project_memory_settings") { db in
+            try db.alter(table: "projects") { table in
+                table.add(column: "memoryWriteMode", .text).notNull().defaults(to: "off")
+                table.add(column: "memoryEmbeddingsEnabled", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         return migrator
     }
 }

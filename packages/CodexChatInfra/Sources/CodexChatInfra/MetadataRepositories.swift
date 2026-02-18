@@ -33,6 +33,8 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
     var approvalPolicy: String
     var networkAccess: Bool
     var webSearch: String
+    var memoryWriteMode: String
+    var memoryEmbeddingsEnabled: Bool
     var createdAt: Date
     var updatedAt: Date
 
@@ -45,6 +47,8 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
         self.approvalPolicy = record.approvalPolicy.rawValue
         self.networkAccess = record.networkAccess
         self.webSearch = record.webSearch.rawValue
+        self.memoryWriteMode = record.memoryWriteMode.rawValue
+        self.memoryEmbeddingsEnabled = record.memoryEmbeddingsEnabled
         self.createdAt = record.createdAt
         self.updatedAt = record.updatedAt
     }
@@ -59,6 +63,8 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
             approvalPolicy: ProjectApprovalPolicy(rawValue: approvalPolicy) ?? .untrusted,
             networkAccess: networkAccess,
             webSearch: ProjectWebSearchMode(rawValue: webSearch) ?? .cached,
+            memoryWriteMode: ProjectMemoryWriteMode(rawValue: memoryWriteMode) ?? .off,
+            memoryEmbeddingsEnabled: memoryEmbeddingsEnabled,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -265,6 +271,20 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
             entity.approvalPolicy = settings.approvalPolicy.rawValue
             entity.networkAccess = settings.networkAccess
             entity.webSearch = settings.webSearch.rawValue
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func updateProjectMemorySettings(id: UUID, settings: ProjectMemorySettings) async throws -> ProjectRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ProjectEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
+
+            entity.memoryWriteMode = settings.writeMode.rawValue
+            entity.memoryEmbeddingsEnabled = settings.embeddingsEnabled
             entity.updatedAt = Date()
             try entity.update(db)
             return entity.record

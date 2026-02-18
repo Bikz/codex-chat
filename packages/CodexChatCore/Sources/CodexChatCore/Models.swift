@@ -23,6 +23,22 @@ public enum ProjectWebSearchMode: String, CaseIterable, Hashable, Sendable, Coda
     case disabled
 }
 
+public enum ProjectMemoryWriteMode: String, CaseIterable, Hashable, Sendable, Codable {
+    case off
+    case summariesOnly = "summaries-only"
+    case summariesAndKeyFacts = "summaries-and-key-facts"
+}
+
+public struct ProjectMemorySettings: Hashable, Sendable, Codable {
+    public var writeMode: ProjectMemoryWriteMode
+    public var embeddingsEnabled: Bool
+
+    public init(writeMode: ProjectMemoryWriteMode, embeddingsEnabled: Bool) {
+        self.writeMode = writeMode
+        self.embeddingsEnabled = embeddingsEnabled
+    }
+}
+
 public struct ProjectSafetySettings: Hashable, Sendable, Codable {
     public var sandboxMode: ProjectSandboxMode
     public var approvalPolicy: ProjectApprovalPolicy
@@ -70,6 +86,8 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
     public var approvalPolicy: ProjectApprovalPolicy
     public var networkAccess: Bool
     public var webSearch: ProjectWebSearchMode
+    public var memoryWriteMode: ProjectMemoryWriteMode
+    public var memoryEmbeddingsEnabled: Bool
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -82,6 +100,8 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         approvalPolicy: ProjectApprovalPolicy = .untrusted,
         networkAccess: Bool = false,
         webSearch: ProjectWebSearchMode = .cached,
+        memoryWriteMode: ProjectMemoryWriteMode = .off,
+        memoryEmbeddingsEnabled: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -93,6 +113,8 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         self.approvalPolicy = approvalPolicy
         self.networkAccess = networkAccess
         self.webSearch = webSearch
+        self.memoryWriteMode = memoryWriteMode
+        self.memoryEmbeddingsEnabled = memoryEmbeddingsEnabled
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

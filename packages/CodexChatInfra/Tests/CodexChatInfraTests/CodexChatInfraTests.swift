@@ -38,6 +38,8 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertEqual(project.approvalPolicy, .untrusted)
         XCTAssertEqual(project.networkAccess, false)
         XCTAssertEqual(project.webSearch, .cached)
+        XCTAssertEqual(project.memoryWriteMode, .off)
+        XCTAssertEqual(project.memoryEmbeddingsEnabled, false)
 
         let thread = try await repositories.threadRepository.createThread(projectID: project.id, title: "First")
         XCTAssertEqual(thread.projectId, project.id)
@@ -80,6 +82,13 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertEqual(updatedProject.approvalPolicy, .onRequest)
         XCTAssertEqual(updatedProject.networkAccess, true)
         XCTAssertEqual(updatedProject.webSearch, .live)
+
+        let updatedMemory = try await repositories.projectRepository.updateProjectMemorySettings(
+            id: project.id,
+            settings: ProjectMemorySettings(writeMode: .summariesOnly, embeddingsEnabled: true)
+        )
+        XCTAssertEqual(updatedMemory.memoryWriteMode, .summariesOnly)
+        XCTAssertEqual(updatedMemory.memoryEmbeddingsEnabled, true)
 
         let secret = try await repositories.projectSecretRepository.upsertSecret(
             projectID: project.id,
