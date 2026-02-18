@@ -341,6 +341,78 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testLoadCodexConfigMigrationUsesSafetyWebSearchWhenLegacyWebSearchMissing() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-runtime-defaults-fallback-\(UUID().uuidString)", isDirectory: true)
+        let storagePaths = CodexChatStoragePaths(rootURL: root)
+        try storagePaths.ensureRootStructure()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let safety = ProjectSafetySettings(
+            sandboxMode: .workspaceWrite,
+            approvalPolicy: .onRequest,
+            networkAccess: true,
+            webSearch: .live
+        )
+
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeDefaultModel,
+            value: "gpt-5"
+        )
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeDefaultReasoning,
+            value: AppModel.ReasoningLevel.high.rawValue
+        )
+        let encodedSafety = try JSONEncoder().encode(safety)
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeDefaultSafety,
+            value: String(decoding: encodedSafety, as: UTF8.self)
+        )
+
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            storagePaths: storagePaths
+        )
+        try await model.loadCodexConfig()
+
+        XCTAssertEqual(model.defaultModel, "gpt-5")
+        XCTAssertEqual(model.defaultReasoning, .high)
+        XCTAssertEqual(model.defaultWebSearch, .live)
+        XCTAssertEqual(model.defaultSafetySettings, safety)
+
+        let migratedDocument = try CodexConfigDocument.parse(
+            rawText: String(contentsOf: storagePaths.codexConfigURL, encoding: .utf8)
+        )
+        XCTAssertEqual(migratedDocument.value(at: [.key("web_search")])?.stringValue, "live")
+    }
+
+    @MainActor
+    func testSaveCodexConfigAndRestartRuntimeShowsNextStartMessageWhenRuntimeUnavailable() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-save-config-\(UUID().uuidString)", isDirectory: true)
+        let storagePaths = CodexChatStoragePaths(rootURL: root)
+        try storagePaths.ensureRootStructure()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            storagePaths: storagePaths
+        )
+        model.updateCodexConfigValue(path: [.key("model")], value: .string("gpt-5-codex"))
+
+        await model.saveCodexConfigAndRestartRuntime()
+
+        XCTAssertEqual(model.codexConfigStatusMessage, "Saved config.toml. Changes apply on next runtime start.")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storagePaths.codexConfigURL.path))
+    }
+
+    @MainActor
     func testEffectiveWebSearchModeClampsToProjectPolicy() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
 
