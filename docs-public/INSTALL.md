@@ -1,63 +1,80 @@
-# Install / Build / Test
+# Install, Build, Test
 
 ## Requirements
 
-- macOS 13+ (SwiftPM platform minimum in `apps/CodexChatApp/Package.swift`).
-- Xcode 16+ (Swift tools version `6.0`) or an equivalent Swift toolchain.
-- Homebrew (for SwiftFormat / SwiftLint).
-- Node 22+ (for `corepack` / `pnpm`; used only for workspace scripts).
+- macOS 14+
+- Xcode 16+ (Swift tools `6.0`)
+- Node 22+
+- Homebrew
+
+Install tooling:
+
+```sh
+brew install swiftformat swiftlint gitleaks
+```
+
+Optional tooling:
+
+```sh
+brew install periphery
+```
 
 ## Setup
 
-From the repo root:
+From repo root:
 
 ```sh
 corepack enable
 pnpm install
-
-brew install swiftformat swiftlint
-
-# Optional: dead-code scan tooling.
-brew install periphery
 ```
 
-## Build + Test
-
-From the repo root:
-
-```sh
-pnpm -s run check
-```
-
-## Fast Validation Loop
-
-For the fastest local loop (format-check, lint, and a tight unit test subset):
+## Validate
 
 ```sh
 make quick
+pnpm -s run check
 ```
 
-## Run In Xcode
-
-Open the app package:
+## Run In Xcode (Canonical)
 
 ```sh
-open apps/CodexChatApp/Package.swift
+open apps/CodexChatHost/CodexChatHost.xcodeproj
 ```
 
-Select the `CodexChatApp` scheme and run.
+Use scheme `CodexChatHost`.
 
-## Codex CLI
+This is the canonical app run path and matches release bundle behavior (bundle ID, icon, menu metadata, permissions).
 
-The app integrates the local Codex runtime via `codex app-server`.
-If the `codex` binary is missing, CodexChat will show an “Install Codex” guidance view and remain usable for local-only features.
+## Contributor CLI (Headless)
 
-## Build Release DMG
+```sh
+cd apps/CodexChatApp
+swift run CodexChatCLI doctor
+swift run CodexChatCLI smoke
+swift run CodexChatCLI repro --fixture basic-turn
+```
 
-For signed/notarized/stapled release artifacts, use:
+Use CLI commands for diagnostics/smoke/repro only. Do GUI QA in host app.
+
+## Runtime Dependency
+
+CodexChat integrates with local Codex runtime via `codex app-server`.
+
+If `codex` is missing, the app remains usable for local-only flows and shows setup guidance.
+
+## Voice Input Permissions
+
+On first voice use, macOS asks for:
+
+- Microphone
+- Speech Recognition
+
+If denied, typed input remains fully available.
+
+## Release Packaging
 
 ```sh
 make release-dmg
 ```
 
-Release credential setup is documented in `docs-public/RELEASE.md`.
+See `RELEASE.md` for signing/notarization credentials and workflow.

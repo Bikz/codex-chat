@@ -1,5 +1,5 @@
-@testable import CodexChatApp
 import CodexChatCore
+@testable import CodexChatShared
 import Foundation
 import XCTest
 

@@ -1,4 +1,4 @@
-@testable import CodexChatApp
+@testable import CodexChatShared
 import CodexMods
 import CodexSkills
 import XCTest

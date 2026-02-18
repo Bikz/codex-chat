@@ -1,0 +1,239 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000010000000000000001 /* CodexChatHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000020000000000000001 /* CodexChatHostApp.swift */; };
+		A10000010000000000000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000020000000000000002 /* Assets.xcassets */; };
+		A10000010000000000000003 /* CodexChatShared in Frameworks */ = {isa = PBXBuildFile; productRef = A100000E0000000000000001 /* CodexChatShared */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A10000020000000000000001 /* CodexChatHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexChatHostApp.swift; sourceTree = "<group>"; };
+		A10000020000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A10000020000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000020000000000000004 /* CodexChatHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodexChatHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000030000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000010000000000000003 /* CodexChatShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000040000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A10000040000000000000002 /* CodexChatHost */,
+				A10000040000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000040000000000000002 /* CodexChatHost */ = {
+			isa = PBXGroup;
+			path = CodexChatHost;
+			sourceTree = "<group>";
+			children = (
+				A10000020000000000000001 /* CodexChatHostApp.swift */,
+				A10000020000000000000002 /* Assets.xcassets */,
+				A10000020000000000000003 /* Info.plist */,
+			);
+		};
+		A10000040000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A10000020000000000000004 /* CodexChatHost.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000050000000000000001 /* CodexChatHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000070000000000000001 /* Build configuration list for PBXNativeTarget "CodexChatHost" */;
+			buildPhases = (
+				A10000030000000000000002 /* Sources */,
+				A10000030000000000000001 /* Frameworks */,
+				A10000030000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CodexChatHost;
+			packageProductDependencies = (
+				A100000E0000000000000001 /* CodexChatShared */,
+			);
+			productName = CodexChatHost;
+			productReference = A10000020000000000000004 /* CodexChatHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000060000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A10000050000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = A10000070000000000000002 /* Build configuration list for PBXProject "CodexChatHost" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A10000040000000000000001;
+			packageReferences = (
+				A100000D0000000000000001 /* XCLocalSwiftPackageReference "../CodexChatApp" */,
+			);
+			productRefGroup = A10000040000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000050000000000000001 /* CodexChatHost */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000030000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000010000000000000002 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000030000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000010000000000000001 /* CodexChatHostApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A10000080000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CodexChatHost/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codexchat.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A10000080000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CodexChatHost/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codexchat.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A10000090000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		A10000090000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000070000000000000001 /* Build configuration list for PBXNativeTarget "CodexChatHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000080000000000000001 /* Debug */,
+				A10000080000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000070000000000000002 /* Build configuration list for PBXProject "CodexChatHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000090000000000000001 /* Debug */,
+				A10000090000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A100000D0000000000000001 /* XCLocalSwiftPackageReference "../CodexChatApp" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../CodexChatApp;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A100000E0000000000000001 /* CodexChatShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000D0000000000000001 /* XCLocalSwiftPackageReference "../CodexChatApp" */;
+			productName = CodexChatShared;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A10000060000000000000001 /* Project object */;
+}

@@ -1,42 +1,44 @@
 # Security Model (High Level)
 
-CodexChat is a local-first macOS app that integrates with the local Codex runtime. It is designed to make agentic actions legible and reviewable.
+CodexChat is a local-first macOS app with explicit action visibility and user approvals for high-risk runtime actions.
 
 ## Data Storage
 
-- App metadata (projects, threads, preferences) is stored locally in an app-managed SQLite database under the user's Application Support directory.
-- Project artifacts intended for long-term ownership (thread transcripts, memory notes, mods) live as files inside the user's project folder.
-- Canonical transcript files are stored per thread at `chats/threads/<thread-id>.md` and updated with crash-safe writes (temporary file + atomic replace).
+- App metadata (projects, threads, preferences, mappings) is stored in local SQLite under `~/CodexChat/system/metadata.sqlite`.
+- User-owned project artifacts live inside each project folder (`chats/threads`, `memory`, `mods`, `artifacts`).
+- Canonical thread transcripts are written to `chats/threads/<thread-id>.md` with crash-safe atomic replacement.
 
 ## Runtime Safety Controls
 
-CodexChat applies project-level safety settings to Codex turns:
+Project safety settings constrain runtime turns:
 
-- `sandbox_mode`: controls filesystem boundaries (ex: read-only vs workspace-write vs full access).
-- `approval_policy`: controls how often the runtime pauses for explicit approval.
-- Network and web search can be restricted based on the project policy.
+- `sandbox_mode`
+- `approval_policy`
+- `network_access`
+- `web_search`
 
-CodexChat ships with a local, readable policy note in the app bundle (`SafetyPolicy.md`) and exposes a UI path to open it.
+CodexChat keeps dangerous actions legible via transcript action cards and explicit approval flows.
 
-## Shell Workspace
+## Shell Workspace Boundary
 
-- Shell panes run as local interactive processes and are intentionally independent from Codex runtime safety controls.
-- Project `sandbox_mode`, `approval_policy`, network, and web-search settings apply to runtime agent turns, not shell-pane commands.
-- For untrusted projects, CodexChat requires a one-time explicit warning acknowledgement before opening the shell workspace.
-- Shell pane activity is not copied into thread transcript files.
-- Transcript files are not automatically injected into runtime prompts; they are discoverable project files for user/agent workflows.
+- Shell panes are local interactive processes and intentionally separate from runtime approval controls.
+- Runtime safety settings do not sandbox shell panes.
+- Untrusted projects require a one-time explicit warning acknowledgment before opening shell workspace.
 
 ## Secrets
 
-- API keys are stored in macOS Keychain.
-- The app avoids logging secrets and uses keychain references when persisting per-project secret records.
+- API keys are stored in macOS Keychain only.
+- Secret material is not persisted in plain text logs.
+
+## Trust-Gated Rendering
+
+- Assistant Markdown rendering is trust-gated for external content.
+- Untrusted projects block outbound `http/https` links and remote images by default.
 
 ## UI Mods Safety
 
-UI mods are files on disk (global and per-project).
+When runtime proposes edits in mod roots, CodexChat enforces review:
 
-If the agent proposes edits to files inside mod roots, CodexChat forces an explicit review step:
-
-- A snapshot of mod roots is captured at turn start.
-- At turn completion, mod-file changes trigger a mandatory review sheet.
-- The user can accept changes or revert back to the snapshot.
+- capture pre-turn snapshot
+- show mandatory review sheet on completion
+- allow explicit accept or full revert

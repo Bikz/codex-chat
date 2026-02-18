@@ -1,0 +1,22 @@
+{
+  "name": "basic-turn",
+  "events": [
+    {
+      "kind": "delta",
+      "text": "Planning complete."
+    },
+    {
+      "kind": "action",
+      "title": "Read /Users/bikram/Developer/CodexChat/README.md"
+    },
+    {
+      "kind": "turnCompleted",
+      "status": "completed"
+    }
+  ],
+  "expected": {
+    "transcript": "Planning complete.",
+    "actionCount": 1,
+    "finalStatus": "completed"
+  }
+}

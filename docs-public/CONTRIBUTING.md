@@ -1,33 +1,38 @@
 # Contributing
 
-## Repo Conventions
+## Core Guardrails
 
-- The default UI is two-pane (sidebar + conversation canvas). Do not add a persistent third pane.
-- `docs/` is private planning memory and is intentionally ignored by git. Public docs should go in `docs-public/`.
-- Prefer small, atomic commits with descriptive messages.
-- Keep the repo steerable: when a Swift file grows beyond ~500 LOC, split it into focused types or `TypeName+Feature.swift` extensions.
-- Do not log secrets. Never print API keys/tokens to stdout, logs, or test snapshots.
-- Keep UI surfaces token-driven: for rounded panel/card containers, prefer `tokenCard(...)` from `CodexChatUI` over hardcoded `.thinMaterial` / `.regularMaterial` so mod overrides apply consistently.
-- **Git Hooks**: We use `husky` to enforce `SwiftFormat` and `SwiftLint` on commit. Ensure you have these installed.
+- Preserve two-pane IA (sidebar + conversation canvas).
+- Do not add a persistent third pane.
+- Ship empty/loading/error states for user-facing surfaces.
+- Keep keyboard navigation, focus visibility, and contrast accessible.
+- Never log secrets.
 
-## Development
+## Module Boundaries
 
-Run build + tests from the repo root:
+- `apps/CodexChatHost`: canonical GUI host (`@main`, bundle identity, assets, release surface).
+- `apps/CodexChatApp`: `CodexChatShared` (shared behavior) + `CodexChatCLI` (headless contributor tooling).
+- `packages/*`: reusable packages.
+
+Do not duplicate app/runtime logic in host or CLI shells.
+
+## Local Workflow
 
 ```sh
 corepack enable
 pnpm install
-
+make quick
 pnpm -s run check
 ```
 
-For the fastest local loop:
+## Preferred Run Paths
 
-```sh
-make quick
-```
+- GUI QA and feature verification: `CodexChatHost` scheme in Xcode.
+- Deterministic diagnostics/repro: `swift run CodexChatCLI ...`.
 
-## Packages
+## Code Quality Expectations
 
-- `apps/CodexChatApp`: macOS app.
-- `packages/*`: modular Swift packages (Core/Infra/UI/Runtime/Skills/Memory/Mods).
+- Keep changes focused and atomic.
+- Add regression tests for bug fixes when feasible.
+- Keep files steerable (split very large files).
+- Prefer token-driven UI surfaces over one-off styling.

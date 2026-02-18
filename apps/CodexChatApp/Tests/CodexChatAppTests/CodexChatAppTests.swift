@@ -1,6 +1,6 @@
-@testable import CodexChatApp
 import CodexChatCore
 import CodexChatInfra
+@testable import CodexChatShared
 import CodexKit
 import CodexMemory
 import CodexMods

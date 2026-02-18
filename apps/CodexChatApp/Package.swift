@@ -5,7 +5,10 @@ let package = Package(
     name: "CodexChatApp",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "CodexChatApp", targets: ["CodexChatApp"]),
+        .library(name: "CodexChatShared", targets: ["CodexChatShared"]),
+        .executable(name: "CodexChatCLI", targets: ["CodexChatCLI"]),
+        .executable(name: "CodexChatApp", targets: ["CodexChatCLI"]),
+        .executable(name: "CodexChatDesktopFallback", targets: ["CodexChatAppExecutable"]),
     ],
     dependencies: [
         .package(path: "../../packages/CodexChatCore"),
@@ -15,12 +18,13 @@ let package = Package(
         .package(path: "../../packages/CodexSkills"),
         .package(path: "../../packages/CodexMemory"),
         .package(path: "../../packages/CodexMods"),
+        .package(url: "https://github.com/LebJe/TOMLKit.git", from: "0.6.0"),
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.0.0"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.10.1"),
     ],
     targets: [
-        .executableTarget(
-            name: "CodexChatApp",
+        .target(
+            name: "CodexChatShared",
             dependencies: [
                 "CodexChatCore",
                 "CodexChatInfra",
@@ -29,16 +33,28 @@ let package = Package(
                 "CodexSkills",
                 "CodexMemory",
                 "CodexMods",
+                .product(name: "TOMLKit", package: "TOMLKit"),
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
+            path: "Sources/CodexChatApp",
             resources: [
                 .copy("Resources"),
             ]
         ),
+        .executableTarget(
+            name: "CodexChatCLI",
+            dependencies: ["CodexChatShared"],
+            path: "Sources/CodexChatCLI"
+        ),
+        .executableTarget(
+            name: "CodexChatAppExecutable",
+            dependencies: ["CodexChatShared"],
+            path: "Sources/CodexChatAppExecutable"
+        ),
         .testTarget(
             name: "CodexChatAppTests",
-            dependencies: ["CodexChatApp"],
+            dependencies: ["CodexChatShared"],
             resources: [
                 .process("Fixtures"),
             ]

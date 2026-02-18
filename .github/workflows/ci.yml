@@ -5,6 +5,8 @@ on:
     branches: ["main"]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -129,3 +131,26 @@ jobs:
           TARGET_ARCH=arm64 \
           VERSION=ci-${{ github.run_number }} \
           ./scripts/release/build-notarized-dmg.sh
+
+  host-archive-nightly:
+    if: github.event_name == 'schedule' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify host metadata parity
+        run: |
+          ./scripts/check-host-app-metadata.sh
+          ./scripts/verify-build-settings-parity.sh
+
+      - name: Archive host app
+        run: |
+          xcodebuild \
+            -project apps/CodexChatHost/CodexChatHost.xcodeproj \
+            -scheme CodexChatHost \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -archivePath "$RUNNER_TEMP/CodexChatHost.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            archive

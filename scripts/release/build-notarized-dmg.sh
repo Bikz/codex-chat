@@ -3,8 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+HOST_PROJECT_PATH="${HOST_PROJECT_PATH:-$ROOT/apps/CodexChatHost/CodexChatHost.xcodeproj}"
+HOST_SCHEME="${HOST_SCHEME:-CodexChatHost}"
 APP_PRODUCT_NAME="${APP_PRODUCT_NAME:-CodexChat}"
-APP_EXECUTABLE_NAME="${APP_EXECUTABLE_NAME:-CodexChatApp}"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.codexchat.app}"
 VERSION="${VERSION:-${GITHUB_REF_NAME:-dev}}"
 VERSION="${VERSION#refs/tags/}"
@@ -21,7 +22,7 @@ NOTARY_ISSUER_ID="${NOTARY_ISSUER_ID:-}"
 NOTARY_KEY_FILE="${NOTARY_KEY_FILE:-}"
 
 WORK_DIR="$ROOT/.release-work/$VERSION"
-BUILD_DIR="$WORK_DIR/.build"
+ARCHIVE_PATH="$WORK_DIR/$HOST_SCHEME.xcarchive"
 APP_BUNDLE_PATH="$WORK_DIR/$APP_PRODUCT_NAME.app"
 DMG_NAME="$APP_PRODUCT_NAME-$VERSION.dmg"
 DMG_PATH="$WORK_DIR/$DMG_NAME"
@@ -45,26 +46,6 @@ require_env() {
   fi
 }
 
-locate_release_binary() {
-  local direct="$BUILD_DIR/release/$APP_EXECUTABLE_NAME"
-  if [[ -x "$direct" ]]; then
-    echo "$direct"
-    return 0
-  fi
-
-  local candidate
-  candidate="$(find "$BUILD_DIR" -type f -name "$APP_EXECUTABLE_NAME" -path "*/release/*" | head -n 1 || true)"
-  [[ -n "$candidate" ]] || fail "unable to locate release binary ($APP_EXECUTABLE_NAME)"
-  echo "$candidate"
-}
-
-locate_resource_bundle() {
-  local candidate
-  candidate="$(find "$BUILD_DIR" -type d -name "*_CodexChatApp.bundle" -path "*/release/*" | head -n 1 || true)"
-  [[ -n "$candidate" ]] || fail "unable to locate SwiftPM resource bundle for CodexChatApp"
-  echo "$candidate"
-}
-
 ensure_expected_arch() {
   local actual_arch
   actual_arch="$(uname -m)"
@@ -73,52 +54,44 @@ ensure_expected_arch() {
   fi
 }
 
-build_release_binary() {
-  echo "Building release binary..."
-  rm -rf "$BUILD_DIR"
-  (cd "$ROOT/apps/CodexChatApp" && swift build -c release --scratch-path "$BUILD_DIR")
+set_plist_value() {
+  local plist_path="$1"
+  local key="$2"
+  local value="$3"
+
+  if /usr/libexec/PlistBuddy -c "Print :$key" "$plist_path" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :$key $value" "$plist_path"
+  else
+    /usr/libexec/PlistBuddy -c "Add :$key string $value" "$plist_path"
+  fi
 }
 
-create_app_bundle() {
-  local binary_path="$1"
-  local resource_bundle_path="$2"
+build_release_app_from_host_archive() {
+  echo "Building host archive..."
+  rm -rf "$ARCHIVE_PATH" "$APP_BUNDLE_PATH"
 
-  echo "Assembling app bundle..."
-  rm -rf "$APP_BUNDLE_PATH"
-  mkdir -p "$APP_BUNDLE_PATH/Contents/MacOS"
-  mkdir -p "$APP_BUNDLE_PATH/Contents/Resources"
+  xcodebuild \
+    -quiet \
+    -project "$HOST_PROJECT_PATH" \
+    -scheme "$HOST_SCHEME" \
+    -configuration Release \
+    -destination "generic/platform=macOS" \
+    -archivePath "$ARCHIVE_PATH" \
+    CODE_SIGNING_ALLOWED=NO \
+    archive
 
-  cp "$binary_path" "$APP_BUNDLE_PATH/Contents/MacOS/$APP_EXECUTABLE_NAME"
-  chmod +x "$APP_BUNDLE_PATH/Contents/MacOS/$APP_EXECUTABLE_NAME"
+  local archived_app
+  archived_app="$(find "$ARCHIVE_PATH/Products/Applications" -maxdepth 1 -type d -name '*.app' | head -n 1 || true)"
+  [[ -n "$archived_app" ]] || fail "unable to locate archived .app at $ARCHIVE_PATH/Products/Applications"
 
-  cp -R "$resource_bundle_path" "$APP_BUNDLE_PATH/Contents/Resources/"
+  cp -R "$archived_app" "$APP_BUNDLE_PATH"
 
-  cat > "$APP_BUNDLE_PATH/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDisplayName</key>
-  <string>$APP_PRODUCT_NAME</string>
-  <key>CFBundleExecutable</key>
-  <string>$APP_EXECUTABLE_NAME</string>
-  <key>CFBundleIdentifier</key>
-  <string>$APP_BUNDLE_ID</string>
-  <key>CFBundleName</key>
-  <string>$APP_PRODUCT_NAME</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>$VERSION</string>
-  <key>CFBundleVersion</key>
-  <string>$BUILD_NUMBER</string>
-  <key>LSMinimumSystemVersion</key>
-  <string>13.0</string>
-  <key>NSHighResolutionCapable</key>
-  <true/>
-</dict>
-</plist>
-EOF
+  local plist="$APP_BUNDLE_PATH/Contents/Info.plist"
+  [[ -f "$plist" ]] || fail "missing Info.plist in archived app bundle"
+
+  set_plist_value "$plist" "CFBundleIdentifier" "$APP_BUNDLE_ID"
+  set_plist_value "$plist" "CFBundleShortVersionString" "$VERSION"
+  set_plist_value "$plist" "CFBundleVersion" "$BUILD_NUMBER"
 }
 
 sign_item() {
@@ -178,11 +151,14 @@ create_dmg() {
 }
 
 main() {
-  require_command swift
+  require_command xcodebuild
   require_command hdiutil
   require_command xcrun
   require_command shasum
   require_command uname
+
+  "$ROOT/scripts/check-host-app-metadata.sh"
+  "$ROOT/scripts/verify-build-settings-parity.sh"
 
   mkdir -p "$WORK_DIR"
   mkdir -p "$DIST_DIR"
@@ -206,22 +182,26 @@ main() {
     xcrun notarytool --version >/dev/null
   fi
 
-  build_release_binary
-
-  local binary_path
-  binary_path="$(locate_release_binary)"
-  local resource_bundle_path
-  resource_bundle_path="$(locate_resource_bundle)"
-  create_app_bundle "$binary_path" "$resource_bundle_path"
+  build_release_app_from_host_archive
 
   if [[ "$SKIP_SIGNING" != "1" ]]; then
     sign_item "$APP_BUNDLE_PATH" "app"
     verify_signature "$APP_BUNDLE_PATH"
   fi
 
+  REQUIRE_SIGNATURE=$([[ "$SKIP_SIGNING" == "1" ]] && echo 0 || echo 1) \
+  REQUIRE_NOTARIZATION=0 \
+  EXPECTED_BUNDLE_ID="$APP_BUNDLE_ID" \
+  "$ROOT/scripts/verify-app-bundle.sh" "$APP_BUNDLE_PATH"
+
   if [[ "$SKIP_NOTARIZATION" != "1" ]]; then
     notarize_and_staple "$APP_BUNDLE_PATH"
     validate_notarized_item "$APP_BUNDLE_PATH" "app"
+
+    REQUIRE_SIGNATURE=1 \
+    REQUIRE_NOTARIZATION=1 \
+    EXPECTED_BUNDLE_ID="$APP_BUNDLE_ID" \
+    "$ROOT/scripts/verify-app-bundle.sh" "$APP_BUNDLE_PATH"
   fi
 
   create_dmg

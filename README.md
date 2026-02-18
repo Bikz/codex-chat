@@ -1,82 +1,72 @@
 # CodexChat
 
-CodexChat is a local-first macOS SwiftUI chat app that integrates the local Codex runtime (app-server) so everyday users can safely benefit from agentic capabilities (files, commands, skills, artifacts).
+CodexChat is a local-first macOS SwiftUI chat app that integrates the local Codex runtime (`codex app-server`) so users can safely run agentic tasks from a chat-first interface.
 
-## Product Rules
+## Product Contract
 
-- Default UI is **two-pane**: sidebar (Projects + Threads) + conversation canvas.
-- A persistent third pane is future scope (the architecture is designed to support it later).
+- UI is strictly two-pane: sidebar (projects + threads) and conversation canvas.
+- Do not ship a persistent third pane in current releases.
+- Capability discovery and invocation happen through the main composer (typed or voice).
 
-## Key Features
+## Architecture
 
-- Projects as real folders (trusted/untrusted) with per-project safety settings.
-- Streaming assistant responses in the transcript.
-- Inline, reviewable Action Cards (tool runs, file changes, approvals).
-- Canonical per-thread chat transcripts written as Markdown at `chats/threads/<thread-id>.md`, checkpointed during each turn for grep/search and external tooling.
-- Per-thread persistent follow-up queue: Enter sends when idle, auto-queues when busy, with edit/delete/re-prioritize and Auto FIFO drain.
-- In-flight `Steer` dispatch for capable runtimes, with deterministic fallback to "queue next" on legacy runtimes.
-- Skills discovery + install + per-project enablement (progressive disclosure).
-- Memory system stored as editable project files, with optional advanced retrieval.
-- System light/dark defaults with UI Mods overrides (including optional dark-specific overrides) and precedence `defaults < global < project`, hot reload, and **mandatory review** for agent-proposed mod edits.
-- Tokenized card/panel surfaces across sidebar lists and major sheets/canvases so Mods material overrides apply consistently.
-- Composer input uses tokenized body typography and supports `Cmd+Return` to send.
-- First-class Shell Workspace drawer with per-project multi-session shell panes, recursive splits, and close/restart controls.
-- Diagnostics surface for runtime status + logs.
-
-## Repo Layout
-
-- `apps/CodexChatApp`: macOS app.
+- `apps/CodexChatHost`: canonical GUI app target (`com.codexchat.app`) for local QA/dev and release distribution.
+- `apps/CodexChatApp`: shared app/runtime module (`CodexChatShared`) and contributor CLI (`CodexChatCLI`).
 - `packages/*`: modular Swift packages (`Core`, `Infra`, `UI`, `CodexKit`, `Skills`, `Memory`, `Mods`).
-- `.github/workflows`: CI.
-- `docs/`: private planning memory (ignored by git by design).
-- `docs-public/`: public documentation (tracked).
 
-## Build + Test
+## Requirements
 
-### Requirements
-
-- macOS 13+
-- Xcode 16+ (Swift tools version `6.0`)
+- macOS 14+
+- Xcode 16+ (Swift tools `6.0`)
+- Node 22+
 - Homebrew
-- Node 22+ (for `corepack` / `pnpm` and git hooks)
-- **gitleaks** (for secret scanning): `brew install gitleaks`
-- **SwiftLint** (for linting): `brew install swiftlint`
-- **SwiftFormat** (for formatting): `brew install swiftformat`
+- SwiftFormat, SwiftLint, gitleaks
 
-### Setup
-
-From the repo root:
+## Setup
 
 ```sh
 corepack enable
 pnpm install
-
 brew install swiftformat swiftlint gitleaks
 ```
 
-### Full Checks
-
-From the repo root:
-
-```sh
-pnpm -s run check
-```
-
-### Fast Checks
+## Validation
 
 ```sh
 make quick
+pnpm -s run check
+```
+
+## Run Locally
+
+Primary run path (canonical GUI behavior):
+
+```sh
+open apps/CodexChatHost/CodexChatHost.xcodeproj
+```
+
+Use the `CodexChatHost` scheme.
+
+Contributor CLI (headless diagnostics/repro):
+
+```sh
+cd apps/CodexChatApp
+swift run CodexChatCLI doctor
+swift run CodexChatCLI smoke
+swift run CodexChatCLI repro --fixture basic-turn
 ```
 
 ## Docs
 
+- `docs-public/README.md`
 - `docs-public/INSTALL.md`
-- `docs-public/RELEASE.md`
+- `docs-public/CONTRIBUTING.md`
+- `docs-public/ARCHITECTURE_CONTRACT.md`
 - `docs-public/SECURITY_MODEL.md`
 - `docs-public/MODS.md`
 - `docs-public/MODS_SHARING.md`
-- `docs-public/CONTRIBUTING.md`
+- `docs-public/RELEASE.md`
 
 ## License
 
-MIT License. See `LICENSE`.
+MIT. See `LICENSE`.

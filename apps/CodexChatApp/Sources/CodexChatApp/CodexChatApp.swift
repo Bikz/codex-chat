@@ -1,23 +1,16 @@
 import AppKit
-import CodexChatInfra
 import CodexChatUI
-import CodexKit
-import CodexSkills
 import SwiftUI
 
-@main
-struct CodexChatApplication: App {
+public struct CodexChatDesktopScene: Scene {
     @StateObject private var model: AppModel
 
-    init() {
-        // SwiftPM executable runs can have no main bundle identifier; disable
-        // automatic tab indexing to avoid AppKit tab-index warnings.
+    public init() {
         NSWindow.allowsAutomaticWindowTabbing = false
-        let bootstrap = Self.bootstrapModel()
-        _model = StateObject(wrappedValue: bootstrap)
+        _model = StateObject(wrappedValue: CodexChatBootstrap.bootstrapModel())
     }
 
-    var body: some Scene {
+    public var body: some Scene {
         WindowGroup {
             MainAppRoot(model: model)
                 .frame(minWidth: 600, minHeight: 400)
@@ -56,43 +49,6 @@ struct CodexChatApplication: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command, .option])
             }
-        }
-    }
-
-    @MainActor
-    private static func bootstrapModel() -> AppModel {
-        let storagePaths = CodexChatStoragePaths.current()
-
-        do {
-            try storagePaths.ensureRootStructure()
-            try CodexChatStorageMigrationCoordinator.performInitialMigrationIfNeeded(paths: storagePaths)
-
-            let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
-            let repositories = MetadataRepositories(database: database)
-
-            let skillCatalogService = SkillCatalogService(
-                codexHomeURL: storagePaths.codexHomeURL,
-                agentsHomeURL: storagePaths.agentsHomeURL
-            )
-            let runtime = CodexRuntime(
-                environmentOverrides: [
-                    "CODEX_HOME": storagePaths.codexHomeURL.path,
-                ]
-            )
-            return AppModel(
-                repositories: repositories,
-                runtime: runtime,
-                bootError: nil,
-                skillCatalogService: skillCatalogService,
-                storagePaths: storagePaths
-            )
-        } catch {
-            return AppModel(
-                repositories: nil,
-                runtime: nil,
-                bootError: error.localizedDescription,
-                storagePaths: storagePaths
-            )
         }
     }
 }
