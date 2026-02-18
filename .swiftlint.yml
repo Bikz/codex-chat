@@ -1,0 +1,35 @@
+included:
+  - apps
+  - packages
+  - tests
+
+excluded:
+  - "**/.build"
+  - "**/.swiftpm"
+  - "DerivedData"
+  - "docs"
+  - "docs-public"
+  - "node_modules"
+
+# Keep the initial ruleset lightweight so linting can be enforced early without a large cleanup PR.
+disabled_rules:
+  - cyclomatic_complexity
+  - file_length
+  - function_body_length
+  - function_parameter_count
+  - large_tuple
+  - nesting
+  - opening_brace
+  - trailing_comma
+  - type_body_length
+
+line_length:
+  warning: 160
+  error: 220
+  ignores_comments: true
+  ignores_urls: true
+
+identifier_name:
+  min_length:
+    warning: 2
+    error: 2

@@ -1,0 +1,9 @@
+--swiftversion 6.0
+
+--exclude .build
+--exclude .swiftpm
+--exclude DerivedData
+--exclude docs
+--exclude docs-public
+--exclude node_modules
+

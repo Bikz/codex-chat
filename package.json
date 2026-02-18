@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
+    "quick": "make quick",
+    "ci": "make ci",
     "swift:build": "bash scripts/swift-build-all.sh",
     "swift:test": "bash scripts/swift-test-all.sh",
     "check": "pnpm run swift:build && pnpm run swift:test"
