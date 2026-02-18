@@ -522,13 +522,39 @@ private struct MessageRow: View {
     let tokens: DesignTokens
 
     var body: some View {
+        let bubbleHex = message.role == .user ? tokens.bubbles.userBackgroundHex : tokens.bubbles.assistantBackgroundHex
+        let isPlain = tokens.bubbles.style == .plain
+        let foreground: Color = {
+            if message.role == .user, !isPlain {
+                return .white
+            }
+            return .primary
+        }()
+
         VStack(alignment: .leading, spacing: tokens.spacing.xSmall) {
             Text(message.role.rawValue.capitalized)
                 .font(.system(size: tokens.typography.captionSize, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isPlain ? .secondary : foreground.opacity(0.9))
             Text(message.text)
                 .font(.system(size: tokens.typography.bodySize))
+                .foregroundStyle(foreground)
                 .textSelection(.enabled)
+        }
+        .padding(12)
+        .background(bubbleBackground(style: tokens.bubbles.style, colorHex: bubbleHex, tokens: tokens))
+    }
+
+    @ViewBuilder
+    private func bubbleBackground(style: DesignTokens.BubbleStyle, colorHex: String, tokens: DesignTokens) -> some View {
+        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium)
+        switch style {
+        case .plain:
+            shape.fill(Color.clear)
+        case .glass:
+            shape.fill(tokens.materials.cardMaterial.material)
+                .overlay(shape.fill(Color(hex: colorHex).opacity(0.12)))
+        case .solid:
+            shape.fill(Color(hex: colorHex))
         }
     }
 }
@@ -536,6 +562,7 @@ private struct MessageRow: View {
 private struct ActionCardRow: View {
     let card: ActionCard
     @State private var isExpanded = false
+    @Environment(\.designTokens) private var tokens
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
@@ -554,7 +581,7 @@ private struct ActionCardRow: View {
             }
         }
         .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(tokens.materials.cardMaterial.material, in: RoundedRectangle(cornerRadius: tokens.radius.medium))
     }
 }
 
