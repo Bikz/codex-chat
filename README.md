@@ -73,6 +73,7 @@ make quick
 - `docs-public/INSTALL.md`
 - `docs-public/SECURITY_MODEL.md`
 - `docs-public/MODS.md`
+- `docs-public/MODS_SHARING.md`
 - `docs-public/CONTRIBUTING.md`
 
 ## License

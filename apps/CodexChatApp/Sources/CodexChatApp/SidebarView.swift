@@ -61,7 +61,7 @@ struct SidebarView: View {
                     verticalPadding: rowVerticalPadding,
                     accentHex: tokens.palette.accentHex,
                     iconColor: .secondary,
-                    action: model.openProjectFolder
+                    action: model.presentNewProjectSheet
                 )
 
                 projectRows

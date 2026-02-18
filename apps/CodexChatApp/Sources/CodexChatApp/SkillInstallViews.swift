@@ -1,4 +1,5 @@
 import CodexChatCore
+import CodexChatUI
 import CodexSkills
 import SwiftUI
 
@@ -10,25 +11,68 @@ struct SkillRow: View {
     let onUpdate: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(item.skill.name)
-                    .font(.headline)
-                Spacer()
-                Text(item.skill.scope.rawValue.capitalized)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.thinMaterial, in: Capsule())
+        SkillsModsCard(padding: 12) {
+            VStack(alignment: .leading, spacing: 9) {
+                header
+
+                Text(item.skill.description)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                metadata
+
+                actions
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color(hex: "#F39C31").opacity(0.2))
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Image(systemName: "cube.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Color(hex: "#CC7E1F"))
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(item.skill.name)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    Text(item.skill.scope.rawValue.capitalized)
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.primary.opacity(0.05), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+                }
             }
 
-            Text(item.skill.description)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Spacer()
 
+            Button {
+                onUpdate()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help("Update skill")
+            .accessibilityLabel("Update \(item.skill.name)")
+        }
+    }
+
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 6) {
             if item.skill.hasScripts {
-                Label("Risk: scripts/ detected", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                Label("Scripts detected", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
                     .foregroundStyle(.orange)
             }
 
@@ -36,31 +80,34 @@ struct SkillRow: View {
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .textSelection(.enabled)
-
-            HStack {
-                Toggle("Enabled for project", isOn: Binding(
-                    get: { item.isEnabledForProject },
-                    set: { onToggle($0) }
-                ))
-                .toggleStyle(.switch)
-                .disabled(!hasSelectedProject)
-
-                Spacer()
-
-                Button("Use in Composer") {
-                    onInsert()
-                }
-                .buttonStyle(.bordered)
-                .disabled(!item.isEnabledForProject)
-
-                Button("Update") {
-                    onUpdate()
-                }
-                .buttonStyle(.bordered)
-            }
         }
-        .padding(.vertical, 6)
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            Button {
+                onToggle(!item.isEnabledForProject)
+            } label: {
+                Label(
+                    item.isEnabledForProject ? "Enabled" : "Enable",
+                    systemImage: item.isEnabledForProject ? "checkmark.circle.fill" : "circle"
+                )
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!hasSelectedProject)
+
+            Button("Use in Composer") {
+                onInsert()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!item.isEnabledForProject)
+
+            Spacer()
+        }
     }
 }
 
@@ -83,7 +130,7 @@ struct InstallSkillSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Install Skill")
                 .font(.title3.weight(.semibold))
 
@@ -111,6 +158,7 @@ struct InstallSkillSheet: View {
             if !isTrustedSource {
                 Toggle("I trust this source and want to install it anyway.", isOn: $trustConfirmed)
                     .toggleStyle(.switch)
+
                 Text("Unknown source detected. Installing may run unreviewed scripts.")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -124,6 +172,7 @@ struct InstallSkillSheet: View {
 
             HStack {
                 Spacer()
+
                 Button("Cancel") {
                     isPresented = false
                 }
@@ -139,7 +188,7 @@ struct InstallSkillSheet: View {
                 .disabled(!canSubmit || model.isSkillOperationInProgress)
             }
         }
-        .padding(20)
+        .padding(22)
         .frame(minWidth: 560)
         .onChange(of: source) { _ in
             trustConfirmed = false
