@@ -2,6 +2,7 @@ import AppKit
 import CodexChatInfra
 import CodexChatUI
 import CodexKit
+import CodexSkills
 import SwiftUI
 
 @main
@@ -25,8 +26,8 @@ struct CodexChatApplication: App {
         }
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Open Project Folder…") {
-                    model.openProjectFolder()
+                Button("New Project…") {
+                    model.presentNewProjectSheet()
                 }
                 .keyboardShortcut("o", modifiers: [.command])
 
@@ -57,13 +58,38 @@ struct CodexChatApplication: App {
 
     @MainActor
     private static func bootstrapModel() -> AppModel {
+        let storagePaths = CodexChatStoragePaths.current()
+
         do {
-            let databaseURL = try MetadataDatabase.appSupportDatabaseURL()
-            let database = try MetadataDatabase(databaseURL: databaseURL)
+            try storagePaths.ensureRootStructure()
+            try CodexChatStorageMigrationCoordinator.performInitialMigrationIfNeeded(paths: storagePaths)
+
+            let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
             let repositories = MetadataRepositories(database: database)
-            return AppModel(repositories: repositories, runtime: CodexRuntime(), bootError: nil)
+
+            let skillCatalogService = SkillCatalogService(
+                codexHomeURL: storagePaths.codexHomeURL,
+                agentsHomeURL: storagePaths.agentsHomeURL
+            )
+            let runtime = CodexRuntime(
+                environmentOverrides: [
+                    "CODEX_HOME": storagePaths.codexHomeURL.path,
+                ]
+            )
+            return AppModel(
+                repositories: repositories,
+                runtime: runtime,
+                bootError: nil,
+                skillCatalogService: skillCatalogService,
+                storagePaths: storagePaths
+            )
         } catch {
-            return AppModel(repositories: nil, runtime: nil, bootError: error.localizedDescription)
+            return AppModel(
+                repositories: nil,
+                runtime: nil,
+                bootError: error.localizedDescription,
+                storagePaths: storagePaths
+            )
         }
     }
 }

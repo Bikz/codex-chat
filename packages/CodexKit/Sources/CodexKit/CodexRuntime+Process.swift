@@ -7,6 +7,10 @@ extension CodexRuntime {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = ["app-server"]
+        process.environment = Self.mergedEnvironment(
+            base: ProcessInfo.processInfo.environment,
+            overrides: environmentOverrides
+        )
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -177,6 +181,7 @@ extension CodexRuntime {
         stderrPumpTask = nil
 
         if let process, process.isRunning {
+            process.terminationHandler = nil
             process.terminate()
         }
 
@@ -185,6 +190,7 @@ extension CodexRuntime {
         stdoutHandle = nil
         stderrHandle = nil
         pendingApprovalRequests.removeAll()
+        runtimeCapabilities = .none
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)
     }
@@ -206,6 +212,7 @@ extension CodexRuntime {
         stdoutHandle = nil
         stderrHandle = nil
         pendingApprovalRequests.removeAll()
+        runtimeCapabilities = .none
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)
 

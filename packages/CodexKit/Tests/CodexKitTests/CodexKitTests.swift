@@ -2,6 +2,16 @@
 import XCTest
 
 final class CodexKitTests: XCTestCase {
+    func testMergedEnvironmentPrefersOverrides() {
+        let base = ["PATH": "/usr/bin", "HOME": "/Users/base"]
+        let overrides = ["HOME": "/Users/override", "CODEX_HOME": "/tmp/codex-home"]
+
+        let merged = CodexRuntime.mergedEnvironment(base: base, overrides: overrides)
+        XCTAssertEqual(merged["PATH"], "/usr/bin")
+        XCTAssertEqual(merged["HOME"], "/Users/override")
+        XCTAssertEqual(merged["CODEX_HOME"], "/tmp/codex-home")
+    }
+
     func testJSONLFramerFramesCompleteLinesAcrossChunks() throws {
         var framer = JSONLFramer()
         let first = try framer.append(Data("{\"method\":\"turn/started\"}".utf8))
@@ -213,6 +223,36 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(update.threadID, "thr_1")
         XCTAssertEqual(update.changes.count, 1)
         XCTAssertEqual(update.changes.first?.path, "README.md")
+    }
+
+    func testEventDecoderFollowUpSuggestions() {
+        let suggestionEvent = JSONRPCMessageEnvelope.notification(
+            method: "turn/followUpsSuggested",
+            params: .object([
+                "threadId": .string("thr_1"),
+                "turnId": .string("turn_1"),
+                "suggestions": .array([
+                    .object([
+                        "id": .string("s_1"),
+                        "text": .string("Follow up on docs"),
+                        "priority": .number(0),
+                    ]),
+                ]),
+            ])
+        )
+
+        let events = AppServerEventDecoder.decodeAll(suggestionEvent)
+        guard case let .followUpSuggestions(batch)? = events.first else {
+            XCTFail("Expected followUpSuggestions")
+            return
+        }
+
+        XCTAssertEqual(batch.threadID, "thr_1")
+        XCTAssertEqual(batch.turnID, "turn_1")
+        XCTAssertEqual(batch.suggestions.count, 1)
+        XCTAssertEqual(batch.suggestions.first?.id, "s_1")
+        XCTAssertEqual(batch.suggestions.first?.text, "Follow up on docs")
+        XCTAssertEqual(batch.suggestions.first?.priority, 0)
     }
 
     func testExecutableCandidatesIncludeCommonFallbackPaths() {

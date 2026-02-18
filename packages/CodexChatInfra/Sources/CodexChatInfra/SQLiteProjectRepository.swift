@@ -8,6 +8,7 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
     var id: String
     var name: String
     var path: String
+    var isGeneralProject: Bool
     var trustState: String
     var sandboxMode: String
     var approvalPolicy: String
@@ -23,6 +24,7 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
         id = record.id.uuidString
         name = record.name
         path = record.path
+        isGeneralProject = record.isGeneralProject
         trustState = record.trustState.rawValue
         sandboxMode = record.sandboxMode.rawValue
         approvalPolicy = record.approvalPolicy.rawValue
@@ -40,6 +42,7 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
             id: UUID(uuidString: id) ?? UUID(),
             name: name,
             path: path,
+            isGeneralProject: isGeneralProject,
             trustState: ProjectTrustState(rawValue: trustState) ?? .untrusted,
             sandboxMode: ProjectSandboxMode(rawValue: sandboxMode) ?? .readOnly,
             approvalPolicy: ProjectApprovalPolicy(rawValue: approvalPolicy) ?? .untrusted,
@@ -85,7 +88,7 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
         }
     }
 
-    public func createProject(named name: String, path: String, trustState: ProjectTrustState) async throws -> ProjectRecord {
+    public func createProject(named name: String, path: String, trustState: ProjectTrustState, isGeneralProject: Bool = false) async throws -> ProjectRecord {
         try await dbQueue.write { db in
             let now = Date()
             let safety = ProjectSafetySettings.recommendedDefaults(for: trustState)
@@ -93,6 +96,7 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
                 record: ProjectRecord(
                     name: name,
                     path: path,
+                    isGeneralProject: isGeneralProject,
                     trustState: trustState,
                     sandboxMode: safety.sandboxMode,
                     approvalPolicy: safety.approvalPolicy,
@@ -113,6 +117,18 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
                 throw CodexChatCoreError.missingRecord(id.uuidString)
             }
             entity.name = name
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func updateProjectPath(id: UUID, path: String) async throws -> ProjectRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ProjectEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
+            entity.path = path
             entity.updatedAt = Date()
             try entity.update(db)
             return entity.record

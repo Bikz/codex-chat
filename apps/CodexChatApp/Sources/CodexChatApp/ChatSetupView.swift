@@ -23,20 +23,21 @@ struct ChatSetupView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 28))
+                .font(.system(size: 36))
                 .foregroundStyle(Color(hex: tokens.palette.accentHex))
+                .symbolRenderingMode(.hierarchical)
 
             Text("Welcome to CodexChat")
-                .font(.system(size: 28, weight: .semibold))
+                .font(.system(size: 30, weight: .bold))
 
             Text("Sign in, pick a project folder, and start a local-first chat with reviewable actions.")
                 .font(.system(size: tokens.typography.bodySize))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.top, 8)
+        .padding(.top, 12)
     }
 
     private var accountCard: some View {
@@ -44,26 +45,43 @@ struct ChatSetupView: View {
             title: "Account",
             subtitle: model.isSignedInForRuntime ? model.accountSummaryText : "Sign in to use Codex runtime"
         ) {
-            HStack {
-                Button("Sign in with ChatGPT") {
-                    model.signInWithChatGPT()
+            if model.isSignedInForRuntime {
+                HStack {
+                    SetupSuccessRow(text: model.accountSummaryText)
+                    Spacer()
+                    Button("Sign out") {
+                        model.logoutAccount()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isAccountOperationInProgress)
+                    .accessibilityLabel("Sign out")
+                    .accessibilityHint("Signs out of the current account")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(hex: tokens.palette.accentHex))
-                .disabled(model.isAccountOperationInProgress || !canAttemptSignIn)
+            } else {
+                HStack {
+                    Button("Sign in with ChatGPT") {
+                        model.signInWithChatGPT()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(hex: tokens.palette.accentHex))
+                    .disabled(model.isAccountOperationInProgress || !canAttemptSignIn)
+                    .accessibilityHint("Opens your browser to sign in with ChatGPT")
+                    .controlSize(.large)
 
-                Button("Use API Key…") {
-                    model.presentAPIKeyPrompt()
+                    Button("Use API Key…") {
+                        model.presentAPIKeyPrompt()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isAccountOperationInProgress || !canAttemptSignIn)
+                    .accessibilityHint("Enter an OpenAI API key manually")
+
+                    Spacer()
                 }
-                .buttonStyle(.bordered)
-                .disabled(model.isAccountOperationInProgress || !canAttemptSignIn)
 
-                Spacer()
+                Text("ChatGPT sign-in opens your browser. API keys are stored in macOS Keychain.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-
-            Text("ChatGPT sign-in opens your browser. API keys are stored in macOS Keychain.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -128,7 +146,7 @@ struct ChatSetupView: View {
     }
 
     private var projectCard: some View {
-        let projectTitle = model.selectedProject?.name ?? "Choose a project folder"
+        let projectTitle = model.selectedProject?.name ?? "Choose or create a project"
         let projectPath = model.selectedProject?.path
 
         return SetupCard(title: "Project Folder", subtitle: projectTitle) {
@@ -140,11 +158,12 @@ struct ChatSetupView: View {
             }
 
             HStack {
-                Button(model.selectedProject == nil ? "Open Project Folder…" : "Change Folder…") {
-                    model.openProjectFolder()
+                Button(model.selectedProject == nil ? "New Project…" : "Switch Project…") {
+                    model.presentNewProjectSheet()
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color(hex: tokens.palette.accentHex))
+                .accessibilityHint("Opens project options to create new or add existing folders")
 
                 Spacer()
             }
@@ -198,6 +217,7 @@ private struct SetupCard<Content: View>: View {
             RoundedRectangle(cornerRadius: tokens.radius.medium)
                 .strokeBorder(Color.primary.opacity(0.06))
         )
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
     }
 }
 
@@ -208,6 +228,7 @@ private struct SetupSuccessRow: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.seal.fill")
                 .foregroundStyle(.green)
+                .accessibilityLabel("Ready")
             Text(text)
                 .font(.callout)
                 .foregroundStyle(.secondary)

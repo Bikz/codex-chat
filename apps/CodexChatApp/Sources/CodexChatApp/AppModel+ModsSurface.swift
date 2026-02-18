@@ -26,18 +26,14 @@ extension AppModel {
                 let selectedGlobal = Self.normalizedOptionalPath(persistedGlobal)
                 let selectedProject = Self.normalizedOptionalPath(selectedProject?.uiModPath)
 
-                let globalOverride = globalMods.first(where: { $0.directoryPath == selectedGlobal })?.definition.theme
-                let projectOverride = projectMods.first(where: { $0.directoryPath == selectedProject })?.definition.theme
-
-                var effective = ModThemeOverride()
-                if let globalOverride {
-                    effective = effective.merged(with: globalOverride)
-                }
-                if let projectOverride {
-                    effective = effective.merged(with: projectOverride)
-                }
-
-                effectiveThemeOverride = effective
+                let resolved = Self.resolvedThemeOverrides(
+                    globalMods: globalMods,
+                    projectMods: projectMods,
+                    selectedGlobalPath: selectedGlobal,
+                    selectedProjectPath: selectedProject
+                )
+                effectiveThemeOverride = resolved.light
+                effectiveDarkThemeOverride = resolved.dark
                 modsState = .loaded(
                     ModsSurfaceModel(
                         globalMods: globalMods,
@@ -150,6 +146,34 @@ extension AppModel {
         }
     }
 
+    nonisolated static func resolvedThemeOverrides(
+        globalMods: [DiscoveredUIMod],
+        projectMods: [DiscoveredUIMod],
+        selectedGlobalPath: String?,
+        selectedProjectPath: String?
+    ) -> (light: ModThemeOverride, dark: ModThemeOverride) {
+        let globalMod = globalMods.first(where: { $0.directoryPath == selectedGlobalPath })
+        let projectMod = projectMods.first(where: { $0.directoryPath == selectedProjectPath })
+
+        var light = ModThemeOverride()
+        if let globalTheme = globalMod?.definition.theme {
+            light = light.merged(with: globalTheme)
+        }
+        if let projectTheme = projectMod?.definition.theme {
+            light = light.merged(with: projectTheme)
+        }
+
+        var darkVariant = ModThemeOverride()
+        if let globalDarkTheme = globalMod?.definition.darkTheme {
+            darkVariant = darkVariant.merged(with: globalDarkTheme)
+        }
+        if let projectDarkTheme = projectMod?.definition.darkTheme {
+            darkVariant = darkVariant.merged(with: projectDarkTheme)
+        }
+
+        return (light, light.resolvedDarkOverride(using: darkVariant))
+    }
+
     private func startModWatchersIfNeeded(globalRootPath: String, projectRootPath: String?) {
         if globalModsWatcher == nil {
             let watcher = DirectoryWatcher(path: globalRootPath) { [weak self] in
@@ -200,16 +224,8 @@ extension AppModel {
     }
 
     static func globalModsRootPath(fileManager: FileManager = .default) throws -> String {
-        let base = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let root = base
-            .appendingPathComponent("CodexChat", isDirectory: true)
-            .appendingPathComponent("Mods", isDirectory: true)
-            .appendingPathComponent("Global", isDirectory: true)
+        let storagePaths = CodexChatStoragePaths.current(fileManager: fileManager)
+        let root = storagePaths.globalModsURL
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         return root.path
     }

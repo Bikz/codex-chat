@@ -30,6 +30,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.isProjectSettingsVisible) {
             ProjectSettingsSheet(model: model)
         }
+        .sheet(isPresented: $model.isNewProjectSheetVisible) {
+            NewProjectSheet(model: model)
+        }
         .sheet(isPresented: $model.isReviewChangesVisible) {
             ReviewChangesSheet(model: model)
         }

@@ -22,32 +22,46 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                HStack {
-                    Button("Sign in with ChatGPT") {
-                        model.signInWithChatGPT()
-                    }
-                    .disabled(model.isAccountOperationInProgress)
+                LabeledContent("Sign in") {
+                    HStack {
+                        Button {
+                            model.signInWithChatGPT()
+                        } label: {
+                            Label("Sign in with ChatGPT", systemImage: "person.crop.circle.badge.checkmark")
+                        }
+                        .disabled(model.isAccountOperationInProgress)
 
-                    Button("Use API Key…") {
-                        model.presentAPIKeyPrompt()
+                        Button {
+                            model.presentAPIKeyPrompt()
+                        } label: {
+                            Label("Use API Key…", systemImage: "key")
+                        }
+                        .disabled(model.isAccountOperationInProgress)
                     }
-                    .disabled(model.isAccountOperationInProgress)
-
-                    Button("Logout") {
-                        model.logoutAccount()
-                    }
-                    .disabled(model.isAccountOperationInProgress)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Button("Use Device-Code Login") {
-                        model.launchDeviceCodeLogin()
+                LabeledContent("Device login") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button {
+                            model.launchDeviceCodeLogin()
+                        } label: {
+                            Label("Use Device-Code Login", systemImage: "qrcode")
+                        }
+                        .disabled(model.isAccountOperationInProgress)
+
+                        Text("Device-code availability can depend on workspace policy settings.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                LabeledContent("Sign out") {
+                    Button(role: .destructive) {
+                        model.logoutAccount()
+                    } label: {
+                        Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
                     }
                     .disabled(model.isAccountOperationInProgress)
-
-                    Text("Device-code availability can depend on workspace policy settings.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 Text("API keys are stored in macOS Keychain. Per-project secret references are tracked in local metadata.")
@@ -56,14 +70,50 @@ struct SettingsView: View {
             }
 
             Section("Diagnostics") {
-                Button("Copy diagnostics bundle") {
+                Button {
                     model.copyDiagnosticsBundle()
+                } label: {
+                    Label("Copy diagnostics bundle", systemImage: "doc.zipper")
                 }
                 .disabled(model.isAccountOperationInProgress)
+                .help("Exports runtime state and logs as a zip, then copies the file path to clipboard")
 
                 Text("Exports non-sensitive runtime state and logs as a zip archive, then copies the saved file path to clipboard.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Storage") {
+                LabeledContent("Root") {
+                    Text(model.storageRootPath)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                HStack {
+                    Button {
+                        model.changeStorageRoot()
+                    } label: {
+                        Label("Change Root…", systemImage: "folder.badge.gearshape")
+                    }
+
+                    Button {
+                        model.revealStorageRoot()
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
+                }
+
+                Text("Changing the storage root moves CodexChat-managed data and requires an app restart.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let storageStatusMessage = model.storageStatusMessage {
+                    Text(storageStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

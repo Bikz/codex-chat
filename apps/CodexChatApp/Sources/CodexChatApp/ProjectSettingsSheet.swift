@@ -30,6 +30,18 @@ struct ProjectSettingsSheet: View {
                         .foregroundStyle(project.trustState == .trusted ? .green : .orange)
                 }
 
+                LabeledContent("Git") {
+                    Text(AppModel.isGitProject(path: project.path) ? "Initialized" : "Not initialized")
+                        .foregroundStyle(AppModel.isGitProject(path: project.path) ? .green : .secondary)
+                }
+
+                if !AppModel.isGitProject(path: project.path) {
+                    Button("Initialize Git Repository") {
+                        model.initializeGitForSelectedProject()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 Divider()
 
                 Text("Safety Controls")

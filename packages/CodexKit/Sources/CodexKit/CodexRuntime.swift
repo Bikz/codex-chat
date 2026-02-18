@@ -4,6 +4,7 @@ public actor CodexRuntime {
     public typealias ExecutableResolver = @Sendable () -> String?
 
     let executableResolver: ExecutableResolver
+    let environmentOverrides: [String: String]
     let correlator = RequestCorrelator()
     let encoder = JSONEncoder()
     let decoder = JSONDecoder()
@@ -14,6 +15,7 @@ public actor CodexRuntime {
     var stderrHandle: FileHandle?
     var framer = JSONLFramer()
     var pendingApprovalRequests: [Int: RuntimeApprovalRequest] = [:]
+    var runtimeCapabilities: RuntimeCapabilities = .none
 
     var stdoutPumpTask: Task<Void, Never>?
     var stderrPumpTask: Task<Void, Never>?
@@ -23,8 +25,12 @@ public actor CodexRuntime {
     let eventStream: AsyncStream<CodexRuntimeEvent>
     let eventContinuation: AsyncStream<CodexRuntimeEvent>.Continuation
 
-    public init(executableResolver: @escaping ExecutableResolver = CodexRuntime.defaultExecutableResolver) {
+    public init(
+        executableResolver: @escaping ExecutableResolver = CodexRuntime.defaultExecutableResolver,
+        environmentOverrides: [String: String] = [:]
+    ) {
         self.executableResolver = executableResolver
+        self.environmentOverrides = environmentOverrides
 
         var continuation: AsyncStream<CodexRuntimeEvent>.Continuation?
         eventStream = AsyncStream(bufferingPolicy: .bufferingNewest(512)) { continuation = $0 }
@@ -79,5 +85,12 @@ public actor CodexRuntime {
                 .appendingPathComponent("codex", isDirectory: false)
                 .path
         }
+    }
+
+    nonisolated static func mergedEnvironment(
+        base: [String: String],
+        overrides: [String: String]
+    ) -> [String: String] {
+        base.merging(overrides) { _, new in new }
     }
 }

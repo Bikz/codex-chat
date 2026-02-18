@@ -91,6 +91,7 @@ final class AppModel: ObservableObject {
 
     @Published var isDiagnosticsVisible = false
     @Published var isProjectSettingsVisible = false
+    @Published var isNewProjectSheetVisible = false
     @Published var isShellWorkspaceVisible = false
     @Published var isReviewChangesVisible = false
     @Published var runtimeStatus: RuntimeStatus = .idle
@@ -102,6 +103,8 @@ final class AppModel: ObservableObject {
     @Published var skillStatusMessage: String?
     @Published var memoryStatusMessage: String?
     @Published var modStatusMessage: String?
+    @Published var storageStatusMessage: String?
+    @Published var storageRootPath: String
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
     @Published var isSkillOperationInProgress = false
@@ -136,6 +139,7 @@ final class AppModel: ObservableObject {
     let skillCatalogService: SkillCatalogService
     let modDiscoveryService: UIModDiscoveryService
     let keychainStore: APIKeychainStore
+    let storagePaths: CodexChatStoragePaths
 
     var transcriptStore: [UUID: [TranscriptEntry]] = [:]
     var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
@@ -166,7 +170,8 @@ final class AppModel: ObservableObject {
         runtime: CodexRuntime?,
         bootError: String?,
         skillCatalogService: SkillCatalogService = SkillCatalogService(),
-        modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService()
+        modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService(),
+        storagePaths: CodexChatStoragePaths = .current()
     ) {
         projectRepository = repositories?.projectRepository
         threadRepository = repositories?.threadRepository
@@ -179,6 +184,8 @@ final class AppModel: ObservableObject {
         self.runtime = runtime
         self.skillCatalogService = skillCatalogService
         self.modDiscoveryService = modDiscoveryService
+        self.storagePaths = storagePaths
+        storageRootPath = storagePaths.rootURL.path
         keychainStore = APIKeychainStore()
         isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
 
@@ -251,7 +258,15 @@ final class AppModel: ObservableObject {
     }
 
     var accountDisplayName: String {
-        accountState.account?.email ?? "Account"
+        if let name = accountState.account?.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty
+        {
+            return name
+        }
+        if let email = accountState.account?.email, !email.isEmpty {
+            return email
+        }
+        return "Account"
     }
 
     var canSendMessages: Bool {

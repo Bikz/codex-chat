@@ -636,6 +636,71 @@ final class CodexChatAppTests: XCTestCase {
         }
     }
 
+    func testStoragePathsUniqueProjectDirectoryAddsNumericSuffix() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-storage-suffix-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+        let first = paths.uniqueProjectDirectoryURL(requestedName: "My App")
+        try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
+
+        let second = paths.uniqueProjectDirectoryURL(requestedName: "My App")
+        XCTAssertEqual(first.lastPathComponent, "My-App")
+        XCTAssertEqual(second.lastPathComponent, "My-App-2")
+    }
+
+    @MainActor
+    func testEnsureGeneralProjectUsesConfiguredStorageRoot() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-storage-general-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil, storagePaths: paths)
+
+        try await model.refreshProjects()
+        try await model.ensureGeneralProject()
+        try await model.refreshProjects()
+
+        XCTAssertEqual(model.generalProject?.path, paths.generalProjectURL.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.generalProjectURL.path))
+    }
+
+    @MainActor
+    func testInitializeGitForSelectedProjectCreatesGitDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-git-init-\(UUID().uuidString)", isDirectory: true)
+        let projectURL = root.appendingPathComponent("project", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+
+        let database = try MetadataDatabase(databaseURL: root.appendingPathComponent("metadata.sqlite"))
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Project",
+            path: projectURL.path,
+            trustState: .untrusted,
+            isGeneralProject: false
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        model.selectedProjectID = project.id
+
+        model.initializeGitForSelectedProject()
+
+        try await waitUntil {
+            FileManager.default.fileExists(atPath: projectURL.appendingPathComponent(".git").path)
+        }
+    }
+
     func testShellSplitTreeSupportsRecursiveSplitAndCloseCollapse() {
         let pane1 = ShellPaneState(id: UUID(), cwd: "/tmp/one")
         let pane2 = ShellPaneState(id: UUID(), cwd: "/tmp/two")
