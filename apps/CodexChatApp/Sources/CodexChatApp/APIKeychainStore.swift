@@ -3,15 +3,12 @@ import Security
 
 enum APIKeychainStoreError: LocalizedError {
     case osStatus(OSStatus)
-    case invalidData
 
     var errorDescription: String? {
         switch self {
         case let .osStatus(status):
             let text = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown OSStatus"
             return "Keychain operation failed (\(status)): \(text)"
-        case .invalidData:
-            return "Stored keychain value could not be decoded"
         }
     }
 }
@@ -48,34 +45,6 @@ final class APIKeychainStore: @unchecked Sendable {
         guard addStatus == errSecSuccess else {
             throw APIKeychainStoreError.osStatus(addStatus)
         }
-    }
-
-    func readSecret(account: String) throws -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecItemNotFound {
-            return nil
-        }
-
-        guard status == errSecSuccess else {
-            throw APIKeychainStoreError.osStatus(status)
-        }
-
-        guard let data = item as? Data,
-              let value = String(data: data, encoding: .utf8)
-        else {
-            throw APIKeychainStoreError.invalidData
-        }
-
-        return value
     }
 
     func deleteSecret(account: String) throws {

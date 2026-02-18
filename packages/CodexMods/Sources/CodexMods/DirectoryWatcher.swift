@@ -10,7 +10,6 @@ public final class DirectoryWatcher: @unchecked Sendable {
     private let onChange: @Sendable () -> Void
 
     private var source: DispatchSourceFileSystemObject?
-    private var descriptor: CInt = -1
 
     public init(path: String, queue: DispatchQueue? = nil, onChange: @escaping @Sendable () -> Void) {
         self.path = path
@@ -29,7 +28,6 @@ public final class DirectoryWatcher: @unchecked Sendable {
         guard descriptor >= 0 else {
             throw CocoaError(.fileReadNoPermission)
         }
-        self.descriptor = descriptor
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor,
@@ -47,6 +45,5 @@ public final class DirectoryWatcher: @unchecked Sendable {
     public func stop() {
         source?.cancel()
         source = nil
-        descriptor = -1
     }
 }

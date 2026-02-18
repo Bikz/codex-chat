@@ -1192,6 +1192,10 @@ private struct ThreadLogsDrawer: View {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(entries) { entry in
                             HStack(alignment: .top, spacing: 8) {
+                                Circle()
+                                    .fill(levelColor(entry.level))
+                                    .frame(width: 6, height: 6)
+                                    .padding(.top, 4)
                                 Text(Self.dateFormatter.string(from: entry.timestamp))
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.secondary)
@@ -1206,6 +1210,19 @@ private struct ThreadLogsDrawer: View {
                     .padding(.bottom, 8)
                 }
             }
+        }
+    }
+
+    private func levelColor(_ level: LogLevel) -> Color {
+        switch level {
+        case .debug:
+            .secondary
+        case .info:
+            .green
+        case .warning:
+            .orange
+        case .error:
+            .red
         }
     }
 }

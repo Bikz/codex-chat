@@ -148,7 +148,6 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
     @MainActor
     private struct Harness {
         let rootURL: URL
-        let projectURL: URL
         let project: ProjectRecord
         let thread: ThreadRecord
         let repositories: MetadataRepositories
@@ -183,7 +182,6 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
             model.selectedThreadID = thread.id
             return Harness(
                 rootURL: rootURL,
-                projectURL: projectURL,
                 project: project,
                 thread: thread,
                 repositories: repositories,

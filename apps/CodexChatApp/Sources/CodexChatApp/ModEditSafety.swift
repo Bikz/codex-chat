@@ -5,7 +5,6 @@ import Foundation
 /// Kept as a small testable surface (used by AppModel, exercised by unit tests).
 enum ModEditSafety {
     struct Snapshot: Hashable {
-        let id: UUID
         let createdAt: Date
         let rootURL: URL
 
@@ -95,7 +94,6 @@ enum ModEditSafety {
         }
 
         return Snapshot(
-            id: UUID(),
             createdAt: startedAt,
             rootURL: snapshotRoot,
             globalRootPath: globalRootPath,

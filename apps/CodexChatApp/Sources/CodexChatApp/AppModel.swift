@@ -30,8 +30,6 @@ final class AppModel: ObservableObject {
         var projectMods: [DiscoveredUIMod]
         var selectedGlobalModPath: String?
         var selectedProjectModPath: String?
-        var globalRootPath: String
-        var projectRootPath: String?
     }
 
     struct PendingModReview: Identifiable, Hashable {
@@ -68,7 +66,6 @@ final class AppModel: ObservableObject {
         var projectID: UUID
         var projectPath: String
         var runtimeThreadID: String
-        var turnID: String?
         var userText: String
         var assistantText: String
         var actions: [ActionCard]
@@ -641,10 +638,6 @@ final class AppModel: ObservableObject {
         submitApprovalDecision(.decline)
     }
 
-    func cancelPendingApproval() {
-        submitApprovalDecision(.cancel)
-    }
-
     func requiresDangerConfirmation(
         sandboxMode: ProjectSandboxMode,
         approvalPolicy: ProjectApprovalPolicy
@@ -1032,9 +1025,7 @@ final class AppModel: ObservableObject {
                         globalMods: globalMods,
                         projectMods: projectMods,
                         selectedGlobalModPath: selectedGlobal,
-                        selectedProjectModPath: selectedProject,
-                        globalRootPath: globalRoot,
-                        projectRootPath: projectRoot
+                        selectedProjectModPath: selectedProject
                     )
                 )
 
@@ -1290,7 +1281,6 @@ final class AppModel: ObservableObject {
                     projectID: selectedProjectID,
                     projectPath: project.path,
                     runtimeThreadID: runtimeThreadID,
-                    turnID: nil,
                     userText: trimmedText,
                     assistantText: "",
                     actions: [],
@@ -1316,7 +1306,6 @@ final class AppModel: ObservableObject {
                     safetyConfiguration: safetyConfiguration,
                     skillInputs: selectedSkillInput.map { [$0] } ?? []
                 )
-                activeTurnContext?.turnID = turnID
                 appendLog(.info, "Started turn \(turnID) for local thread \(selectedThreadID.uuidString)")
             } catch {
                 handleRuntimeError(error)
@@ -1405,7 +1394,6 @@ final class AppModel: ObservableObject {
 
         case let .turnStarted(turnID):
             if var context = activeTurnContext {
-                context.turnID = turnID
                 activeTurnContext = context
                 appendEntry(
                     .actionCard(
@@ -2186,7 +2174,7 @@ final class AppModel: ObservableObject {
     private func appendThreadLog(level: LogLevel, text: String, to threadID: UUID) {
         let sanitized = redactSensitiveText(in: text)
         var logs = threadLogsByThreadID[threadID, default: []]
-        logs.append(ThreadLogEntry(threadID: threadID, level: level, text: sanitized))
+        logs.append(ThreadLogEntry(level: level, text: sanitized))
         if logs.count > 1000 {
             logs.removeFirst(logs.count - 1000)
         }
