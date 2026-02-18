@@ -263,11 +263,12 @@ struct ChatsCanvasView: View {
 
 private struct ComposerControlBar: View {
     @ObservedObject var model: AppModel
+    @Environment(\.designTokens) private var tokens
     @State private var isCustomModelSheetVisible = false
     @State private var customModelDraft = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Menu {
                     ForEach(model.modelPresets, id: \.self) { preset in
@@ -283,9 +284,17 @@ private struct ComposerControlBar: View {
                         isCustomModelSheetVisible = true
                     }
                 } label: {
-                    chip("Model: \(model.defaultModel)")
+                    controlChip(
+                        title: "Model",
+                        value: model.defaultModel,
+                        systemImage: "cpu",
+                        tint: Color(hex: tokens.palette.accentHex),
+                        minWidth: 220
+                    )
                 }
                 .menuStyle(.borderlessButton)
+                .accessibilityLabel("Model")
+                .help("Select model")
 
                 Menu {
                     ForEach(AppModel.ReasoningLevel.allCases, id: \.self) { level in
@@ -294,9 +303,17 @@ private struct ComposerControlBar: View {
                         }
                     }
                 } label: {
-                    chip("Reasoning: \(model.defaultReasoning.title)")
+                    controlChip(
+                        title: "Reasoning",
+                        value: model.defaultReasoning.title,
+                        systemImage: "brain.head.profile",
+                        tint: Color.blue.opacity(0.9),
+                        minWidth: 160
+                    )
                 }
                 .menuStyle(.borderlessButton)
+                .accessibilityLabel("Reasoning")
+                .help("Select reasoning effort")
 
                 Menu {
                     ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
@@ -305,12 +322,22 @@ private struct ComposerControlBar: View {
                         }
                     }
                 } label: {
-                    chip("Web: \(webSearchLabel(model.defaultWebSearch))")
+                    controlChip(
+                        title: "Web",
+                        value: webSearchLabel(model.defaultWebSearch),
+                        systemImage: "globe",
+                        tint: webSearchTint(model.defaultWebSearch),
+                        minWidth: 140
+                    )
                 }
                 .menuStyle(.borderlessButton)
+                .accessibilityLabel("Web search mode")
+                .help("Select web search mode")
 
                 Spacer()
             }
+            .padding(8)
+            .tokenCard(style: .panel, radius: tokens.radius.medium, strokeOpacity: 0.06)
 
             if model.isDefaultWebSearchClampedForSelectedProject() {
                 Text("Web mode is clamped by project safety policy for this thread.")
@@ -332,13 +359,47 @@ private struct ComposerControlBar: View {
         }
     }
 
-    private func chip(_ title: String) -> some View {
-        Text(title)
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Color.secondary.opacity(0.12), in: Capsule())
-            .foregroundStyle(.secondary)
+    private func controlChip(
+        title: String,
+        value: String,
+        systemImage: String,
+        tint: Color,
+        minWidth: CGFloat
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 14, height: 14)
+                .foregroundStyle(tint)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                Text(value)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 6)
+
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(minWidth: minWidth, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func webSearchLabel(_ mode: ProjectWebSearchMode) -> String {
@@ -349,6 +410,17 @@ private struct ComposerControlBar: View {
             "Live"
         case .disabled:
             "Disabled"
+        }
+    }
+
+    private func webSearchTint(_ mode: ProjectWebSearchMode) -> Color {
+        switch mode {
+        case .cached:
+            .secondary
+        case .live:
+            Color(hex: tokens.palette.accentHex)
+        case .disabled:
+            .orange
         }
     }
 }

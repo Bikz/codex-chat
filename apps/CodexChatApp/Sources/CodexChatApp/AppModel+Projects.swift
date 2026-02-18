@@ -135,6 +135,41 @@ extension AppModel {
         }
     }
 
+    func updateGeneralProjectSafetySettings(
+        sandboxMode: ProjectSandboxMode,
+        approvalPolicy: ProjectApprovalPolicy,
+        networkAccess: Bool,
+        webSearch: ProjectWebSearchMode
+    ) {
+        guard let projectRepository,
+              let generalProjectID = generalProject?.id
+        else {
+            projectStatusMessage = "General project is unavailable."
+            return
+        }
+
+        let settings = ProjectSafetySettings(
+            sandboxMode: sandboxMode,
+            approvalPolicy: approvalPolicy,
+            networkAccess: networkAccess,
+            webSearch: webSearch
+        )
+
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectSafetySettings(
+                    id: generalProjectID,
+                    settings: settings
+                )
+                try await refreshProjects()
+                projectStatusMessage = "Updated safety settings for the General project."
+            } catch {
+                projectStatusMessage = "Failed to update General project safety settings: \(error.localizedDescription)"
+                appendLog(.error, "Failed to update General project safety settings: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func updateSelectedProjectMemorySettings(
         writeMode: ProjectMemoryWriteMode,
         embeddingsEnabled: Bool
@@ -161,6 +196,33 @@ extension AppModel {
         }
     }
 
+    func updateGeneralProjectMemorySettings(
+        writeMode: ProjectMemoryWriteMode,
+        embeddingsEnabled: Bool
+    ) {
+        guard let projectRepository,
+              let generalProjectID = generalProject?.id
+        else {
+            memoryStatusMessage = "General project is unavailable."
+            return
+        }
+
+        let settings = ProjectMemorySettings(writeMode: writeMode, embeddingsEnabled: embeddingsEnabled)
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectMemorySettings(
+                    id: generalProjectID,
+                    settings: settings
+                )
+                try await refreshProjects()
+                memoryStatusMessage = "Updated memory settings for the General project."
+            } catch {
+                memoryStatusMessage = "Failed to update General project memory settings: \(error.localizedDescription)"
+                appendLog(.error, "Failed to update General project memory settings: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func openSafetyPolicyDocument() {
         let url = Bundle.module.url(forResource: "SafetyPolicy", withExtension: "md")
             ?? Bundle.module.url(forResource: "SafetyPolicy", withExtension: "md", subdirectory: "Resources")
@@ -177,6 +239,14 @@ extension AppModel {
 
     func untrustSelectedProject() {
         setSelectedProjectTrustState(.untrusted)
+    }
+
+    func trustGeneralProject() {
+        setGeneralProjectTrustState(.trusted)
+    }
+
+    func untrustGeneralProject() {
+        setGeneralProjectTrustState(.untrusted)
     }
 
     static func isGitProject(path: String) -> Bool {
@@ -223,6 +293,28 @@ extension AppModel {
             } catch {
                 projectStatusMessage = "Failed to update trust state: \(error.localizedDescription)"
                 appendLog(.error, "Failed to update trust state: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func setGeneralProjectTrustState(_ trustState: ProjectTrustState) {
+        guard let projectRepository,
+              let generalProjectID = generalProject?.id
+        else {
+            projectStatusMessage = "General project is unavailable."
+            return
+        }
+
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectTrustState(id: generalProjectID, trustState: trustState)
+                try await refreshProjects()
+                projectStatusMessage = trustState == .trusted
+                    ? "General project trusted."
+                    : "General project marked untrusted."
+            } catch {
+                projectStatusMessage = "Failed to update General project trust state: \(error.localizedDescription)"
+                appendLog(.error, "Failed to update General project trust state: \(error.localizedDescription)")
             }
         }
     }

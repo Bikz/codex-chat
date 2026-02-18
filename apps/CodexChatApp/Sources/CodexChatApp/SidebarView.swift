@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatCore
 import CodexChatUI
 import SwiftUI
@@ -30,15 +31,23 @@ struct SidebarView: View {
     }
 
     private var sidebarBodyFont: Font {
-        .system(size: tokens.typography.bodySize + 1)
+        .callout
     }
 
     private var sidebarMetaFont: Font {
-        .system(size: tokens.typography.captionSize + 1)
+        .footnote
     }
 
     private var sidebarSectionFont: Font {
-        .system(size: tokens.typography.captionSize + 1, weight: .semibold)
+        .footnote.weight(.semibold)
+    }
+
+    private var sidebarBodyIconFont: Font {
+        .subheadline
+    }
+
+    private var sidebarMetaIconFont: Font {
+        .caption
     }
 
     private var sidebarBackgroundColor: Color {
@@ -63,6 +72,7 @@ struct SidebarView: View {
                     verticalPadding: rowVerticalPadding,
                     minimumHeight: rowMinimumHeight,
                     bodyFont: sidebarBodyFont,
+                    iconFont: sidebarBodyIconFont,
                     action: model.createGlobalNewChat
                 )
 
@@ -74,6 +84,7 @@ struct SidebarView: View {
                     verticalPadding: rowVerticalPadding,
                     minimumHeight: rowMinimumHeight,
                     bodyFont: sidebarBodyFont,
+                    iconFont: sidebarBodyIconFont,
                     isActive: model.detailDestination == .skillsAndMods,
                     iconColor: .secondary,
                     action: model.openSkillsAndMods
@@ -90,6 +101,7 @@ struct SidebarView: View {
                     verticalPadding: rowVerticalPadding,
                     minimumHeight: rowMinimumHeight,
                     bodyFont: sidebarBodyFont,
+                    iconFont: sidebarBodyIconFont,
                     iconColor: .secondary,
                     action: model.presentNewProjectSheet
                 )
@@ -106,7 +118,10 @@ struct SidebarView: View {
             Section {
                 generalThreadRows
             } header: {
-                Color.clear.frame(height: tokens.spacing.small)
+                VStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: tokens.spacing.small)
+                    SidebarSectionHeader(title: "General", font: sidebarSectionFont)
+                }
             }
             .listRowSeparator(.hidden)
         }
@@ -124,7 +139,7 @@ struct SidebarView: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(sidebarBodyFont)
+                .font(sidebarBodyIconFont)
                 .foregroundStyle(.secondary)
                 .frame(width: iconColumnWidth, alignment: .leading)
 
@@ -147,7 +162,7 @@ struct SidebarView: View {
                     isSearchFocused = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(sidebarMetaFont)
+                        .font(sidebarMetaIconFont)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -194,7 +209,7 @@ struct SidebarView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: model.showAllProjects ? "chevron.up" : "ellipsis")
-                        .font(sidebarMetaFont)
+                        .font(sidebarMetaIconFont)
                         .foregroundStyle(.secondary)
                         .frame(width: iconColumnWidth, alignment: .leading)
                     Text(model.showAllProjects ? "Show less" : "See more")
@@ -225,7 +240,7 @@ struct SidebarView: View {
 
         return HStack(spacing: 8) {
             Image(systemName: "folder")
-                .font(sidebarBodyFont)
+                .font(sidebarBodyIconFont)
                 .foregroundStyle(.secondary)
                 .frame(width: iconColumnWidth, alignment: .leading)
 
@@ -238,7 +253,7 @@ struct SidebarView: View {
 
             HStack(spacing: controlSlotSpacing) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(sidebarMetaFont)
+                    .font(sidebarMetaIconFont)
                     .foregroundStyle(.secondary)
                     .frame(width: projectChevronWidth, height: controlIconWidth, alignment: .center)
                     .opacity(isHovered ? 1 : 0)
@@ -250,7 +265,7 @@ struct SidebarView: View {
                     model.createThread(in: project.id)
                 } label: {
                     Image(systemName: "square.and.pencil")
-                        .font(sidebarMetaFont)
+                        .font(sidebarMetaIconFont)
                         .foregroundStyle(.secondary)
                         .frame(width: controlIconWidth, height: controlIconWidth)
                         .contentShape(Rectangle())
@@ -267,7 +282,7 @@ struct SidebarView: View {
                     model.showProjectSettings()
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(sidebarMetaFont)
+                        .font(sidebarMetaIconFont)
                         .foregroundStyle(.secondary)
                         .frame(width: controlIconWidth, height: controlIconWidth)
                         .contentShape(Rectangle())
@@ -345,7 +360,7 @@ struct SidebarView: View {
                         model.togglePin(threadID: thread.id)
                     } label: {
                         Image(systemName: thread.isPinned ? "pin.fill" : "pin")
-                            .font(sidebarMetaFont)
+                            .font(sidebarMetaIconFont)
                             .foregroundStyle(.secondary)
                             .frame(width: controlIconWidth, height: controlIconWidth)
                     }
@@ -356,7 +371,7 @@ struct SidebarView: View {
                         model.archiveThread(threadID: thread.id)
                     } label: {
                         Image(systemName: "archivebox")
-                            .font(sidebarMetaFont)
+                            .font(sidebarMetaIconFont)
                             .foregroundStyle(.secondary)
                             .frame(width: controlIconWidth, height: controlIconWidth)
                     }
@@ -467,7 +482,7 @@ struct SidebarView: View {
                 .opacity(0.4)
 
             Button {
-                model.showProjectSettings()
+                openSettingsWindow()
             } label: {
                 HStack(spacing: 10) {
                     UserInitialCircle(model.accountDisplayName, size: 28)
@@ -487,9 +502,14 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Account and settings")
-            .accessibilityHint("Opens settings for your account and selected project")
+            .accessibilityHint("Opens global CodexChat settings and General project controls")
         }
         .background(sidebarBackgroundColor)
+    }
+
+    private func openSettingsWindow() {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
@@ -501,6 +521,7 @@ private struct SidebarActionRow: View {
     let verticalPadding: CGFloat
     let minimumHeight: CGFloat
     let bodyFont: Font
+    let iconFont: Font
     let isActive: Bool
     let iconColor: Color
     let action: () -> Void
@@ -515,6 +536,7 @@ private struct SidebarActionRow: View {
         verticalPadding: CGFloat,
         minimumHeight: CGFloat,
         bodyFont: Font,
+        iconFont: Font,
         isActive: Bool = false,
         iconColor: Color = .secondary,
         action: @escaping () -> Void
@@ -526,6 +548,7 @@ private struct SidebarActionRow: View {
         self.verticalPadding = verticalPadding
         self.minimumHeight = minimumHeight
         self.bodyFont = bodyFont
+        self.iconFont = iconFont
         self.isActive = isActive
         self.iconColor = iconColor
         self.action = action
@@ -535,7 +558,7 @@ private struct SidebarActionRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(bodyFont)
+                    .font(iconFont)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(iconColor)
                     .frame(width: iconColumnWidth, alignment: .leading)
