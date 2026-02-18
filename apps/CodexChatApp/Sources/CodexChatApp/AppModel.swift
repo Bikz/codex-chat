@@ -61,7 +61,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private struct ActiveTurnContext {
+    struct ActiveTurnContext {
         var localThreadID: UUID
         var projectID: UUID
         var projectPath: String
@@ -107,42 +107,42 @@ final class AppModel: ObservableObject {
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
     @Published var pendingModReview: PendingModReview?
     @Published var isModReviewDecisionInProgress = false
-    @Published private(set) var isTurnInProgress = false
-    @Published private(set) var logs: [LogEntry] = []
-    @Published private(set) var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
-    @Published private(set) var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
-    @Published private(set) var isNodeSkillInstallerAvailable = false
+    @Published var isTurnInProgress = false
+    @Published var logs: [LogEntry] = []
+    @Published var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
+    @Published var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
+    @Published var isNodeSkillInstallerAvailable = false
 
-    @Published private(set) var effectiveThemeOverride: ModThemeOverride = .init()
+    @Published var effectiveThemeOverride: ModThemeOverride = .init()
 
-    private let projectRepository: (any ProjectRepository)?
-    private let threadRepository: (any ThreadRepository)?
-    private let preferenceRepository: (any PreferenceRepository)?
-    private let runtimeThreadMappingRepository: (any RuntimeThreadMappingRepository)?
-    private let projectSecretRepository: (any ProjectSecretRepository)?
-    private let projectSkillEnablementRepository: (any ProjectSkillEnablementRepository)?
-    private let chatSearchRepository: (any ChatSearchRepository)?
-    private let runtime: CodexRuntime?
-    private let skillCatalogService: SkillCatalogService
-    private let modDiscoveryService: UIModDiscoveryService
-    private let keychainStore: APIKeychainStore
+    let projectRepository: (any ProjectRepository)?
+    let threadRepository: (any ThreadRepository)?
+    let preferenceRepository: (any PreferenceRepository)?
+    let runtimeThreadMappingRepository: (any RuntimeThreadMappingRepository)?
+    let projectSecretRepository: (any ProjectSecretRepository)?
+    let projectSkillEnablementRepository: (any ProjectSkillEnablementRepository)?
+    let chatSearchRepository: (any ChatSearchRepository)?
+    let runtime: CodexRuntime?
+    let skillCatalogService: SkillCatalogService
+    let modDiscoveryService: UIModDiscoveryService
+    let keychainStore: APIKeychainStore
 
-    private var transcriptStore: [UUID: [TranscriptEntry]] = [:]
-    private var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
-    private var runtimeThreadIDByLocalThreadID: [UUID: String] = [:]
-    private var localThreadIDByRuntimeThreadID: [String: UUID] = [:]
-    private var localThreadIDByCommandItemID: [String: UUID] = [:]
-    private var approvalStateMachine = ApprovalStateMachine()
-    private var activeTurnContext: ActiveTurnContext?
-    private var activeModSnapshot: ModEditSafety.Snapshot?
-    private var runtimeEventTask: Task<Void, Never>?
-    private var searchTask: Task<Void, Never>?
-    private var modsRefreshTask: Task<Void, Never>?
-    private var modsDebounceTask: Task<Void, Never>?
+    var transcriptStore: [UUID: [TranscriptEntry]] = [:]
+    var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
+    var runtimeThreadIDByLocalThreadID: [UUID: String] = [:]
+    var localThreadIDByRuntimeThreadID: [String: UUID] = [:]
+    var localThreadIDByCommandItemID: [String: UUID] = [:]
+    var approvalStateMachine = ApprovalStateMachine()
+    var activeTurnContext: ActiveTurnContext?
+    var activeModSnapshot: ModEditSafety.Snapshot?
+    var runtimeEventTask: Task<Void, Never>?
+    var searchTask: Task<Void, Never>?
+    var modsRefreshTask: Task<Void, Never>?
+    var modsDebounceTask: Task<Void, Never>?
 
-    private var globalModsWatcher: DirectoryWatcher?
-    private var projectModsWatcher: DirectoryWatcher?
-    private var watchedProjectModsRootPath: String?
+    var globalModsWatcher: DirectoryWatcher?
+    var projectModsWatcher: DirectoryWatcher?
+    var watchedProjectModsRootPath: String?
 
     init(
         repositories: MetadataRepositories?,
