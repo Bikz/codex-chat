@@ -227,4 +227,3 @@ extension AppModel {
         return trimmed
     }
 }
-
