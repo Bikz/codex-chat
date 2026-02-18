@@ -100,6 +100,74 @@ public actor CodexRuntime {
         return turnID
     }
 
+    public func readAccount(refreshToken: Bool = false) async throws -> RuntimeAccountState {
+        try await start()
+
+        let result = try await sendRequest(
+            method: "account/read",
+            params: .object(["refreshToken": .bool(refreshToken)])
+        )
+
+        let requiresOpenAIAuth = result.value(at: ["requiresOpenaiAuth"])?.boolValue ?? true
+        guard let accountObject = result.value(at: ["account"])?.objectValue else {
+            return RuntimeAccountState(
+                account: nil,
+                authMode: .unknown,
+                requiresOpenAIAuth: requiresOpenAIAuth
+            )
+        }
+
+        let type = accountObject["type"]?.stringValue ?? "unknown"
+        let summary = RuntimeAccountSummary(
+            type: type,
+            email: accountObject["email"]?.stringValue,
+            planType: accountObject["planType"]?.stringValue
+        )
+
+        return RuntimeAccountState(
+            account: summary,
+            authMode: Self.authMode(fromAccountType: type),
+            requiresOpenAIAuth: requiresOpenAIAuth
+        )
+    }
+
+    public func startChatGPTLogin() async throws -> RuntimeChatGPTLoginStart {
+        try await start()
+
+        let result = try await sendRequest(
+            method: "account/login/start",
+            params: .object(["type": .string("chatgpt")]),
+            timeoutSeconds: 30
+        )
+
+        guard let authURLString = result.value(at: ["authUrl"])?.stringValue,
+              let authURL = URL(string: authURLString) else {
+            throw CodexRuntimeError.invalidResponse("account/login/start(chatgpt) missing authUrl")
+        }
+
+        return RuntimeChatGPTLoginStart(
+            loginID: result.value(at: ["loginId"])?.stringValue,
+            authURL: authURL
+        )
+    }
+
+    public func startAPIKeyLogin(apiKey: String) async throws {
+        try await start()
+        _ = try await sendRequest(
+            method: "account/login/start",
+            params: .object([
+                "type": .string("apiKey"),
+                "apiKey": .string(apiKey)
+            ]),
+            timeoutSeconds: 30
+        )
+    }
+
+    public func logoutAccount() async throws {
+        try await start()
+        _ = try await sendRequest(method: "account/logout", params: .object([:]))
+    }
+
     private func spawnProcess(executablePath: String) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
@@ -359,5 +427,32 @@ public actor CodexRuntime {
         }
 
         return nil
+    }
+
+    nonisolated public static func launchDeviceAuthInTerminal() throws {
+        guard defaultExecutableResolver() != nil else {
+            throw CodexRuntimeError.binaryNotFound
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = [
+            "-e", "tell application \"Terminal\" to do script \"codex login --device-auth\"",
+            "-e", "tell application \"Terminal\" to activate"
+        ]
+        try process.run()
+    }
+
+    nonisolated private static func authMode(fromAccountType type: String) -> RuntimeAuthMode {
+        switch type.lowercased() {
+        case "apikey":
+            return .apiKey
+        case "chatgpt":
+            return .chatGPT
+        case "chatgptauthtokens":
+            return .chatGPTAuthTokens
+        default:
+            return .unknown
+        }
     }
 }

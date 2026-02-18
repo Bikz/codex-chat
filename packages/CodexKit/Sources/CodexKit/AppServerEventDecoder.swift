@@ -58,6 +58,18 @@ enum AppServerEventDecoder {
             )
             return .turnCompleted(completion)
 
+        case "account/updated":
+            let mode = RuntimeAuthMode(rawMode: params.value(at: ["authMode"])?.stringValue)
+            return .accountUpdated(authMode: mode)
+
+        case "account/login/completed":
+            let completion = RuntimeLoginCompleted(
+                loginID: params.value(at: ["loginId"])?.stringValue,
+                success: params.value(at: ["success"])?.boolValue ?? false,
+                error: params.value(at: ["error"])?.stringValue
+            )
+            return .accountLoginCompleted(completion)
+
         default:
             return nil
         }

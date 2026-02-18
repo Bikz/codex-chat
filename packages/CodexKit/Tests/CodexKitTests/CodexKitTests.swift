@@ -69,4 +69,32 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(completion.turnID, "turn_1")
         XCTAssertEqual(completion.status, "completed")
     }
+
+    func testEventDecoderAccountNotifications() {
+        let updated = JSONRPCMessageEnvelope.notification(
+            method: "account/updated",
+            params: .object(["authMode": .string("chatgpt")])
+        )
+        guard case .accountUpdated(let mode)? = AppServerEventDecoder.decode(updated) else {
+            XCTFail("Expected accountUpdated")
+            return
+        }
+        XCTAssertEqual(mode, .chatGPT)
+
+        let completed = JSONRPCMessageEnvelope.notification(
+            method: "account/login/completed",
+            params: .object([
+                "loginId": .string("login_123"),
+                "success": .bool(true),
+                "error": .null
+            ])
+        )
+        guard case .accountLoginCompleted(let completion)? = AppServerEventDecoder.decode(completed) else {
+            XCTFail("Expected accountLoginCompleted")
+            return
+        }
+        XCTAssertEqual(completion.loginID, "login_123")
+        XCTAssertTrue(completion.success)
+        XCTAssertNil(completion.error)
+    }
 }

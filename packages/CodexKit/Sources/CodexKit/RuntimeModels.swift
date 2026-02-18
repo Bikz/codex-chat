@@ -56,12 +56,86 @@ public struct RuntimeTurnCompletion: Hashable, Sendable {
     }
 }
 
+public enum RuntimeAuthMode: String, Codable, Sendable {
+    case apiKey = "apikey"
+    case chatGPT = "chatgpt"
+    case chatGPTAuthTokens = "chatgptAuthTokens"
+    case unknown
+
+    public init(rawMode: String?) {
+        switch rawMode {
+        case RuntimeAuthMode.apiKey.rawValue:
+            self = .apiKey
+        case RuntimeAuthMode.chatGPT.rawValue:
+            self = .chatGPT
+        case RuntimeAuthMode.chatGPTAuthTokens.rawValue:
+            self = .chatGPTAuthTokens
+        default:
+            self = .unknown
+        }
+    }
+}
+
+public struct RuntimeAccountSummary: Hashable, Sendable, Codable {
+    public let type: String
+    public let email: String?
+    public let planType: String?
+
+    public init(type: String, email: String?, planType: String?) {
+        self.type = type
+        self.email = email
+        self.planType = planType
+    }
+}
+
+public struct RuntimeAccountState: Hashable, Sendable, Codable {
+    public let account: RuntimeAccountSummary?
+    public let authMode: RuntimeAuthMode
+    public let requiresOpenAIAuth: Bool
+
+    public init(account: RuntimeAccountSummary?, authMode: RuntimeAuthMode, requiresOpenAIAuth: Bool) {
+        self.account = account
+        self.authMode = authMode
+        self.requiresOpenAIAuth = requiresOpenAIAuth
+    }
+
+    public static let signedOut = RuntimeAccountState(
+        account: nil,
+        authMode: .unknown,
+        requiresOpenAIAuth: true
+    )
+}
+
+public struct RuntimeChatGPTLoginStart: Hashable, Sendable {
+    public let loginID: String?
+    public let authURL: URL
+
+    public init(loginID: String?, authURL: URL) {
+        self.loginID = loginID
+        self.authURL = authURL
+    }
+}
+
+public struct RuntimeLoginCompleted: Hashable, Sendable {
+    public let loginID: String?
+    public let success: Bool
+    public let error: String?
+
+    public init(loginID: String?, success: Bool, error: String?) {
+        self.loginID = loginID
+        self.success = success
+        self.error = error
+    }
+}
+
 public enum CodexRuntimeEvent: Hashable, Sendable {
     case threadStarted(threadID: String)
     case turnStarted(turnID: String)
     case assistantMessageDelta(itemID: String, delta: String)
     case action(RuntimeAction)
     case turnCompleted(RuntimeTurnCompletion)
+    case accountUpdated(authMode: RuntimeAuthMode)
+    case accountLoginCompleted(RuntimeLoginCompleted)
 }
 
 public enum CodexRuntimeError: LocalizedError, Sendable {
