@@ -1,9 +1,11 @@
 import CodexChatInfra
+import CodexChatUI
 import SwiftUI
 
 @main
 struct CodexChatApplication: App {
     @StateObject private var model: AppModel
+    @StateObject private var themeProvider = ThemeProvider()
 
     init() {
         let bootstrap = Self.bootstrapModel()
@@ -13,6 +15,7 @@ struct CodexChatApplication: App {
     var body: some Scene {
         WindowGroup {
             ContentView(model: model)
+                .designTokens(themeProvider.tokens)
         }
         .commands {
             CommandGroup(after: .newItem) {

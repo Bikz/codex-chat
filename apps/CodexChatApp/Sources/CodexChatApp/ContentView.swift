@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.designTokens) private var tokens
 
     var body: some View {
         NavigationSplitView {
@@ -12,16 +13,17 @@ struct ContentView: View {
         } detail: {
             conversationCanvas
         }
+        .background(Color(hex: tokens.palette.backgroundHex))
         .onAppear {
             model.onAppear()
         }
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: tokens.spacing.medium) {
             HStack {
                 Text("Projects")
-                    .font(.headline)
+                    .font(.system(size: tokens.typography.titleSize, weight: .semibold))
                 Spacer()
                 Button(action: model.createProject) {
                     Label("New Project", systemImage: "plus")
@@ -34,7 +36,7 @@ struct ContentView: View {
 
             HStack {
                 Text("Threads")
-                    .font(.headline)
+                    .font(.system(size: tokens.typography.titleSize, weight: .semibold))
                 Spacer()
                 Button(action: model.createThread) {
                     Label("New Thread", systemImage: "plus")
@@ -47,7 +49,8 @@ struct ContentView: View {
 
             Spacer()
         }
-        .padding()
+        .padding(tokens.spacing.medium)
+        .background(Color(hex: tokens.palette.panelHex).opacity(0.6))
     }
 
     @ViewBuilder
@@ -74,6 +77,7 @@ struct ContentView: View {
                 Text(project.name)
                     .tag(project.id)
             }
+            .clipShape(RoundedRectangle(cornerRadius: tokens.radius.medium))
         }
     }
 
@@ -107,6 +111,7 @@ struct ContentView: View {
                 Text(thread.title)
                     .tag(thread.id)
             }
+            .clipShape(RoundedRectangle(cornerRadius: tokens.radius.medium))
         }
     }
 
@@ -133,21 +138,22 @@ struct ContentView: View {
                 )
             case .loaded(let messages):
                 List(messages) { message in
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: tokens.spacing.xSmall) {
                         Text(message.role.rawValue.capitalized)
-                            .font(.caption)
+                            .font(.system(size: tokens.typography.captionSize, weight: .medium))
                             .foregroundStyle(.secondary)
                         Text(message.text)
+                            .font(.system(size: tokens.typography.bodySize))
                             .textSelection(.enabled)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, tokens.spacing.xSmall)
                 }
                 .listStyle(.plain)
             }
 
             Divider()
 
-            HStack(spacing: 12) {
+            HStack(spacing: tokens.spacing.small) {
                 TextField("Ask CodexChat to do something…", text: $model.composerText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
@@ -156,9 +162,11 @@ struct ContentView: View {
                     model.sendMessage()
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(Color(hex: tokens.palette.accentHex))
                 .disabled(model.selectedThreadID == nil)
             }
-            .padding()
+            .padding(tokens.spacing.medium)
+            .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
         }
         .navigationTitle("Conversation")
     }
