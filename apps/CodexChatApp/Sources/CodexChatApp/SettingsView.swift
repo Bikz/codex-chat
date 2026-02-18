@@ -6,6 +6,16 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
 
+    @State private var selectedSection: SettingsSection = .defaultSelection
+
+    @State private var runtimeModelDraft = ""
+    @State private var safetySandboxMode: ProjectSandboxMode = .readOnly
+    @State private var safetyApprovalPolicy: ProjectApprovalPolicy = .untrusted
+    @State private var safetyNetworkAccess = false
+    @State private var safetyWebSearchMode: ProjectWebSearchMode = .cached
+    @State private var pendingSafetyDefaults: ProjectSafetySettings?
+    @State private var isSafetyApplyPromptVisible = false
+
     @State private var generalSandboxMode: ProjectSandboxMode = .readOnly
     @State private var generalApprovalPolicy: ProjectApprovalPolicy = .untrusted
     @State private var generalNetworkAccess = false
@@ -19,28 +29,61 @@ struct SettingsView: View {
     @State private var generalDangerConfirmationError: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                accountCard
-                CodexConfigSettingsSection(model: model)
-                generalProjectCard
-                diagnosticsCard
-                storageCard
+        SettingsScaffold(
+            title: "Settings",
+            subtitle: "Global CodexChat configuration and General project controls.",
+            sidebar: {
+                sidebar
+            },
+            content: {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: tokens.spacing.small) {
+                        sectionContent
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(tokens.spacing.xSmall)
+                }
             }
-            .padding(.horizontal, SkillsModsTheme.pageHorizontalInset)
-            .padding(.vertical, SkillsModsTheme.pageVerticalInset)
-        }
-        .background(SkillsModsTheme.canvasBackground(tokens: tokens))
+        )
+        .tint(Color(hex: tokens.palette.accentHex))
+        .frame(minWidth: 940, minHeight: 620)
         .onAppear {
+            runtimeModelDraft = model.defaultModel
+            syncSafetyDefaultsFromModel()
             syncGeneralProjectFromModel()
+        }
+        .onChange(of: model.defaultSafetySettings) { _, _ in
+            syncSafetyDefaultsFromModel()
+        }
+        .onChange(of: model.defaultModel) { _, newValue in
+            runtimeModelDraft = newValue
         }
         .onReceive(model.$projectsState) { _ in
             syncGeneralProjectFromModel()
         }
+        .confirmationDialog(
+            "Apply global safety defaults",
+            isPresented: $isSafetyApplyPromptVisible,
+            titleVisibility: .visible
+        ) {
+            Button("Apply to New Projects Only") {
+                guard let pendingSafetyDefaults else { return }
+                model.saveGlobalSafetyDefaults(pendingSafetyDefaults, applyToExistingProjects: false)
+            }
+
+            Button("Apply to Existing + New Projects") {
+                guard let pendingSafetyDefaults else { return }
+                model.saveGlobalSafetyDefaults(pendingSafetyDefaults, applyToExistingProjects: true)
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose whether these defaults should affect only newly created projects or also update existing projects.")
+        }
         .sheet(isPresented: $isGeneralDangerConfirmationVisible) {
-            AppDangerConfirmationSheet(
+            DangerConfirmationSheet(
                 phrase: model.dangerConfirmationPhrase,
+                subtitle: "Type the confirmation phrase to enable dangerous General project settings.",
                 input: $generalDangerConfirmationInput,
                 errorText: generalDangerConfirmationError,
                 onCancel: {
@@ -50,7 +93,10 @@ struct SettingsView: View {
                     isGeneralDangerConfirmationVisible = false
                 },
                 onConfirm: {
-                    guard generalDangerConfirmationInput.trimmingCharacters(in: .whitespacesAndNewlines) == model.dangerConfirmationPhrase else {
+                    guard DangerConfirmationSheet.isPhraseMatch(
+                        input: generalDangerConfirmationInput,
+                        phrase: model.dangerConfirmationPhrase
+                    ) else {
                         generalDangerConfirmationError = "Phrase did not match."
                         return
                     }
@@ -71,29 +117,59 @@ struct SettingsView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Settings")
-                .font(.system(size: 46, weight: .semibold, design: .rounded))
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsSection.allCases) { section in
+                SettingsSidebarItem(
+                    title: section.title,
+                    symbolName: section.symbolName,
+                    isSelected: selectedSection == section
+                ) {
+                    selectedSection = section
+                }
+            }
+        }
+    }
 
-            Text("Global CodexChat configuration and General project controls.")
-                .font(.title3)
-                .foregroundStyle(SkillsModsTheme.mutedText(tokens: tokens))
+    @ViewBuilder
+    private var sectionContent: some View {
+        switch selectedSection {
+        case .account:
+            accountCard
+        case .runtime:
+            runtimeContent
+        case .generalProject:
+            generalProjectContent
+        case .safetyDefaults:
+            safetyDefaultsCard
+        case .experimental:
+            experimentalCard
+        case .diagnostics:
+            diagnosticsCard
+        case .storage:
+            storageCard
+        }
+    }
+
+    private var runtimeContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            runtimeDefaultsCard
+            codexConfigCard
         }
     }
 
     private var accountCard: some View {
-        SkillsModsCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Account")
-                    .font(.title3.weight(.semibold))
-
-                LabeledContent("Current") {
+        SettingsSectionCard(
+            title: "Account",
+            subtitle: "Account authentication and keychain-backed key management."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsFieldRow(label: "Current") {
                     Text(model.accountSummaryText)
                         .foregroundStyle(.secondary)
                 }
 
-                LabeledContent("Auth mode") {
+                SettingsFieldRow(label: "Auth mode") {
                     Text(model.accountState.authMode.rawValue)
                         .foregroundStyle(.secondary)
                 }
@@ -131,6 +207,7 @@ struct SettingsView: View {
                     } label: {
                         Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
                     }
+                    .buttonStyle(.bordered)
                     .disabled(model.isAccountOperationInProgress)
                 }
 
@@ -141,137 +218,234 @@ struct SettingsView: View {
         }
     }
 
-    private var generalProjectCard: some View {
-        SkillsModsCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("General Project")
-                    .font(.title3.weight(.semibold))
+    private var runtimeDefaultsCard: some View {
+        SettingsSectionCard(
+            title: "Runtime Defaults",
+            subtitle: "Defaults used when creating turns and projects."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    TextField("Model ID", text: $runtimeModelDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Default model ID")
 
-                if let generalProject = model.generalProject {
-                    LabeledContent("Name") {
-                        Text(generalProject.name)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    LabeledContent("Path") {
-                        Text(generalProject.path)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-
-                    HStack(spacing: 8) {
-                        Button("Trust") {
-                            model.trustGeneralProject()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(generalProject.trustState == .trusted)
-
-                        Button("Mark Untrusted") {
-                            model.untrustGeneralProject()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(generalProject.trustState == .untrusted)
-                    }
-
-                    Divider()
-
-                    Text("Safety")
-                        .font(.headline)
-
-                    Picker("Sandbox mode", selection: $generalSandboxMode) {
-                        Text("Read-only").tag(ProjectSandboxMode.readOnly)
-                        Text("Workspace-write").tag(ProjectSandboxMode.workspaceWrite)
-                        Text("Danger full access").tag(ProjectSandboxMode.dangerFullAccess)
-                    }
-                    .pickerStyle(.menu)
-
-                    Picker("Approval policy", selection: $generalApprovalPolicy) {
-                        Text("Untrusted").tag(ProjectApprovalPolicy.untrusted)
-                        Text("On request").tag(ProjectApprovalPolicy.onRequest)
-                        Text("Never").tag(ProjectApprovalPolicy.never)
-                    }
-                    .pickerStyle(.menu)
-
-                    Toggle("Allow network access in workspace-write", isOn: $generalNetworkAccess)
-                        .disabled(generalSandboxMode != .workspaceWrite)
-                        .onChange(of: generalSandboxMode) { _, newValue in
-                            if newValue != .workspaceWrite {
-                                generalNetworkAccess = false
+                    Menu("Preset") {
+                        ForEach(model.modelPresets, id: \.self) { preset in
+                            Button(preset) {
+                                runtimeModelDraft = preset
+                                model.setDefaultModel(preset)
                             }
                         }
-
-                    Picker("Web search mode", selection: $generalWebSearchMode) {
-                        Text("Cached").tag(ProjectWebSearchMode.cached)
-                        Text("Live").tag(ProjectWebSearchMode.live)
-                        Text("Disabled").tag(ProjectWebSearchMode.disabled)
                     }
-                    .pickerStyle(.menu)
 
-                    Button("Save General Safety Settings") {
-                        let settings = ProjectSafetySettings(
-                            sandboxMode: generalSandboxMode,
-                            approvalPolicy: generalApprovalPolicy,
-                            networkAccess: generalNetworkAccess,
-                            webSearch: generalWebSearchMode
-                        )
-
-                        if model.requiresDangerConfirmation(
-                            sandboxMode: settings.sandboxMode,
-                            approvalPolicy: settings.approvalPolicy
-                        ) {
-                            pendingGeneralSafetySettings = settings
-                            generalDangerConfirmationInput = ""
-                            generalDangerConfirmationError = nil
-                            isGeneralDangerConfirmationVisible = true
-                        } else {
-                            model.updateGeneralProjectSafetySettings(
-                                sandboxMode: settings.sandboxMode,
-                                approvalPolicy: settings.approvalPolicy,
-                                networkAccess: settings.networkAccess,
-                                webSearch: settings.webSearch
-                            )
-                        }
+                    Button("Save") {
+                        model.setDefaultModel(runtimeModelDraft)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(runtimeModelDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
 
-                    Divider()
-
-                    Text("Memory")
-                        .font(.headline)
-
-                    Picker("After each completed turn", selection: $generalMemoryWriteMode) {
-                        Text("Off").tag(ProjectMemoryWriteMode.off)
-                        Text("Summaries only").tag(ProjectMemoryWriteMode.summariesOnly)
-                        Text("Summaries + key facts").tag(ProjectMemoryWriteMode.summariesAndKeyFacts)
+                Picker(
+                    "Reasoning",
+                    selection: Binding(
+                        get: { model.defaultReasoning },
+                        set: { model.setDefaultReasoning($0) }
+                    )
+                ) {
+                    ForEach(AppModel.ReasoningLevel.allCases, id: \.self) { level in
+                        Text(level.title).tag(level)
                     }
-                    .pickerStyle(.menu)
-                    .disabled(isSyncingGeneralProject)
+                }
+                .pickerStyle(.segmented)
 
-                    Toggle("Enable semantic retrieval (advanced)", isOn: $generalMemoryEmbeddingsEnabled)
-                        .disabled(isSyncingGeneralProject)
+                Picker(
+                    "Web search",
+                    selection: Binding(
+                        get: { model.defaultWebSearch },
+                        set: { model.setDefaultWebSearch($0) }
+                    )
+                ) {
+                    Text("Cached").tag(ProjectWebSearchMode.cached)
+                    Text("Live").tag(ProjectWebSearchMode.live)
+                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                }
+                .pickerStyle(.segmented)
 
-                    Button("Save General Memory Settings") {
-                        model.updateGeneralProjectMemorySettings(
-                            writeMode: generalMemoryWriteMode,
-                            embeddingsEnabled: generalMemoryEmbeddingsEnabled
-                        )
-                    }
-                    .buttonStyle(.borderedProminent)
+                Text("Composer controls inherit these defaults. Project safety policy still clamps effective web-search behavior at turn time.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 
-                    Text("General project memory is stored under the General project folder in `memory/*.md`.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("General project is unavailable.")
+    private var codexConfigCard: some View {
+        CodexConfigSettingsSection(model: model)
+    }
+
+    @ViewBuilder
+    private var generalProjectContent: some View {
+        if let project = model.generalProject {
+            generalProjectSummaryCard(project)
+            generalProjectSafetyCard
+            generalProjectMemoryCard
+        } else {
+            SettingsSectionCard(
+                title: "General Project",
+                subtitle: "Shared baseline project for defaults and global memory behavior."
+            ) {
+                Text("General project is unavailable.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func generalProjectSummaryCard(_ generalProject: ProjectRecord) -> some View {
+        SettingsSectionCard(
+            title: "General Project",
+            subtitle: "Baseline project metadata and trust state."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsFieldRow(label: "Name") {
+                    Text(generalProject.name)
                         .foregroundStyle(.secondary)
                 }
+
+                SettingsFieldRow(label: "Path") {
+                    Text(generalProject.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                SettingsFieldRow(label: "Trust") {
+                    SettingsStatusBadge(
+                        generalProject.trustState == .trusted ? "Trusted" : "Untrusted",
+                        tone: generalProject.trustState == .trusted ? .accent : .neutral
+                    )
+                }
+
+                HStack(spacing: 8) {
+                    Button("Trust") {
+                        model.trustGeneralProject()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(generalProject.trustState == .trusted)
+                    .accessibilityHint("Marks this project as trusted.")
+
+                    Button("Mark Untrusted", role: .destructive) {
+                        model.untrustGeneralProject()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(generalProject.trustState == .untrusted)
+                    .accessibilityHint("Marks this project as untrusted.")
+                }
+            }
+        }
+    }
+
+    private var generalProjectSafetyCard: some View {
+        SettingsSectionCard(
+            title: "Trust & Safety",
+            subtitle: "Controls for sandboxing, approvals, network access, and web search."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Sandbox mode", selection: $generalSandboxMode) {
+                    Text("Read-only").tag(ProjectSandboxMode.readOnly)
+                    Text("Workspace-write").tag(ProjectSandboxMode.workspaceWrite)
+                    Text("Danger full access").tag(ProjectSandboxMode.dangerFullAccess)
+                }
+                .pickerStyle(.menu)
+
+                Picker("Approval policy", selection: $generalApprovalPolicy) {
+                    Text("Untrusted").tag(ProjectApprovalPolicy.untrusted)
+                    Text("On request").tag(ProjectApprovalPolicy.onRequest)
+                    Text("Never").tag(ProjectApprovalPolicy.never)
+                }
+                .pickerStyle(.menu)
+
+                Toggle("Allow network access in workspace-write", isOn: $generalNetworkAccess)
+                    .disabled(generalSandboxMode != .workspaceWrite)
+                    .onChange(of: generalSandboxMode) { _, newValue in
+                        generalNetworkAccess = ProjectSettingsSheet.clampedNetworkAccess(
+                            for: newValue,
+                            networkAccess: generalNetworkAccess
+                        )
+                    }
+                    .accessibilityHint("Only available when sandbox mode is workspace-write.")
+
+                Picker("Web search mode", selection: $generalWebSearchMode) {
+                    Text("Cached").tag(ProjectWebSearchMode.cached)
+                    Text("Live").tag(ProjectWebSearchMode.live)
+                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                }
+                .pickerStyle(.menu)
+
+                Button("Save General Safety Settings") {
+                    let settings = ProjectSafetySettings(
+                        sandboxMode: generalSandboxMode,
+                        approvalPolicy: generalApprovalPolicy,
+                        networkAccess: generalNetworkAccess,
+                        webSearch: generalWebSearchMode
+                    )
+
+                    if model.requiresDangerConfirmation(
+                        sandboxMode: settings.sandboxMode,
+                        approvalPolicy: settings.approvalPolicy
+                    ) {
+                        pendingGeneralSafetySettings = settings
+                        generalDangerConfirmationInput = ""
+                        generalDangerConfirmationError = nil
+                        isGeneralDangerConfirmationVisible = true
+                    } else {
+                        model.updateGeneralProjectSafetySettings(
+                            sandboxMode: settings.sandboxMode,
+                            approvalPolicy: settings.approvalPolicy,
+                            networkAccess: settings.networkAccess,
+                            webSearch: settings.webSearch
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityHint("Saves updated safety controls for the General project.")
 
                 if let status = model.projectStatusMessage {
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+
+    private var generalProjectMemoryCard: some View {
+        SettingsSectionCard(
+            title: "Memory",
+            subtitle: "Memory write and retrieval behavior for the General project."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("After each completed turn", selection: $generalMemoryWriteMode) {
+                    Text("Off").tag(ProjectMemoryWriteMode.off)
+                    Text("Summaries only").tag(ProjectMemoryWriteMode.summariesOnly)
+                    Text("Summaries + key facts").tag(ProjectMemoryWriteMode.summariesAndKeyFacts)
+                }
+                .pickerStyle(.menu)
+                .disabled(isSyncingGeneralProject)
+
+                Toggle("Enable semantic retrieval (advanced)", isOn: $generalMemoryEmbeddingsEnabled)
+                    .disabled(isSyncingGeneralProject)
+
+                Button("Save General Memory Settings") {
+                    model.updateGeneralProjectMemorySettings(
+                        writeMode: generalMemoryWriteMode,
+                        embeddingsEnabled: generalMemoryEmbeddingsEnabled
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+
+                Text("General project memory is stored under the General project folder in `memory/*.md`.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 if let memoryStatus = model.memoryStatusMessage {
                     Text(memoryStatus)
                         .font(.caption)
@@ -281,17 +455,92 @@ struct SettingsView: View {
         }
     }
 
-    private var diagnosticsCard: some View {
-        SkillsModsCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Diagnostics")
-                    .font(.title3.weight(.semibold))
+    private var safetyDefaultsCard: some View {
+        SettingsSectionCard(
+            title: "Safety Defaults",
+            subtitle: "Defaults for newly created projects."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Sandbox mode", selection: $safetySandboxMode) {
+                    Text("Read-only").tag(ProjectSandboxMode.readOnly)
+                    Text("Workspace-write").tag(ProjectSandboxMode.workspaceWrite)
+                    Text("Danger full access").tag(ProjectSandboxMode.dangerFullAccess)
+                }
+                .pickerStyle(.menu)
 
+                Picker("Approval policy", selection: $safetyApprovalPolicy) {
+                    Text("Untrusted").tag(ProjectApprovalPolicy.untrusted)
+                    Text("On request").tag(ProjectApprovalPolicy.onRequest)
+                    Text("Never").tag(ProjectApprovalPolicy.never)
+                }
+                .pickerStyle(.menu)
+
+                Toggle("Allow network access in workspace-write", isOn: $safetyNetworkAccess)
+                    .disabled(safetySandboxMode != .workspaceWrite)
+                    .onChange(of: safetySandboxMode) { _, newValue in
+                        safetyNetworkAccess = ProjectSettingsSheet.clampedNetworkAccess(
+                            for: newValue,
+                            networkAccess: safetyNetworkAccess
+                        )
+                    }
+                    .accessibilityHint("Only available when sandbox mode is workspace-write.")
+
+                Picker("Web search mode", selection: $safetyWebSearchMode) {
+                    Text("Cached").tag(ProjectWebSearchMode.cached)
+                    Text("Live").tag(ProjectWebSearchMode.live)
+                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                }
+                .pickerStyle(.menu)
+
+                Button("Save Global Safety Defaults…") {
+                    pendingSafetyDefaults = ProjectSafetySettings(
+                        sandboxMode: safetySandboxMode,
+                        approvalPolicy: safetyApprovalPolicy,
+                        networkAccess: safetyNetworkAccess,
+                        webSearch: safetyWebSearchMode
+                    )
+                    isSafetyApplyPromptVisible = true
+                }
+                .buttonStyle(.borderedProminent)
+
+                Text("These defaults initialize new projects. After saving, you can choose whether to bulk-apply them to existing projects.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let runtimeDefaultsStatusMessage = model.runtimeDefaultsStatusMessage {
+                    Text(runtimeDefaultsStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var experimentalCard: some View {
+        SettingsSectionCard(
+            title: "Experimental",
+            subtitle: "Experimental values are managed through config.toml."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Use the Runtime section's Codex Config editor to change experimental flags.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var diagnosticsCard: some View {
+        SettingsSectionCard(
+            title: "Diagnostics",
+            subtitle: "Capture a support-ready diagnostics bundle with non-sensitive logs."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
                 Button {
                     model.copyDiagnosticsBundle()
                 } label: {
                     Label("Copy diagnostics bundle", systemImage: "doc.zipper")
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(model.isAccountOperationInProgress)
 
                 Text("Exports non-sensitive runtime state and logs as a zip archive, then copies the saved file path to clipboard.")
@@ -302,12 +551,12 @@ struct SettingsView: View {
     }
 
     private var storageCard: some View {
-        SkillsModsCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Storage")
-                    .font(.title3.weight(.semibold))
-
-                LabeledContent("Root") {
+        SettingsSectionCard(
+            title: "Storage",
+            subtitle: "Storage root and managed metadata location."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsFieldRow(label: "Root") {
                     Text(model.storageRootPath)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -341,6 +590,13 @@ struct SettingsView: View {
         }
     }
 
+    private func syncSafetyDefaultsFromModel() {
+        safetySandboxMode = model.defaultSafetySettings.sandboxMode
+        safetyApprovalPolicy = model.defaultSafetySettings.approvalPolicy
+        safetyNetworkAccess = model.defaultSafetySettings.networkAccess
+        safetyWebSearchMode = model.defaultSafetySettings.webSearch
+    }
+
     private func syncGeneralProjectFromModel() {
         guard let project = model.generalProject else { return }
         isSyncingGeneralProject = true
@@ -351,55 +607,5 @@ struct SettingsView: View {
         generalMemoryWriteMode = project.memoryWriteMode
         generalMemoryEmbeddingsEnabled = project.memoryEmbeddingsEnabled
         isSyncingGeneralProject = false
-    }
-}
-
-private struct AppDangerConfirmationSheet: View {
-    let phrase: String
-    @Binding var input: String
-    let errorText: String?
-    let onCancel: () -> Void
-    let onConfirm: () -> Void
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Confirm Dangerous Settings")
-                .font(.title3.weight(.semibold))
-
-            Text("Type the confirmation phrase to enable dangerous General project settings.")
-                .foregroundStyle(.secondary)
-
-            Text(phrase)
-                .font(.system(.body, design: .monospaced))
-                .padding(8)
-                .tokenCard(style: .card, radius: 8, strokeOpacity: 0.06)
-
-            TextField("Type phrase exactly", text: $input)
-                .textFieldStyle(.roundedBorder)
-                .focused($isFocused)
-
-            if let errorText {
-                Text(errorText)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    onCancel()
-                }
-                Button("Confirm") {
-                    onConfirm()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(20)
-        .frame(minWidth: 460)
-        .onAppear {
-            isFocused = true
-        }
     }
 }

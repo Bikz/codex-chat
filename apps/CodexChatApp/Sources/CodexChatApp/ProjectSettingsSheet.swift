@@ -2,8 +2,17 @@ import CodexChatCore
 import CodexChatUI
 import SwiftUI
 
+struct ProjectSettingsSafetyDraft: Equatable {
+    var sandboxMode: ProjectSandboxMode
+    var approvalPolicy: ProjectApprovalPolicy
+    var networkAccess: Bool
+    var webSearchMode: ProjectWebSearchMode
+}
+
 struct ProjectSettingsSheet: View {
     @ObservedObject var model: AppModel
+    @Environment(\.designTokens) private var tokens
+
     @State private var sandboxMode: ProjectSandboxMode = .readOnly
     @State private var approvalPolicy: ProjectApprovalPolicy = .untrusted
     @State private var networkAccess = false
@@ -14,38 +23,168 @@ struct ProjectSettingsSheet: View {
     @State private var pendingSafetySettings: ProjectSafetySettings?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Project Settings")
-                .font(.title3.weight(.semibold))
+        VStack(spacing: 0) {
+            header
 
-            if let project = model.selectedProject {
-                LabeledContent("Name") { Text(project.name) }
-                LabeledContent("Path") {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let project = model.selectedProject {
+                        projectSummaryCard(project)
+                        trustAndSafetyCard(project)
+                        archivedChatsCard
+                    } else {
+                        SettingsSectionCard(
+                            title: "Project Settings",
+                            subtitle: "Select a project first."
+                        ) {
+                            Text("No project selected.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if let status = model.projectStatusMessage {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 2)
+                    }
+                }
+                .padding(18)
+            }
+        }
+        .tint(Color(hex: tokens.palette.accentHex))
+        .background(Color(hex: tokens.palette.backgroundHex))
+        .frame(minWidth: 700, minHeight: 500)
+        .onAppear {
+            syncSafetyStateFromSelectedProject()
+            Task {
+                try? await model.refreshArchivedThreads()
+            }
+        }
+        .onChange(of: model.selectedProject?.id) { _, _ in
+            syncSafetyStateFromSelectedProject()
+            Task {
+                try? await model.refreshArchivedThreads()
+            }
+        }
+        .sheet(isPresented: $isDangerConfirmationVisible) {
+            DangerConfirmationSheet(
+                phrase: model.dangerConfirmationPhrase,
+                subtitle: "Type the confirmation phrase to enable dangerous project settings.",
+                input: $confirmationInput,
+                errorText: confirmationError,
+                onCancel: {
+                    confirmationInput = ""
+                    confirmationError = nil
+                    pendingSafetySettings = nil
+                    isDangerConfirmationVisible = false
+                },
+                onConfirm: {
+                    guard DangerConfirmationSheet.isPhraseMatch(
+                        input: confirmationInput,
+                        phrase: model.dangerConfirmationPhrase
+                    ) else {
+                        confirmationError = "Phrase did not match."
+                        return
+                    }
+                    if let pendingSafetySettings {
+                        applySafetySettings(pendingSafetySettings)
+                    }
+                    confirmationInput = ""
+                    confirmationError = nil
+                    pendingSafetySettings = nil
+                    isDangerConfirmationVisible = false
+                }
+            )
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Project Settings")
+                    .font(.title3.weight(.semibold))
+                Text("Per-project trust, safety, and archived chat controls.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("Done") {
+                model.closeProjectSettings()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+        .background(Color(hex: tokens.palette.backgroundHex))
+    }
+
+    private func projectSummaryCard(_ project: ProjectRecord) -> some View {
+        SettingsSectionCard(
+            title: "Project Summary",
+            subtitle: "Identity and trust posture for the selected project."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsFieldRow(label: "Name") {
+                    Text(project.name)
+                }
+
+                SettingsFieldRow(label: "Path") {
                     Text(project.path)
                         .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
-                LabeledContent("Trust") {
-                    Text(project.trustState.rawValue.capitalized)
-                        .foregroundStyle(project.trustState == .trusted ? .green : .orange)
+
+                SettingsFieldRow(label: "Trust") {
+                    SettingsStatusBadge(
+                        project.trustState == .trusted ? "Trusted" : "Untrusted",
+                        tone: project.trustState == .trusted ? .accent : .neutral
+                    )
                 }
 
-                LabeledContent("Git") {
-                    Text(AppModel.isGitProject(path: project.path) ? "Initialized" : "Not initialized")
-                        .foregroundStyle(AppModel.isGitProject(path: project.path) ? .green : .secondary)
+                let isGitInitialized = AppModel.isGitProject(path: project.path)
+                SettingsFieldRow(label: "Git") {
+                    SettingsStatusBadge(
+                        isGitInitialized ? "Initialized" : "Not initialized",
+                        tone: isGitInitialized ? .accent : .neutral
+                    )
                 }
 
-                if !AppModel.isGitProject(path: project.path) {
+                if !isGitInitialized {
                     Button("Initialize Git Repository") {
                         model.initializeGitForSelectedProject()
                     }
                     .buttonStyle(.bordered)
                 }
+            }
+        }
+    }
 
-                Divider()
+    private func trustAndSafetyCard(_ project: ProjectRecord) -> some View {
+        SettingsSectionCard(
+            title: "Trust & Safety",
+            subtitle: "Runtime guardrails and approval policy for this project."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Button("Trust Project") {
+                        model.trustSelectedProject()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(project.trustState == .trusted)
+                    .accessibilityHint("Marks this project as trusted.")
 
-                Text("Safety Controls")
-                    .font(.headline)
+                    Button("Mark Untrusted", role: .destructive) {
+                        model.untrustSelectedProject()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(project.trustState == .untrusted)
+                    .accessibilityHint("Marks this project as untrusted.")
+                }
 
                 Picker("Sandbox mode", selection: $sandboxMode) {
                     Text("Read-only").tag(ProjectSandboxMode.readOnly)
@@ -64,10 +203,9 @@ struct ProjectSettingsSheet: View {
                 Toggle("Allow network access in workspace-write", isOn: $networkAccess)
                     .disabled(sandboxMode != .workspaceWrite)
                     .onChange(of: sandboxMode) { _, newValue in
-                        if newValue != .workspaceWrite {
-                            networkAccess = false
-                        }
+                        networkAccess = Self.clampedNetworkAccess(for: newValue, networkAccess: networkAccess)
                     }
+                    .accessibilityHint("Only available when sandbox mode is workspace-write.")
 
                 Picker("Web search mode", selection: $webSearchMode) {
                     Text("Cached").tag(ProjectWebSearchMode.cached)
@@ -80,96 +218,29 @@ struct ProjectSettingsSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button("Open Local Safety Docs") {
-                    model.openSafetyPolicyDocument()
-                }
-                .buttonStyle(.bordered)
-
-                Button("Save Safety Settings") {
-                    saveSafetySettings()
-                }
-                .buttonStyle(.borderedProminent)
-
-                HStack {
-                    Button("Trust Project") {
-                        model.trustSelectedProject()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(project.trustState == .trusted)
-
-                    Button("Mark Untrusted") {
-                        model.untrustSelectedProject()
+                HStack(spacing: 8) {
+                    Button("Open Local Safety Docs") {
+                        model.openSafetyPolicyDocument()
                     }
                     .buttonStyle(.bordered)
-                    .disabled(project.trustState == .untrusted)
+
+                    Button("Save Safety Settings") {
+                        saveSafetySettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityHint("Saves updated safety settings for this project.")
                 }
-            } else {
-                Text("Select a project first.")
-                    .foregroundStyle(.secondary)
             }
+        }
+    }
 
-            Divider()
-
-            Text("Archived Chats")
-                .font(.headline)
-
+    private var archivedChatsCard: some View {
+        SettingsSectionCard(
+            title: "Archived Chats",
+            subtitle: "Manage archived conversation threads.",
+            emphasis: .secondary
+        ) {
             archivedChatsSection
-
-            if let status = model.projectStatusMessage {
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Done") {
-                    model.closeProjectSettings()
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .padding(18)
-        .frame(minWidth: 620, minHeight: 420)
-        .onAppear {
-            syncSafetyStateFromSelectedProject()
-            Task {
-                try? await model.refreshArchivedThreads()
-            }
-        }
-        .onChange(of: model.selectedProject?.id) { _, _ in
-            syncSafetyStateFromSelectedProject()
-            Task {
-                try? await model.refreshArchivedThreads()
-            }
-        }
-        .sheet(isPresented: $isDangerConfirmationVisible) {
-            DangerConfirmationSheet(
-                phrase: model.dangerConfirmationPhrase,
-                input: $confirmationInput,
-                errorText: confirmationError,
-                onCancel: {
-                    confirmationInput = ""
-                    confirmationError = nil
-                    pendingSafetySettings = nil
-                    isDangerConfirmationVisible = false
-                },
-                onConfirm: {
-                    guard confirmationInput.trimmingCharacters(in: .whitespacesAndNewlines) == model.dangerConfirmationPhrase else {
-                        confirmationError = "Phrase did not match."
-                        return
-                    }
-                    if let pendingSafetySettings {
-                        applySafetySettings(pendingSafetySettings)
-                    }
-                    confirmationInput = ""
-                    confirmationError = nil
-                    pendingSafetySettings = nil
-                    isDangerConfirmationVisible = false
-                }
-            )
         }
     }
 
@@ -206,10 +277,27 @@ struct ProjectSettingsSheet: View {
 
     private func syncSafetyStateFromSelectedProject() {
         guard let project = model.selectedProject else { return }
-        sandboxMode = project.sandboxMode
-        approvalPolicy = project.approvalPolicy
-        networkAccess = project.networkAccess
-        webSearchMode = project.webSearch
+        let draft = Self.safetyDraft(from: project)
+        sandboxMode = draft.sandboxMode
+        approvalPolicy = draft.approvalPolicy
+        networkAccess = draft.networkAccess
+        webSearchMode = draft.webSearchMode
+    }
+
+    static func safetyDraft(from project: ProjectRecord) -> ProjectSettingsSafetyDraft {
+        ProjectSettingsSafetyDraft(
+            sandboxMode: project.sandboxMode,
+            approvalPolicy: project.approvalPolicy,
+            networkAccess: project.networkAccess,
+            webSearchMode: project.webSearch
+        )
+    }
+
+    static func clampedNetworkAccess(for sandboxMode: ProjectSandboxMode, networkAccess: Bool) -> Bool {
+        guard sandboxMode == .workspaceWrite else {
+            return false
+        }
+        return networkAccess
     }
 
     @ViewBuilder
@@ -255,7 +343,14 @@ struct ProjectSettingsSheet: View {
                             .buttonStyle(.borderless)
                         }
                         .padding(8)
-                        .tokenCard(style: .card, radius: 8, strokeOpacity: 0.06)
+                        .background(
+                            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                                .fill(Color(hex: tokens.palette.panelHex).opacity(0.72))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08))
+                        )
                     }
                 }
             }
