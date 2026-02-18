@@ -1,13 +1,15 @@
+import CodexChatUI
 import SwiftUI
 
 struct ShellSplitContainerView: View {
     @ObservedObject var model: AppModel
     let projectID: UUID
     let session: ShellSessionState
+    @Environment(\.designTokens) private var tokens
 
     var body: some View {
         splitNodeView(sessionID: session.id, node: session.rootNode)
-            .padding(6)
+            .padding(tokens.spacing.xSmall)
     }
 
     private func splitNodeView(sessionID: UUID, node: ShellSplitNode) -> AnyView {

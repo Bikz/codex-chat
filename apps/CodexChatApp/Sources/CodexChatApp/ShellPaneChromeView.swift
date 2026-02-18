@@ -37,17 +37,18 @@ struct ShellPaneChromeView<Content: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(pane.processStatus == .running ? Color.green : Color.orange)
+                    .fill(pane.processStatus == .running ? Color(hex: tokens.palette.accentHex) : Color.orange)
                     .frame(width: 8, height: 8)
 
                 Text(pane.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .lineLimit(1)
 
                 Text(pane.cwd)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
 
                 Spacer(minLength: 8)
 
@@ -89,21 +90,25 @@ struct ShellPaneChromeView<Content: View>: View {
                 .buttonStyle(.borderless)
                 .help("Close pane")
             }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .background(tokens.materials.cardMaterial.material)
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(Color.primary.opacity(isActive ? tokens.surfaces.activeOpacity : tokens.surfaces.baseOpacity))
 
             Divider()
+                .opacity(tokens.surfaces.hairlineOpacity)
 
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(tokens.materials.panelMaterial.material)
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(isActive ? Color(hex: tokens.palette.accentHex) : Color.primary.opacity(0.12), lineWidth: isActive ? 1.2 : 1)
+            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                .strokeBorder(
+                    isActive ? Color(hex: tokens.palette.accentHex).opacity(0.65) : Color.primary.opacity(0.12),
+                    lineWidth: 1
+                )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture(perform: onFocus)
     }

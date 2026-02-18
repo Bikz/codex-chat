@@ -10,29 +10,65 @@ struct ShellWorkspaceDrawer: View {
             if let project = model.selectedProject {
                 let workspace = model.selectedProjectShellWorkspace
                     ?? ProjectShellWorkspaceState(projectID: project.id)
-                HStack(spacing: 0) {
-                    sessionsSidebar(workspace: workspace)
-                        .frame(width: 220)
-                    Divider()
-                    sessionSurface(projectName: project.name, projectID: project.id, workspace: workspace)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(alignment: .leading, spacing: tokens.spacing.small) {
+                    workspaceHeader(projectName: project.name, workspace: workspace)
+
+                    HStack(spacing: tokens.spacing.small) {
+                        sessionsSidebar(workspace: workspace)
+                            .frame(width: 240, maxHeight: .infinity)
+                            .tokenCard(style: .card, radius: tokens.radius.small, strokeOpacity: 0.08)
+
+                        sessionSurface(projectName: project.name, projectID: project.id, workspace: workspace)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .tokenCard(style: .card, radius: tokens.radius.small, strokeOpacity: 0.08)
+                    }
                 }
+                .padding(tokens.spacing.small)
+                .tokenCard(style: .panel, radius: tokens.radius.medium, strokeOpacity: 0.08)
             } else {
                 EmptyStateView(
                     title: "No project selected",
                     message: "Select a project to open Shell Workspace.",
                     systemImage: "terminal"
                 )
+                .tokenCard(style: .panel, radius: tokens.radius.medium, strokeOpacity: 0.08)
             }
         }
-        .background(tokens.materials.panelMaterial.material)
+    }
+
+    private func workspaceHeader(projectName: String, workspace: ProjectShellWorkspaceState) -> some View {
+        HStack(spacing: 10) {
+            Label("Shell Workspace", systemImage: "terminal")
+                .font(.subheadline.weight(.semibold))
+
+            Text(projectName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Text("\(workspace.sessions.count) session\(workspace.sessions.count == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button {
+                model.createShellSession()
+            } label: {
+                Label("New Session", systemImage: "plus")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .help("New shell session")
+        }
+        .padding(.horizontal, 2)
     }
 
     private func sessionsSidebar(workspace: ProjectShellWorkspaceState) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Shells")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 Button {
                     model.createShellSession()
@@ -43,11 +79,11 @@ struct ShellWorkspaceDrawer: View {
                 .buttonStyle(.borderless)
                 .help("New shell session")
             }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            .background(tokens.materials.cardMaterial.material)
+            .padding(.horizontal, tokens.spacing.small)
+            .frame(height: 36)
 
             Divider()
+                .opacity(tokens.surfaces.hairlineOpacity)
 
             if workspace.sessions.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -66,7 +102,7 @@ struct ShellWorkspaceDrawer: View {
                     }
                     .buttonStyle(.bordered)
                 }
-                .padding(10)
+                .padding(tokens.spacing.small)
                 Spacer()
             } else {
                 ScrollView {
@@ -86,7 +122,7 @@ struct ShellWorkspaceDrawer: View {
 
                                         Spacer(minLength: 6)
                                     }
-                                    .frame(height: 28)
+                                    .frame(height: 30)
                                     .padding(.horizontal, 8)
                                     .background(
                                         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -100,17 +136,17 @@ struct ShellWorkspaceDrawer: View {
                                 } label: {
                                     Image(systemName: "xmark")
                                         .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
                                 }
                                 .buttonStyle(.borderless)
                                 .help("Close session")
                             }
                         }
                     }
-                    .padding(10)
+                    .padding(tokens.spacing.small)
                 }
             }
         }
-        .background(tokens.materials.cardMaterial.material)
     }
 
     @ViewBuilder
@@ -131,16 +167,17 @@ struct ShellWorkspaceDrawer: View {
             }
         } else if let session = workspace.selectedSession() {
             VStack(spacing: 0) {
-                HStack {
+                HStack(spacing: 10) {
                     Text(session.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
 
                     if let activePane = ShellSplitTree.findLeaf(in: session.rootNode, paneID: session.activePaneID) {
                         Text(activePane.cwd)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .truncationMode(.middle)
                     } else {
                         Text(projectName)
                             .font(.caption)
@@ -163,11 +200,12 @@ struct ShellWorkspaceDrawer: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 10)
-                .frame(height: 34)
-                .background(tokens.materials.cardMaterial.material)
+                .padding(.horizontal, tokens.spacing.small)
+                .frame(height: 36)
+                .background(Color.primary.opacity(tokens.surfaces.baseOpacity))
 
                 Divider()
+                    .opacity(tokens.surfaces.hairlineOpacity)
 
                 ShellSplitContainerView(model: model, projectID: projectID, session: session)
             }

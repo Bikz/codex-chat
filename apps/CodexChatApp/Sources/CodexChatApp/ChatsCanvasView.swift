@@ -40,9 +40,13 @@ struct ChatsCanvasView: View {
 
                 if model.isShellWorkspaceVisible {
                     Divider()
+                        .opacity(tokens.surfaces.hairlineOpacity)
                     ShellWorkspaceDrawer(model: model)
-                        .frame(height: 280)
-                        .background(tokens.materials.panelMaterial.material)
+                        .frame(height: 300)
+                        .padding(.horizontal, tokens.spacing.medium)
+                        .padding(.top, tokens.spacing.small)
+                        .padding(.bottom, tokens.spacing.medium)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
