@@ -99,7 +99,7 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
     public func createProject(named name: String) async throws -> ProjectRecord {
         try await dbQueue.write { db in
             let now = Date()
-            var entity = ProjectEntity(record: ProjectRecord(name: name, createdAt: now, updatedAt: now))
+            let entity = ProjectEntity(record: ProjectRecord(name: name, createdAt: now, updatedAt: now))
             try entity.insert(db)
             return entity.record
         }
@@ -144,7 +144,7 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
     public func createThread(projectID: UUID, title: String) async throws -> ThreadRecord {
         try await dbQueue.write { db in
             let now = Date()
-            var entity = ThreadEntity(
+            let entity = ThreadEntity(
                 record: ThreadRecord(projectId: projectID, title: title, createdAt: now, updatedAt: now)
             )
             try entity.insert(db)
@@ -174,7 +174,7 @@ public final class SQLitePreferenceRepository: PreferenceRepository, @unchecked 
 
     public func setPreference(key: AppPreferenceKey, value: String) async throws {
         try await dbQueue.write { db in
-            var entity = PreferenceEntity(key: key.rawValue, value: value)
+            let entity = PreferenceEntity(key: key.rawValue, value: value)
             try entity.save(db)
         }
     }
