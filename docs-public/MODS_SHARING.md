@@ -1,16 +1,14 @@
 # Create And Share Skills + Mods
 
-This guide explains how users can create and share custom Skills and UI Mods for CodexChat.
-
 ## Skills
 
-### Create a skill
+### Create
 
-1. Create a new folder for your skill repository.
-2. Add a `SKILL.md` file with frontmatter (`name`, `description`) and clear instructions.
-3. Optionally add a `scripts/` directory for helper automation.
+1. Create a skill folder.
+2. Add `SKILL.md` with clear instructions and metadata.
+3. Optionally add helper scripts.
 
-Example structure:
+Example:
 
 ```text
 my-skill/
@@ -19,57 +17,55 @@ my-skill/
     run.sh
 ```
 
-### Share a skill
+### Share
 
-1. Commit and push the skill folder to any git repository.
+1. Push the skill folder/repo to git.
 2. Share the repository URL.
 
-### Import a skill in CodexChat
+### Import In CodexChat
 
-1. Open `Skills & Mods` -> `Skills`.
-2. Click `New skill`.
-3. Paste the git repository URL and install.
-4. Enable the installed skill for your project.
-
-Notes:
-
-- CodexChat supports git clone installs and optional `npx skills add` installs when Node tooling is available.
-- Trusted-host checks are applied in the install flow.
+1. Open `Skills & Mods`.
+2. Go to `Skills`.
+3. Click `New skill`.
+4. Paste repository URL and install.
+5. Enable for the target project.
 
 ## Mods
 
-### Create a mod
+### Create
 
-1. Open `Skills & Mods` -> `Mods`.
-2. Click `Create Sample` in either `Global Mod` or `Project Mod`.
-3. Edit the generated `ui.mod.json`.
+1. Open `Skills & Mods`.
+2. Go to `Mods`.
+3. Click `Create Sample` in Global or Project section.
+4. Edit generated `ui.mod.json`.
 
 Mod roots:
 
-- Global mods: `~/Library/Application Support/CodexChat/Mods/Global`
-- Project mods: `<project>/mods`
+- Global: `~/CodexChat/global/mods`
+- Project: `<project>/mods`
 
-Example structure:
+Example:
 
 ```text
 my-mod/
   ui.mod.json
 ```
 
-### Share a mod
+### Share
 
-1. Commit and push the mod directory to any git repository.
-2. Share that repository URL.
-3. Other users can clone the mod directory into either global mods or project mods.
-4. In CodexChat, select the mod from the `Global Mod` or `Project Mod` picker.
+1. Push mod directory/repo to git.
+2. Share the URL.
+3. Other users clone into global or project mod root.
+4. Select mod in CodexChat picker.
 
-## Suggested repo strategy
+## Suggested Catalog Strategy
 
-- Keep this main `codexchat` repo focused on product code + docs.
-- Optionally create a separate community catalog repo with metadata and links to user-owned skill/mod repos.
-- Allow import from external repos so creators keep ownership and release cadence.
+- Keep this main repo focused on product code and docs.
+- Maintain an external community catalog repo with links to user-owned skill/mod repos.
+- Let creators own release cadence in their own repos.
 
-## Related docs
+## Related Docs
 
-- `MODS.md`: UI mod schema, precedence, and token coverage.
-- `CONTRIBUTING.md`: contribution and repo conventions.
+- `MODS.md`
+- `CONTRIBUTING.md`
+- `ARCHITECTURE_CONTRACT.md`

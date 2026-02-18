@@ -1,110 +1,61 @@
 # UI Mods
 
-CodexChat supports a simple UI mod system that overrides design tokens (colors, spacing, typography, materials, bubble style).
+CodexChat supports UI mods that override design tokens (palette, typography, spacing, radius, materials, bubbles).
 
-## Where Mods Live
+## Mod Roots
 
-- Global mods: `~/Library/Application Support/CodexChat/Mods/Global`
+- Global mods: `~/CodexChat/global/mods`
 - Project mods: `<project>/mods`
 
 ## Precedence
-
-Effective theme is computed as:
 
 `defaults < global mod < project mod`
 
 ## Mod Structure
 
-Each mod is a directory containing a `ui.mod.json` definition file:
+Each mod is a directory containing `ui.mod.json`:
 
-```
+```text
 MyMod/
   ui.mod.json
 ```
 
-CodexChat discovers mods by scanning the immediate subdirectories of the global/project mod roots.
+CodexChat discovers mods by scanning immediate subdirectories of each mod root.
 
-## `ui.mod.json` Schema (v1)
+## Schema (`ui.mod.json`, v1)
 
 Top-level fields:
 
 - `schemaVersion` (int): currently `1`
-- `manifest` (object):
-  - `id` (string): stable identifier (ex: `com.example.my-mod`)
-  - `name` (string)
-  - `version` (string)
-  - optional: `author`, `license`, `description`, `homepage`, `repository`, `checksum`
+- `manifest` (object): `id`, `name`, `version`, optional metadata fields
 - `theme` (object): token overrides
-- optional `darkTheme` (object): token overrides used only while system appearance is dark
-- optional: `future` (object): reserved for future UI surfaces (no third pane is shipped today)
+- `darkTheme` (optional object): dark-mode token overrides
+- `future` (optional object): reserved for future surfaces
 
-Theme overrides (all optional):
+Theme override groups (all optional):
 
 - `typography`: `titleSize`, `bodySize`, `captionSize`
 - `spacing`: `xSmall`, `small`, `medium`, `large`
 - `radius`: `small`, `medium`, `large`
 - `palette`: `accentHex`, `backgroundHex`, `panelHex`
-- `materials`: `panelMaterial`, `cardMaterial` (values: `ultraThin|thin|regular|thick|ultraThick`)
-- `bubbles`: `style`, `userBackgroundHex`, `assistantBackgroundHex` (styles: `plain|glass|solid`)
-- `iconography`: `style` (currently: `sf-symbols`)
+- `materials`: `panelMaterial`, `cardMaterial` (`ultraThin|thin|regular|thick|ultraThick`)
+- `bubbles`: `style`, `userBackgroundHex`, `assistantBackgroundHex` (`plain|glass|solid`)
+- `iconography`: `style` (currently `sf-symbols`)
 
-## Tokenized Surface Coverage (Updated February 18, 2026)
+## System Appearance Behavior
 
-- Mod-driven material tokens now style the main card/panel containers across sidebar lists, skills, memory, mods, trust banners, and approval/review sheets.
-- CodexChat uses a shared `tokenCard(style:radius:strokeOpacity:)` helper in `packages/CodexChatUI/Sources/CodexChatUI/TokenCard.swift` to keep card styling consistent.
-- When adding new rounded containers, prefer token-based `tokenCard(...)` usage over hardcoded `.thinMaterial` / `.regularMaterial` so selected mods propagate correctly.
-- The chat composer text input now follows `typography.bodySize` from design tokens.
+- Without a selected mod, CodexChat uses system-aware defaults.
+- In dark mode, if mod only defines `theme` and omits `darkTheme`, CodexChat keeps system dark colors and applies non-color tokens.
+- If `darkTheme` is present, those dark values are applied.
 
-### System Appearance Defaults And Fallbacks
+## Hex Color Support
 
-- With no mod selected, CodexChat uses system-aware defaults in both light and dark mode.
-- In dark mode, if a selected mod defines only `theme` and omits `darkTheme`, CodexChat keeps system dark colors and applies only non-color tokens from `theme` (typography, spacing, radius, materials, iconography, bubble style).
-- If `darkTheme` is present, its values apply on top of that dark fallback behavior.
+Accepted formats:
 
-Colors accept `#RGB`, `#RRGGBB`, or `#AARRGGBB` (alpha-first) hex.
-
-### Example
-
-```json
-{
-  "schemaVersion": 1,
-  "manifest": {
-    "id": "com.example.green-glass",
-    "name": "Green Glass",
-    "version": "1.0.0",
-    "author": "Example"
-  },
-  "theme": {
-    "palette": {
-      "accentHex": "#2E7D32",
-      "backgroundHex": "#F7F8F7",
-      "panelHex": "#FFFFFF"
-    },
-    "materials": {
-      "panelMaterial": "thin",
-      "cardMaterial": "regular"
-    },
-    "bubbles": {
-      "style": "glass",
-      "userBackgroundHex": "#2E7D32",
-      "assistantBackgroundHex": "#FFFFFF"
-    }
-  },
-  "darkTheme": {
-    "palette": {
-      "accentHex": "#2E7D32",
-      "backgroundHex": "#000000",
-      "panelHex": "#121212"
-    },
-    "bubbles": {
-      "style": "glass",
-      "userBackgroundHex": "#2E7D32",
-      "assistantBackgroundHex": "#1C1C1E"
-    }
-  }
-}
-```
+- `#RGB`
+- `#RRGGBB`
+- `#AARRGGBB` (alpha first)
 
 ## Hot Reload
 
-CodexChat watches the global and active project mod roots and refreshes the available mods when files change.
+CodexChat watches global and active project mod roots and refreshes mod lists when files change.

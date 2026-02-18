@@ -51,15 +51,28 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
             switch scope {
             case .active:
                 request = request.filter(Column("archivedAt") == nil)
-                    .order(Column("isPinned").desc)
-                    .order(Column("updatedAt").desc)
+                    .order(
+                        Column("isPinned").desc,
+                        Column("updatedAt").desc,
+                        Column("createdAt").desc,
+                        Column("id").asc
+                    )
             case .archived:
                 request = request.filter(Column("archivedAt") != nil)
-                    .order(Column("archivedAt").desc)
+                    .order(
+                        Column("archivedAt").desc,
+                        Column("updatedAt").desc,
+                        Column("createdAt").desc,
+                        Column("id").asc
+                    )
             case .all:
                 request = request
-                    .order(Column("isPinned").desc)
-                    .order(Column("updatedAt").desc)
+                    .order(
+                        Column("isPinned").desc,
+                        Column("updatedAt").desc,
+                        Column("createdAt").desc,
+                        Column("id").asc
+                    )
             }
 
             return try request.fetchAll(db).map(\.record)
@@ -70,7 +83,12 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
         try await dbQueue.read { db in
             try ThreadEntity
                 .filter(Column("archivedAt") != nil)
-                .order(Column("archivedAt").desc)
+                .order(
+                    Column("archivedAt").desc,
+                    Column("updatedAt").desc,
+                    Column("createdAt").desc,
+                    Column("id").asc
+                )
                 .fetchAll(db)
                 .map(\.record)
         }
