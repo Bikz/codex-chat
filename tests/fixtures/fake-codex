@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+
+import json
+import sys
+from typing import Any, Dict, Optional
+
+
+def _send(message: Dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(message) + "\n")
+    sys.stdout.flush()
+
+
+def _main() -> int:
+    args = sys.argv[1:]
+    if len(args) != 1 or args[0] != "app-server":
+        sys.stderr.write("usage: fake-codex app-server\n")
+        return 2
+
+    thread_id = "thr_test"
+    turn_id = "turn_test"
+    pending_approval_id: Optional[int] = None
+    is_initialized = False
+
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        try:
+            msg: Dict[str, Any] = json.loads(line)
+        except Exception:
+            continue
+
+        msg_id = msg.get("id")
+        method = msg.get("method")
+        params: Dict[str, Any] = msg.get("params") or {}
+        result = msg.get("result")
+        error = msg.get("error")
+
+        is_request = msg_id is not None and method is not None and result is None and error is None
+        is_notification = msg_id is None and method is not None and result is None and error is None
+        is_response = msg_id is not None and method is None and (result is not None or error is not None)
+
+        if is_notification:
+            if method == "initialized":
+                is_initialized = True
+            continue
+
+        if is_request:
+            if method == "initialize":
+                _send({"jsonrpc": "2.0", "id": msg_id, "result": {}})
+                continue
+
+            if not is_initialized:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {
+                            "code": -32002,
+                            "message": "not initialized (send initialized notification after initialize)",
+                            "data": None,
+                        },
+                    }
+                )
+                continue
+
+            if method == "account/read":
+                _send({"jsonrpc": "2.0", "id": msg_id, "result": {"requiresOpenaiAuth": True}})
+                continue
+
+            if method == "thread/start":
+                _send({"jsonrpc": "2.0", "id": msg_id, "result": {"thread": {"id": thread_id}}})
+                _send({"jsonrpc": "2.0", "method": "thread/started", "params": {"thread": {"id": thread_id}}})
+                continue
+
+            if method == "turn/start":
+                _send({"jsonrpc": "2.0", "id": msg_id, "result": {"turn": {"id": turn_id}}})
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/started",
+                        "params": {"threadId": thread_id, "turn": {"id": turn_id}},
+                    }
+                )
+
+                pending_approval_id = 9001
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": pending_approval_id,
+                        "method": "item/commandExecution/requestApproval",
+                        "params": {
+                            "threadId": thread_id,
+                            "turnId": turn_id,
+                            "itemId": "cmd_1",
+                            "cwd": params.get("cwd") or "/tmp",
+                            "command": ["echo", "hello"],
+                            "reason": "Test approval",
+                        },
+                    }
+                )
+                continue
+
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {"code": -32601, "message": f"method not found: {method}", "data": None},
+                }
+            )
+            continue
+
+        if is_response:
+            if pending_approval_id is not None and msg_id == pending_approval_id:
+                pending_approval_id = None
+
+                diff = "--- a/notes.txt\n+++ b/notes.txt\n@@\n+hello\n"
+                item = {
+                    "id": "file_1",
+                    "type": "fileChange",
+                    "status": "completed",
+                    "changes": [{"path": "notes.txt", "kind": "modify", "diff": diff}],
+                }
+
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "item/completed",
+                        "params": {"threadId": thread_id, "turnId": turn_id, "item": item},
+                    }
+                )
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "item/agentMessage/delta",
+                        "params": {
+                            "threadId": thread_id,
+                            "turnId": turn_id,
+                            "itemId": "msg_1",
+                            "delta": "Hello from fake runtime.",
+                        },
+                    }
+                )
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/completed",
+                        "params": {"threadId": thread_id, "turn": {"id": turn_id, "status": "completed"}},
+                    }
+                )
+
+            continue
+
+        # Client notifications are handled above.
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
