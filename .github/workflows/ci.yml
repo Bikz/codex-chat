@@ -4,9 +4,17 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-test:
+  fast-checks:
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -20,11 +28,70 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Cache SwiftPM + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/.build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swift-${{ hashFiles('**/Package.swift', '**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swift-
+
+      - name: Install Swift tooling
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+          brew list swiftformat >/dev/null 2>&1 || brew install swiftformat
+
       - name: Verify toolchain
         run: |
           xcodebuild -version
           swift --version
           pnpm --version
+          swiftlint version
+          swiftformat --version
 
-      - name: Build and test
-        run: pnpm run check
+      - name: Fast checks
+        run: make quick
+
+  full-checks:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache SwiftPM + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/.build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swift-${{ hashFiles('**/Package.swift', '**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swift-
+
+      - name: Install Swift tooling
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+          brew list swiftformat >/dev/null 2>&1 || brew install swiftformat
+
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          pnpm --version
+          swiftlint version
+          swiftformat --version
+
+      - name: Full checks
+        run: make ci

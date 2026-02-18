@@ -1,0 +1,40 @@
+name: periphery
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 1"
+
+concurrency:
+  group: periphery-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache SwiftPM + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/.build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-periphery-${{ hashFiles('**/Package.swift', '**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-periphery-
+
+      - name: Install Periphery
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          brew list periphery >/dev/null 2>&1 || brew install periphery
+          periphery version
+
+      - name: Scan
+        run: make periphery
+
