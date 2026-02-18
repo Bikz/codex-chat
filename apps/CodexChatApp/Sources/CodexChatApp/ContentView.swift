@@ -38,6 +38,12 @@ struct ContentView: View {
             MemorySnippetInsertSheet(model: model, isPresented: $isInsertMemorySheetVisible)
         }
         .sheet(item: Binding(get: {
+            model.pendingModReview
+        }, set: { _ in })) { review in
+            ModChangesReviewSheet(model: model, review: review)
+                .interactiveDismissDisabled(true)
+        }
+        .sheet(item: Binding(get: {
             model.activeApprovalRequest
         }, set: { _ in })) { request in
             ApprovalRequestSheet(model: model, request: request)

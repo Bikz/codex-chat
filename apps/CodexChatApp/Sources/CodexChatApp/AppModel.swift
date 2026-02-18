@@ -32,6 +32,14 @@ final class AppModel: ObservableObject {
         var projectRootPath: String?
     }
 
+    struct PendingModReview: Identifiable, Hashable {
+        let id: UUID
+        let threadID: UUID
+        let changes: [RuntimeFileChange]
+        let reason: String
+        let canRevert: Bool
+    }
+
     enum SurfaceState<Value> {
         case idle
         case loading
@@ -63,6 +71,19 @@ final class AppModel: ObservableObject {
         var assistantText: String
         var actions: [ActionCard]
         var startedAt: Date
+    }
+
+    private struct ModSnapshot {
+        var id: UUID
+        var createdAt: Date
+        var rootURL: URL
+
+        var globalRootPath: String
+        var globalSnapshotURL: URL
+
+        var projectRootPath: String
+        var projectSnapshotURL: URL?
+        var projectRootExisted: Bool
     }
 
     @Published var projectsState: SurfaceState<[ProjectRecord]> = .loading
@@ -98,6 +119,8 @@ final class AppModel: ObservableObject {
     @Published var isAPIKeyPromptVisible = false
     @Published var pendingAPIKey = ""
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
+    @Published var pendingModReview: PendingModReview?
+    @Published var isModReviewDecisionInProgress = false
     @Published private(set) var logs: [LogEntry] = []
     @Published private(set) var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
     @Published private(set) var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
@@ -124,6 +147,7 @@ final class AppModel: ObservableObject {
     private var localThreadIDByCommandItemID: [String: UUID] = [:]
     private var approvalStateMachine = ApprovalStateMachine()
     private var activeTurnContext: ActiveTurnContext?
+    private var activeModSnapshot: ModSnapshot?
     private var runtimeEventTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var modsRefreshTask: Task<Void, Never>?
@@ -190,7 +214,10 @@ final class AppModel: ObservableObject {
     }
 
     var canSendMessages: Bool {
-        selectedThreadID != nil && runtimeIssue == nil && runtimeStatus == .connected
+        selectedThreadID != nil
+            && runtimeIssue == nil
+            && runtimeStatus == .connected
+            && pendingModReview == nil
     }
 
     var selectedProject: ProjectRecord? {
@@ -537,6 +564,65 @@ final class AppModel: ObservableObject {
         } catch {
             projectStatusMessage = "Failed to revert files: \(error.localizedDescription)"
             appendLog(.error, "Revert failed: \(error.localizedDescription)")
+        }
+    }
+
+    func acceptPendingModReview() {
+        guard let review = pendingModReview else { return }
+        pendingModReview = nil
+        isModReviewDecisionInProgress = false
+
+        if let snapshot = activeModSnapshot {
+            try? FileManager.default.removeItem(at: snapshot.rootURL)
+            activeModSnapshot = nil
+        }
+
+        appendLog(.info, "Accepted mod changes for thread \(review.threadID.uuidString)")
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: review.threadID,
+                    method: "mods/accepted",
+                    title: "Mod changes accepted",
+                    detail: "Approved \(review.changes.count) mod-related change(s)."
+                )
+            ),
+            to: review.threadID
+        )
+    }
+
+    func revertPendingModReview() {
+        guard let review = pendingModReview else { return }
+        guard let snapshot = activeModSnapshot else {
+            modStatusMessage = "Revert is unavailable (no snapshot captured)."
+            return
+        }
+
+        isModReviewDecisionInProgress = true
+        Task {
+            defer { isModReviewDecisionInProgress = false }
+
+            do {
+                try restoreModsFromSnapshot(snapshot)
+                pendingModReview = nil
+                activeModSnapshot = nil
+                refreshModsSurface()
+                appendLog(.warning, "Reverted mod changes for thread \(review.threadID.uuidString)")
+                appendEntry(
+                    .actionCard(
+                        ActionCard(
+                            threadID: review.threadID,
+                            method: "mods/reverted",
+                            title: "Mod changes reverted",
+                            detail: "Restored mod snapshot from \(snapshot.createdAt.formatted())."
+                        )
+                    ),
+                    to: review.threadID
+                )
+            } catch {
+                modStatusMessage = "Failed to revert mod changes: \(error.localizedDescription)"
+                appendLog(.error, "Revert mod changes failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -1124,6 +1210,74 @@ final class AppModel: ObservableObject {
         return trimmed
     }
 
+    private func captureModSnapshot(
+        projectPath: String,
+        threadID: UUID,
+        startedAt: Date,
+        fileManager: FileManager = .default
+    ) throws -> ModSnapshot {
+        let snapshotsRoot = try Self.modSnapshotsRootURL(fileManager: fileManager)
+        let timestamp = Self.snapshotTimestamp(startedAt)
+        let snapshotRoot = snapshotsRoot
+            .appendingPathComponent("\(timestamp)-\(threadID.uuidString)", isDirectory: true)
+
+        if fileManager.fileExists(atPath: snapshotRoot.path) {
+            try fileManager.removeItem(at: snapshotRoot)
+        }
+        try fileManager.createDirectory(at: snapshotRoot, withIntermediateDirectories: true)
+
+        let globalRootPath = try Self.globalModsRootPath(fileManager: fileManager)
+        let globalRootURL = URL(fileURLWithPath: globalRootPath, isDirectory: true)
+        let globalSnapshotURL = snapshotRoot.appendingPathComponent("global", isDirectory: true)
+        try fileManager.copyItem(at: globalRootURL, to: globalSnapshotURL)
+
+        let projectModsRootPath = Self.projectModsRootPath(projectPath: projectPath)
+        let projectModsRootURL = URL(fileURLWithPath: projectModsRootPath, isDirectory: true)
+        let projectRootExisted = fileManager.fileExists(atPath: projectModsRootURL.path)
+
+        var projectSnapshotURL: URL?
+        if projectRootExisted {
+            let dest = snapshotRoot.appendingPathComponent("project", isDirectory: true)
+            try fileManager.copyItem(at: projectModsRootURL, to: dest)
+            projectSnapshotURL = dest
+        }
+
+        appendLog(.debug, "Captured mod snapshot at \(snapshotRoot.lastPathComponent)")
+
+        return ModSnapshot(
+            id: UUID(),
+            createdAt: startedAt,
+            rootURL: snapshotRoot,
+            globalRootPath: globalRootPath,
+            globalSnapshotURL: globalSnapshotURL,
+            projectRootPath: projectModsRootPath,
+            projectSnapshotURL: projectSnapshotURL,
+            projectRootExisted: projectRootExisted
+        )
+    }
+
+    private static func modSnapshotsRootURL(fileManager: FileManager = .default) throws -> URL {
+        let base = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let root = base
+            .appendingPathComponent("CodexChat", isDirectory: true)
+            .appendingPathComponent("ModSnapshots", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    private static func snapshotTimestamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
+    }
+
     func sendMessage() {
         guard let selectedThreadID,
               let selectedProjectID,
@@ -1152,6 +1306,7 @@ final class AppModel: ObservableObject {
                     projectPath: project.path,
                     safetyConfiguration: safetyConfiguration
                 )
+                let startedAt = Date()
                 activeTurnContext = ActiveTurnContext(
                     localThreadID: selectedThreadID,
                     projectID: selectedProjectID,
@@ -1161,7 +1316,13 @@ final class AppModel: ObservableObject {
                     userText: trimmedText,
                     assistantText: "",
                     actions: [],
-                    startedAt: Date()
+                    startedAt: startedAt
+                )
+
+                activeModSnapshot = try? captureModSnapshot(
+                    projectPath: project.path,
+                    threadID: selectedThreadID,
+                    startedAt: startedAt
                 )
 
                 let turnID = try await runtime.startTurn(
@@ -1315,6 +1476,7 @@ final class AppModel: ObservableObject {
 
                 assistantMessageIDsByItemID[context.localThreadID] = [:]
                 localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != context.localThreadID }
+                processModChangesIfNeeded(context: context)
                 activeTurnContext = nil
 
                 Task {
@@ -1552,6 +1714,107 @@ final class AppModel: ObservableObject {
         } catch {
             appendLog(.error, "Failed to append memory summary: \(error.localizedDescription)")
         }
+    }
+
+    private func processModChangesIfNeeded(context: ActiveTurnContext) {
+        guard pendingModReview == nil else { return }
+
+        let changes = reviewChangesByThreadID[context.localThreadID] ?? []
+        guard !changes.isEmpty else {
+            discardModSnapshotIfPresent()
+            return
+        }
+
+        let snapshot = activeModSnapshot
+        let projectRootPath = snapshot?.projectRootPath ?? Self.projectModsRootPath(projectPath: context.projectPath)
+        let globalRootPath = snapshot?.globalRootPath ?? (try? Self.globalModsRootPath())
+
+        let modChanges = changes.filter { change in
+            let absolute = Self.absolutePath(for: change.path, projectPath: context.projectPath)
+            if let globalRootPath, Self.isWithin(rootPath: globalRootPath, path: absolute) {
+                return true
+            }
+            return Self.isWithin(rootPath: projectRootPath, path: absolute)
+        }
+
+        guard !modChanges.isEmpty else {
+            discardModSnapshotIfPresent()
+            return
+        }
+
+        pendingModReview = PendingModReview(
+            id: UUID(),
+            threadID: context.localThreadID,
+            changes: modChanges,
+            reason: "Codex proposed edits to mod files. Review is required before continuing.",
+            canRevert: snapshot != nil
+        )
+
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: context.localThreadID,
+                    method: "mods/reviewRequired",
+                    title: "Mod changes require approval",
+                    detail: "Review and accept or revert \(modChanges.count) mod-related change(s)."
+                )
+            ),
+            to: context.localThreadID
+        )
+    }
+
+    private func discardModSnapshotIfPresent() {
+        guard let snapshot = activeModSnapshot else { return }
+        try? FileManager.default.removeItem(at: snapshot.rootURL)
+        activeModSnapshot = nil
+    }
+
+    private func restoreModsFromSnapshot(_ snapshot: ModSnapshot, fileManager: FileManager = .default) throws {
+        let globalDestination = URL(fileURLWithPath: snapshot.globalRootPath, isDirectory: true)
+        if fileManager.fileExists(atPath: globalDestination.path) {
+            try fileManager.removeItem(at: globalDestination)
+        }
+        try fileManager.createDirectory(at: globalDestination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.copyItem(at: snapshot.globalSnapshotURL, to: globalDestination)
+
+        let projectDestination = URL(fileURLWithPath: snapshot.projectRootPath, isDirectory: true)
+        if fileManager.fileExists(atPath: projectDestination.path) {
+            try fileManager.removeItem(at: projectDestination)
+        }
+
+        if snapshot.projectRootExisted {
+            guard let projectSnapshotURL = snapshot.projectSnapshotURL else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            try fileManager.copyItem(at: projectSnapshotURL, to: projectDestination)
+        }
+
+        if fileManager.fileExists(atPath: snapshot.rootURL.path) {
+            try fileManager.removeItem(at: snapshot.rootURL)
+        }
+    }
+
+    private static func absolutePath(for path: String, projectPath: String) -> String {
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path).standardizedFileURL.path
+        }
+        return URL(fileURLWithPath: projectPath, isDirectory: true)
+            .appendingPathComponent(path)
+            .standardizedFileURL
+            .path
+    }
+
+    private static func isWithin(rootPath: String, path: String) -> Bool {
+        let normalizedRoot = URL(fileURLWithPath: rootPath, isDirectory: true).standardizedFileURL.path
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+
+        if normalizedPath == normalizedRoot {
+            return true
+        }
+        if normalizedRoot.hasSuffix("/") {
+            return normalizedPath.hasPrefix(normalizedRoot)
+        }
+        return normalizedPath.hasPrefix(normalizedRoot + "/")
     }
 
     private func refreshAccountState() async throws {
