@@ -8,7 +8,15 @@ extension AppModel {
     }
 
     func signInWithChatGPT() {
-        guard let runtime else { return }
+        if case .installCodex? = runtimeIssue {
+            accountStatusMessage = "Install Codex and restart runtime to complete ChatGPT sign-in."
+            return
+        }
+
+        guard let runtime else {
+            accountStatusMessage = "Runtime is unavailable. Restart Runtime and try again."
+            return
+        }
 
         stopChatGPTLoginPolling(cancelRuntimeLogin: true)
         isAccountOperationInProgress = true
@@ -56,8 +64,6 @@ extension AppModel {
     }
 
     func signInWithAPIKey(_ apiKey: String) {
-        guard let runtime else { return }
-
         stopChatGPTLoginPolling(cancelRuntimeLogin: true)
         isAccountOperationInProgress = true
         accountStatusMessage = nil
@@ -66,23 +72,40 @@ extension AppModel {
             defer { isAccountOperationInProgress = false }
 
             do {
-                try await runtime.startAPIKeyLogin(apiKey: apiKey)
                 try keychainStore.saveSecret(apiKey, account: APIKeychainStore.runtimeAPIKeyAccount)
                 try await upsertProjectAPIKeyReferenceIfNeeded()
+
+                if case .installCodex? = runtimeIssue {
+                    accountStatusMessage = "API key saved in Keychain. Install Codex and restart runtime to finish sign-in."
+                    appendLog(.info, "Stored API key while runtime binary is unavailable")
+                    return
+                }
+
+                guard let runtime else {
+                    accountStatusMessage = "API key saved in Keychain. Restart Runtime to finish sign-in."
+                    appendLog(.info, "Stored API key while runtime is unavailable")
+                    return
+                }
+
+                try await runtime.startAPIKeyLogin(apiKey: apiKey)
                 try await refreshAccountState()
                 accountStatusMessage = "Signed in with API key."
                 appendLog(.info, "Signed in with API key")
                 requestAutoDrain(reason: "account signed in")
             } catch {
-                accountStatusMessage = "API key sign-in failed: \(error.localizedDescription)"
+                if let runtimeError = error as? CodexRuntimeError,
+                   case .binaryNotFound = runtimeError
+                {
+                    accountStatusMessage = "API key saved in Keychain. Install Codex and restart runtime to finish sign-in."
+                } else {
+                    accountStatusMessage = "API key sign-in failed: \(error.localizedDescription)"
+                }
                 handleRuntimeError(error)
             }
         }
     }
 
     func logoutAccount() {
-        guard let runtime else { return }
-
         stopChatGPTLoginPolling(cancelRuntimeLogin: true)
         isAccountOperationInProgress = true
         accountStatusMessage = nil
@@ -91,9 +114,15 @@ extension AppModel {
             defer { isAccountOperationInProgress = false }
 
             do {
-                try await runtime.logoutAccount()
+                if let runtime {
+                    try await runtime.logoutAccount()
+                }
                 try keychainStore.deleteSecret(account: APIKeychainStore.runtimeAPIKeyAccount)
-                try await refreshAccountState()
+                if runtime != nil {
+                    try await refreshAccountState()
+                } else {
+                    accountState = .signedOut
+                }
                 accountStatusMessage = "Logged out."
                 appendLog(.info, "Account logged out")
             } catch {

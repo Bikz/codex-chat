@@ -64,7 +64,7 @@ struct ChatSetupView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color(hex: tokens.palette.accentHex))
-                    .disabled(model.isAccountOperationInProgress || !canAttemptSignIn)
+                    .disabled(model.isAccountOperationInProgress)
                     .accessibilityHint("Opens your browser to sign in with ChatGPT")
                     .controlSize(.large)
 
@@ -72,7 +72,7 @@ struct ChatSetupView: View {
                         model.presentAPIKeyPrompt()
                     }
                     .buttonStyle(.bordered)
-                    .disabled(model.isAccountOperationInProgress || !canAttemptSignIn)
+                    .disabled(model.isAccountOperationInProgress)
                     .accessibilityHint("Enter an OpenAI API key manually")
 
                     Spacer()
@@ -81,6 +81,12 @@ struct ChatSetupView: View {
                 Text("ChatGPT sign-in opens your browser. API keys are stored in macOS Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if case .installCodex? = model.runtimeIssue {
+                    Text("Codex runtime is missing. You can still save an API key now; install Codex to complete runtime login.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -188,13 +194,6 @@ struct ChatSetupView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private var canAttemptSignIn: Bool {
-        if case .installCodex? = model.runtimeIssue {
-            return false
-        }
-        return true
     }
 }
 
