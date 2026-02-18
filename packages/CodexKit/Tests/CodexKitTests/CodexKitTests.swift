@@ -2,6 +2,20 @@
 import XCTest
 
 final class CodexKitTests: XCTestCase {
+    func testRuntimeAccountSummaryNameSupportsInitAndBackwardCompatibleDecoding() throws {
+        let named = RuntimeAccountSummary(type: "chatgpt", name: "Bikram Brar", email: "bikram@example.com", planType: "pro")
+        XCTAssertEqual(named.name, "Bikram Brar")
+
+        let legacyData = Data(#"{"type":"chatgpt","email":"legacy@example.com","planType":"pro"}"#.utf8)
+        let decodedLegacy = try JSONDecoder().decode(RuntimeAccountSummary.self, from: legacyData)
+        XCTAssertNil(decodedLegacy.name)
+        XCTAssertEqual(decodedLegacy.email, "legacy@example.com")
+
+        let encoded = try JSONEncoder().encode(named)
+        let decodedNamed = try JSONDecoder().decode(RuntimeAccountSummary.self, from: encoded)
+        XCTAssertEqual(decodedNamed.name, "Bikram Brar")
+    }
+
     func testMergedEnvironmentPrefersOverrides() {
         let base = ["PATH": "/usr/bin", "HOME": "/Users/base"]
         let overrides = ["HOME": "/Users/override", "CODEX_HOME": "/tmp/codex-home"]
@@ -266,5 +280,39 @@ final class CodexKitTests: XCTestCase {
         XCTAssertTrue(candidates.contains("/usr/local/bin/codex"))
         XCTAssertTrue(candidates.contains("/Users/tester/.local/bin/codex"))
         XCTAssertTrue(candidates.contains("/Users/tester/bin/codex"))
+    }
+
+    func testMakeTurnStartParamsIncludesModelReasoningAndExperimentalOptions() {
+        let params = CodexRuntime.makeTurnStartParams(
+            threadID: "thr_1",
+            text: "hello",
+            safetyConfiguration: nil,
+            skillInputs: [],
+            turnOptions: RuntimeTurnOptions(
+                model: "gpt-5-codex",
+                reasoningEffort: "high",
+                experimental: ["parallelToolCalls": true]
+            ),
+            includeWebSearch: true
+        )
+
+        XCTAssertEqual(params.value(at: ["model"])?.stringValue, "gpt-5-codex")
+        XCTAssertEqual(params.value(at: ["reasoningEffort"])?.stringValue, "high")
+        XCTAssertEqual(params.value(at: ["experimental", "parallelToolCalls"])?.boolValue, true)
+    }
+
+    func testMakeTurnStartParamsOmitsEmptyTurnOptions() {
+        let params = CodexRuntime.makeTurnStartParams(
+            threadID: "thr_1",
+            text: "hello",
+            safetyConfiguration: nil,
+            skillInputs: [],
+            turnOptions: RuntimeTurnOptions(model: "   ", reasoningEffort: "", experimental: [:]),
+            includeWebSearch: true
+        )
+
+        XCTAssertNil(params.value(at: ["model"]))
+        XCTAssertNil(params.value(at: ["reasoningEffort"]))
+        XCTAssertNil(params.value(at: ["experimental"]))
     }
 }

@@ -7,6 +7,21 @@ public enum RuntimeStatus: String, CaseIterable, Codable, Sendable {
     case error
 }
 
+public struct RuntimeCapabilities: Hashable, Sendable {
+    public var supportsTurnSteer: Bool
+    public var supportsFollowUpSuggestions: Bool
+
+    public init(supportsTurnSteer: Bool, supportsFollowUpSuggestions: Bool) {
+        self.supportsTurnSteer = supportsTurnSteer
+        self.supportsFollowUpSuggestions = supportsFollowUpSuggestions
+    }
+
+    public static let none = RuntimeCapabilities(
+        supportsTurnSteer: false,
+        supportsFollowUpSuggestions: false
+    )
+}
+
 public enum LogLevel: String, Codable, Sendable {
     case debug
     case info
@@ -90,11 +105,13 @@ public enum RuntimeAuthMode: String, Codable, Sendable {
 
 public struct RuntimeAccountSummary: Hashable, Sendable, Codable {
     public let type: String
+    public let name: String?
     public let email: String?
     public let planType: String?
 
-    public init(type: String, email: String?, planType: String?) {
+    public init(type: String, name: String? = nil, email: String?, planType: String?) {
         self.type = type
+        self.name = name
         self.email = email
         self.planType = planType
     }
@@ -190,6 +207,22 @@ public struct RuntimeSkillInput: Hashable, Sendable, Codable {
     }
 }
 
+public struct RuntimeTurnOptions: Hashable, Sendable, Codable {
+    public let model: String?
+    public let reasoningEffort: String?
+    public let experimental: [String: Bool]
+
+    public init(
+        model: String? = nil,
+        reasoningEffort: String? = nil,
+        experimental: [String: Bool] = [:]
+    ) {
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.experimental = experimental
+    }
+}
+
 public enum RuntimeApprovalKind: String, Hashable, Sendable, Codable {
     case commandExecution
     case fileChange
@@ -264,6 +297,30 @@ public struct RuntimeCommandOutputDelta: Hashable, Sendable, Codable {
     }
 }
 
+public struct RuntimeFollowUpSuggestion: Hashable, Sendable {
+    public let id: String?
+    public let text: String
+    public let priority: Int?
+
+    public init(id: String?, text: String, priority: Int?) {
+        self.id = id
+        self.text = text
+        self.priority = priority
+    }
+}
+
+public struct RuntimeFollowUpSuggestionBatch: Hashable, Sendable {
+    public let threadID: String?
+    public let turnID: String?
+    public let suggestions: [RuntimeFollowUpSuggestion]
+
+    public init(threadID: String?, turnID: String?, suggestions: [RuntimeFollowUpSuggestion]) {
+        self.threadID = threadID
+        self.turnID = turnID
+        self.suggestions = suggestions
+    }
+}
+
 public struct RuntimeApprovalRequest: Identifiable, Hashable, Sendable, Codable {
     public let id: Int
     public let kind: RuntimeApprovalKind
@@ -312,6 +369,7 @@ public enum CodexRuntimeEvent: Hashable, Sendable {
     case turnStarted(turnID: String)
     case assistantMessageDelta(itemID: String, delta: String)
     case commandOutputDelta(RuntimeCommandOutputDelta)
+    case followUpSuggestions(RuntimeFollowUpSuggestionBatch)
     case fileChangesUpdated(RuntimeFileChangeUpdate)
     case approvalRequested(RuntimeApprovalRequest)
     case action(RuntimeAction)

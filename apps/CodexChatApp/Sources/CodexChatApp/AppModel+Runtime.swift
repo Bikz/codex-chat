@@ -32,7 +32,11 @@ extension AppModel {
             throw CodexChatCoreError.missingRecord(projectID.uuidString)
         }
 
-        let safetyConfiguration = runtimeSafetyConfiguration(for: project)
+        let safetyConfiguration = runtimeSafetyConfiguration(
+            for: project,
+            preferredWebSearch: defaultWebSearch
+        )
+        let turnOptions = runtimeTurnOptions()
         let selectedSkillInput: RuntimeSkillInput? = sourceQueueItemID == nil ? selectedSkillForComposer.map {
             RuntimeSkillInput(name: $0.skill.name, path: $0.skill.skillPath)
         } : nil
@@ -70,11 +74,13 @@ extension AppModel {
 
             let turnID: String
             do {
-                turnID = try await runtime.startTurn(
+                turnID = try await startTurnWithRuntimeFallback(
+                    runtime: runtime,
                     threadID: runtimeThreadID,
                     text: trimmedText,
                     safetyConfiguration: safetyConfiguration,
-                    skillInputs: selectedSkillInput.map { [$0] } ?? []
+                    skillInputs: selectedSkillInput.map { [$0] } ?? [],
+                    turnOptions: turnOptions
                 )
             } catch {
                 guard shouldRecreateRuntimeThread(after: error) else {
@@ -96,11 +102,13 @@ extension AppModel {
                     activeTurnContext = context
                 }
 
-                turnID = try await runtime.startTurn(
+                turnID = try await startTurnWithRuntimeFallback(
+                    runtime: runtime,
                     threadID: runtimeThreadID,
                     text: trimmedText,
                     safetyConfiguration: safetyConfiguration,
-                    skillInputs: selectedSkillInput.map { [$0] } ?? []
+                    skillInputs: selectedSkillInput.map { [$0] } ?? [],
+                    turnOptions: turnOptions
                 )
             }
 
@@ -339,6 +347,63 @@ extension AppModel {
             "invalid",
         ]
         return staleIndicators.contains { lowered.contains($0) }
+    }
+
+    private func startTurnWithRuntimeFallback(
+        runtime: CodexRuntime,
+        threadID: String,
+        text: String,
+        safetyConfiguration: RuntimeSafetyConfiguration,
+        skillInputs: [RuntimeSkillInput],
+        turnOptions: RuntimeTurnOptions
+    ) async throws -> String {
+        do {
+            return try await runtime.startTurn(
+                threadID: threadID,
+                text: text,
+                safetyConfiguration: safetyConfiguration,
+                skillInputs: skillInputs,
+                turnOptions: turnOptions
+            )
+        } catch {
+            guard shouldRetryWithoutTurnOptions(error) else {
+                throw error
+            }
+
+            followUpStatusMessage = "Runtime rejected model/reasoning options. Retried with compatibility mode."
+            appendLog(.warning, "Retrying turn/start without model/reasoning due to runtime compatibility.")
+            return try await runtime.startTurn(
+                threadID: threadID,
+                text: text,
+                safetyConfiguration: safetyConfiguration,
+                skillInputs: skillInputs,
+                turnOptions: nil
+            )
+        }
+    }
+
+    func shouldRetryWithoutTurnOptions(_ error: Error) -> Bool {
+        let detail: String
+        if let runtimeError = error as? CodexRuntimeError {
+            switch runtimeError {
+            case let .rpcError(_, message):
+                detail = message
+            case let .invalidResponse(message):
+                detail = message
+            default:
+                return false
+            }
+        } else {
+            detail = error.localizedDescription
+        }
+
+        let lowered = detail.lowercased()
+        let indicatesUnsupported = lowered.contains("unknown") || lowered.contains("invalid")
+        let referencesTurnOptions = lowered.contains("model")
+            || lowered.contains("reasoning")
+            || lowered.contains("reasoningeffort")
+            || lowered.contains("reasoning_effort")
+        return indicatesUnsupported && referencesTurnOptions
     }
 
     private func captureModSnapshot(

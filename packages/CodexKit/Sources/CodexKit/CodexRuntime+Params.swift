@@ -30,6 +30,7 @@ extension CodexRuntime {
         text: String,
         safetyConfiguration: RuntimeSafetyConfiguration?,
         skillInputs: [RuntimeSkillInput],
+        turnOptions: RuntimeTurnOptions?,
         includeWebSearch: Bool
     ) -> JSONValue {
         var inputItems: [JSONValue] = [
@@ -63,6 +64,27 @@ extension CodexRuntime {
             )
             if includeWebSearch {
                 params["webSearch"] = .string(safetyConfiguration.webSearch.rawValue)
+            }
+        }
+
+        if let turnOptions {
+            if let model = turnOptions.model?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !model.isEmpty
+            {
+                params["model"] = .string(model)
+            }
+
+            if let reasoningEffort = turnOptions.reasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !reasoningEffort.isEmpty
+            {
+                params["reasoningEffort"] = .string(reasoningEffort)
+            }
+
+            if !turnOptions.experimental.isEmpty {
+                let experimental = Dictionary(uniqueKeysWithValues: turnOptions.experimental.map { key, value in
+                    (key, JSONValue.bool(value))
+                })
+                params["experimental"] = .object(experimental)
             }
         }
 

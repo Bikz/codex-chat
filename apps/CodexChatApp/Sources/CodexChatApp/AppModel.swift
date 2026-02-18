@@ -60,6 +60,40 @@ final class AppModel: ObservableObject {
         }
     }
 
+    enum ReasoningLevel: String, CaseIterable, Codable, Sendable {
+        case low
+        case medium
+        case high
+
+        var title: String {
+            switch self {
+            case .low:
+                "Low"
+            case .medium:
+                "Medium"
+            case .high:
+                "High"
+            }
+        }
+    }
+
+    enum ExperimentalFlag: String, CaseIterable, Codable, Sendable, Hashable {
+        case parallelToolCalls
+        case strictToolSchema
+        case streamToolEvents
+
+        var title: String {
+            switch self {
+            case .parallelToolCalls:
+                "Parallel Tool Calls"
+            case .strictToolSchema:
+                "Strict Tool Schema"
+            case .streamToolEvents:
+                "Stream Tool Events"
+            }
+        }
+    }
+
     struct ActiveTurnContext {
         var localThreadID: UUID
         var projectID: UUID
@@ -88,6 +122,16 @@ final class AppModel: ObservableObject {
     @Published var composerText = ""
     @Published var searchQuery = ""
     @Published var selectedSkillIDForComposer: String?
+    @Published var defaultModel = "gpt-5-codex"
+    @Published var defaultReasoning: ReasoningLevel = .medium
+    @Published var defaultWebSearch: ProjectWebSearchMode = .cached
+    @Published var defaultSafetySettings = ProjectSafetySettings(
+        sandboxMode: .readOnly,
+        approvalPolicy: .untrusted,
+        networkAccess: false,
+        webSearch: .cached
+    )
+    @Published var experimentalFlags: Set<ExperimentalFlag> = []
 
     @Published var isDiagnosticsVisible = false
     @Published var isProjectSettingsVisible = false
@@ -104,6 +148,7 @@ final class AppModel: ObservableObject {
     @Published var memoryStatusMessage: String?
     @Published var modStatusMessage: String?
     @Published var storageStatusMessage: String?
+    @Published var runtimeDefaultsStatusMessage: String?
     @Published var storageRootPath: String
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false

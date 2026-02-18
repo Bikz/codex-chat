@@ -1,6 +1,10 @@
 import Foundation
 
 public extension CodexRuntime {
+    func capabilities() async -> RuntimeCapabilities {
+        runtimeCapabilities
+    }
+
     func start() async throws {
         if process != nil {
             return
@@ -62,7 +66,8 @@ public extension CodexRuntime {
         threadID: String,
         text: String,
         safetyConfiguration: RuntimeSafetyConfiguration? = nil,
-        skillInputs: [RuntimeSkillInput] = []
+        skillInputs: [RuntimeSkillInput] = [],
+        turnOptions: RuntimeTurnOptions? = nil
     ) async throws -> String {
         try await start()
 
@@ -71,6 +76,7 @@ public extension CodexRuntime {
             text: text,
             safetyConfiguration: safetyConfiguration,
             skillInputs: skillInputs,
+            turnOptions: turnOptions,
             includeWebSearch: true
         )
         let result: JSONValue
@@ -82,6 +88,7 @@ public extension CodexRuntime {
                 text: text,
                 safetyConfiguration: safetyConfiguration,
                 skillInputs: skillInputs,
+                turnOptions: turnOptions,
                 includeWebSearch: false
             )
             result = try await sendRequest(method: "turn/start", params: params)
@@ -91,6 +98,7 @@ public extension CodexRuntime {
                 text: text,
                 safetyConfiguration: safetyConfiguration,
                 skillInputs: [],
+                turnOptions: turnOptions,
                 includeWebSearch: true
             )
             result = try await sendRequest(method: "turn/start", params: params)
@@ -100,6 +108,24 @@ public extension CodexRuntime {
         }
 
         return turnID
+    }
+
+    func steerTurn(
+        threadID: String,
+        text: String,
+        turnID: String? = nil
+    ) async throws {
+        try await start()
+
+        var payload: [String: JSONValue] = [
+            "threadId": .string(threadID),
+            "text": .string(text),
+        ]
+        if let turnID, !turnID.isEmpty {
+            payload["turnId"] = .string(turnID)
+        }
+
+        _ = try await sendRequest(method: "turn/steer", params: .object(payload))
     }
 
     func readAccount(refreshToken: Bool = false) async throws -> RuntimeAccountState {
@@ -122,6 +148,7 @@ public extension CodexRuntime {
         let type = accountObject["type"]?.stringValue ?? "unknown"
         let summary = RuntimeAccountSummary(
             type: type,
+            name: accountObject["name"]?.stringValue ?? accountObject["fullName"]?.stringValue,
             email: accountObject["email"]?.stringValue,
             planType: accountObject["planType"]?.stringValue
         )
@@ -151,6 +178,15 @@ public extension CodexRuntime {
         return RuntimeChatGPTLoginStart(
             loginID: result.value(at: ["loginId"])?.stringValue,
             authURL: authURL
+        )
+    }
+
+    func cancelChatGPTLogin(loginID: String) async throws {
+        try await start()
+        _ = try await sendRequest(
+            method: "account/login/cancel",
+            params: .object(["loginId": .string(loginID)]),
+            timeoutSeconds: 15
         )
     }
 

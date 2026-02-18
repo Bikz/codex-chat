@@ -323,6 +323,7 @@ extension AppModel {
             trustState: .trusted,
             isGeneralProject: true
         )
+        try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
 
         try await prepareProjectFolderStructure(projectPath: project.path)
         try await refreshProjects()

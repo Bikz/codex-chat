@@ -28,45 +28,10 @@ struct ChatsCanvasView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     FollowUpQueueView(model: model)
 
-                    if let selectedSkill = model.selectedSkillForComposer {
-                        HStack(spacing: 8) {
-                            Label("Using \(selectedSkill.skill.name)", systemImage: "wand.and.stars")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Button("Clear") {
-                                model.clearSelectedSkillForComposer()
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Clear selected skill")
-
-                            Spacer()
-                        }
+                    ComposerControlBar(model: model)
                         .padding(.horizontal, tokens.spacing.medium)
-                    }
 
                     HStack(alignment: .bottom, spacing: tokens.spacing.small) {
-                        Menu {
-                            if model.enabledSkillsForSelectedProject.isEmpty {
-                                Text("No enabled skills")
-                            } else {
-                                ForEach(model.enabledSkillsForSelectedProject) { item in
-                                    Button(item.skill.name) {
-                                        model.selectSkillForComposer(item)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "wand.and.stars")
-                                .foregroundStyle(.secondary)
-                                .symbolRenderingMode(.hierarchical)
-                                .frame(width: 22, height: 22)
-                        }
-                        .menuStyle(.borderlessButton)
-                        .accessibilityLabel("Insert skill trigger")
-                        .help("Insert skill trigger")
-                        .disabled(model.enabledSkillsForSelectedProject.isEmpty)
-
                         Button {
                             isInsertMemorySheetVisible = true
                         } label: {
@@ -293,5 +258,123 @@ struct ChatsCanvasView: View {
                 proxy.scrollTo(lastID, anchor: .bottom)
             }
         }
+    }
+}
+
+private struct ComposerControlBar: View {
+    @ObservedObject var model: AppModel
+    @State private var isCustomModelSheetVisible = false
+    @State private var customModelDraft = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Menu {
+                    ForEach(model.modelPresets, id: \.self) { preset in
+                        Button(preset) {
+                            model.setDefaultModel(preset)
+                        }
+                    }
+
+                    Divider()
+
+                    Button("Custom…") {
+                        customModelDraft = model.defaultModel
+                        isCustomModelSheetVisible = true
+                    }
+                } label: {
+                    chip("Model: \(model.defaultModel)")
+                }
+                .menuStyle(.borderlessButton)
+
+                Menu {
+                    ForEach(AppModel.ReasoningLevel.allCases, id: \.self) { level in
+                        Button(level.title) {
+                            model.setDefaultReasoning(level)
+                        }
+                    }
+                } label: {
+                    chip("Reasoning: \(model.defaultReasoning.title)")
+                }
+                .menuStyle(.borderlessButton)
+
+                Menu {
+                    ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
+                        Button(webSearchLabel(mode)) {
+                            model.setDefaultWebSearch(mode)
+                        }
+                    }
+                } label: {
+                    chip("Web: \(webSearchLabel(model.defaultWebSearch))")
+                }
+                .menuStyle(.borderlessButton)
+
+                Spacer()
+            }
+
+            if model.isDefaultWebSearchClampedForSelectedProject() {
+                Text("Web mode is clamped by project safety policy for this thread.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .sheet(isPresented: $isCustomModelSheetVisible) {
+            CustomModelSheet(
+                modelID: $customModelDraft,
+                onCancel: {
+                    isCustomModelSheetVisible = false
+                },
+                onSave: {
+                    model.setDefaultModel(customModelDraft)
+                    isCustomModelSheetVisible = false
+                }
+            )
+        }
+    }
+
+    private func chip(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
+            .foregroundStyle(.secondary)
+    }
+
+    private func webSearchLabel(_ mode: ProjectWebSearchMode) -> String {
+        switch mode {
+        case .cached:
+            "Cached"
+        case .live:
+            "Live"
+        case .disabled:
+            "Disabled"
+        }
+    }
+}
+
+private struct CustomModelSheet: View {
+    @Binding var modelID: String
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Custom Model")
+                .font(.title3.weight(.semibold))
+
+            TextField("Model ID", text: $modelID)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Save", action: onSave)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 420)
     }
 }

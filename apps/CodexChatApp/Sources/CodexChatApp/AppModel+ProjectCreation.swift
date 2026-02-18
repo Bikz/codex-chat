@@ -55,6 +55,7 @@ extension AppModel {
                 trustState: .untrusted,
                 isGeneralProject: false
             )
+            try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
 
             try await activateProject(project)
             projectStatusMessage = "Created new project at \(destinationURL.path)."
@@ -138,6 +139,7 @@ extension AppModel {
             trustState: trustState,
             isGeneralProject: false
         )
+        try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
 
         try await activateProject(project)
         projectStatusMessage = trustState == .trusted

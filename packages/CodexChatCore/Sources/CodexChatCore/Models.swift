@@ -285,6 +285,11 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case lastOpenedThreadID = "last_opened_thread_id"
     case globalUIModPath = "global_ui_mod_path"
     case untrustedShellAcknowledgements = "untrusted_shell_acknowledgements"
+    case runtimeDefaultModel = "runtime.default.model"
+    case runtimeDefaultReasoning = "runtime.default.reasoning"
+    case runtimeDefaultWebSearch = "runtime.default.web_search"
+    case runtimeDefaultSafety = "runtime.default.safety"
+    case runtimeExperimentalFlags = "runtime.experimental.flags"
 }
 
 public enum ChatMessageRole: String, Codable, Hashable, Sendable {

@@ -10,12 +10,21 @@ extension AppModel {
         return "This action appears risky. Review command/file details carefully before approving."
     }
 
-    func runtimeSafetyConfiguration(for project: ProjectRecord) -> RuntimeSafetyConfiguration {
-        RuntimeSafetyConfiguration(
+    func runtimeSafetyConfiguration(
+        for project: ProjectRecord,
+        preferredWebSearch: ProjectWebSearchMode? = nil
+    ) -> RuntimeSafetyConfiguration {
+        let effectiveWebSearch: ProjectWebSearchMode = if let preferredWebSearch {
+            effectiveWebSearchMode(preferred: preferredWebSearch, projectPolicy: project.webSearch)
+        } else {
+            project.webSearch
+        }
+
+        return RuntimeSafetyConfiguration(
             sandboxMode: mapSandboxMode(project.sandboxMode),
             approvalPolicy: mapApprovalPolicy(project.approvalPolicy),
             networkAccess: project.networkAccess,
-            webSearch: mapWebSearchMode(project.webSearch),
+            webSearch: mapWebSearchMode(effectiveWebSearch),
             writableRoots: [project.path]
         )
     }
