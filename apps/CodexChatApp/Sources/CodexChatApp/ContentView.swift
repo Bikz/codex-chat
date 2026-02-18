@@ -316,18 +316,23 @@ struct ContentView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: tokens.spacing.small) {
-                        TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
-                            .lineLimit(1 ... 4)
+                    if let selectedSkill = model.selectedSkillForComposer {
+                        HStack(spacing: 8) {
+                            Label("Using \(selectedSkill.skill.name)", systemImage: "wand.and.stars")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
-                        Button("Send") {
-                            model.sendMessage()
+                            Button("Clear") {
+                                model.clearSelectedSkillForComposer()
+                            }
+                            .buttonStyle(.borderless)
+
+                            Spacer()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color(hex: tokens.palette.accentHex))
-                        .disabled(!model.canSendMessages)
+                        .padding(.horizontal, tokens.spacing.medium)
+                    }
 
+                    HStack(alignment: .bottom, spacing: tokens.spacing.small) {
                         Menu {
                             if model.enabledSkillsForSelectedProject.isEmpty {
                                 Text("No enabled skills")
@@ -339,54 +344,51 @@ struct ContentView: View {
                                 }
                             }
                         } label: {
-                            Label("Skill", systemImage: "wand.and.stars")
+                            Image(systemName: "wand.and.stars")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 22, height: 22)
                         }
                         .menuStyle(.borderlessButton)
+                        .help("Insert skill trigger")
                         .disabled(model.enabledSkillsForSelectedProject.isEmpty)
 
                         Button {
                             isInsertMemorySheetVisible = true
                         } label: {
-                            Label("Insert memory snippet", systemImage: "brain")
-                                .labelStyle(.iconOnly)
+                            Image(systemName: "brain")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 22, height: 22)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderless)
                         .help("Insert memory snippet")
                         .disabled(model.selectedProjectID == nil)
 
-                        Button("Reveal Chat File") {
-                            model.revealSelectedThreadArchiveInFinder()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(model.selectedThreadID == nil)
+                        TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .lineLimit(1 ... 6)
+                            .padding(.vertical, 10)
 
-                        Button("Review Changes") {
-                            model.openReviewChanges()
+                        Button {
+                            model.sendMessage()
+                        } label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(Color(hex: tokens.palette.accentHex))
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(!model.canReviewChanges)
-
-                        Button(model.isLogsDrawerVisible ? "Hide Logs" : "Terminal / Logs") {
-                            model.toggleLogsDrawer()
-                        }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderless)
+                        .help("Send")
+                        .disabled(!model.canSendMessages)
                     }
-
-                    if let selectedSkill = model.selectedSkillForComposer {
-                        HStack {
-                            Label("Using \(selectedSkill.skill.name)", systemImage: "checkmark.seal")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Button("Clear") {
-                                model.clearSelectedSkillForComposer()
-                            }
-                            .buttonStyle(.borderless)
-                            Spacer()
-                        }
-                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(tokens.materials.panelMaterial.material, in: RoundedRectangle(cornerRadius: tokens.radius.large))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: tokens.radius.large)
+                            .strokeBorder(Color.primary.opacity(0.08))
+                    )
+                    .padding(.horizontal, tokens.spacing.medium)
+                    .padding(.vertical, tokens.spacing.small)
                 }
-                .padding(tokens.spacing.medium)
-                .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
 
                 if model.isLogsDrawerVisible {
                     Divider()
@@ -397,6 +399,37 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Conversation")
+        .toolbar {
+            if !shouldShowChatSetup {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        model.openReviewChanges()
+                    } label: {
+                        Label("Review Changes", systemImage: "doc.text.magnifyingglass")
+                            .labelStyle(.iconOnly)
+                    }
+                    .help("Review changes")
+                    .disabled(!model.canReviewChanges)
+
+                    Button {
+                        model.revealSelectedThreadArchiveInFinder()
+                    } label: {
+                        Label("Reveal Chat File", systemImage: "doc.text")
+                            .labelStyle(.iconOnly)
+                    }
+                    .help("Reveal latest chat archive")
+                    .disabled(model.selectedThreadID == nil)
+
+                    Button {
+                        model.toggleLogsDrawer()
+                    } label: {
+                        Label("Terminal / Logs", systemImage: "terminal")
+                            .labelStyle(.iconOnly)
+                    }
+                    .help("Toggle terminal/logs drawer")
+                }
+            }
+        }
     }
 
     private var shouldShowChatSetup: Bool {
