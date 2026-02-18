@@ -682,8 +682,7 @@ final class AppModel: ObservableObject {
             appendLog(.debug, "Runtime thread started: \(threadID)")
 
         case let .turnStarted(turnID):
-            if var context = activeTurnContext {
-                activeTurnContext = context
+            if let context = activeTurnContext {
                 appendEntry(
                     .actionCard(
                         ActionCard(
@@ -1061,12 +1060,12 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func appendEntry(_ entry: TranscriptEntry, to threadID: UUID) {
+    func appendEntry(_ entry: TranscriptEntry, to threadID: UUID) {
         transcriptStore[threadID, default: []].append(entry)
         refreshConversationState()
     }
 
-    private func appendAssistantDelta(_ delta: String, itemID: String, to threadID: UUID) {
+    func appendAssistantDelta(_ delta: String, itemID: String, to threadID: UUID) {
         var entries = transcriptStore[threadID, default: []]
         var itemMap = assistantMessageIDsByItemID[threadID, default: [:]]
 
