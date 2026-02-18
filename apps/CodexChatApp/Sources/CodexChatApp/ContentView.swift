@@ -664,6 +664,8 @@ private struct ActionCardRow: View {
     @Environment(\.designTokens) private var tokens
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
+
         DisclosureGroup(isExpanded: $isExpanded) {
             Text(card.detail)
                 .font(.system(.caption, design: .monospaced))
@@ -680,7 +682,8 @@ private struct ActionCardRow: View {
             }
         }
         .padding(10)
-        .background(tokens.materials.cardMaterial.material, in: RoundedRectangle(cornerRadius: tokens.radius.medium))
+        .background(tokens.materials.cardMaterial.material, in: shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.06)))
     }
 }
 
