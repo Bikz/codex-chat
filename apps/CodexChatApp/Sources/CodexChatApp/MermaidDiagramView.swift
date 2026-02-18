@@ -1,3 +1,4 @@
+import MarkdownUI
 import SwiftUI
 
 struct MermaidDiagramView: View {
@@ -93,9 +94,7 @@ struct MermaidDiagramView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text("```mermaid\n\(source)\n```")
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
+            Markdown(unsupportedMermaidCodeBlock)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(10)
@@ -123,5 +122,9 @@ struct MermaidDiagramView: View {
             return "~>"
         }
         return "->"
+    }
+
+    private var unsupportedMermaidCodeBlock: String {
+        "```mermaid\n\(source)\n```"
     }
 }

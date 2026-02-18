@@ -15,6 +15,7 @@ let package = Package(
         .package(path: "../../packages/CodexSkills"),
         .package(path: "../../packages/CodexMemory"),
         .package(path: "../../packages/CodexMods"),
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.0.0"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.10.1"),
     ],
     targets: [
@@ -28,6 +29,7 @@ let package = Package(
                 "CodexSkills",
                 "CodexMemory",
                 "CodexMods",
+                .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
             resources: [

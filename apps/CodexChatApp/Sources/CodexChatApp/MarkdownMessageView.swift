@@ -1,3 +1,4 @@
+import MarkdownUI
 import SwiftUI
 
 struct MarkdownMessageView: View {
@@ -26,15 +27,9 @@ struct MarkdownMessageView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
     private func markdownText(_ markdown: String) -> some View {
-        if let attributed = try? AttributedString(markdown: markdown) {
-            Text(attributed)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text(markdown)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        Markdown(markdown)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private static func parseSegments(_ input: String) -> [Segment] {
