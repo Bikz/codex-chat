@@ -49,6 +49,7 @@ extension AppModel {
                 try await refreshSkills()
                 refreshModsSurface()
                 try await refreshFollowUpQueue(threadID: result.threadID)
+                await rehydrateThreadTranscript(threadID: result.threadID)
                 refreshConversationState()
             } catch {
                 appendLog(.error, "Failed to open search result: \(error.localizedDescription)")

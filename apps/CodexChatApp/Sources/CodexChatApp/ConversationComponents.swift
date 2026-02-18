@@ -38,11 +38,8 @@ struct MessageRow: View {
 
     @ViewBuilder
     private func messageText(message: ChatMessage) -> some View {
-        if message.role == .assistant,
-           let attributed = try? AttributedString(markdown: message.text,
-                                                  options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-        {
-            Text(attributed)
+        if message.role == .assistant {
+            MarkdownMessageView(text: message.text)
         } else {
             Text(message.text)
         }

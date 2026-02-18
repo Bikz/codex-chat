@@ -329,6 +329,10 @@ extension AppModel {
             withIntermediateDirectories: true
         )
         try fileManager.createDirectory(
+            at: projectURL.appendingPathComponent("chats/threads", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
             at: projectURL.appendingPathComponent("artifacts", isDirectory: true),
             withIntermediateDirectories: true
         )
@@ -393,21 +397,14 @@ extension AppModel {
             }
 
             try await prepareProjectFolderStructure(projectPath: generalURL.path)
+            try ensureGeneralAgentsGuidance(projectURL: generalURL)
+            try await ensureGeneralProjectSafetyMigrated(projectID: existing.id)
             try await refreshGeneralThreads(generalProjectID: existing.id)
             return
         }
 
         // Seed AGENTS.md so the runtime understands the context.
-        let agentsMD = generalURL.appendingPathComponent("AGENTS.md")
-        if !FileManager.default.fileExists(atPath: agentsMD.path) {
-            let content = """
-            # General
-
-            This project is the default catch-all for conversations that are not tied to a specific codebase or topic.
-            Treat threads here like general chat sessions - helpful, conversational, and not bound to any particular repository.
-            """
-            try content.write(to: agentsMD, atomically: true, encoding: .utf8)
-        }
+        try ensureGeneralAgentsGuidance(projectURL: generalURL)
 
         let project = try await projectRepository.createProject(
             named: "General",
@@ -415,7 +412,11 @@ extension AppModel {
             trustState: .trusted,
             isGeneralProject: true
         )
-        try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
+        _ = try await projectRepository.updateProjectSafetySettings(
+            id: project.id,
+            settings: generalProjectSafetyDefaults
+        )
+        try await preferenceRepository?.setPreference(key: .generalProjectSafetyMigrationV1, value: "1")
 
         try await prepareProjectFolderStructure(projectPath: project.path)
         try await refreshProjects()
@@ -469,5 +470,69 @@ extension AppModel {
             }
             refreshModsSurface()
         }
+    }
+
+    private var generalProjectSafetyDefaults: ProjectSafetySettings {
+        ProjectSafetySettings(
+            sandboxMode: .readOnly,
+            approvalPolicy: .onRequest,
+            networkAccess: false,
+            webSearch: .cached
+        )
+    }
+
+    private func ensureGeneralProjectSafetyMigrated(projectID: UUID) async throws {
+        guard let projectRepository else { return }
+
+        let migrationApplied = try await preferenceRepository?
+            .getPreference(key: .generalProjectSafetyMigrationV1) == "1"
+        guard !migrationApplied else {
+            return
+        }
+
+        _ = try await projectRepository.updateProjectSafetySettings(
+            id: projectID,
+            settings: generalProjectSafetyDefaults
+        )
+        try await preferenceRepository?.setPreference(key: .generalProjectSafetyMigrationV1, value: "1")
+        try await refreshProjects()
+        appendLog(.info, "Migrated General project safety defaults to read-only + on-request.")
+    }
+
+    private func ensureGeneralAgentsGuidance(projectURL: URL) throws {
+        let agentsURL = projectURL.appendingPathComponent("AGENTS.md", isDirectory: false)
+        let guidanceBlock = """
+        <!-- CODEXCHAT_HISTORY_GUIDANCE_BEGIN -->
+        ## Chat Transcript Files
+
+        Conversation history is stored in `chats/threads/*.md`.
+        Read these transcript files when cross-thread context is relevant.
+        Treat transcript files as append-only historical records unless the user explicitly asks to edit them.
+        <!-- CODEXCHAT_HISTORY_GUIDANCE_END -->
+        """
+
+        if !FileManager.default.fileExists(atPath: agentsURL.path) {
+            let content = """
+            # General
+
+            This project is the default catch-all for conversations that are not tied to a specific codebase or topic.
+            Treat threads here like general chat sessions - helpful, conversational, and not bound to any particular repository.
+
+            \(guidanceBlock)
+            """
+            try content.write(to: agentsURL, atomically: true, encoding: .utf8)
+            return
+        }
+
+        var content = try String(contentsOf: agentsURL, encoding: .utf8)
+        if content.contains("CODEXCHAT_HISTORY_GUIDANCE_BEGIN") {
+            return
+        }
+
+        if !content.hasSuffix("\n") {
+            content += "\n"
+        }
+        content += "\n\(guidanceBlock)\n"
+        try content.write(to: agentsURL, atomically: true, encoding: .utf8)
     }
 }

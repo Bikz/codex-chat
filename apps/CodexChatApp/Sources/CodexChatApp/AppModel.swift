@@ -95,6 +95,7 @@ final class AppModel: ObservableObject {
     }
 
     struct ActiveTurnContext {
+        var localTurnID: UUID
         var localThreadID: UUID
         var projectID: UUID
         var projectPath: String

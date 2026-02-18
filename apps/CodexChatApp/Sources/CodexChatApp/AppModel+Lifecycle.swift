@@ -35,6 +35,9 @@ extension AppModel {
             try await refreshArchivedThreads()
             try await refreshFollowUpQueuesForVisibleThreads()
             try await refreshSkills()
+            if let selectedThreadID {
+                await rehydrateThreadTranscript(threadID: selectedThreadID)
+            }
             refreshModsSurface()
             refreshConversationState()
             appendLog(.info, "Initial metadata load completed")

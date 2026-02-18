@@ -13,7 +13,7 @@ extension AppModel {
         }
 
         guard let archiveURL = ChatArchiveStore.latestArchiveURL(projectPath: project.path, threadID: threadID) else {
-            projectStatusMessage = "No archived chat file found for the selected thread yet."
+            projectStatusMessage = "No thread transcript file found for the selected thread yet."
             return
         }
 
@@ -37,6 +37,7 @@ extension AppModel {
                 refreshModsSurface()
                 if let selectedThreadID {
                     try await refreshFollowUpQueue(threadID: selectedThreadID)
+                    await rehydrateThreadTranscript(threadID: selectedThreadID)
                 }
                 refreshConversationState()
             } catch {
@@ -147,6 +148,7 @@ extension AppModel {
                 try await persistSelection()
                 if let threadID {
                     try await refreshFollowUpQueue(threadID: threadID)
+                    await rehydrateThreadTranscript(threadID: threadID)
                 }
                 refreshConversationState()
                 requestAutoDrain(reason: "thread selection changed")
@@ -167,6 +169,7 @@ extension AppModel {
         try await persistSelection()
         if let selectedThreadID {
             try await refreshFollowUpQueue(threadID: selectedThreadID)
+            await rehydrateThreadTranscript(threadID: selectedThreadID)
         }
         refreshConversationState()
     }
@@ -257,5 +260,91 @@ extension AppModel {
         refreshConversationState()
         appendLog(.info, "Created thread from draft chat \(thread.id.uuidString)")
         return thread.id
+    }
+
+    func rehydrateThreadTranscript(threadID: UUID, limit: Int = 50) async {
+        do {
+            guard let projectPath = try await projectPathForThread(threadID: threadID) else {
+                return
+            }
+            let turns = try ChatArchiveStore.loadRecentTurns(
+                projectPath: projectPath,
+                threadID: threadID,
+                limit: limit
+            )
+            transcriptStore[threadID] = Self.transcriptEntries(from: turns, threadID: threadID)
+        } catch {
+            appendLog(
+                .warning,
+                "Failed to rehydrate transcript for thread \(threadID.uuidString): \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func projectPathForThread(threadID: UUID) async throws -> String? {
+        if let selectedProject,
+           selectedThreadID == threadID
+        {
+            return selectedProject.path
+        }
+
+        guard let thread = try await threadRepository?.getThread(id: threadID),
+              let project = try await projectRepository?.getProject(id: thread.projectId)
+        else {
+            return nil
+        }
+        return project.path
+    }
+
+    private static func transcriptEntries(
+        from turns: [ArchivedTurnSummary],
+        threadID: UUID
+    ) -> [TranscriptEntry] {
+        let ordered = turns.sorted {
+            if $0.timestamp != $1.timestamp {
+                return $0.timestamp < $1.timestamp
+            }
+            return $0.turnID.uuidString < $1.turnID.uuidString
+        }
+
+        var entries: [TranscriptEntry] = []
+        entries.reserveCapacity(ordered.count * 3)
+
+        for turn in ordered {
+            let userMessage = ChatMessage(
+                id: UUID(),
+                threadId: threadID,
+                role: .user,
+                text: turn.userText,
+                createdAt: turn.timestamp
+            )
+            entries.append(.message(userMessage))
+
+            let assistantText = turn.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !assistantText.isEmpty {
+                let assistantMessage = ChatMessage(
+                    id: UUID(),
+                    threadId: threadID,
+                    role: .assistant,
+                    text: assistantText,
+                    createdAt: turn.timestamp
+                )
+                entries.append(.message(assistantMessage))
+            }
+
+            for action in turn.actions {
+                let normalizedAction = ActionCard(
+                    id: action.id,
+                    threadID: threadID,
+                    method: action.method,
+                    title: action.title,
+                    detail: action.detail,
+                    createdAt: action.createdAt
+                )
+                entries.append(.actionCard(normalizedAction))
+            }
+        }
+
+        return entries
     }
 }

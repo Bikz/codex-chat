@@ -5,7 +5,8 @@ CodexChat is a local-first macOS app that integrates with the local Codex runtim
 ## Data Storage
 
 - App metadata (projects, threads, preferences) is stored locally in an app-managed SQLite database under the user's Application Support directory.
-- Project artifacts intended for long-term ownership (chat archives, memory notes, mods) live as files inside the user's project folder.
+- Project artifacts intended for long-term ownership (thread transcripts, memory notes, mods) live as files inside the user's project folder.
+- Canonical transcript files are stored per thread at `chats/threads/<thread-id>.md` and updated with crash-safe writes (temporary file + atomic replace).
 
 ## Runtime Safety Controls
 
@@ -22,7 +23,8 @@ CodexChat ships with a local, readable policy note in the app bundle (`SafetyPol
 - Shell panes run as local interactive processes and are intentionally independent from Codex runtime safety controls.
 - Project `sandbox_mode`, `approval_policy`, network, and web-search settings apply to runtime agent turns, not shell-pane commands.
 - For untrusted projects, CodexChat requires a one-time explicit warning acknowledgement before opening the shell workspace.
-- Shell pane activity is not copied into chat transcript archives.
+- Shell pane activity is not copied into thread transcript files.
+- Transcript files are not automatically injected into runtime prompts; they are discoverable project files for user/agent workflows.
 
 ## Secrets
 

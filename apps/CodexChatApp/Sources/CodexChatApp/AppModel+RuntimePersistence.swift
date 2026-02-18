@@ -4,8 +4,28 @@ import CodexMemory
 import Foundation
 
 extension AppModel {
-    func persistCompletedTurn(context: ActiveTurnContext) async {
+    func persistCompletedTurn(context: ActiveTurnContext, completion: RuntimeTurnCompletion) async {
         let assistantText = context.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedStatus = completion.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let turnFailed = completion.errorMessage != nil
+            || normalizedStatus.contains("fail")
+            || normalizedStatus.contains("error")
+            || normalizedStatus.contains("cancel")
+        let turnStatus: ChatArchiveTurnStatus = turnFailed ? .failed : .completed
+
+        var persistedActions = context.actions
+        if let errorMessage = completion.errorMessage, !errorMessage.isEmpty {
+            persistedActions.append(
+                ActionCard(
+                    threadID: context.localThreadID,
+                    method: "turn/error",
+                    title: "Turn error",
+                    detail: errorMessage,
+                    createdAt: Date()
+                )
+            )
+        }
+
         var isThreadArchived = false
         if let threadRepository,
            let thread = try? await threadRepository.getThread(id: context.localThreadID)
@@ -14,18 +34,35 @@ extension AppModel {
         }
 
         let summary = ArchivedTurnSummary(
+            turnID: context.localTurnID,
             timestamp: context.startedAt,
+            status: turnStatus,
             userText: context.userText,
             assistantText: assistantText,
-            actions: context.actions
+            actions: persistedActions
         )
 
         do {
-            let archiveURL = try ChatArchiveStore.appendTurn(
-                projectPath: context.projectPath,
-                threadID: context.localThreadID,
-                turn: summary
-            )
+            let archiveURL: URL = switch turnStatus {
+            case .completed:
+                try ChatArchiveStore.finalizeCheckpoint(
+                    projectPath: context.projectPath,
+                    threadID: context.localThreadID,
+                    turn: summary
+                )
+            case .failed:
+                try ChatArchiveStore.failCheckpoint(
+                    projectPath: context.projectPath,
+                    threadID: context.localThreadID,
+                    turn: summary
+                )
+            case .pending:
+                try ChatArchiveStore.beginCheckpoint(
+                    projectPath: context.projectPath,
+                    threadID: context.localThreadID,
+                    turn: summary
+                )
+            }
             projectStatusMessage = "Archived chat turn to \(archiveURL.lastPathComponent)."
 
             guard !isThreadArchived else {
@@ -49,12 +86,14 @@ extension AppModel {
                 )
             }
 
-            await applyInitialThreadTitleIfNeeded(
-                threadID: context.localThreadID,
-                projectID: context.projectID,
-                userText: context.userText,
-                assistantText: assistantText
-            )
+            if !turnFailed {
+                await applyInitialThreadTitleIfNeeded(
+                    threadID: context.localThreadID,
+                    projectID: context.projectID,
+                    userText: context.userText,
+                    assistantText: assistantText
+                )
+            }
         } catch {
             appendLog(.error, "Failed to archive turn: \(error.localizedDescription)")
         }

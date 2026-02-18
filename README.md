@@ -12,7 +12,7 @@ CodexChat is a local-first macOS SwiftUI chat app that integrates the local Code
 - Projects as real folders (trusted/untrusted) with per-project safety settings.
 - Streaming assistant responses in the transcript.
 - Inline, reviewable Action Cards (tool runs, file changes, approvals).
-- Local chat archives written as Markdown in the project for grep/search.
+- Canonical per-thread chat transcripts written as Markdown at `chats/threads/<thread-id>.md`, checkpointed during each turn for grep/search and external tooling.
 - Per-thread persistent follow-up queue: Enter sends when idle, auto-queues when busy, with edit/delete/re-prioritize and Auto FIFO drain.
 - In-flight `Steer` dispatch for capable runtimes, with deterministic fallback to "queue next" on legacy runtimes.
 - Skills discovery + install + per-project enablement (progressive disclosure).

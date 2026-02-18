@@ -67,7 +67,9 @@ extension AppModel {
                 safetyConfiguration: safetyConfiguration
             )
             let startedAt = Date()
+            let localTurnID = UUID()
             activeTurnContext = ActiveTurnContext(
+                localTurnID: localTurnID,
                 localThreadID: threadID,
                 projectID: projectID,
                 projectPath: projectPath,
@@ -77,6 +79,23 @@ extension AppModel {
                 actions: [],
                 startedAt: startedAt
             )
+
+            do {
+                _ = try ChatArchiveStore.beginCheckpoint(
+                    projectPath: projectPath,
+                    threadID: threadID,
+                    turn: ArchivedTurnSummary(
+                        turnID: localTurnID,
+                        timestamp: startedAt,
+                        status: .pending,
+                        userText: trimmedText,
+                        assistantText: "",
+                        actions: []
+                    )
+                )
+            } catch {
+                appendLog(.warning, "Failed to checkpoint turn start: \(error.localizedDescription)")
+            }
 
             activeModSnapshot = {
                 do {
@@ -142,6 +161,34 @@ extension AppModel {
 
             appendLog(.info, "Started turn \(turnID) for local thread \(threadID.uuidString)")
         } catch {
+            if let context = activeTurnContext,
+               context.localThreadID == threadID
+            {
+                let failureAction = ActionCard(
+                    threadID: threadID,
+                    method: "turn/start/error",
+                    title: "Turn failed to start",
+                    detail: error.localizedDescription,
+                    createdAt: Date()
+                )
+                do {
+                    _ = try ChatArchiveStore.failCheckpoint(
+                        projectPath: projectPath,
+                        threadID: threadID,
+                        turn: ArchivedTurnSummary(
+                            turnID: context.localTurnID,
+                            timestamp: context.startedAt,
+                            status: .failed,
+                            userText: context.userText,
+                            assistantText: context.assistantText,
+                            actions: context.actions + [failureAction]
+                        )
+                    )
+                } catch {
+                    appendLog(.warning, "Failed to persist failed turn checkpoint: \(error.localizedDescription)")
+                }
+            }
+
             handleRuntimeError(error)
             appendEntry(
                 .actionCard(

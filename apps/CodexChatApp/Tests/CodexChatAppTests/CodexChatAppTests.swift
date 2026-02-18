@@ -74,7 +74,7 @@ final class CodexChatAppTests: XCTestCase {
 
         let content = try String(contentsOf: archiveURL, encoding: .utf8)
         XCTAssertEqual(
-            content.components(separatedBy: "# Chat Archive for \(threadID.uuidString)").count - 1,
+            content.components(separatedBy: "# Thread Transcript for \(threadID.uuidString)").count - 1,
             1
         )
         XCTAssertTrue(content.contains("First question"))
@@ -186,6 +186,7 @@ final class CodexChatAppTests: XCTestCase {
         let request = makeApprovalRequest(id: 101)
         model.selectedThreadID = threadID
         model.activeTurnContext = AppModel.ActiveTurnContext(
+            localTurnID: UUID(),
             localThreadID: threadID,
             projectID: projectID,
             projectPath: "/tmp",

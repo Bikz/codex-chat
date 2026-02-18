@@ -66,8 +66,8 @@ struct ChatsCanvasView: View {
                         Label("Reveal Chat File", systemImage: "doc.text")
                             .labelStyle(.iconOnly)
                     }
-                    .accessibilityLabel("Reveal chat archive in Finder")
-                    .help("Reveal latest chat archive")
+                    .accessibilityLabel("Reveal thread transcript file in Finder")
+                    .help("Reveal thread transcript file")
                     .disabled(model.selectedThreadID == nil)
 
                     Button {

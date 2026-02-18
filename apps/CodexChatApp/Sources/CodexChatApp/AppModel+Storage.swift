@@ -43,6 +43,7 @@ extension AppModel {
         }
 
         try await refreshProjects()
+        await migrateLegacyChatArchivesIfNeeded()
     }
 
     func changeStorageRoot() {
@@ -220,5 +221,30 @@ extension AppModel {
         }
 
         NSApp.terminate(nil)
+    }
+
+    private func migrateLegacyChatArchivesIfNeeded() async {
+        for project in projects {
+            guard Self.projectDirectoryExists(path: project.path) else {
+                continue
+            }
+
+            do {
+                let migratedCount = try ChatArchiveStore.migrateLegacyDateShardedArchivesIfNeeded(
+                    projectPath: project.path
+                )
+                if migratedCount > 0 {
+                    appendLog(
+                        .info,
+                        "Backfilled \(migratedCount) legacy chat turn(s) into canonical transcripts for \(project.name)."
+                    )
+                }
+            } catch {
+                appendLog(
+                    .warning,
+                    "Legacy chat archive backfill failed for \(project.name): \(error.localizedDescription)"
+                )
+            }
+        }
     }
 }

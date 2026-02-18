@@ -135,11 +135,25 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         }
         harness.model.approvePendingApprovalOnce()
 
-        let archiveURL = try await eventuallyValue(timeoutSeconds: 3.0) {
-            ChatArchiveStore.latestArchiveURL(projectPath: harness.project.path, threadID: harness.thread.id)
+        let content: String = try await eventuallyValue(timeoutSeconds: 3.0) { () -> String? in
+            guard let archiveURL = ChatArchiveStore.latestArchiveURL(
+                projectPath: harness.project.path,
+                threadID: harness.thread.id
+            ) else {
+                return nil
+            }
+
+            guard let text = try? String(contentsOf: archiveURL, encoding: .utf8),
+                  text.contains("status=completed"),
+                  text.contains("Completed fileChange"),
+                  text.contains("notes.txt")
+            else {
+                return nil
+            }
+
+            return text
         }
 
-        let content = try String(contentsOf: archiveURL, encoding: .utf8)
         XCTAssertTrue(content.contains("### Actions"))
         XCTAssertTrue(content.contains("Completed fileChange"))
         XCTAssertTrue(content.contains("notes.txt"))

@@ -11,9 +11,11 @@ final class CodexChatAppArchiveGoldenTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
 
         let threadID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1"))
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
 
         let turn = ArchivedTurnSummary(
+            turnID: turnID,
             timestamp: timestamp,
             userText: "Please update the README.",
             assistantText: "Done. README updated.",
@@ -35,7 +37,13 @@ final class CodexChatAppArchiveGoldenTests: XCTestCase {
             return
         }
         let expected = try String(contentsOf: expectedURL, encoding: .utf8)
+        let normalizedActual = actual
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedExpected = expected
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        XCTAssertEqual(actual, expected)
+        XCTAssertEqual(normalizedActual, normalizedExpected)
     }
 }

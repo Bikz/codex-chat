@@ -76,7 +76,7 @@ extension AppModel {
                 activeTurnContext = nil
 
                 Task {
-                    await persistCompletedTurn(context: context)
+                    await persistCompletedTurn(context: context, completion: completion)
                 }
             } else {
                 appendLog(.debug, "Turn completed without active context: \(completion.status)")

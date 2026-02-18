@@ -290,6 +290,7 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case runtimeDefaultWebSearch = "runtime.default.web_search"
     case runtimeDefaultSafety = "runtime.default.safety"
     case runtimeExperimentalFlags = "runtime.experimental.flags"
+    case generalProjectSafetyMigrationV1 = "general_project_safety_migration_v1"
 }
 
 public enum ChatMessageRole: String, Codable, Hashable, Sendable {
