@@ -503,24 +503,49 @@ struct ContentView: View {
                     systemImage: "text.cursor"
                 )
             case let .loaded(entries):
-                List(entries) { entry in
-                    switch entry {
-                    case let .message(message):
-                        MessageRow(message: message, tokens: tokens)
-                            .padding(.vertical, tokens.spacing.xSmall)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 0, leading: tokens.spacing.medium, bottom: 0, trailing: tokens.spacing.medium))
-                    case let .actionCard(card):
-                        ActionCardRow(card: card)
-                            .padding(.vertical, tokens.spacing.xSmall)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 0, leading: tokens.spacing.medium, bottom: 0, trailing: tokens.spacing.medium))
+                ScrollViewReader { proxy in
+                    List(entries) { entry in
+                        switch entry {
+                        case let .message(message):
+                            MessageRow(message: message, tokens: tokens)
+                                .padding(.vertical, tokens.spacing.xSmall)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 0, leading: tokens.spacing.medium, bottom: 0, trailing: tokens.spacing.medium))
+                        case let .actionCard(card):
+                            ActionCardRow(card: card)
+                                .padding(.vertical, tokens.spacing.xSmall)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 0, leading: tokens.spacing.medium, bottom: 0, trailing: tokens.spacing.medium))
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .onAppear {
+                        scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: false)
+                    }
+                    .onChange(of: entries.last?.id) { _ in
+                        scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: true)
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+            }
+        }
+    }
+
+    private func scrollTranscriptToBottom(
+        entries: [TranscriptEntry],
+        proxy: ScrollViewProxy,
+        animated: Bool
+    ) {
+        guard let lastID = entries.last?.id else { return }
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    proxy.scrollTo(lastID, anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo(lastID, anchor: .bottom)
             }
         }
     }
