@@ -106,6 +106,27 @@ public final class MetadataDatabase: @unchecked Sendable {
                 """)
         }
 
+        migrator.registerMigration("v6_add_project_safety_settings") { db in
+            try db.alter(table: "projects") { table in
+                table.add(column: "sandboxMode", .text).notNull().defaults(to: "read-only")
+                table.add(column: "approvalPolicy", .text).notNull().defaults(to: "untrusted")
+                table.add(column: "networkAccess", .boolean).notNull().defaults(to: false)
+                table.add(column: "webSearch", .text).notNull().defaults(to: "cached")
+            }
+
+            // Keep existing trusted projects aligned with recommended defaults.
+            try db.execute(
+                sql: """
+                    UPDATE projects
+                    SET sandboxMode = 'workspace-write',
+                        approvalPolicy = 'on-request',
+                        networkAccess = 0,
+                        webSearch = 'cached'
+                    WHERE trustState = 'trusted'
+                    """
+            )
+        }
+
         return migrator
     }
 }

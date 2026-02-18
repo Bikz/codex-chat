@@ -7,6 +7,7 @@ public protocol ProjectRepository: Sendable {
     func createProject(named name: String, path: String, trustState: ProjectTrustState) async throws -> ProjectRecord
     func updateProjectName(id: UUID, name: String) async throws -> ProjectRecord
     func updateProjectTrustState(id: UUID, trustState: ProjectTrustState) async throws -> ProjectRecord
+    func updateProjectSafetySettings(id: UUID, settings: ProjectSafetySettings) async throws -> ProjectRecord
 }
 
 public protocol ThreadRepository: Sendable {
@@ -24,6 +25,7 @@ public protocol PreferenceRepository: Sendable {
 public protocol RuntimeThreadMappingRepository: Sendable {
     func setRuntimeThreadID(localThreadID: UUID, runtimeThreadID: String) async throws
     func getRuntimeThreadID(localThreadID: UUID) async throws -> String?
+    func getLocalThreadID(runtimeThreadID: String) async throws -> UUID?
 }
 
 public protocol ProjectSecretRepository: Sendable {

@@ -13,6 +13,7 @@ public actor CodexRuntime {
     private var stdoutHandle: FileHandle?
     private var stderrHandle: FileHandle?
     private var framer = JSONLFramer()
+    private var pendingApprovalRequests: [Int: RuntimeApprovalRequest] = [:]
 
     private let eventStream: AsyncStream<CodexRuntimeEvent>
     private let eventContinuation: AsyncStream<CodexRuntimeEvent>.Continuation
@@ -63,15 +64,28 @@ public actor CodexRuntime {
         await stopProcess()
     }
 
-    public func startThread(cwd: String? = nil) async throws -> String {
+    public func startThread(
+        cwd: String? = nil,
+        safetyConfiguration: RuntimeSafetyConfiguration? = nil
+    ) async throws -> String {
         try await start()
 
-        var params: [String: JSONValue] = [:]
-        if let cwd {
-            params["cwd"] = .string(cwd)
+        var params = Self.makeThreadStartParams(
+            cwd: cwd,
+            safetyConfiguration: safetyConfiguration,
+            includeWebSearch: true
+        )
+        let result: JSONValue
+        do {
+            result = try await sendRequest(method: "thread/start", params: params)
+        } catch let error as CodexRuntimeError where Self.shouldRetryWithoutWebSearch(error: error) {
+            params = Self.makeThreadStartParams(
+                cwd: cwd,
+                safetyConfiguration: safetyConfiguration,
+                includeWebSearch: false
+            )
+            result = try await sendRequest(method: "thread/start", params: params)
         }
-
-        let result = try await sendRequest(method: "thread/start", params: .object(params))
         guard let threadID = result.value(at: ["thread", "id"])?.stringValue else {
             throw CodexRuntimeError.invalidResponse("thread/start missing result.thread.id")
         }
@@ -79,25 +93,46 @@ public actor CodexRuntime {
         return threadID
     }
 
-    public func startTurn(threadID: String, text: String) async throws -> String {
+    public func startTurn(
+        threadID: String,
+        text: String,
+        safetyConfiguration: RuntimeSafetyConfiguration? = nil
+    ) async throws -> String {
         try await start()
 
-        let params: JSONValue = .object([
-            "threadId": .string(threadID),
-            "input": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(text)
-                ])
-            ])
-        ])
-
-        let result = try await sendRequest(method: "turn/start", params: params)
+        var params = Self.makeTurnStartParams(
+            threadID: threadID,
+            text: text,
+            safetyConfiguration: safetyConfiguration,
+            includeWebSearch: true
+        )
+        let result: JSONValue
+        do {
+            result = try await sendRequest(method: "turn/start", params: params)
+        } catch let error as CodexRuntimeError where Self.shouldRetryWithoutWebSearch(error: error) {
+            params = Self.makeTurnStartParams(
+                threadID: threadID,
+                text: text,
+                safetyConfiguration: safetyConfiguration,
+                includeWebSearch: false
+            )
+            result = try await sendRequest(method: "turn/start", params: params)
+        }
         guard let turnID = result.value(at: ["turn", "id"])?.stringValue else {
             throw CodexRuntimeError.invalidResponse("turn/start missing result.turn.id")
         }
 
         return turnID
+    }
+
+    public func respondToApproval(
+        requestID: Int,
+        decision: RuntimeApprovalDecision
+    ) throws {
+        guard pendingApprovalRequests.removeValue(forKey: requestID) != nil else {
+            throw CodexRuntimeError.invalidResponse("Unknown approval request id: \(requestID)")
+        }
+        try writeMessage(JSONRPCMessageEnvelope.response(id: requestID, result: decision.rpcResult))
     }
 
     public func readAccount(refreshToken: Bool = false) async throws -> RuntimeAccountState {
@@ -237,6 +272,8 @@ public actor CodexRuntime {
                         method: "runtime/stdout/decode_error",
                         itemID: nil,
                         itemType: nil,
+                        threadID: nil,
+                        turnID: nil,
                         title: "Runtime stream decode error",
                         detail: error.localizedDescription
                     )
@@ -263,6 +300,8 @@ public actor CodexRuntime {
                     method: "runtime/stderr",
                     itemID: nil,
                     itemType: nil,
+                    threadID: nil,
+                    turnID: nil,
                     title: "Runtime stderr",
                     detail: message
                 )
@@ -281,7 +320,7 @@ public actor CodexRuntime {
             return
         }
 
-        if let event = AppServerEventDecoder.decode(message) {
+        for event in AppServerEventDecoder.decodeAll(message) {
             eventContinuation.yield(event)
         }
     }
@@ -293,16 +332,13 @@ public actor CodexRuntime {
         }
 
         if method.hasSuffix("/requestApproval") {
-            try writeMessage(JSONRPCMessageEnvelope.response(id: id, result: .string("decline")))
-
-            let action = RuntimeAction(
+            let approval = Self.decodeApprovalRequest(
+                requestID: id,
                 method: method,
-                itemID: request.params?.value(at: ["itemId"])?.stringValue,
-                itemType: "approval",
-                title: "Approval requested",
-                detail: "Automatically declined until interactive approval UI is implemented."
+                params: request.params
             )
-            eventContinuation.yield(.action(action))
+            pendingApprovalRequests[id] = approval
+            eventContinuation.yield(.approvalRequested(approval))
             return
         }
 
@@ -390,6 +426,7 @@ public actor CodexRuntime {
         stdinHandle = nil
         stdoutHandle = nil
         stderrHandle = nil
+        pendingApprovalRequests.removeAll()
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)
     }
@@ -402,6 +439,7 @@ public actor CodexRuntime {
         stdinHandle = nil
         stdoutHandle = nil
         stderrHandle = nil
+        pendingApprovalRequests.removeAll()
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)
 
@@ -409,10 +447,148 @@ public actor CodexRuntime {
             method: "runtime/terminated",
             itemID: nil,
             itemType: nil,
+            threadID: nil,
+            turnID: nil,
             title: "Runtime terminated",
             detail: "codex app-server exited with status \(status)."
         )
         eventContinuation.yield(.action(action))
+    }
+
+    private static func makeThreadStartParams(
+        cwd: String?,
+        safetyConfiguration: RuntimeSafetyConfiguration?,
+        includeWebSearch: Bool
+    ) -> JSONValue {
+        var params: [String: JSONValue] = [:]
+        if let cwd {
+            params["cwd"] = .string(cwd)
+        }
+
+        if let safetyConfiguration {
+            params["approvalPolicy"] = .string(safetyConfiguration.approvalPolicy.rawValue)
+            params["sandboxPolicy"] = makeSandboxPolicy(
+                cwd: cwd,
+                safetyConfiguration: safetyConfiguration
+            )
+            if includeWebSearch {
+                params["webSearch"] = .string(safetyConfiguration.webSearch.rawValue)
+            }
+        }
+
+        return .object(params)
+    }
+
+    private static func makeTurnStartParams(
+        threadID: String,
+        text: String,
+        safetyConfiguration: RuntimeSafetyConfiguration?,
+        includeWebSearch: Bool
+    ) -> JSONValue {
+        var params: [String: JSONValue] = [
+            "threadId": .string(threadID),
+            "input": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string(text)
+                ])
+            ])
+        ]
+
+        if let safetyConfiguration {
+            params["approvalPolicy"] = .string(safetyConfiguration.approvalPolicy.rawValue)
+            params["sandboxPolicy"] = makeSandboxPolicy(
+                cwd: nil,
+                safetyConfiguration: safetyConfiguration
+            )
+            if includeWebSearch {
+                params["webSearch"] = .string(safetyConfiguration.webSearch.rawValue)
+            }
+        }
+
+        return .object(params)
+    }
+
+    private static func makeSandboxPolicy(
+        cwd: String?,
+        safetyConfiguration: RuntimeSafetyConfiguration
+    ) -> JSONValue {
+        switch safetyConfiguration.sandboxMode {
+        case .readOnly:
+            return .object(["type": .string(RuntimeSandboxMode.readOnly.rawValue)])
+        case .workspaceWrite:
+            var roots = safetyConfiguration.writableRoots
+            if roots.isEmpty, let cwd {
+                roots = [cwd]
+            }
+            return .object([
+                "type": .string(RuntimeSandboxMode.workspaceWrite.rawValue),
+                "writableRoots": .array(roots.map(JSONValue.string)),
+                "networkAccess": .bool(safetyConfiguration.networkAccess)
+            ])
+        case .dangerFullAccess:
+            return .object(["type": .string(RuntimeSandboxMode.dangerFullAccess.rawValue)])
+        }
+    }
+
+    private static func shouldRetryWithoutWebSearch(error: CodexRuntimeError) -> Bool {
+        guard case .rpcError(_, let message) = error else {
+            return false
+        }
+        let lowered = message.lowercased()
+        return (lowered.contains("websearch") || lowered.contains("web_search"))
+            && (lowered.contains("unknown") || lowered.contains("invalid"))
+    }
+
+    private static func decodeApprovalRequest(
+        requestID: Int,
+        method: String,
+        params: JSONValue?
+    ) -> RuntimeApprovalRequest {
+        let payload = params ?? .object([:])
+        let kind: RuntimeApprovalKind
+        if method.contains("commandExecution") {
+            kind = .commandExecution
+        } else if method.contains("fileChange") {
+            kind = .fileChange
+        } else {
+            kind = .unknown
+        }
+
+        let command: [String]
+        if let array = payload.value(at: ["command"])?.arrayValue {
+            command = array.compactMap(\.stringValue)
+        } else if let parsed = payload.value(at: ["parsedCmd"])?.arrayValue {
+            command = parsed.compactMap(\.stringValue)
+        } else if let single = payload.value(at: ["command"])?.stringValue {
+            command = [single]
+        } else {
+            command = []
+        }
+
+        let changes: [RuntimeFileChange] = (payload.value(at: ["changes"])?.arrayValue ?? []).compactMap { change in
+            guard let path = change.value(at: ["path"])?.stringValue else {
+                return nil
+            }
+            let kind = change.value(at: ["kind"])?.stringValue ?? "update"
+            let diff = change.value(at: ["diff"])?.stringValue
+            return RuntimeFileChange(path: path, kind: kind, diff: diff)
+        }
+
+        return RuntimeApprovalRequest(
+            id: requestID,
+            kind: kind,
+            method: method,
+            threadID: payload.value(at: ["threadId"])?.stringValue,
+            turnID: payload.value(at: ["turnId"])?.stringValue,
+            itemID: payload.value(at: ["itemId"])?.stringValue,
+            reason: payload.value(at: ["reason"])?.stringValue,
+            risk: payload.value(at: ["risk"])?.stringValue,
+            cwd: payload.value(at: ["cwd"])?.stringValue,
+            command: command,
+            changes: changes,
+            detail: payload.prettyPrinted()
+        )
     }
 
     nonisolated public static func defaultExecutableResolver() -> String? {

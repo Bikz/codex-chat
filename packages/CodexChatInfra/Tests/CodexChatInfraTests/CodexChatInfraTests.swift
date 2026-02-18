@@ -33,6 +33,10 @@ final class CodexChatInfraTests: XCTestCase {
         )
         XCTAssertEqual(project.name, "Inbox")
         XCTAssertEqual(project.path, "/tmp/inbox")
+        XCTAssertEqual(project.sandboxMode, .readOnly)
+        XCTAssertEqual(project.approvalPolicy, .untrusted)
+        XCTAssertEqual(project.networkAccess, false)
+        XCTAssertEqual(project.webSearch, .cached)
 
         let thread = try await repositories.threadRepository.createThread(projectID: project.id, title: "First")
         XCTAssertEqual(thread.projectId, project.id)
@@ -59,6 +63,22 @@ final class CodexChatInfraTests: XCTestCase {
         )
         let runtimeThreadID = try await repositories.runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: thread.id)
         XCTAssertEqual(runtimeThreadID, "thr_123")
+        let localThreadID = try await repositories.runtimeThreadMappingRepository.getLocalThreadID(runtimeThreadID: "thr_123")
+        XCTAssertEqual(localThreadID, thread.id)
+
+        let updatedProject = try await repositories.projectRepository.updateProjectSafetySettings(
+            id: project.id,
+            settings: ProjectSafetySettings(
+                sandboxMode: .workspaceWrite,
+                approvalPolicy: .onRequest,
+                networkAccess: true,
+                webSearch: .live
+            )
+        )
+        XCTAssertEqual(updatedProject.sandboxMode, .workspaceWrite)
+        XCTAssertEqual(updatedProject.approvalPolicy, .onRequest)
+        XCTAssertEqual(updatedProject.networkAccess, true)
+        XCTAssertEqual(updatedProject.webSearch, .live)
 
         let secret = try await repositories.projectSecretRepository.upsertSecret(
             projectID: project.id,

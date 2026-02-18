@@ -5,11 +5,52 @@ public enum ProjectTrustState: String, CaseIterable, Hashable, Sendable, Codable
     case trusted
 }
 
+public enum ProjectSandboxMode: String, CaseIterable, Hashable, Sendable, Codable {
+    case readOnly = "read-only"
+    case workspaceWrite = "workspace-write"
+    case dangerFullAccess = "danger-full-access"
+}
+
+public enum ProjectApprovalPolicy: String, CaseIterable, Hashable, Sendable, Codable {
+    case untrusted
+    case onRequest = "on-request"
+    case never
+}
+
+public enum ProjectWebSearchMode: String, CaseIterable, Hashable, Sendable, Codable {
+    case cached
+    case live
+    case disabled
+}
+
+public struct ProjectSafetySettings: Hashable, Sendable, Codable {
+    public var sandboxMode: ProjectSandboxMode
+    public var approvalPolicy: ProjectApprovalPolicy
+    public var networkAccess: Bool
+    public var webSearch: ProjectWebSearchMode
+
+    public init(
+        sandboxMode: ProjectSandboxMode,
+        approvalPolicy: ProjectApprovalPolicy,
+        networkAccess: Bool,
+        webSearch: ProjectWebSearchMode
+    ) {
+        self.sandboxMode = sandboxMode
+        self.approvalPolicy = approvalPolicy
+        self.networkAccess = networkAccess
+        self.webSearch = webSearch
+    }
+}
+
 public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var name: String
     public var path: String
     public var trustState: ProjectTrustState
+    public var sandboxMode: ProjectSandboxMode
+    public var approvalPolicy: ProjectApprovalPolicy
+    public var networkAccess: Bool
+    public var webSearch: ProjectWebSearchMode
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -18,6 +59,10 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         name: String,
         path: String,
         trustState: ProjectTrustState,
+        sandboxMode: ProjectSandboxMode = .readOnly,
+        approvalPolicy: ProjectApprovalPolicy = .untrusted,
+        networkAccess: Bool = false,
+        webSearch: ProjectWebSearchMode = .cached,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -25,8 +70,33 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         self.name = name
         self.path = path
         self.trustState = trustState
+        self.sandboxMode = sandboxMode
+        self.approvalPolicy = approvalPolicy
+        self.networkAccess = networkAccess
+        self.webSearch = webSearch
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+}
+
+public extension ProjectSafetySettings {
+    static func recommendedDefaults(for trustState: ProjectTrustState) -> ProjectSafetySettings {
+        switch trustState {
+        case .trusted:
+            return ProjectSafetySettings(
+                sandboxMode: .workspaceWrite,
+                approvalPolicy: .onRequest,
+                networkAccess: false,
+                webSearch: .cached
+            )
+        case .untrusted:
+            return ProjectSafetySettings(
+                sandboxMode: .readOnly,
+                approvalPolicy: .untrusted,
+                networkAccess: false,
+                webSearch: .cached
+            )
+        }
     }
 }
 

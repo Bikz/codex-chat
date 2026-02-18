@@ -27,6 +27,10 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
     var name: String
     var path: String
     var trustState: String
+    var sandboxMode: String
+    var approvalPolicy: String
+    var networkAccess: Bool
+    var webSearch: String
     var createdAt: Date
     var updatedAt: Date
 
@@ -35,6 +39,10 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
         self.name = record.name
         self.path = record.path
         self.trustState = record.trustState.rawValue
+        self.sandboxMode = record.sandboxMode.rawValue
+        self.approvalPolicy = record.approvalPolicy.rawValue
+        self.networkAccess = record.networkAccess
+        self.webSearch = record.webSearch.rawValue
         self.createdAt = record.createdAt
         self.updatedAt = record.updatedAt
     }
@@ -45,6 +53,10 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
             name: name,
             path: path,
             trustState: ProjectTrustState(rawValue: trustState) ?? .untrusted,
+            sandboxMode: ProjectSandboxMode(rawValue: sandboxMode) ?? .readOnly,
+            approvalPolicy: ProjectApprovalPolicy(rawValue: approvalPolicy) ?? .untrusted,
+            networkAccess: networkAccess,
+            webSearch: ProjectWebSearchMode(rawValue: webSearch) ?? .cached,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -173,11 +185,16 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
     public func createProject(named name: String, path: String, trustState: ProjectTrustState) async throws -> ProjectRecord {
         try await dbQueue.write { db in
             let now = Date()
+            let safety = ProjectSafetySettings.recommendedDefaults(for: trustState)
             let entity = ProjectEntity(
                 record: ProjectRecord(
                     name: name,
                     path: path,
                     trustState: trustState,
+                    sandboxMode: safety.sandboxMode,
+                    approvalPolicy: safety.approvalPolicy,
+                    networkAccess: safety.networkAccess,
+                    webSearch: safety.webSearch,
                     createdAt: now,
                     updatedAt: now
                 )
@@ -205,6 +222,22 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
                 throw CodexChatCoreError.missingRecord(id.uuidString)
             }
             entity.trustState = trustState.rawValue
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func updateProjectSafetySettings(id: UUID, settings: ProjectSafetySettings) async throws -> ProjectRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ProjectEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
+
+            entity.sandboxMode = settings.sandboxMode.rawValue
+            entity.approvalPolicy = settings.approvalPolicy.rawValue
+            entity.networkAccess = settings.networkAccess
+            entity.webSearch = settings.webSearch.rawValue
             entity.updatedAt = Date()
             try entity.update(db)
             return entity.record
@@ -303,6 +336,15 @@ public final class SQLiteRuntimeThreadMappingRepository: RuntimeThreadMappingRep
     public func getRuntimeThreadID(localThreadID: UUID) async throws -> String? {
         try await dbQueue.read { db in
             try RuntimeThreadMappingEntity.fetchOne(db, key: ["localThreadID": localThreadID.uuidString])?.runtimeThreadID
+        }
+    }
+
+    public func getLocalThreadID(runtimeThreadID: String) async throws -> UUID? {
+        try await dbQueue.read { db in
+            try RuntimeThreadMappingEntity
+                .filter(Column("runtimeThreadID") == runtimeThreadID)
+                .fetchOne(db)
+                .flatMap { UUID(uuidString: $0.localThreadID) }
         }
     }
 }

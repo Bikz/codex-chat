@@ -45,7 +45,8 @@ final class CodexKitTests: XCTestCase {
             ])
         )
 
-        guard case .assistantMessageDelta(let itemID, let delta)? = AppServerEventDecoder.decode(deltaNotification) else {
+        let deltaEvents = AppServerEventDecoder.decodeAll(deltaNotification)
+        guard case .assistantMessageDelta(let itemID, let delta)? = deltaEvents.first else {
             XCTFail("Expected assistantMessageDelta")
             return
         }
@@ -62,7 +63,8 @@ final class CodexKitTests: XCTestCase {
             ])
         )
 
-        guard case .turnCompleted(let completion)? = AppServerEventDecoder.decode(completionNotification) else {
+        let completionEvents = AppServerEventDecoder.decodeAll(completionNotification)
+        guard case .turnCompleted(let completion)? = completionEvents.first else {
             XCTFail("Expected turnCompleted")
             return
         }
@@ -75,7 +77,7 @@ final class CodexKitTests: XCTestCase {
             method: "account/updated",
             params: .object(["authMode": .string("chatgpt")])
         )
-        guard case .accountUpdated(let mode)? = AppServerEventDecoder.decode(updated) else {
+        guard case .accountUpdated(let mode)? = AppServerEventDecoder.decodeAll(updated).first else {
             XCTFail("Expected accountUpdated")
             return
         }
@@ -89,12 +91,69 @@ final class CodexKitTests: XCTestCase {
                 "error": .null
             ])
         )
-        guard case .accountLoginCompleted(let completion)? = AppServerEventDecoder.decode(completed) else {
+        guard case .accountLoginCompleted(let completion)? = AppServerEventDecoder.decodeAll(completed).first else {
             XCTFail("Expected accountLoginCompleted")
             return
         }
         XCTAssertEqual(completion.loginID, "login_123")
         XCTAssertTrue(completion.success)
         XCTAssertNil(completion.error)
+    }
+
+    func testEventDecoderCommandOutputAndFileChanges() {
+        let commandOutput = JSONRPCMessageEnvelope.notification(
+            method: "item/commandExecution/outputDelta",
+            params: .object([
+                "threadId": .string("thr_1"),
+                "turnId": .string("turn_1"),
+                "itemId": .string("item_cmd_1"),
+                "delta": .string("stdout line")
+            ])
+        )
+        let commandEvents = AppServerEventDecoder.decodeAll(commandOutput)
+        guard case .commandOutputDelta(let output)? = commandEvents.first else {
+            XCTFail("Expected command output delta")
+            return
+        }
+        XCTAssertEqual(output.itemID, "item_cmd_1")
+        XCTAssertEqual(output.threadID, "thr_1")
+        XCTAssertEqual(output.turnID, "turn_1")
+        XCTAssertEqual(output.delta, "stdout line")
+
+        let fileChangeStarted = JSONRPCMessageEnvelope.notification(
+            method: "item/started",
+            params: .object([
+                "threadId": .string("thr_1"),
+                "turnId": .string("turn_1"),
+                "item": .object([
+                    "id": .string("item_file_1"),
+                    "type": .string("fileChange"),
+                    "status": .string("inProgress"),
+                    "changes": .array([
+                        .object([
+                            "path": .string("README.md"),
+                            "kind": .string("update"),
+                            "diff": .string("@@ -1 +1 @@")
+                        ])
+                    ])
+                ])
+            ])
+        )
+
+        let fileEvents = AppServerEventDecoder.decodeAll(fileChangeStarted)
+        XCTAssertEqual(fileEvents.count, 2)
+
+        let updateEvent = fileEvents.first {
+            if case .fileChangesUpdated = $0 { return true }
+            return false
+        }
+        guard case .fileChangesUpdated(let update)? = updateEvent else {
+            XCTFail("Expected fileChangesUpdated")
+            return
+        }
+        XCTAssertEqual(update.itemID, "item_file_1")
+        XCTAssertEqual(update.threadID, "thr_1")
+        XCTAssertEqual(update.changes.count, 1)
+        XCTAssertEqual(update.changes.first?.path, "README.md")
     }
 }

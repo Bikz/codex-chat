@@ -32,13 +32,25 @@ public struct RuntimeAction: Hashable, Sendable {
     public let method: String
     public let itemID: String?
     public let itemType: String?
+    public let threadID: String?
+    public let turnID: String?
     public let title: String
     public let detail: String
 
-    public init(method: String, itemID: String?, itemType: String?, title: String, detail: String) {
+    public init(
+        method: String,
+        itemID: String?,
+        itemType: String?,
+        threadID: String?,
+        turnID: String?,
+        title: String,
+        detail: String
+    ) {
         self.method = method
         self.itemID = itemID
         self.itemType = itemType
+        self.threadID = threadID
+        self.turnID = turnID
         self.title = title
         self.detail = detail
     }
@@ -128,10 +140,170 @@ public struct RuntimeLoginCompleted: Hashable, Sendable {
     }
 }
 
+public enum RuntimeSandboxMode: String, Hashable, Sendable, Codable {
+    case readOnly = "readOnly"
+    case workspaceWrite = "workspaceWrite"
+    case dangerFullAccess = "dangerFullAccess"
+}
+
+public enum RuntimeApprovalPolicy: String, Hashable, Sendable, Codable {
+    case untrusted = "unlessTrusted"
+    case onRequest = "onRequest"
+    case never = "never"
+}
+
+public enum RuntimeWebSearchMode: String, Hashable, Sendable, Codable {
+    case cached
+    case live
+    case disabled
+}
+
+public struct RuntimeSafetyConfiguration: Hashable, Sendable, Codable {
+    public let sandboxMode: RuntimeSandboxMode
+    public let approvalPolicy: RuntimeApprovalPolicy
+    public let networkAccess: Bool
+    public let webSearch: RuntimeWebSearchMode
+    public let writableRoots: [String]
+
+    public init(
+        sandboxMode: RuntimeSandboxMode,
+        approvalPolicy: RuntimeApprovalPolicy,
+        networkAccess: Bool,
+        webSearch: RuntimeWebSearchMode,
+        writableRoots: [String]
+    ) {
+        self.sandboxMode = sandboxMode
+        self.approvalPolicy = approvalPolicy
+        self.networkAccess = networkAccess
+        self.webSearch = webSearch
+        self.writableRoots = writableRoots
+    }
+}
+
+public enum RuntimeApprovalKind: String, Hashable, Sendable, Codable {
+    case commandExecution
+    case fileChange
+    case unknown
+}
+
+public enum RuntimeApprovalDecision: Hashable, Sendable {
+    case approveOnce
+    case approveForSession
+    case decline
+    case cancel
+
+    var rpcResult: JSONValue {
+        switch self {
+        case .approveOnce:
+            return .string("accept")
+        case .approveForSession:
+            return .string("acceptForSession")
+        case .decline:
+            return .string("decline")
+        case .cancel:
+            return .string("cancel")
+        }
+    }
+}
+
+public struct RuntimeFileChange: Hashable, Sendable, Codable {
+    public let path: String
+    public let kind: String
+    public let diff: String?
+
+    public init(path: String, kind: String, diff: String?) {
+        self.path = path
+        self.kind = kind
+        self.diff = diff
+    }
+}
+
+public struct RuntimeFileChangeUpdate: Hashable, Sendable, Codable {
+    public let itemID: String?
+    public let threadID: String?
+    public let turnID: String?
+    public let status: String?
+    public let changes: [RuntimeFileChange]
+
+    public init(
+        itemID: String?,
+        threadID: String?,
+        turnID: String?,
+        status: String?,
+        changes: [RuntimeFileChange]
+    ) {
+        self.itemID = itemID
+        self.threadID = threadID
+        self.turnID = turnID
+        self.status = status
+        self.changes = changes
+    }
+}
+
+public struct RuntimeCommandOutputDelta: Hashable, Sendable, Codable {
+    public let itemID: String
+    public let threadID: String?
+    public let turnID: String?
+    public let delta: String
+
+    public init(itemID: String, threadID: String?, turnID: String?, delta: String) {
+        self.itemID = itemID
+        self.threadID = threadID
+        self.turnID = turnID
+        self.delta = delta
+    }
+}
+
+public struct RuntimeApprovalRequest: Identifiable, Hashable, Sendable, Codable {
+    public let id: Int
+    public let kind: RuntimeApprovalKind
+    public let method: String
+    public let threadID: String?
+    public let turnID: String?
+    public let itemID: String?
+    public let reason: String?
+    public let risk: String?
+    public let cwd: String?
+    public let command: [String]
+    public let changes: [RuntimeFileChange]
+    public let detail: String
+
+    public init(
+        id: Int,
+        kind: RuntimeApprovalKind,
+        method: String,
+        threadID: String?,
+        turnID: String?,
+        itemID: String?,
+        reason: String?,
+        risk: String?,
+        cwd: String?,
+        command: [String],
+        changes: [RuntimeFileChange],
+        detail: String
+    ) {
+        self.id = id
+        self.kind = kind
+        self.method = method
+        self.threadID = threadID
+        self.turnID = turnID
+        self.itemID = itemID
+        self.reason = reason
+        self.risk = risk
+        self.cwd = cwd
+        self.command = command
+        self.changes = changes
+        self.detail = detail
+    }
+}
+
 public enum CodexRuntimeEvent: Hashable, Sendable {
     case threadStarted(threadID: String)
     case turnStarted(turnID: String)
     case assistantMessageDelta(itemID: String, delta: String)
+    case commandOutputDelta(RuntimeCommandOutputDelta)
+    case fileChangesUpdated(RuntimeFileChangeUpdate)
+    case approvalRequested(RuntimeApprovalRequest)
     case action(RuntimeAction)
     case turnCompleted(RuntimeTurnCompletion)
     case accountUpdated(authMode: RuntimeAuthMode)
