@@ -471,8 +471,10 @@ final class AppModel: ObservableObject {
                 let path = url.standardizedFileURL.path
                 if let existing = try await projectRepository.getProject(path: path) {
                     selectedProjectID = existing.id
+                    try await prepareProjectFolderStructure(projectPath: existing.path)
                     try await persistSelection()
                     try await refreshThreads()
+                    try await ensureSelectedProjectHasDefaultThread()
                     try await refreshSkills()
                     refreshModsSurface()
                     refreshConversationState()
@@ -490,8 +492,10 @@ final class AppModel: ObservableObject {
 
                 try await refreshProjects()
                 selectedProjectID = project.id
+                try await prepareProjectFolderStructure(projectPath: project.path)
                 try await persistSelection()
                 try await refreshThreads()
+                try await ensureSelectedProjectHasDefaultThread()
                 try await refreshSkills()
                 refreshModsSurface()
                 refreshConversationState()
@@ -1929,6 +1933,62 @@ final class AppModel: ObservableObject {
         if let selectedThreadID {
             try await preferenceRepository.setPreference(key: .lastOpenedThreadID, value: selectedThreadID.uuidString)
         }
+    }
+
+    private func prepareProjectFolderStructure(projectPath: String) async throws {
+        let fileManager = FileManager.default
+        let projectURL = URL(fileURLWithPath: projectPath, isDirectory: true)
+
+        // Human-owned project artifacts.
+        try fileManager.createDirectory(
+            at: projectURL.appendingPathComponent("chats", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: projectURL.appendingPathComponent("artifacts", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: projectURL.appendingPathComponent("mods", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        // Project-scoped skills live under .agents/skills (managed by the app, not the agent).
+        try fileManager.createDirectory(
+            at: projectURL.appendingPathComponent(".agents/skills", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        let memoryStore = ProjectMemoryStore(projectPath: projectPath)
+        try await memoryStore.ensureStructure()
+    }
+
+    private func ensureSelectedProjectHasDefaultThread() async throws {
+        guard let selectedProjectID,
+              let threadRepository
+        else {
+            return
+        }
+
+        let threads = try await threadRepository.listThreads(projectID: selectedProjectID)
+        if !threads.isEmpty {
+            return
+        }
+
+        let title = "New chat"
+        let thread = try await threadRepository.createThread(projectID: selectedProjectID, title: title)
+
+        try await chatSearchRepository?.indexThreadTitle(
+            threadID: thread.id,
+            projectID: selectedProjectID,
+            title: title
+        )
+
+        try await refreshThreads()
+        selectedThreadID = thread.id
+        try await persistSelection()
+        refreshConversationState()
+        appendLog(.info, "Created default thread for project \(selectedProjectID.uuidString)")
     }
 
     private func refreshConversationState() {
