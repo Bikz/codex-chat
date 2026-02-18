@@ -272,6 +272,51 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertEqual(afterDelete.first?.sortIndex, 0)
     }
 
+    func testRewriteSkillPathsMigratesEnabledEntriesToNewRoot() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let project = try await repositories.projectRepository.createProject(
+            named: "Skills",
+            path: "/tmp/old-root/projects/skills",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/old-root/projects/skills/.agents/skills/a",
+            enabled: true
+        )
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/old-root/projects/skills/.agents/skills/b",
+            enabled: false
+        )
+
+        try await repositories.projectSkillEnablementRepository.rewriteSkillPaths(
+            projectID: project.id,
+            fromRootPath: "/tmp/old-root",
+            toRootPath: "/tmp/new-root"
+        )
+
+        let enabled = try await repositories.projectSkillEnablementRepository.enabledSkillPaths(projectID: project.id)
+        XCTAssertTrue(enabled.contains("/tmp/new-root/projects/skills/.agents/skills/a"))
+        XCTAssertFalse(enabled.contains("/tmp/old-root/projects/skills/.agents/skills/a"))
+
+        let oldDisabledState = try await repositories.projectSkillEnablementRepository.isSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/old-root/projects/skills/.agents/skills/b"
+        )
+        XCTAssertFalse(oldDisabledState)
+
+        let newDisabledState = try await repositories.projectSkillEnablementRepository.isSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/new-root/projects/skills/.agents/skills/b"
+        )
+        XCTAssertFalse(newDisabledState)
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-test-\(UUID().uuidString).sqlite")

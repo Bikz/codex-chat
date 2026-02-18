@@ -1,6 +1,11 @@
 import AppKit
 import Foundation
 
+struct StorageRootMigrationResult {
+    let oldPaths: CodexChatStoragePaths
+    let newPaths: CodexChatStoragePaths
+}
+
 extension AppModel {
     func applyStartupStorageFixups() async throws {
         guard let projectRepository else {
@@ -66,55 +71,50 @@ extension AppModel {
 
     private func applyStorageRootChange(to newRootURL: URL) async {
         do {
-            let oldPaths = storagePaths
-            let newPaths = CodexChatStoragePaths(rootURL: newRootURL)
-
-            try CodexChatStorageMigrationCoordinator.validateRootSelection(
-                newRootURL: newPaths.rootURL,
-                currentRootURL: oldPaths.rootURL
-            )
-
-            let unexpected = try CodexChatStorageMigrationCoordinator.unexpectedTopLevelEntries(in: newPaths.rootURL)
-            if !unexpected.isEmpty, !confirmRootCollision(entries: unexpected) {
-                storageStatusMessage = "Storage root change cancelled."
-                return
-            }
-
-            try newPaths.ensureRootStructure()
-            try CodexChatStorageMigrationCoordinator.migrateManagedRoot(from: oldPaths, to: newPaths)
-
-            try await rewriteMetadataForManagedRootChange(oldPaths: oldPaths, newPaths: newPaths)
-            try CodexChatStorageMigrationCoordinator.syncSQLiteFiles(
-                sourceSQLiteURL: oldPaths.metadataDatabaseURL,
-                destinationSQLiteURL: newPaths.metadataDatabaseURL,
-                overwriteExisting: true
-            )
-
-            CodexChatStoragePaths.persistRootURL(newPaths.rootURL)
-            storageRootPath = newPaths.rootURL.path
-
-            do {
-                try CodexChatStorageMigrationCoordinator.deleteRootIfExists(oldPaths.rootURL)
-                storageStatusMessage = "Storage root moved to \(newPaths.rootURL.path). Restarting is required."
-            } catch {
-                storageStatusMessage = "Storage root moved, but old root could not be removed: \(error.localizedDescription)"
-                appendLog(.warning, "Failed to remove old storage root at \(oldPaths.rootURL.path): \(error.localizedDescription)")
-            }
-
-            appendLog(.info, "Storage root changed from \(oldPaths.rootURL.path) to \(newPaths.rootURL.path)")
-            showRestartRequiredAlert()
+            let result = try await migrateStorageRoot(to: newRootURL)
+            storageStatusMessage = "Storage root moved to \(result.newPaths.rootURL.path). Restarting is required."
+            appendLog(.info, "Storage root changed from \(result.oldPaths.rootURL.path) to \(result.newPaths.rootURL.path)")
+            showRestartRequiredAlert(oldRootURL: result.oldPaths.rootURL)
         } catch {
             storageStatusMessage = "Failed to change storage root: \(error.localizedDescription)"
             appendLog(.error, "Storage root change failed: \(error.localizedDescription)")
         }
     }
 
-    private func rewriteMetadataForManagedRootChange(
+    func migrateStorageRoot(to newRootURL: URL) async throws -> StorageRootMigrationResult {
+        let oldPaths = storagePaths
+        let newPaths = CodexChatStoragePaths(rootURL: newRootURL)
+
+        try CodexChatStorageMigrationCoordinator.validateRootSelection(
+            newRootURL: newPaths.rootURL,
+            currentRootURL: oldPaths.rootURL
+        )
+
+        let unexpected = try CodexChatStorageMigrationCoordinator.unexpectedTopLevelEntries(in: newPaths.rootURL)
+        if !unexpected.isEmpty, !confirmRootCollision(entries: unexpected) {
+            throw CodexChatStorageMigrationError.invalidRootSelection("Storage root change cancelled by user.")
+        }
+
+        try newPaths.ensureRootStructure()
+        try CodexChatStorageMigrationCoordinator.migrateManagedRoot(from: oldPaths, to: newPaths)
+
+        try await rewriteMetadataForManagedRootChange(oldPaths: oldPaths, newPaths: newPaths)
+        try CodexChatStorageMigrationCoordinator.syncSQLiteFiles(
+            sourceSQLiteURL: oldPaths.metadataDatabaseURL,
+            destinationSQLiteURL: newPaths.metadataDatabaseURL,
+            overwriteExisting: true
+        )
+
+        CodexChatStoragePaths.persistRootURL(newPaths.rootURL)
+        storageRootPath = newPaths.rootURL.path
+        return StorageRootMigrationResult(oldPaths: oldPaths, newPaths: newPaths)
+    }
+
+    func rewriteMetadataForManagedRootChange(
         oldPaths: CodexChatStoragePaths,
         newPaths: CodexChatStoragePaths
     ) async throws {
-        guard let projectRepository,
-              let preferenceRepository
+        guard let projectRepository
         else {
             return
         }
@@ -133,17 +133,37 @@ extension AppModel {
             if newPath != project.path {
                 _ = try await projectRepository.updateProjectPath(id: project.id, path: newPath)
             }
+
+            if let existingProjectModPath = project.uiModPath,
+               existingProjectModPath.hasPrefix(oldRootPath)
+            {
+                let modSuffix = String(existingProjectModPath.dropFirst(oldRootPath.count))
+                let rewrittenModPath = (newRootPath + modSuffix).replacingOccurrences(of: "//", with: "/")
+                if rewrittenModPath != existingProjectModPath {
+                    _ = try await projectRepository.updateProjectUIModPath(id: project.id, uiModPath: rewrittenModPath)
+                }
+            }
+
+            if let projectSkillEnablementRepository {
+                try await projectSkillEnablementRepository.rewriteSkillPaths(
+                    projectID: project.id,
+                    fromRootPath: oldRootPath,
+                    toRootPath: newRootPath
+                )
+            }
         }
 
-        if let globalModPath = try await preferenceRepository.getPreference(key: .globalUIModPath),
-           globalModPath.hasPrefix(oldPaths.globalModsURL.path)
-        {
-            let suffix = String(globalModPath.dropFirst(oldPaths.globalModsURL.path.count))
-            let normalizedSuffix = suffix.hasPrefix("/") ? suffix : "/\(suffix)"
-            try await preferenceRepository.setPreference(
-                key: .globalUIModPath,
-                value: newPaths.globalModsURL.path + normalizedSuffix
-            )
+        if let preferenceRepository {
+            if let globalModPath = try await preferenceRepository.getPreference(key: .globalUIModPath),
+               globalModPath.hasPrefix(oldPaths.globalModsURL.path)
+            {
+                let suffix = String(globalModPath.dropFirst(oldPaths.globalModsURL.path.count))
+                let normalizedSuffix = suffix.hasPrefix("/") ? suffix : "/\(suffix)"
+                try await preferenceRepository.setPreference(
+                    key: .globalUIModPath,
+                    value: newPaths.globalModsURL.path + normalizedSuffix
+                )
+            }
         }
 
         try await refreshProjects()
@@ -186,12 +206,19 @@ extension AppModel {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func showRestartRequiredAlert() {
+    private func showRestartRequiredAlert(oldRootURL: URL) {
         let alert = NSAlert()
         alert.messageText = "Restart Required"
         alert.informativeText = "CodexChat moved your managed storage root. The app will now close so it can reopen with the new root."
         alert.addButton(withTitle: "Close App")
         _ = alert.runModal()
+
+        do {
+            try CodexChatStorageMigrationCoordinator.deleteRootIfExists(oldRootURL)
+        } catch {
+            appendLog(.warning, "Failed to remove old storage root at \(oldRootURL.path): \(error.localizedDescription)")
+        }
+
         NSApp.terminate(nil)
     }
 }

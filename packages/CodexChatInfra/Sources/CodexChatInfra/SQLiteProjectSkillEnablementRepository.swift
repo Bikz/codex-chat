@@ -72,4 +72,57 @@ public final class SQLiteProjectSkillEnablementRepository: ProjectSkillEnablemen
             return Set(entities.map(\.skillPath))
         }
     }
+
+    public func rewriteSkillPaths(projectID: UUID, fromRootPath: String, toRootPath: String) async throws {
+        let normalizedFrom = URL(fileURLWithPath: fromRootPath, isDirectory: true).standardizedFileURL.path
+        let normalizedTo = URL(fileURLWithPath: toRootPath, isDirectory: true).standardizedFileURL.path
+
+        guard normalizedFrom != normalizedTo else {
+            return
+        }
+
+        try await dbQueue.write { db in
+            let projectIDString = projectID.uuidString
+            let entities = try ProjectSkillEnablementEntity
+                .filter(Column("projectID") == projectIDString)
+                .fetchAll(db)
+
+            for entity in entities where entity.skillPath.hasPrefix(normalizedFrom) {
+                let suffix = String(entity.skillPath.dropFirst(normalizedFrom.count))
+                let rewrittenPath = (normalizedTo + suffix).replacingOccurrences(of: "//", with: "/")
+                guard rewrittenPath != entity.skillPath else { continue }
+
+                var destinationEntity = try ProjectSkillEnablementEntity.fetchOne(
+                    db,
+                    key: ["projectID": projectIDString, "skillPath": rewrittenPath]
+                )
+
+                if destinationEntity == nil {
+                    destinationEntity = ProjectSkillEnablementEntity(
+                        record: ProjectSkillEnablementRecord(
+                            projectID: projectID,
+                            skillPath: rewrittenPath,
+                            enabled: entity.enabled,
+                            updatedAt: Date()
+                        )
+                    )
+                } else if var existing = destinationEntity {
+                    existing.enabled = existing.enabled || entity.enabled
+                    existing.updatedAt = Date()
+                    destinationEntity = existing
+                }
+
+                try db.execute(
+                    sql: """
+                    DELETE FROM project_skill_enablements
+                    WHERE projectID = ? AND skillPath = ?
+                    """,
+                    arguments: [projectIDString, entity.skillPath]
+                )
+                if let destinationEntity {
+                    try destinationEntity.save(db)
+                }
+            }
+        }
+    }
 }

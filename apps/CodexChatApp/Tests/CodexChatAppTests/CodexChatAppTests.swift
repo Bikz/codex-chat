@@ -250,6 +250,103 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(model.accountDisplayName, "bikram@example.com")
     }
 
+    @MainActor
+    func testAccountDisplayNameFallsBackToAccountWhenNameAndEmailMissing() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.accountState = RuntimeAccountState(
+            account: RuntimeAccountSummary(
+                type: "chatgpt",
+                name: nil,
+                email: nil,
+                planType: nil
+            ),
+            authMode: .chatGPT,
+            requiresOpenAIAuth: true
+        )
+
+        XCTAssertEqual(model.accountDisplayName, "Account")
+    }
+
+    @MainActor
+    func testLoadRuntimeDefaultsFromPreferencesRestoresValues() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-runtime-defaults-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let safety = ProjectSafetySettings(
+            sandboxMode: .workspaceWrite,
+            approvalPolicy: .onRequest,
+            networkAccess: true,
+            webSearch: .live
+        )
+
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeDefaultModel,
+            value: "gpt-5"
+        )
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeDefaultReasoning,
+            value: AppModel.ReasoningLevel.high.rawValue
+        )
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeDefaultWebSearch,
+            value: ProjectWebSearchMode.disabled.rawValue
+        )
+        let encodedSafety = try JSONEncoder().encode(safety)
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeDefaultSafety,
+            value: String(decoding: encodedSafety, as: UTF8.self)
+        )
+        let encodedFlags = try JSONEncoder().encode([AppModel.ExperimentalFlag.parallelToolCalls.rawValue])
+        try await repositories.preferenceRepository.setPreference(
+            key: .runtimeExperimentalFlags,
+            value: String(decoding: encodedFlags, as: UTF8.self)
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.loadRuntimeDefaultsFromPreferences()
+
+        XCTAssertEqual(model.defaultModel, "gpt-5")
+        XCTAssertEqual(model.defaultReasoning, .high)
+        XCTAssertEqual(model.defaultWebSearch, .disabled)
+        XCTAssertEqual(model.defaultSafetySettings, safety)
+        XCTAssertTrue(model.experimentalFlags.contains(.parallelToolCalls))
+    }
+
+    @MainActor
+    func testEffectiveWebSearchModeClampsToProjectPolicy() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        XCTAssertEqual(model.effectiveWebSearchMode(preferred: .live, projectPolicy: .cached), .cached)
+        XCTAssertEqual(model.effectiveWebSearchMode(preferred: .live, projectPolicy: .disabled), .disabled)
+        XCTAssertEqual(model.effectiveWebSearchMode(preferred: .disabled, projectPolicy: .live), .disabled)
+    }
+
+    @MainActor
+    func testShouldRetryWithoutTurnOptionsForUnsupportedModelOrReasoning() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        XCTAssertTrue(
+            model.shouldRetryWithoutTurnOptions(
+                CodexRuntimeError.rpcError(code: -32602, message: "Unknown model: gpt-5-codex")
+            )
+        )
+        XCTAssertTrue(
+            model.shouldRetryWithoutTurnOptions(
+                CodexRuntimeError.rpcError(code: -32602, message: "Invalid reasoningEffort value")
+            )
+        )
+        XCTAssertFalse(
+            model.shouldRetryWithoutTurnOptions(
+                CodexRuntimeError.rpcError(code: -32601, message: "Unknown method")
+            )
+        )
+    }
+
     func testMemoryAutoSummaryFormattingRespectsMode() {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let threadID = UUID()
@@ -606,13 +703,10 @@ final class CodexChatAppTests: XCTestCase {
             .summaryLog,
             text: """
             # Summary Log
-
             ## 2026-02-18 12:00:00
-
             - Thread: `\(thread.id.uuidString)`
             - User: keep this memory
             - Assistant: remembered phrase for archive test
-
             """
         )
         let before = try await store.keywordSearch(query: "remembered phrase")
@@ -733,6 +827,112 @@ final class CodexChatAppTests: XCTestCase {
         try await waitUntil {
             FileManager.default.fileExists(atPath: projectURL.appendingPathComponent(".git").path)
         }
+    }
+
+    @MainActor
+    func testRewriteMetadataForManagedRootChangeRewritesProjectModAndSkillPaths() async throws {
+        let oldRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-root-old-\(UUID().uuidString)", isDirectory: true)
+        let newRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-root-new-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: oldRoot)
+            try? FileManager.default.removeItem(at: newRoot)
+        }
+
+        let oldPaths = CodexChatStoragePaths(rootURL: oldRoot)
+        let newPaths = CodexChatStoragePaths(rootURL: newRoot)
+        try oldPaths.ensureRootStructure()
+        try newPaths.ensureRootStructure()
+
+        let database = try MetadataDatabase(databaseURL: oldPaths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+
+        let projectPath = oldPaths.projectsURL.appendingPathComponent("Workspace", isDirectory: true).path
+        let project = try await repositories.projectRepository.createProject(
+            named: "Workspace",
+            path: projectPath,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        _ = try await repositories.projectRepository.updateProjectUIModPath(
+            id: project.id,
+            uiModPath: oldPaths.projectsURL.appendingPathComponent("Workspace/mods/theme", isDirectory: true).path
+        )
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            projectID: project.id,
+            skillPath: oldPaths.projectsURL.appendingPathComponent("Workspace/.agents/skills/my-skill", isDirectory: true).path,
+            enabled: true
+        )
+        try await repositories.preferenceRepository.setPreference(
+            key: .globalUIModPath,
+            value: oldPaths.globalModsURL.appendingPathComponent("global-theme", isDirectory: true).path
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil, storagePaths: oldPaths)
+        try await model.refreshProjects()
+        try await model.rewriteMetadataForManagedRootChange(oldPaths: oldPaths, newPaths: newPaths)
+
+        let rewritten = try await repositories.projectRepository.getProject(id: project.id)
+        XCTAssertEqual(rewritten?.path, newPaths.projectsURL.appendingPathComponent("Workspace", isDirectory: true).path)
+        XCTAssertEqual(
+            rewritten?.uiModPath,
+            newPaths.projectsURL.appendingPathComponent("Workspace/mods/theme", isDirectory: true).path
+        )
+
+        let enabledPaths = try await repositories.projectSkillEnablementRepository.enabledSkillPaths(projectID: project.id)
+        XCTAssertTrue(enabledPaths.contains(newPaths.projectsURL.appendingPathComponent("Workspace/.agents/skills/my-skill", isDirectory: true).path))
+        XCTAssertFalse(enabledPaths.contains(oldPaths.projectsURL.appendingPathComponent("Workspace/.agents/skills/my-skill", isDirectory: true).path))
+
+        let globalModPath = try await repositories.preferenceRepository.getPreference(key: .globalUIModPath)
+        XCTAssertEqual(globalModPath, newPaths.globalModsURL.appendingPathComponent("global-theme", isDirectory: true).path)
+    }
+
+    @MainActor
+    func testMigrateStorageRootDoesNotDeleteOldRootUntilRestartStep() async throws {
+        let defaults = UserDefaults.standard
+        let priorRoot = defaults.string(forKey: CodexChatStoragePaths.rootPreferenceKey)
+        defer {
+            if let priorRoot {
+                defaults.set(priorRoot, forKey: CodexChatStoragePaths.rootPreferenceKey)
+            } else {
+                defaults.removeObject(forKey: CodexChatStoragePaths.rootPreferenceKey)
+            }
+        }
+
+        let oldRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-migrate-old-\(UUID().uuidString)", isDirectory: true)
+        let newRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-migrate-new-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: oldRoot)
+            try? FileManager.default.removeItem(at: newRoot)
+        }
+
+        let oldPaths = CodexChatStoragePaths(rootURL: oldRoot)
+        try oldPaths.ensureRootStructure()
+        let sentinel = oldRoot.appendingPathComponent("sentinel.txt", isDirectory: false)
+        try "still here".write(to: sentinel, atomically: true, encoding: .utf8)
+
+        let database = try MetadataDatabase(databaseURL: oldPaths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        _ = try await repositories.projectRepository.createProject(
+            named: "Project",
+            path: oldPaths.projectsURL.appendingPathComponent("Project", isDirectory: true).path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil, storagePaths: oldPaths)
+        try await model.refreshProjects()
+
+        let result = try await model.migrateStorageRoot(to: newRoot)
+
+        XCTAssertEqual(result.oldPaths.rootURL.path, oldRoot.path)
+        XCTAssertEqual(result.newPaths.rootURL.path, newRoot.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldRoot.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.newPaths.metadataDatabaseURL.path))
     }
 
     func testShellSplitTreeSupportsRecursiveSplitAndCloseCollapse() {

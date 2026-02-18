@@ -70,6 +70,7 @@ public protocol ProjectSkillEnablementRepository: Sendable {
     func setSkillEnabled(projectID: UUID, skillPath: String, enabled: Bool) async throws
     func isSkillEnabled(projectID: UUID, skillPath: String) async throws -> Bool
     func enabledSkillPaths(projectID: UUID) async throws -> Set<String>
+    func rewriteSkillPaths(projectID: UUID, fromRootPath: String, toRootPath: String) async throws
 }
 
 public protocol ChatSearchRepository: Sendable {
