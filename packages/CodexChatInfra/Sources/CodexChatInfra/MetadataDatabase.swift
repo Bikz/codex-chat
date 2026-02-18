@@ -127,6 +127,22 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v7_add_project_skill_enablements") { db in
+            try db.create(table: "project_skill_enablements") { table in
+                table.column("projectID", .text).notNull()
+                    .references("projects", onDelete: .cascade)
+                table.column("skillPath", .text).notNull()
+                table.column("enabled", .boolean).notNull().defaults(to: true)
+                table.column("updatedAt", .datetime).notNull()
+                table.primaryKey(["projectID", "skillPath"])
+            }
+            try db.create(
+                index: "idx_project_skill_enablements_project",
+                on: "project_skill_enablements",
+                columns: ["projectID"]
+            )
+        }
+
         return migrator
     }
 }

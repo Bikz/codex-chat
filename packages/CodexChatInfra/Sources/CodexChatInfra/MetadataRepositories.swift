@@ -8,6 +8,7 @@ public struct MetadataRepositories: Sendable {
     public let preferenceRepository: any PreferenceRepository
     public let runtimeThreadMappingRepository: any RuntimeThreadMappingRepository
     public let projectSecretRepository: any ProjectSecretRepository
+    public let projectSkillEnablementRepository: any ProjectSkillEnablementRepository
     public let chatSearchRepository: any ChatSearchRepository
 
     public init(database: MetadataDatabase) {
@@ -16,6 +17,7 @@ public struct MetadataRepositories: Sendable {
         self.preferenceRepository = SQLitePreferenceRepository(dbQueue: database.dbQueue)
         self.runtimeThreadMappingRepository = SQLiteRuntimeThreadMappingRepository(dbQueue: database.dbQueue)
         self.projectSecretRepository = SQLiteProjectSecretRepository(dbQueue: database.dbQueue)
+        self.projectSkillEnablementRepository = SQLiteProjectSkillEnablementRepository(dbQueue: database.dbQueue)
         self.chatSearchRepository = SQLiteChatSearchRepository(dbQueue: database.dbQueue)
     }
 }
@@ -146,6 +148,31 @@ private struct ProjectSecretEntity: Codable, FetchableRecord, PersistableRecord 
             name: name,
             keychainAccount: keychainAccount,
             createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+}
+
+private struct ProjectSkillEnablementEntity: Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "project_skill_enablements"
+
+    var projectID: String
+    var skillPath: String
+    var enabled: Bool
+    var updatedAt: Date
+
+    init(record: ProjectSkillEnablementRecord) {
+        self.projectID = record.projectID.uuidString
+        self.skillPath = record.skillPath
+        self.enabled = record.enabled
+        self.updatedAt = record.updatedAt
+    }
+
+    var record: ProjectSkillEnablementRecord {
+        ProjectSkillEnablementRecord(
+            projectID: UUID(uuidString: projectID) ?? UUID(),
+            skillPath: skillPath,
+            enabled: enabled,
             updatedAt: updatedAt
         )
     }
@@ -395,6 +422,53 @@ public final class SQLiteProjectSecretRepository: ProjectSecretRepository, @unch
     public func deleteSecret(id: UUID) async throws {
         try await dbQueue.write { db in
             _ = try ProjectSecretEntity.deleteOne(db, key: ["id": id.uuidString])
+        }
+    }
+}
+
+public final class SQLiteProjectSkillEnablementRepository: ProjectSkillEnablementRepository, @unchecked Sendable {
+    private let dbQueue: DatabaseQueue
+
+    public init(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+
+    public func setSkillEnabled(projectID: UUID, skillPath: String, enabled: Bool) async throws {
+        let normalizedPath = skillPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPath.isEmpty else { return }
+
+        try await dbQueue.write { db in
+            let entity = ProjectSkillEnablementEntity(
+                record: ProjectSkillEnablementRecord(
+                    projectID: projectID,
+                    skillPath: normalizedPath,
+                    enabled: enabled,
+                    updatedAt: Date()
+                )
+            )
+            try entity.save(db)
+        }
+    }
+
+    public func isSkillEnabled(projectID: UUID, skillPath: String) async throws -> Bool {
+        let normalizedPath = skillPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPath.isEmpty else { return false }
+
+        return try await dbQueue.read { db in
+            let entity = try ProjectSkillEnablementEntity.fetchOne(
+                db,
+                key: ["projectID": projectID.uuidString, "skillPath": normalizedPath]
+            )
+            return entity?.enabled ?? false
+        }
+    }
+
+    public func enabledSkillPaths(projectID: UUID) async throws -> Set<String> {
+        try await dbQueue.read { db in
+            let entities = try ProjectSkillEnablementEntity
+                .filter(Column("projectID") == projectID.uuidString && Column("enabled") == true)
+                .fetchAll(db)
+            return Set(entities.map(\.skillPath))
         }
     }
 }

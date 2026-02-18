@@ -19,6 +19,7 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("preferences"))
         XCTAssertTrue(tableNames.contains("runtime_thread_mappings"))
         XCTAssertTrue(tableNames.contains("project_secrets"))
+        XCTAssertTrue(tableNames.contains("project_skill_enablements"))
         XCTAssertTrue(tableNames.contains("chat_search_index"))
     }
 
@@ -94,6 +95,30 @@ final class CodexChatInfraTests: XCTestCase {
         try await repositories.projectSecretRepository.deleteSecret(id: secret.id)
         let afterDelete = try await repositories.projectSecretRepository.listSecrets(projectID: project.id)
         XCTAssertTrue(afterDelete.isEmpty)
+
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/inbox/.agents/skills/my-skill",
+            enabled: true
+        )
+        let isEnabled = try await repositories.projectSkillEnablementRepository.isSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/inbox/.agents/skills/my-skill"
+        )
+        XCTAssertTrue(isEnabled)
+        let enabledPaths = try await repositories.projectSkillEnablementRepository.enabledSkillPaths(projectID: project.id)
+        XCTAssertTrue(enabledPaths.contains("/tmp/inbox/.agents/skills/my-skill"))
+
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/inbox/.agents/skills/my-skill",
+            enabled: false
+        )
+        let isEnabledAfterDisable = try await repositories.projectSkillEnablementRepository.isSkillEnabled(
+            projectID: project.id,
+            skillPath: "/tmp/inbox/.agents/skills/my-skill"
+        )
+        XCTAssertFalse(isEnabledAfterDisable)
 
         try await repositories.chatSearchRepository.indexThreadTitle(
             threadID: thread.id,

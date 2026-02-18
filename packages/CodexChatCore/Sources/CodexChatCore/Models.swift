@@ -42,6 +42,25 @@ public struct ProjectSafetySettings: Hashable, Sendable, Codable {
     }
 }
 
+public enum SkillInstallScope: String, CaseIterable, Hashable, Sendable, Codable {
+    case project
+    case global
+}
+
+public struct ProjectSkillEnablementRecord: Hashable, Sendable, Codable {
+    public let projectID: UUID
+    public let skillPath: String
+    public let enabled: Bool
+    public let updatedAt: Date
+
+    public init(projectID: UUID, skillPath: String, enabled: Bool, updatedAt: Date = Date()) {
+        self.projectID = projectID
+        self.skillPath = skillPath
+        self.enabled = enabled
+        self.updatedAt = updatedAt
+    }
+}
+
 public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var name: String

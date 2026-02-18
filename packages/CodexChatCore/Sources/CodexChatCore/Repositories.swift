@@ -34,6 +34,12 @@ public protocol ProjectSecretRepository: Sendable {
     func deleteSecret(id: UUID) async throws
 }
 
+public protocol ProjectSkillEnablementRepository: Sendable {
+    func setSkillEnabled(projectID: UUID, skillPath: String, enabled: Bool) async throws
+    func isSkillEnabled(projectID: UUID, skillPath: String) async throws -> Bool
+    func enabledSkillPaths(projectID: UUID) async throws -> Set<String>
+}
+
 public protocol ChatSearchRepository: Sendable {
     func indexThreadTitle(threadID: UUID, projectID: UUID, title: String) async throws
     func indexMessageExcerpt(threadID: UUID, projectID: UUID, text: String) async throws
