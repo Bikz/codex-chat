@@ -10,6 +10,7 @@ VERSION="${VERSION:-${GITHUB_REF_NAME:-dev}}"
 VERSION="${VERSION#refs/tags/}"
 BUILD_NUMBER="${BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 DIST_DIR="${DIST_DIR:-$ROOT/dist}"
+TARGET_ARCH="${TARGET_ARCH:-arm64}"
 
 SKIP_SIGNING="${SKIP_SIGNING:-0}"
 SKIP_NOTARIZATION="${SKIP_NOTARIZATION:-0}"
@@ -20,6 +21,7 @@ NOTARY_ISSUER_ID="${NOTARY_ISSUER_ID:-}"
 NOTARY_KEY_FILE="${NOTARY_KEY_FILE:-}"
 
 WORK_DIR="$ROOT/.release-work/$VERSION"
+BUILD_DIR="$WORK_DIR/.build"
 APP_BUNDLE_PATH="$WORK_DIR/$APP_PRODUCT_NAME.app"
 DMG_NAME="$APP_PRODUCT_NAME-$VERSION.dmg"
 DMG_PATH="$WORK_DIR/$DMG_NAME"
@@ -44,30 +46,37 @@ require_env() {
 }
 
 locate_release_binary() {
-  local package_root="$ROOT/apps/CodexChatApp"
-  local direct="$package_root/.build/release/$APP_EXECUTABLE_NAME"
+  local direct="$BUILD_DIR/release/$APP_EXECUTABLE_NAME"
   if [[ -x "$direct" ]]; then
     echo "$direct"
     return 0
   fi
 
   local candidate
-  candidate="$(find "$package_root/.build" -type f -name "$APP_EXECUTABLE_NAME" -path "*/release/*" | head -n 1 || true)"
+  candidate="$(find "$BUILD_DIR" -type f -name "$APP_EXECUTABLE_NAME" -path "*/release/*" | head -n 1 || true)"
   [[ -n "$candidate" ]] || fail "unable to locate release binary ($APP_EXECUTABLE_NAME)"
   echo "$candidate"
 }
 
 locate_resource_bundle() {
-  local package_root="$ROOT/apps/CodexChatApp"
   local candidate
-  candidate="$(find "$package_root/.build" -type d -name "*_CodexChatApp.bundle" -path "*/release/*" | head -n 1 || true)"
+  candidate="$(find "$BUILD_DIR" -type d -name "*_CodexChatApp.bundle" -path "*/release/*" | head -n 1 || true)"
   [[ -n "$candidate" ]] || fail "unable to locate SwiftPM resource bundle for CodexChatApp"
   echo "$candidate"
 }
 
+ensure_expected_arch() {
+  local actual_arch
+  actual_arch="$(uname -m)"
+  if [[ "$actual_arch" != "$TARGET_ARCH" ]]; then
+    fail "build host architecture is $actual_arch, expected $TARGET_ARCH"
+  fi
+}
+
 build_release_binary() {
   echo "Building release binary..."
-  (cd "$ROOT/apps/CodexChatApp" && swift build -c release)
+  rm -rf "$BUILD_DIR"
+  (cd "$ROOT/apps/CodexChatApp" && swift build -c release --scratch-path "$BUILD_DIR")
 }
 
 create_app_bundle() {
@@ -114,8 +123,14 @@ EOF
 
 sign_item() {
   local path="$1"
+  local kind="${2:-generic}"
   echo "Signing $path"
-  codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$path"
+  if [[ "$kind" == "app" ]]; then
+    codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$path"
+    return 0
+  fi
+
+  codesign --force --timestamp --sign "$CODESIGN_IDENTITY" "$path"
 }
 
 verify_signature() {
@@ -137,6 +152,20 @@ notarize_and_staple() {
   xcrun stapler staple "$path"
 }
 
+validate_notarized_item() {
+  local path="$1"
+  local kind="$2"
+
+  xcrun stapler validate "$path"
+
+  if [[ "$kind" == "dmg" ]]; then
+    spctl --assess --type open --verbose "$path"
+    return 0
+  fi
+
+  spctl --assess --type execute --verbose "$path"
+}
+
 create_dmg() {
   local dmg_source="$WORK_DIR/dmg-root"
   rm -rf "$dmg_source"
@@ -153,9 +182,11 @@ main() {
   require_command hdiutil
   require_command xcrun
   require_command shasum
+  require_command uname
 
   mkdir -p "$WORK_DIR"
   mkdir -p "$DIST_DIR"
+  ensure_expected_arch
 
   if [[ "$SKIP_NOTARIZATION" != "1" && "$SKIP_SIGNING" == "1" ]]; then
     fail "notarization requires signing; remove SKIP_SIGNING or set SKIP_NOTARIZATION=1"
@@ -184,27 +215,33 @@ main() {
   create_app_bundle "$binary_path" "$resource_bundle_path"
 
   if [[ "$SKIP_SIGNING" != "1" ]]; then
-    sign_item "$APP_BUNDLE_PATH"
+    sign_item "$APP_BUNDLE_PATH" "app"
     verify_signature "$APP_BUNDLE_PATH"
   fi
 
   if [[ "$SKIP_NOTARIZATION" != "1" ]]; then
     notarize_and_staple "$APP_BUNDLE_PATH"
+    validate_notarized_item "$APP_BUNDLE_PATH" "app"
   fi
 
   create_dmg
 
   if [[ "$SKIP_SIGNING" != "1" ]]; then
-    sign_item "$DMG_PATH"
+    sign_item "$DMG_PATH" "dmg"
   fi
 
   if [[ "$SKIP_NOTARIZATION" != "1" ]]; then
     notarize_and_staple "$DMG_PATH"
+    validate_notarized_item "$DMG_PATH" "dmg"
   fi
 
   local final_dmg="$DIST_DIR/$DMG_NAME"
   cp "$DMG_PATH" "$final_dmg"
   shasum -a 256 "$final_dmg" > "$final_dmg.sha256"
+
+  if [[ "$SKIP_NOTARIZATION" != "1" ]]; then
+    validate_notarized_item "$final_dmg" "dmg"
+  fi
 
   echo "Release artifacts:"
   echo "  $final_dmg"

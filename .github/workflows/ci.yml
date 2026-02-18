@@ -95,3 +95,37 @@ jobs:
 
       - name: Full checks
         run: make ci
+
+  release-dry-run:
+    runs-on: macos-14
+    needs: fast-checks
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Apple Silicon runner
+        run: |
+          set -euo pipefail
+          ARCH="$(uname -m)"
+          if [[ "$ARCH" != "arm64" ]]; then
+            echo "Apple Silicon runner required for release dry-run. Got: $ARCH" >&2
+            exit 1
+          fi
+
+      - name: Cache SwiftPM + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/.build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swift-${{ hashFiles('**/Package.swift', '**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swift-
+
+      - name: Release packaging dry run
+        run: |
+          SKIP_SIGNING=1 \
+          SKIP_NOTARIZATION=1 \
+          TARGET_ARCH=arm64 \
+          VERSION=ci-${{ github.run_number }} \
+          ./scripts/release/build-notarized-dmg.sh

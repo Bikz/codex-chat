@@ -16,13 +16,22 @@ permissions:
 
 jobs:
   build-notarize-release:
-    runs-on: macos-latest
+    runs-on: macos-14
     timeout-minutes: 60
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify Apple Silicon runner
+        run: |
+          set -euo pipefail
+          ARCH="$(uname -m)"
+          if [[ "$ARCH" != "arm64" ]]; then
+            echo "Apple Silicon runner required. Got: $ARCH" >&2
+            exit 1
+          fi
 
       - name: Resolve version
         run: |
@@ -48,6 +57,7 @@ jobs:
 
           CERT_PATH="$RUNNER_TEMP/developer-id.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/release-signing.keychain-db"
+          echo "CI_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
           echo "$APPLE_DEVELOPER_ID_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
 
@@ -107,3 +117,10 @@ jobs:
           files: |
             dist/*.dmg
             dist/*.sha256
+
+      - name: Cleanup signing keychain
+        if: always()
+        run: |
+          if [[ -n "${CI_SIGNING_KEYCHAIN:-}" && -f "$CI_SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$CI_SIGNING_KEYCHAIN" || true
+          fi

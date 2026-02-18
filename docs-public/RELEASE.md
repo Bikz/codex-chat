@@ -2,6 +2,11 @@
 
 CodexChat ships direct-download releases via a signed, notarized, stapled DMG attached to GitHub Releases.
 
+## Architecture Support
+
+- Current direct-download channel ships **Apple Silicon (`arm64`) only**.
+- Release workflow and packaging script enforce `arm64` runners/hosts.
+
 ## Trigger
 
 - Push a version tag: `v*` (example: `v0.2.0`).
@@ -29,6 +34,12 @@ VERSION=v0.2.0 ./scripts/release/build-notarized-dmg.sh
 - Output artifacts:
   - `dist/CodexChat-<version>.dmg`
   - `dist/CodexChat-<version>.dmg.sha256`
+
+The script validates notarization/stapling after upload:
+
+- `xcrun stapler validate` for both `.app` and `.dmg`
+- `spctl --assess --type execute` for app bundle
+- `spctl --assess --type open` for DMG
 
 ## Local Non-Notarized Dry Run
 
