@@ -303,10 +303,28 @@ public final class SkillCatalogService: @unchecked Sendable {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = URL(string: trimmed)?.lastPathComponent
             ?? trimmed.split(separator: "/").last.map(String.init)
-            ?? "skill-\(UUID().uuidString.prefix(8))"
-        let sanitized = base.replacingOccurrences(of: ".git", with: "")
+            ?? ""
+
+        let withoutSuffix = base
+            .replacingOccurrences(of: ".git", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? "skill-\(UUID().uuidString.prefix(8))" : sanitized
+
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let scalars = withoutSuffix.unicodeScalars.map { scalar -> Character in
+            if allowed.contains(scalar) {
+                return Character(scalar)
+            }
+            return "-"
+        }
+
+        let collapsed = String(scalars)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-."))
+
+        if collapsed.isEmpty || collapsed == "." || collapsed == ".." {
+            return "skill-\(UUID().uuidString.prefix(8))"
+        }
+
+        return collapsed
     }
 
     private func parseSkillMetadata(at skillFileURL: URL) throws -> ParsedSkillMetadata {

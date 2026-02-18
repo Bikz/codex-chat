@@ -67,6 +67,58 @@ final class CodexSkillsTests: XCTestCase {
         XCTAssertFalse(service.isTrustedSource("git@unknown.example.com:owner/skill.git"))
     }
 
+    func testInstallSkillSanitizesDestinationName() throws {
+        final class ArgvCapture: @unchecked Sendable {
+            private let lock = NSLock()
+            private var argv: [String] = []
+
+            func set(_ argv: [String]) {
+                lock.lock()
+                self.argv = argv
+                lock.unlock()
+            }
+
+            func get() -> [String] {
+                lock.lock()
+                defer { lock.unlock() }
+                return argv
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-install-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let capturedArgv = ArgvCapture()
+
+        let service = SkillCatalogService(
+            codexHomeURL: codexHome,
+            agentsHomeURL: root.appendingPathComponent(".agents", isDirectory: true),
+            processRunner: { argv, _ in
+                capturedArgv.set(argv)
+                return "ok"
+            }
+        )
+
+        let result = try service.installSkill(
+            SkillInstallRequest(
+                source: "../..",
+                scope: .global,
+                projectPath: nil,
+                installer: .git
+            )
+        )
+
+        let argv = capturedArgv.get()
+        XCTAssertEqual(argv.prefix(3), ["git", "clone", "--depth"])
+        XCTAssertTrue(result.installedPath.hasPrefix(codexHome.appendingPathComponent("skills", isDirectory: true).path))
+        XCTAssertFalse(result.installedPath.contains("/../"))
+        XCTAssertNotEqual(URL(fileURLWithPath: result.installedPath).lastPathComponent, "..")
+        XCTAssertNotEqual(URL(fileURLWithPath: result.installedPath).lastPathComponent, ".")
+    }
+
     private func createSkill(at directoryURL: URL, body: String, includeScripts: Bool = false) throws {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let skillFile = directoryURL.appendingPathComponent("SKILL.md", isDirectory: false)
