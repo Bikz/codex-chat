@@ -18,3 +18,8 @@ public protocol PreferenceRepository: Sendable {
     func setPreference(key: AppPreferenceKey, value: String) async throws
     func getPreference(key: AppPreferenceKey) async throws -> String?
 }
+
+public protocol RuntimeThreadMappingRepository: Sendable {
+    func setRuntimeThreadID(localThreadID: UUID, runtimeThreadID: String) async throws
+    func getRuntimeThreadID(localThreadID: UUID) async throws -> String?
+}

@@ -54,6 +54,21 @@ public final class MetadataDatabase: @unchecked Sendable {
             }
         }
 
+        migrator.registerMigration("v2_add_runtime_thread_mappings") { db in
+            try db.create(table: "runtime_thread_mappings") { table in
+                table.column("localThreadID", .text).notNull().primaryKey()
+                    .references("threads", onDelete: .cascade)
+                table.column("runtimeThreadID", .text).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_runtime_thread_mappings_runtime_id",
+                on: "runtime_thread_mappings",
+                columns: ["runtimeThreadID"],
+                unique: true
+            )
+        }
+
         return migrator
     }
 }

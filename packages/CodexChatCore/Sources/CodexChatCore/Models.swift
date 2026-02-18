@@ -36,6 +36,18 @@ public struct ThreadRecord: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+public struct RuntimeThreadMappingRecord: Hashable, Sendable, Codable {
+    public let localThreadID: UUID
+    public let runtimeThreadID: String
+    public let updatedAt: Date
+
+    public init(localThreadID: UUID, runtimeThreadID: String, updatedAt: Date = Date()) {
+        self.localThreadID = localThreadID
+        self.runtimeThreadID = runtimeThreadID
+        self.updatedAt = updatedAt
+    }
+}
+
 public struct AppPreferenceRecord: Hashable, Sendable, Codable {
     public var key: String
     public var value: String
@@ -70,6 +82,54 @@ public struct ChatMessage: Identifiable, Hashable, Sendable, Codable {
         self.role = role
         self.text = text
         self.createdAt = createdAt
+    }
+}
+
+public struct ActionCard: Identifiable, Hashable, Sendable {
+    public let id: UUID
+    public let threadID: UUID
+    public let method: String
+    public let title: String
+    public let detail: String
+    public let createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        threadID: UUID,
+        method: String,
+        title: String,
+        detail: String,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.method = method
+        self.title = title
+        self.detail = detail
+        self.createdAt = createdAt
+    }
+}
+
+public enum TranscriptEntry: Identifiable, Hashable, Sendable {
+    case message(ChatMessage)
+    case actionCard(ActionCard)
+
+    public var id: UUID {
+        switch self {
+        case .message(let message):
+            return message.id
+        case .actionCard(let card):
+            return card.id
+        }
+    }
+
+    public var threadID: UUID {
+        switch self {
+        case .message(let message):
+            return message.threadId
+        case .actionCard(let card):
+            return card.threadID
+        }
     }
 }
 

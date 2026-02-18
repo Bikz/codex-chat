@@ -6,11 +6,13 @@ public struct MetadataRepositories: Sendable {
     public let projectRepository: any ProjectRepository
     public let threadRepository: any ThreadRepository
     public let preferenceRepository: any PreferenceRepository
+    public let runtimeThreadMappingRepository: any RuntimeThreadMappingRepository
 
     public init(database: MetadataDatabase) {
         self.projectRepository = SQLiteProjectRepository(dbQueue: database.dbQueue)
         self.threadRepository = SQLiteThreadRepository(dbQueue: database.dbQueue)
         self.preferenceRepository = SQLitePreferenceRepository(dbQueue: database.dbQueue)
+        self.runtimeThreadMappingRepository = SQLiteRuntimeThreadMappingRepository(dbQueue: database.dbQueue)
     }
 }
 
@@ -72,6 +74,28 @@ private struct PreferenceEntity: Codable, FetchableRecord, PersistableRecord {
 
     var key: String
     var value: String
+}
+
+private struct RuntimeThreadMappingEntity: Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "runtime_thread_mappings"
+
+    var localThreadID: String
+    var runtimeThreadID: String
+    var updatedAt: Date
+
+    init(record: RuntimeThreadMappingRecord) {
+        self.localThreadID = record.localThreadID.uuidString
+        self.runtimeThreadID = record.runtimeThreadID
+        self.updatedAt = record.updatedAt
+    }
+
+    var record: RuntimeThreadMappingRecord {
+        RuntimeThreadMappingRecord(
+            localThreadID: UUID(uuidString: localThreadID) ?? UUID(),
+            runtimeThreadID: runtimeThreadID,
+            updatedAt: updatedAt
+        )
+    }
 }
 
 public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendable {
@@ -182,6 +206,33 @@ public final class SQLitePreferenceRepository: PreferenceRepository, @unchecked 
     public func getPreference(key: AppPreferenceKey) async throws -> String? {
         try await dbQueue.read { db in
             try PreferenceEntity.fetchOne(db, key: ["key": key.rawValue])?.value
+        }
+    }
+}
+
+public final class SQLiteRuntimeThreadMappingRepository: RuntimeThreadMappingRepository, @unchecked Sendable {
+    private let dbQueue: DatabaseQueue
+
+    public init(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+
+    public func setRuntimeThreadID(localThreadID: UUID, runtimeThreadID: String) async throws {
+        try await dbQueue.write { db in
+            let entity = RuntimeThreadMappingEntity(
+                record: RuntimeThreadMappingRecord(
+                    localThreadID: localThreadID,
+                    runtimeThreadID: runtimeThreadID,
+                    updatedAt: Date()
+                )
+            )
+            try entity.save(db)
+        }
+    }
+
+    public func getRuntimeThreadID(localThreadID: UUID) async throws -> String? {
+        try await dbQueue.read { db in
+            try RuntimeThreadMappingEntity.fetchOne(db, key: ["localThreadID": localThreadID.uuidString])?.runtimeThreadID
         }
     }
 }

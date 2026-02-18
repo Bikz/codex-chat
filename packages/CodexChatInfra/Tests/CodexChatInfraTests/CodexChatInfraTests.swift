@@ -17,6 +17,7 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("projects"))
         XCTAssertTrue(tableNames.contains("threads"))
         XCTAssertTrue(tableNames.contains("preferences"))
+        XCTAssertTrue(tableNames.contains("runtime_thread_mappings"))
     }
 
     func testProjectThreadAndPreferencePersistence() async throws {
@@ -44,6 +45,13 @@ final class CodexChatInfraTests: XCTestCase {
 
         let persistedProjectPreference = try await repositories.preferenceRepository.getPreference(key: .lastOpenedProjectID)
         XCTAssertEqual(persistedProjectPreference, project.id.uuidString)
+
+        try await repositories.runtimeThreadMappingRepository.setRuntimeThreadID(
+            localThreadID: thread.id,
+            runtimeThreadID: "thr_123"
+        )
+        let runtimeThreadID = try await repositories.runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: thread.id)
+        XCTAssertEqual(runtimeThreadID, "thr_123")
     }
 
     private func temporaryDatabaseURL() -> URL {
