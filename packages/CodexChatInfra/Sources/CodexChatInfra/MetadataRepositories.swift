@@ -82,7 +82,7 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
     }
 
     public func listProjects() async throws -> [ProjectRecord] {
-        try dbQueue.read { db in
+        try await dbQueue.read { db in
             try ProjectEntity
                 .order(Column("updatedAt").desc)
                 .fetchAll(db)
@@ -91,22 +91,22 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
     }
 
     public func getProject(id: UUID) async throws -> ProjectRecord? {
-        try dbQueue.read { db in
+        try await dbQueue.read { db in
             try ProjectEntity.fetchOne(db, key: ["id": id.uuidString])?.record
         }
     }
 
     public func createProject(named name: String) async throws -> ProjectRecord {
-        let now = Date()
-        var entity = ProjectEntity(record: ProjectRecord(name: name, createdAt: now, updatedAt: now))
-        try dbQueue.write { db in
+        try await dbQueue.write { db in
+            let now = Date()
+            var entity = ProjectEntity(record: ProjectRecord(name: name, createdAt: now, updatedAt: now))
             try entity.insert(db)
+            return entity.record
         }
-        return entity.record
     }
 
     public func updateProjectName(id: UUID, name: String) async throws -> ProjectRecord {
-        try dbQueue.write { db in
+        try await dbQueue.write { db in
             guard var entity = try ProjectEntity.fetchOne(db, key: ["id": id.uuidString]) else {
                 throw CodexChatCoreError.missingRecord(id.uuidString)
             }
@@ -126,7 +126,7 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
     }
 
     public func listThreads(projectID: UUID) async throws -> [ThreadRecord] {
-        try dbQueue.read { db in
+        try await dbQueue.read { db in
             try ThreadEntity
                 .filter(Column("projectId") == projectID.uuidString)
                 .order(Column("updatedAt").desc)
@@ -136,24 +136,24 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
     }
 
     public func getThread(id: UUID) async throws -> ThreadRecord? {
-        try dbQueue.read { db in
+        try await dbQueue.read { db in
             try ThreadEntity.fetchOne(db, key: ["id": id.uuidString])?.record
         }
     }
 
     public func createThread(projectID: UUID, title: String) async throws -> ThreadRecord {
-        let now = Date()
-        var entity = ThreadEntity(
-            record: ThreadRecord(projectId: projectID, title: title, createdAt: now, updatedAt: now)
-        )
-        try dbQueue.write { db in
+        try await dbQueue.write { db in
+            let now = Date()
+            var entity = ThreadEntity(
+                record: ThreadRecord(projectId: projectID, title: title, createdAt: now, updatedAt: now)
+            )
             try entity.insert(db)
+            return entity.record
         }
-        return entity.record
     }
 
     public func updateThreadTitle(id: UUID, title: String) async throws -> ThreadRecord {
-        try dbQueue.write { db in
+        try await dbQueue.write { db in
             guard var entity = try ThreadEntity.fetchOne(db, key: ["id": id.uuidString]) else {
                 throw CodexChatCoreError.missingRecord(id.uuidString)
             }
@@ -173,14 +173,14 @@ public final class SQLitePreferenceRepository: PreferenceRepository, @unchecked 
     }
 
     public func setPreference(key: AppPreferenceKey, value: String) async throws {
-        try dbQueue.write { db in
+        try await dbQueue.write { db in
             var entity = PreferenceEntity(key: key.rawValue, value: value)
             try entity.save(db)
         }
     }
 
     public func getPreference(key: AppPreferenceKey) async throws -> String? {
-        try dbQueue.read { db in
+        try await dbQueue.read { db in
             try PreferenceEntity.fetchOne(db, key: ["key": key.rawValue])?.value
         }
     }
