@@ -14,6 +14,14 @@ From the repo root:
 pnpm -s run check
 ```
 
+## Fast Validation Loop
+
+For the fastest local loop (format-check, lint, and a tight unit test subset):
+
+```sh
+make quick
+```
+
 ## Run In Xcode
 
 Open the app package:

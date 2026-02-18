@@ -14,8 +14,13 @@ Run build + tests from the repo root:
 pnpm -s run check
 ```
 
+For the fastest local loop:
+
+```sh
+make quick
+```
+
 ## Packages
 
 - `apps/CodexChatApp`: macOS app.
 - `packages/*`: modular Swift packages (Core/Infra/UI/Runtime/Skills/Memory/Mods).
-
