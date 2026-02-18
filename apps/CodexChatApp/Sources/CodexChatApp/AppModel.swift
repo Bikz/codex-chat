@@ -20,7 +20,9 @@ final class AppModel: ObservableObject {
         let skill: DiscoveredSkill
         var isEnabledForProject: Bool
 
-        var id: String { skill.id }
+        var id: String {
+            skill.id
+        }
     }
 
     struct ModsSurfaceModel: Hashable {
@@ -54,9 +56,9 @@ final class AppModel: ObservableObject {
         var message: String {
             switch self {
             case .installCodex:
-                return "Codex CLI is not installed or not on PATH. Install Codex, then restart the runtime."
-            case .recoverable(let detail):
-                return detail
+                "Codex CLI is not installed or not on PATH. Install Codex, then restart the runtime."
+            case let .recoverable(detail):
+                detail
             }
         }
     }
@@ -113,7 +115,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
     @Published private(set) var isNodeSkillInstallerAvailable = false
 
-    @Published private(set) var effectiveThemeOverride: ModThemeOverride = ModThemeOverride()
+    @Published private(set) var effectiveThemeOverride: ModThemeOverride = .init()
 
     private let projectRepository: (any ProjectRepository)?
     private let threadRepository: (any ThreadRepository)?
@@ -151,24 +153,24 @@ final class AppModel: ObservableObject {
         skillCatalogService: SkillCatalogService = SkillCatalogService(),
         modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService()
     ) {
-        self.projectRepository = repositories?.projectRepository
-        self.threadRepository = repositories?.threadRepository
-        self.preferenceRepository = repositories?.preferenceRepository
-        self.runtimeThreadMappingRepository = repositories?.runtimeThreadMappingRepository
-        self.projectSecretRepository = repositories?.projectSecretRepository
-        self.projectSkillEnablementRepository = repositories?.projectSkillEnablementRepository
-        self.chatSearchRepository = repositories?.chatSearchRepository
+        projectRepository = repositories?.projectRepository
+        threadRepository = repositories?.threadRepository
+        preferenceRepository = repositories?.preferenceRepository
+        runtimeThreadMappingRepository = repositories?.runtimeThreadMappingRepository
+        projectSecretRepository = repositories?.projectSecretRepository
+        projectSkillEnablementRepository = repositories?.projectSkillEnablementRepository
+        chatSearchRepository = repositories?.chatSearchRepository
         self.runtime = runtime
         self.skillCatalogService = skillCatalogService
         self.modDiscoveryService = modDiscoveryService
-        self.keychainStore = APIKeychainStore()
-        self.isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
+        keychainStore = APIKeychainStore()
+        isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
 
         if let bootError {
-            self.projectsState = .failed(bootError)
-            self.threadsState = .failed(bootError)
-            self.conversationState = .failed(bootError)
-            self.skillsState = .failed(bootError)
+            projectsState = .failed(bootError)
+            threadsState = .failed(bootError)
+            conversationState = .failed(bootError)
+            skillsState = .failed(bootError)
             runtimeStatus = .error
             runtimeIssue = .recoverable(bootError)
             appendLog(.error, bootError)
@@ -187,14 +189,14 @@ final class AppModel: ObservableObject {
     }
 
     var projects: [ProjectRecord] {
-        if case .loaded(let projects) = projectsState {
+        if case let .loaded(projects) = projectsState {
             return projects
         }
         return []
     }
 
     var threads: [ThreadRecord] {
-        if case .loaded(let threads) = threadsState {
+        if case let .loaded(threads) = threadsState {
             return threads
         }
         return []
@@ -238,7 +240,7 @@ final class AppModel: ObservableObject {
     }
 
     var skills: [SkillListItem] {
-        if case .loaded(let skills) = skillsState {
+        if case let .loaded(skills) = skillsState {
             return skills
         }
         return []
@@ -455,7 +457,8 @@ final class AppModel: ObservableObject {
         panel.canCreateDirectories = true
 
         guard panel.runModal() == .OK,
-              let url = panel.url else {
+              let url = panel.url
+        else {
             return
         }
 
@@ -647,7 +650,8 @@ final class AppModel: ObservableObject {
         webSearch: ProjectWebSearchMode
     ) {
         guard let selectedProjectID,
-              let projectRepository else {
+              let projectRepository
+        else {
             return
         }
 
@@ -678,7 +682,8 @@ final class AppModel: ObservableObject {
         embeddingsEnabled: Bool
     ) {
         guard let selectedProjectID,
-              let projectRepository else {
+              let projectRepository
+        else {
             return
         }
 
@@ -710,7 +715,8 @@ final class AppModel: ObservableObject {
 
     private func submitApprovalDecision(_ decision: RuntimeApprovalDecision) {
         guard let request = activeApprovalRequest,
-              let runtime else {
+              let runtime
+        else {
             return
         }
 
@@ -766,12 +772,12 @@ final class AppModel: ObservableObject {
 
                 let results = try await chatSearchRepository.search(query: trimmed, projectID: nil, limit: 50)
                 if Task.isCancelled { return }
-                self.searchState = .loaded(results)
+                searchState = .loaded(results)
             } catch is CancellationError {
                 return
             } catch {
-                self.searchState = .failed(error.localizedDescription)
-                self.appendLog(.error, "Search failed: \(error.localizedDescription)")
+                searchState = .failed(error.localizedDescription)
+                appendLog(.error, "Search failed: \(error.localizedDescription)")
             }
         }
     }
@@ -794,7 +800,8 @@ final class AppModel: ObservableObject {
 
     func revealSelectedThreadArchiveInFinder() {
         guard let threadID = selectedThreadID,
-              let project = selectedProject else {
+              let project = selectedProject
+        else {
             return
         }
 
@@ -931,7 +938,8 @@ final class AppModel: ObservableObject {
 
     func setSkillEnabled(_ item: SkillListItem, enabled: Bool) {
         guard let selectedProjectID,
-              let projectSkillEnablementRepository else {
+              let projectSkillEnablementRepository
+        else {
             skillStatusMessage = "Select a project before enabling skills."
             return
         }
@@ -984,11 +992,10 @@ final class AppModel: ObservableObject {
                 let projectRoot = selectedProject.map { Self.projectModsRootPath(projectPath: $0.path) }
 
                 let globalMods = try modDiscoveryService.discoverMods(in: globalRoot, scope: .global)
-                let projectMods: [DiscoveredUIMod]
-                if let projectRoot {
-                    projectMods = try modDiscoveryService.discoverMods(in: projectRoot, scope: .project)
+                let projectMods: [DiscoveredUIMod] = if let projectRoot {
+                    try modDiscoveryService.discoverMods(in: projectRoot, scope: .project)
                 } else {
-                    projectMods = []
+                    []
                 }
 
                 let persistedGlobal = try await preferenceRepository?.getPreference(key: .globalUIModPath)
@@ -1048,7 +1055,8 @@ final class AppModel: ObservableObject {
 
     func setProjectMod(_ mod: DiscoveredUIMod?) {
         guard let projectRepository,
-              let selectedProjectID else {
+              let selectedProjectID
+        else {
             modStatusMessage = "Select a project first."
             return
         }
@@ -1238,7 +1246,8 @@ final class AppModel: ObservableObject {
               let selectedProjectID,
               let project = selectedProject,
               let runtime,
-              canSendMessages else {
+              canSendMessages
+        else {
             return
         }
 
@@ -1356,7 +1365,8 @@ final class AppModel: ObservableObject {
 
     private func startRuntimeEventLoopIfNeeded() async {
         guard runtimeEventTask == nil,
-              let runtime else {
+              let runtime
+        else {
             return
         }
 
@@ -1365,17 +1375,17 @@ final class AppModel: ObservableObject {
             guard let self else { return }
 
             for await event in stream {
-                self.handleRuntimeEvent(event)
+                handleRuntimeEvent(event)
             }
         }
     }
 
     private func handleRuntimeEvent(_ event: CodexRuntimeEvent) {
         switch event {
-        case .threadStarted(let threadID):
+        case let .threadStarted(threadID):
             appendLog(.debug, "Runtime thread started: \(threadID)")
 
-        case .turnStarted(let turnID):
+        case let .turnStarted(turnID):
             if var context = activeTurnContext {
                 context.turnID = turnID
                 activeTurnContext = context
@@ -1392,7 +1402,7 @@ final class AppModel: ObservableObject {
                 )
             }
 
-        case .assistantMessageDelta(let itemID, let delta):
+        case let .assistantMessageDelta(itemID, delta):
             guard let context = activeTurnContext else {
                 appendLog(.debug, "Dropped delta with no active turn")
                 return
@@ -1403,25 +1413,24 @@ final class AppModel: ObservableObject {
             updatedContext.assistantText += delta
             activeTurnContext = updatedContext
 
-        case .commandOutputDelta(let output):
+        case let .commandOutputDelta(output):
             handleCommandOutputDelta(output)
 
-        case .fileChangesUpdated(let update):
+        case let .fileChangesUpdated(update):
             handleFileChangesUpdate(update)
 
-        case .approvalRequested(let request):
+        case let .approvalRequested(request):
             handleApprovalRequest(request)
 
-        case .action(let action):
+        case let .action(action):
             handleRuntimeAction(action)
 
-        case .turnCompleted(let completion):
+        case let .turnCompleted(completion):
             if let context = activeTurnContext {
-                let detail: String
-                if let errorMessage = completion.errorMessage {
-                    detail = "status=\(completion.status), error=\(errorMessage)"
+                let detail = if let errorMessage = completion.errorMessage {
+                    "status=\(completion.status), error=\(errorMessage)"
                 } else {
-                    detail = "status=\(completion.status)"
+                    "status=\(completion.status)"
                 }
 
                 appendEntry(
@@ -1448,13 +1457,13 @@ final class AppModel: ObservableObject {
                 appendLog(.debug, "Turn completed without active context: \(completion.status)")
             }
 
-        case .accountUpdated(let authMode):
+        case let .accountUpdated(authMode):
             appendLog(.info, "Account mode updated: \(authMode.rawValue)")
             Task {
                 try? await refreshAccountState()
             }
 
-        case .accountLoginCompleted(let completion):
+        case let .accountLoginCompleted(completion):
             if completion.success {
                 accountStatusMessage = "Login completed."
                 appendLog(.info, "Login completed")
@@ -1485,7 +1494,8 @@ final class AppModel: ObservableObject {
         }
 
         if action.itemType == "commandExecution",
-           let itemID = action.itemID {
+           let itemID = action.itemID
+        {
             localThreadIDByCommandItemID[itemID] = localThreadID
         }
 
@@ -1498,7 +1508,8 @@ final class AppModel: ObservableObject {
         appendEntry(.actionCard(card), to: localThreadID)
 
         if var context = activeTurnContext,
-           context.localThreadID == localThreadID {
+           context.localThreadID == localThreadID
+        {
             context.actions.append(card)
             activeTurnContext = context
         }
@@ -1588,7 +1599,8 @@ final class AppModel: ObservableObject {
         safetyConfiguration: RuntimeSafetyConfiguration
     ) async throws -> String {
         if let runtimeThreadMappingRepository,
-           let existingRuntimeThreadID = try await runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: localThreadID) {
+           let existingRuntimeThreadID = try await runtimeThreadMappingRepository.getRuntimeThreadID(localThreadID: localThreadID)
+        {
             runtimeThreadIDByLocalThreadID[localThreadID] = existingRuntimeThreadID
             localThreadIDByRuntimeThreadID[existingRuntimeThreadID] = localThreadID
             return existingRuntimeThreadID
@@ -1741,7 +1753,8 @@ final class AppModel: ObservableObject {
 
     private func upsertProjectAPIKeyReferenceIfNeeded() async throws {
         guard let projectID = selectedProjectID,
-              let projectSecretRepository else {
+              let projectSecretRepository
+        else {
             return
         }
 
@@ -1754,7 +1767,8 @@ final class AppModel: ObservableObject {
 
     private func setSelectedProjectTrustState(_ trustState: ProjectTrustState) {
         guard let selectedProjectID,
-              let projectRepository else {
+              let projectRepository
+        else {
             return
         }
 
@@ -1783,12 +1797,13 @@ final class AppModel: ObservableObject {
 
         if let messageID = itemMap[itemID],
            let index = entries.firstIndex(where: {
-               guard case .message(let message) = $0 else {
+               guard case let .message(message) = $0 else {
                    return false
                }
                return message.id == messageID
            }),
-           case .message(var existingMessage) = entries[index] {
+           case var .message(existingMessage) = entries[index]
+        {
             existingMessage.text += delta
             entries[index] = .message(existingMessage)
             transcriptStore[threadID] = entries
@@ -1843,23 +1858,24 @@ final class AppModel: ObservableObject {
         }
 
         if let selectedThreadID,
-           loadedThreads.contains(where: { $0.id == selectedThreadID }) {
+           loadedThreads.contains(where: { $0.id == selectedThreadID })
+        {
             return
         }
 
-        self.selectedThreadID = loadedThreads.first?.id
+        selectedThreadID = loadedThreads.first?.id
     }
 
     private func refreshSkills() async throws {
         skillsState = .loading
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
-        let enabledPaths: Set<String>
-        if let selectedProjectID,
-           let projectSkillEnablementRepository {
-            enabledPaths = try await projectSkillEnablementRepository.enabledSkillPaths(projectID: selectedProjectID)
+        let enabledPaths: Set<String> = if let selectedProjectID,
+                                           let projectSkillEnablementRepository
+        {
+            try await projectSkillEnablementRepository.enabledSkillPaths(projectID: selectedProjectID)
         } else {
-            enabledPaths = []
+            []
         }
 
         let items = discovered.map { skill in
@@ -1869,7 +1885,8 @@ final class AppModel: ObservableObject {
         skillsState = .loaded(items)
 
         if let selectedSkillIDForComposer,
-           !items.contains(where: { $0.id == selectedSkillIDForComposer && $0.isEnabledForProject }) {
+           !items.contains(where: { $0.id == selectedSkillIDForComposer && $0.isEnabledForProject })
+        {
             self.selectedSkillIDForComposer = nil
         }
     }
@@ -1878,12 +1895,14 @@ final class AppModel: ObservableObject {
         guard let preferenceRepository else { return }
 
         if let projectIDString = try await preferenceRepository.getPreference(key: .lastOpenedProjectID),
-           let projectID = UUID(uuidString: projectIDString) {
+           let projectID = UUID(uuidString: projectIDString)
+        {
             selectedProjectID = projectID
         }
 
         if let threadIDString = try await preferenceRepository.getPreference(key: .lastOpenedThreadID),
-           let threadID = UUID(uuidString: threadIDString) {
+           let threadID = UUID(uuidString: threadIDString)
+        {
             selectedThreadID = threadID
         }
 
@@ -1922,7 +1941,7 @@ final class AppModel: ObservableObject {
             switch runtimeError {
             case .binaryNotFound:
                 runtimeIssue = .installCodex
-            case .handshakeFailed(let detail):
+            case let .handshakeFailed(detail):
                 runtimeIssue = .recoverable(detail)
             default:
                 runtimeIssue = .recoverable(runtimeError.localizedDescription)
@@ -1955,42 +1974,42 @@ final class AppModel: ObservableObject {
     private func mapSandboxMode(_ mode: ProjectSandboxMode) -> RuntimeSandboxMode {
         switch mode {
         case .readOnly:
-            return .readOnly
+            .readOnly
         case .workspaceWrite:
-            return .workspaceWrite
+            .workspaceWrite
         case .dangerFullAccess:
-            return .dangerFullAccess
+            .dangerFullAccess
         }
     }
 
     private func mapSkillScope(_ scope: SkillInstallScope) -> SkillScope {
         switch scope {
         case .project:
-            return .project
+            .project
         case .global:
-            return .global
+            .global
         }
     }
 
     private func mapApprovalPolicy(_ policy: ProjectApprovalPolicy) -> RuntimeApprovalPolicy {
         switch policy {
         case .untrusted:
-            return .untrusted
+            .untrusted
         case .onRequest:
-            return .onRequest
+            .onRequest
         case .never:
-            return .never
+            .never
         }
     }
 
     private func mapWebSearchMode(_ mode: ProjectWebSearchMode) -> RuntimeWebSearchMode {
         switch mode {
         case .cached:
-            return .cached
+            .cached
         case .live:
-            return .live
+            .live
         case .disabled:
-            return .disabled
+            .disabled
         }
     }
 
@@ -2020,13 +2039,13 @@ final class AppModel: ObservableObject {
     private func approvalDecisionLabel(_ decision: RuntimeApprovalDecision) -> String {
         switch decision {
         case .approveOnce:
-            return "Approve once"
+            "Approve once"
         case .approveForSession:
-            return "Approve for session"
+            "Approve for session"
         case .decline:
-            return "Decline"
+            "Decline"
         case .cancel:
-            return "Cancel"
+            "Cancel"
         }
     }
 
@@ -2039,7 +2058,7 @@ final class AppModel: ObservableObject {
             "chown ",
             "mkfs",
             "dd ",
-            "git reset --hard"
+            "git reset --hard",
         ]
 
         if riskyPatterns.contains(where: { commandText.contains($0) }) {
@@ -2059,8 +2078,8 @@ final class AppModel: ObservableObject {
         let sanitized = redactSensitiveText(in: text)
         var logs = threadLogsByThreadID[threadID, default: []]
         logs.append(ThreadLogEntry(threadID: threadID, level: level, text: sanitized))
-        if logs.count > 1_000 {
-            logs.removeFirst(logs.count - 1_000)
+        if logs.count > 1000 {
+            logs.removeFirst(logs.count - 1000)
         }
         threadLogsByThreadID[threadID] = logs
     }
@@ -2077,10 +2096,8 @@ final class AppModel: ObservableObject {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            let errorText = String(
-                decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
-                as: UTF8.self
-            )
+            let errorData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorText = String(bytes: errorData, encoding: .utf8) ?? ""
             throw NSError(
                 domain: "CodexChatApp.GitRestore",
                 code: Int(process.terminationStatus),
@@ -2101,7 +2118,7 @@ final class AppModel: ObservableObject {
         let patterns = [
             "sk-[A-Za-z0-9_-]{16,}",
             "(?i)api[_-]?key\\s*[:=]\\s*[^\\s]+",
-            "(?i)authorization\\s*:\\s*bearer\\s+[^\\s]+"
+            "(?i)authorization\\s*:\\s*bearer\\s+[^\\s]+",
         ]
 
         for pattern in patterns {

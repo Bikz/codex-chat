@@ -62,13 +62,13 @@ struct DiagnosticsView: View {
     private func color(for level: LogLevel) -> Color {
         switch level {
         case .debug:
-            return .secondary
+            .secondary
         case .info:
-            return .blue
+            .blue
         case .warning:
-            return .orange
+            .orange
         case .error:
-            return .red
+            .red
         }
     }
 }

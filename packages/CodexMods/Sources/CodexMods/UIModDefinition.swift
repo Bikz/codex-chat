@@ -78,7 +78,7 @@ public struct DiscoveredUIMod: Identifiable, Hashable, Sendable {
     public let computedChecksum: String?
 
     public init(scope: ModScope, directoryPath: String, definitionPath: String, definition: UIModDefinition, computedChecksum: String?) {
-        self.id = "\(scope.rawValue):\(directoryPath)"
+        id = "\(scope.rawValue):\(directoryPath)"
         self.scope = scope
         self.directoryPath = directoryPath
         self.definitionPath = definitionPath
@@ -96,17 +96,16 @@ public enum UIModDiscoveryError: LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .missingManifest(let path):
-            return "Missing mod manifest in \(path)"
-        case .invalidManifestID(let id):
-            return "Mod manifest id is invalid: \(id)"
-        case .invalidSchemaVersion(let version):
-            return "Unsupported mod schema version: \(version)"
-        case .unreadableDefinition(let message):
-            return "Failed to load mod definition: \(message)"
-        case .invalidChecksum(let expected, let actual):
-            return "Mod checksum mismatch (expected \(expected), got \(actual))"
+        case let .missingManifest(path):
+            "Missing mod manifest in \(path)"
+        case let .invalidManifestID(id):
+            "Mod manifest id is invalid: \(id)"
+        case let .invalidSchemaVersion(version):
+            "Unsupported mod schema version: \(version)"
+        case let .unreadableDefinition(message):
+            "Failed to load mod definition: \(message)"
+        case let .invalidChecksum(expected, actual):
+            "Mod checksum mismatch (expected \(expected), got \(actual))"
         }
     }
 }
-

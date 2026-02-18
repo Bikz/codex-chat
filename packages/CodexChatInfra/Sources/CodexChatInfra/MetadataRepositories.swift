@@ -12,13 +12,13 @@ public struct MetadataRepositories: Sendable {
     public let chatSearchRepository: any ChatSearchRepository
 
     public init(database: MetadataDatabase) {
-        self.projectRepository = SQLiteProjectRepository(dbQueue: database.dbQueue)
-        self.threadRepository = SQLiteThreadRepository(dbQueue: database.dbQueue)
-        self.preferenceRepository = SQLitePreferenceRepository(dbQueue: database.dbQueue)
-        self.runtimeThreadMappingRepository = SQLiteRuntimeThreadMappingRepository(dbQueue: database.dbQueue)
-        self.projectSecretRepository = SQLiteProjectSecretRepository(dbQueue: database.dbQueue)
-        self.projectSkillEnablementRepository = SQLiteProjectSkillEnablementRepository(dbQueue: database.dbQueue)
-        self.chatSearchRepository = SQLiteChatSearchRepository(dbQueue: database.dbQueue)
+        projectRepository = SQLiteProjectRepository(dbQueue: database.dbQueue)
+        threadRepository = SQLiteThreadRepository(dbQueue: database.dbQueue)
+        preferenceRepository = SQLitePreferenceRepository(dbQueue: database.dbQueue)
+        runtimeThreadMappingRepository = SQLiteRuntimeThreadMappingRepository(dbQueue: database.dbQueue)
+        projectSecretRepository = SQLiteProjectSecretRepository(dbQueue: database.dbQueue)
+        projectSkillEnablementRepository = SQLiteProjectSkillEnablementRepository(dbQueue: database.dbQueue)
+        chatSearchRepository = SQLiteChatSearchRepository(dbQueue: database.dbQueue)
     }
 }
 
@@ -40,19 +40,19 @@ private struct ProjectEntity: Codable, FetchableRecord, PersistableRecord {
     var updatedAt: Date
 
     init(record: ProjectRecord) {
-        self.id = record.id.uuidString
-        self.name = record.name
-        self.path = record.path
-        self.trustState = record.trustState.rawValue
-        self.sandboxMode = record.sandboxMode.rawValue
-        self.approvalPolicy = record.approvalPolicy.rawValue
-        self.networkAccess = record.networkAccess
-        self.webSearch = record.webSearch.rawValue
-        self.memoryWriteMode = record.memoryWriteMode.rawValue
-        self.memoryEmbeddingsEnabled = record.memoryEmbeddingsEnabled
-        self.uiModPath = record.uiModPath
-        self.createdAt = record.createdAt
-        self.updatedAt = record.updatedAt
+        id = record.id.uuidString
+        name = record.name
+        path = record.path
+        trustState = record.trustState.rawValue
+        sandboxMode = record.sandboxMode.rawValue
+        approvalPolicy = record.approvalPolicy.rawValue
+        networkAccess = record.networkAccess
+        webSearch = record.webSearch.rawValue
+        memoryWriteMode = record.memoryWriteMode.rawValue
+        memoryEmbeddingsEnabled = record.memoryEmbeddingsEnabled
+        uiModPath = record.uiModPath
+        createdAt = record.createdAt
+        updatedAt = record.updatedAt
     }
 
     var record: ProjectRecord {
@@ -84,11 +84,11 @@ private struct ThreadEntity: Codable, FetchableRecord, PersistableRecord {
     var updatedAt: Date
 
     init(record: ThreadRecord) {
-        self.id = record.id.uuidString
-        self.projectId = record.projectId.uuidString
-        self.title = record.title
-        self.createdAt = record.createdAt
-        self.updatedAt = record.updatedAt
+        id = record.id.uuidString
+        projectId = record.projectId.uuidString
+        title = record.title
+        createdAt = record.createdAt
+        updatedAt = record.updatedAt
     }
 
     var record: ThreadRecord {
@@ -117,9 +117,9 @@ private struct RuntimeThreadMappingEntity: Codable, FetchableRecord, Persistable
     var updatedAt: Date
 
     init(record: RuntimeThreadMappingRecord) {
-        self.localThreadID = record.localThreadID.uuidString
-        self.runtimeThreadID = record.runtimeThreadID
-        self.updatedAt = record.updatedAt
+        localThreadID = record.localThreadID.uuidString
+        runtimeThreadID = record.runtimeThreadID
+        updatedAt = record.updatedAt
     }
 
     var record: RuntimeThreadMappingRecord {
@@ -142,12 +142,12 @@ private struct ProjectSecretEntity: Codable, FetchableRecord, PersistableRecord 
     var updatedAt: Date
 
     init(record: ProjectSecretRecord) {
-        self.id = record.id.uuidString
-        self.projectID = record.projectID.uuidString
-        self.name = record.name
-        self.keychainAccount = record.keychainAccount
-        self.createdAt = record.createdAt
-        self.updatedAt = record.updatedAt
+        id = record.id.uuidString
+        projectID = record.projectID.uuidString
+        name = record.name
+        keychainAccount = record.keychainAccount
+        createdAt = record.createdAt
+        updatedAt = record.updatedAt
     }
 
     var record: ProjectSecretRecord {
@@ -171,10 +171,10 @@ private struct ProjectSkillEnablementEntity: Codable, FetchableRecord, Persistab
     var updatedAt: Date
 
     init(record: ProjectSkillEnablementRecord) {
-        self.projectID = record.projectID.uuidString
-        self.skillPath = record.skillPath
-        self.enabled = record.enabled
-        self.updatedAt = record.updatedAt
+        projectID = record.projectID.uuidString
+        skillPath = record.skillPath
+        enabled = record.enabled
+        updatedAt = record.updatedAt
     }
 
     var record: ProjectSkillEnablementRecord {
@@ -434,7 +434,8 @@ public final class SQLiteProjectSecretRepository: ProjectSecretRepository, @unch
             let now = Date()
             if var existing = try ProjectSecretEntity
                 .filter(Column("projectID") == projectID.uuidString && Column("name") == name)
-                .fetchOne(db) {
+                .fetchOne(db)
+            {
                 existing.keychainAccount = keychainAccount
                 existing.updatedAt = now
                 try existing.update(db)
@@ -527,9 +528,9 @@ public final class SQLiteChatSearchRepository: ChatSearchRepository, @unchecked 
             )
             try db.execute(
                 sql: """
-                    INSERT INTO chat_search_index(threadID, projectID, source, content)
-                    VALUES (?, ?, 'title', ?)
-                    """,
+                INSERT INTO chat_search_index(threadID, projectID, source, content)
+                VALUES (?, ?, 'title', ?)
+                """,
                 arguments: [threadID.uuidString, projectID.uuidString, trimmed]
             )
         }
@@ -542,9 +543,9 @@ public final class SQLiteChatSearchRepository: ChatSearchRepository, @unchecked 
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                    INSERT INTO chat_search_index(threadID, projectID, source, content)
-                    VALUES (?, ?, 'message', ?)
-                    """,
+                INSERT INTO chat_search_index(threadID, projectID, source, content)
+                VALUES (?, ?, 'message', ?)
+                """,
                 arguments: [threadID.uuidString, projectID.uuidString, trimmed]
             )
         }
@@ -558,10 +559,10 @@ public final class SQLiteChatSearchRepository: ChatSearchRepository, @unchecked 
 
         return try await dbQueue.read { db in
             var sql = """
-                SELECT threadID, projectID, source, snippet(chat_search_index, 3, '', '', ' … ', 18) AS excerpt
-                FROM chat_search_index
-                WHERE chat_search_index MATCH ?
-                """
+            SELECT threadID, projectID, source, snippet(chat_search_index, 3, '', '', ' … ', 18) AS excerpt
+            FROM chat_search_index
+            WHERE chat_search_index MATCH ?
+            """
             var arguments: StatementArguments = [normalizedQuery]
 
             if let projectID {
@@ -576,7 +577,8 @@ public final class SQLiteChatSearchRepository: ChatSearchRepository, @unchecked 
                 guard let threadIDString: String = row["threadID"],
                       let projectIDString: String = row["projectID"],
                       let threadUUID = UUID(uuidString: threadIDString),
-                      let projectUUID = UUID(uuidString: projectIDString) else {
+                      let projectUUID = UUID(uuidString: projectIDString)
+                else {
                     return nil
                 }
 

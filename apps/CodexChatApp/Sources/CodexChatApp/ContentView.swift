@@ -194,17 +194,17 @@ struct ContentView: View {
             )
         case .loading:
             LoadingStateView(title: "Searching archives…")
-        case .failed(let message):
+        case let .failed(message):
             ErrorStateView(title: "Search unavailable", message: message, actionLabel: "Retry") {
                 model.updateSearchQuery(model.searchQuery)
             }
-        case .loaded(let results) where results.isEmpty:
+        case let .loaded(results) where results.isEmpty:
             EmptyStateView(
                 title: "No results",
                 message: "Try a different keyword.",
                 systemImage: "magnifyingglass"
             )
-        case .loaded(let results):
+        case let .loaded(results):
             List(results) { result in
                 Button {
                     model.selectSearchResult(result)
@@ -231,11 +231,11 @@ struct ContentView: View {
         switch model.projectsState {
         case .idle, .loading:
             LoadingStateView(title: "Loading projects…")
-        case .failed(let message):
+        case let .failed(message):
             ErrorStateView(title: "Couldn’t load projects", message: message, actionLabel: "Retry") {
                 model.retryLoad()
             }
-        case .loaded(let projects) where projects.isEmpty:
+        case let .loaded(projects) where projects.isEmpty:
             EmptyStateView(
                 title: "No projects yet",
                 message: "Open a folder to start organizing chats.",
@@ -271,11 +271,11 @@ struct ContentView: View {
             )
         case .loading:
             LoadingStateView(title: "Loading threads…")
-        case .failed(let message):
+        case let .failed(message):
             ErrorStateView(title: "Couldn’t load threads", message: message, actionLabel: "Retry") {
                 model.retryLoad()
             }
-        case .loaded(let threads) where threads.isEmpty:
+        case let .loaded(threads) where threads.isEmpty:
             EmptyStateView(
                 title: "No threads yet",
                 message: "Create a thread to start the conversation.",
@@ -313,7 +313,7 @@ struct ContentView: View {
                 HStack(spacing: tokens.spacing.small) {
                     TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
-                        .lineLimit(1...4)
+                        .lineLimit(1 ... 4)
 
                     Button("Send") {
                         model.sendMessage()
@@ -424,24 +424,24 @@ struct ContentView: View {
                 )
             case .loading:
                 LoadingStateView(title: "Preparing conversation…")
-            case .failed(let message):
+            case let .failed(message):
                 ErrorStateView(title: "Conversation unavailable", message: message, actionLabel: "Retry") {
                     model.retryLoad()
                 }
-            case .loaded(let entries) where entries.isEmpty:
+            case let .loaded(entries) where entries.isEmpty:
                 EmptyStateView(
                     title: "Thread is empty",
                     message: "Use the composer below to send the first message.",
                     systemImage: "text.cursor"
                 )
-            case .loaded(let entries):
+            case let .loaded(entries):
                 List(entries) { entry in
                     switch entry {
-                    case .message(let message):
+                    case let .message(message):
                         MessageRow(message: message, tokens: tokens)
                             .padding(.vertical, tokens.spacing.xSmall)
                             .listRowSeparator(.hidden)
-                    case .actionCard(let card):
+                    case let .actionCard(card):
                         ActionCardRow(card: card)
                             .padding(.vertical, tokens.spacing.xSmall)
                             .listRowSeparator(.hidden)
@@ -493,17 +493,17 @@ struct ContentView: View {
         switch model.skillsState {
         case .idle, .loading:
             LoadingStateView(title: "Scanning installed skills…")
-        case .failed(let message):
+        case let .failed(message):
             ErrorStateView(title: "Couldn’t load skills", message: message, actionLabel: "Retry") {
                 model.refreshSkillsSurface()
             }
-        case .loaded(let skills) where skills.isEmpty:
+        case let .loaded(skills) where skills.isEmpty:
             EmptyStateView(
                 title: "No skills discovered",
                 message: "Install a skill from git or npx, then enable it for this project.",
                 systemImage: "square.stack.3d.up"
             )
-        case .loaded(let skills):
+        case let .loaded(skills):
             List(skills) { item in
                 SkillRow(
                     item: item,

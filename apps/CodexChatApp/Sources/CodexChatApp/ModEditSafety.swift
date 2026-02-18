@@ -136,4 +136,3 @@ enum ModEditSafety {
         try? fileManager.removeItem(at: snapshot.rootURL)
     }
 }
-

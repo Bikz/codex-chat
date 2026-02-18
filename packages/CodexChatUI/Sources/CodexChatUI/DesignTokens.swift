@@ -130,16 +130,19 @@ public struct DesignTokens: Hashable, Sendable {
         }
 
         if let panel = override.materials?.panelMaterial,
-           let material = DesignMaterial(rawValue: panel) {
+           let material = DesignMaterial(rawValue: panel)
+        {
             copy.materials.panelMaterial = material
         }
         if let card = override.materials?.cardMaterial,
-           let material = DesignMaterial(rawValue: card) {
+           let material = DesignMaterial(rawValue: card)
+        {
             copy.materials.cardMaterial = material
         }
 
         if let style = override.bubbles?.style,
-           let bubbleStyle = BubbleStyle(rawValue: style) {
+           let bubbleStyle = BubbleStyle(rawValue: style)
+        {
             copy.bubbles.style = bubbleStyle
         }
         if let userHex = override.bubbles?.userBackgroundHex {
@@ -150,7 +153,8 @@ public struct DesignTokens: Hashable, Sendable {
         }
 
         if let iconStyle = override.iconography?.style,
-           let resolved = Iconography.Style(rawValue: iconStyle) {
+           let resolved = Iconography.Style(rawValue: iconStyle)
+        {
             copy.iconography.style = resolved
         }
 
@@ -160,24 +164,24 @@ public struct DesignTokens: Hashable, Sendable {
 
 public extension DesignTokens {
     enum DesignMaterial: String, CaseIterable, Hashable, Sendable, Codable {
-        case ultraThin = "ultraThin"
-        case thin = "thin"
-        case regular = "regular"
-        case thick = "thick"
-        case ultraThick = "ultraThick"
+        case ultraThin
+        case thin
+        case regular
+        case thick
+        case ultraThick
 
         public var material: Material {
             switch self {
             case .ultraThin:
-                return .ultraThinMaterial
+                .ultraThinMaterial
             case .thin:
-                return .thinMaterial
+                .thinMaterial
             case .regular:
-                return .regularMaterial
+                .regularMaterial
             case .thick:
-                return .thickMaterial
+                .thickMaterial
             case .ultraThick:
-                return .ultraThickMaterial
+                .ultraThickMaterial
             }
         }
     }
@@ -193,9 +197,9 @@ public extension DesignTokens {
     }
 
     enum BubbleStyle: String, CaseIterable, Hashable, Sendable, Codable {
-        case plain = "plain"
-        case glass = "glass"
-        case solid = "solid"
+        case plain
+        case glass
+        case solid
     }
 
     struct Bubbles: Hashable, Sendable {
@@ -234,7 +238,7 @@ public final class ThemeProvider: ObservableObject {
 
     public init(tokens: DesignTokens = .default) {
         self.tokens = tokens
-        self.baseline = tokens
+        baseline = tokens
     }
 
     public func apply(override: ModThemeOverride) {
@@ -246,15 +250,8 @@ public final class ThemeProvider: ObservableObject {
     }
 }
 
-private struct DesignTokensKey: EnvironmentKey {
-    static let defaultValue = DesignTokens.default
-}
-
 public extension EnvironmentValues {
-    var designTokens: DesignTokens {
-        get { self[DesignTokensKey.self] }
-        set { self[DesignTokensKey.self] = newValue }
-    }
+    @Entry var designTokens: DesignTokens = .default
 }
 
 public extension View {
@@ -269,24 +266,24 @@ public extension Color {
         var int: UInt64 = 0
         Scanner(string: hex).scanHexInt64(&int)
 
-        let a, r, g, b: UInt64
+        let alpha, red, green, blue: UInt64
         switch hex.count {
         case 3:
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+            (alpha, red, green, blue) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
         case 6:
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+            (alpha, red, green, blue) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
         case 8:
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+            (alpha, red, green, blue) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
         default:
-            (a, r, g, b) = (255, 0, 0, 0)
+            (alpha, red, green, blue) = (255, 0, 0, 0)
         }
 
         self.init(
             .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
+            red: Double(red) / 255,
+            green: Double(green) / 255,
+            blue: Double(blue) / 255,
+            opacity: Double(alpha) / 255
         )
     }
 }

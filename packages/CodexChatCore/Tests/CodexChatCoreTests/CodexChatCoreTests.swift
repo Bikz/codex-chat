@@ -1,5 +1,5 @@
-import XCTest
 @testable import CodexChatCore
+import XCTest
 
 final class CodexChatCoreTests: XCTestCase {
     func testVersionPlaceholder() {

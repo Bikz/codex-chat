@@ -1,5 +1,5 @@
-import CodexMods
 @testable import CodexChatUI
+import CodexMods
 import XCTest
 
 final class CodexChatUITests: XCTestCase {

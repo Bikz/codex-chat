@@ -1,7 +1,7 @@
 import Foundation
 
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #endif
 
 public final class DirectoryWatcher: @unchecked Sendable {
@@ -50,4 +50,3 @@ public final class DirectoryWatcher: @unchecked Sendable {
         descriptor = -1
     }
 }
-

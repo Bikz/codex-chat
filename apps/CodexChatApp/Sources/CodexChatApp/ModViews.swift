@@ -58,12 +58,12 @@ struct ModsCanvas: View {
         case .loading:
             LoadingStateView(title: "Loading mods…")
                 .padding(tokens.spacing.medium)
-        case .failed(let message):
+        case let .failed(message):
             ErrorStateView(title: "Mods unavailable", message: message, actionLabel: "Retry") {
                 model.refreshModsSurface()
             }
             .padding(tokens.spacing.medium)
-        case .loaded(let surface):
+        case let .loaded(surface):
             ScrollView {
                 VStack(alignment: .leading, spacing: tokens.spacing.medium) {
                     Text("Precedence: defaults < global mod < project mod.")
@@ -106,7 +106,7 @@ struct ModsCanvas: View {
                     model.setGlobalMod(mod)
                 }
             )) {
-                Text("None").tag(Optional<String>.none)
+                Text("None").tag(String?.none)
                 ForEach(surface.globalMods) { mod in
                     Text("\(mod.definition.manifest.name) (\(mod.definition.manifest.version))")
                         .tag(Optional(mod.directoryPath))
@@ -153,7 +153,7 @@ struct ModsCanvas: View {
                         model.setProjectMod(mod)
                     }
                 )) {
-                    Text("None").tag(Optional<String>.none)
+                    Text("None").tag(String?.none)
                     ForEach(surface.projectMods) { mod in
                         Text("\(mod.definition.manifest.name) (\(mod.definition.manifest.version))")
                             .tag(Optional(mod.directoryPath))
@@ -174,4 +174,3 @@ struct ModsCanvas: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: tokens.radius.medium))
     }
 }
-

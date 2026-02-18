@@ -10,9 +10,9 @@ enum DiagnosticsBundleExporterError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cancelled:
-            return "Diagnostics export cancelled"
-        case .zipFailed(let code):
-            return "Could not create diagnostics archive (zip exited with code \(code))"
+            "Diagnostics export cancelled"
+        case let .zipFailed(code):
+            "Could not create diagnostics archive (zip exited with code \(code))"
         }
     }
 }
@@ -78,7 +78,7 @@ enum DiagnosticsBundleExporter {
             "-q",
             destinationURL.path,
             "diagnostics.json",
-            "logs.txt"
+            "logs.txt",
         ]
         try zip.run()
         zip.waitUntilExit()
@@ -101,7 +101,7 @@ enum DiagnosticsBundleExporter {
         let patterns = [
             "sk-[A-Za-z0-9_-]{16,}",
             "(?i)api[_-]?key\\s*[:=]\\s*[^\\s]+",
-            "(?i)authorization\\s*:\\s*bearer\\s+[^\\s]+"
+            "(?i)authorization\\s*:\\s*bearer\\s+[^\\s]+",
         ]
 
         for pattern in patterns {

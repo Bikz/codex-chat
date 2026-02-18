@@ -5,7 +5,7 @@ let package = Package(
     name: "CodexChatApp",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "CodexChatApp", targets: ["CodexChatApp"])
+        .executable(name: "CodexChatApp", targets: ["CodexChatApp"]),
     ],
     dependencies: [
         .package(path: "../../packages/CodexChatCore"),
@@ -14,7 +14,7 @@ let package = Package(
         .package(path: "../../packages/CodexKit"),
         .package(path: "../../packages/CodexSkills"),
         .package(path: "../../packages/CodexMemory"),
-        .package(path: "../../packages/CodexMods")
+        .package(path: "../../packages/CodexMods"),
     ],
     targets: [
         .executableTarget(
@@ -26,15 +26,15 @@ let package = Package(
                 "CodexKit",
                 "CodexSkills",
                 "CodexMemory",
-                "CodexMods"
+                "CodexMods",
             ],
             resources: [
-                .copy("Resources")
+                .copy("Resources"),
             ]
         ),
         .testTarget(
             name: "CodexChatAppTests",
             dependencies: ["CodexChatApp"]
-        )
+        ),
     ]
 )

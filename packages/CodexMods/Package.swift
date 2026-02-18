@@ -5,10 +5,10 @@ let package = Package(
     name: "CodexMods",
     platforms: [.macOS(.v13)],
     products: [
-        .library(name: "CodexMods", targets: ["CodexMods"])
+        .library(name: "CodexMods", targets: ["CodexMods"]),
     ],
     targets: [
         .target(name: "CodexMods"),
-        .testTarget(name: "CodexModsTests", dependencies: ["CodexMods"])
+        .testTarget(name: "CodexModsTests", dependencies: ["CodexMods"]),
     ]
 )

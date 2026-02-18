@@ -134,7 +134,7 @@ struct MemoryCanvas: View {
         }
     }
 
-    private func settingsSection(project: ProjectRecord) -> some View {
+    private func settingsSection(project _: ProjectRecord) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Auto-Write")
                 .font(.headline)
@@ -170,7 +170,7 @@ struct MemoryCanvas: View {
         case .idle, .loading:
             LoadingStateView(title: "Loading \(selectedFileKind.displayName)…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .failed(let message):
+        case let .failed(message):
             ErrorStateView(title: "Memory unavailable", message: message, actionLabel: "Retry") {
                 Task { await loadFile(for: project, kind: selectedFileKind) }
             }
@@ -456,17 +456,17 @@ struct MemorySnippetInsertSheet: View {
             )
         case .loading:
             LoadingStateView(title: "Searching memory…")
-        case .failed(let message):
+        case let .failed(message):
             ErrorStateView(title: "Search failed", message: message, actionLabel: "Retry") {
                 scheduleSearch(project: project)
             }
-        case .loaded(let hits) where hits.isEmpty:
+        case let .loaded(hits) where hits.isEmpty:
             EmptyStateView(
                 title: "No matches",
                 message: "Try a different keyword.",
                 systemImage: "doc.text.magnifyingglass"
             )
-        case .loaded(let hits):
+        case let .loaded(hits):
             List(hits) { hit in
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -507,12 +507,11 @@ struct MemorySnippetInsertSheet: View {
                 if Task.isCancelled { return }
 
                 let store = ProjectMemoryStore(projectPath: project.path)
-                let hits: [MemorySearchHit]
-                switch mode {
+                let hits: [MemorySearchHit] = switch mode {
                 case .keyword:
-                    hits = try await store.keywordSearch(query: trimmed, limit: 30)
+                    try await store.keywordSearch(query: trimmed, limit: 30)
                 case .semantic:
-                    hits = try await store.semanticSearch(query: trimmed, limit: 20)
+                    try await store.semanticSearch(query: trimmed, limit: 20)
                 }
 
                 if Task.isCancelled { return }

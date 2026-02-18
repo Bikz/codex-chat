@@ -5,8 +5,8 @@ enum JSONLFramerError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .bufferOverflow(let maxBytes):
-            return "JSONL buffer exceeded \(maxBytes) bytes"
+        case let .bufferOverflow(maxBytes):
+            "JSONL buffer exceeded \(maxBytes) bytes"
         }
     }
 }

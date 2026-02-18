@@ -73,4 +73,3 @@ struct ModChangesReviewSheet: View {
         .frame(minWidth: 760, minHeight: 560)
     }
 }
-

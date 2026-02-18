@@ -42,4 +42,3 @@ public struct EmptyModCatalogProvider: ModCatalogProvider {
         []
     }
 }
-

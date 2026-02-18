@@ -1,6 +1,6 @@
+@testable import CodexMemory
 import Foundation
 import XCTest
-@testable import CodexMemory
 
 final class CodexMemoryTests: XCTestCase {
     func testVersionPlaceholder() {
@@ -59,18 +59,18 @@ final class CodexMemoryTests: XCTestCase {
     }
 
     func testSemanticSearchBuildsIndexWhenAvailable() async throws {
-#if canImport(NaturalLanguage)
-        let projectURL = try temporaryProjectDirectory()
-        let store = ProjectMemoryStore(projectPath: projectURL.path)
+        #if canImport(NaturalLanguage)
+            let projectURL = try temporaryProjectDirectory()
+            let store = ProjectMemoryStore(projectPath: projectURL.path)
 
-        try await store.ensureStructure()
-        try await store.write(.profile, text: "# Profile\n\nI prefer SwiftUI.\n")
+            try await store.ensureStructure()
+            try await store.write(.profile, text: "# Profile\n\nI prefer SwiftUI.\n")
 
-        let hits = try await store.semanticSearch(query: "SwiftUI", limit: 5)
-        XCTAssertFalse(hits.isEmpty)
-#else
-        throw XCTSkip("NaturalLanguage not available")
-#endif
+            let hits = try await store.semanticSearch(query: "SwiftUI", limit: 5)
+            XCTAssertFalse(hits.isEmpty)
+        #else
+            throw XCTSkip("NaturalLanguage not available")
+        #endif
     }
 
     private func temporaryProjectDirectory() throws -> URL {

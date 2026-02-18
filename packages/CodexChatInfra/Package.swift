@@ -5,12 +5,12 @@ let package = Package(
     name: "CodexChatInfra",
     platforms: [.macOS(.v13)],
     products: [
-        .library(name: "CodexChatInfra", targets: ["CodexChatInfra"])
+        .library(name: "CodexChatInfra", targets: ["CodexChatInfra"]),
     ],
     dependencies: [
         .package(path: "../CodexChatCore"),
         .package(path: "../CodexKit"),
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0")
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
     ],
     targets: [
         .target(
@@ -18,12 +18,12 @@ let package = Package(
             dependencies: [
                 "CodexChatCore",
                 "CodexKit",
-                .product(name: "GRDB", package: "GRDB.swift")
+                .product(name: "GRDB", package: "GRDB.swift"),
             ]
         ),
         .testTarget(
             name: "CodexChatInfraTests",
             dependencies: ["CodexChatInfra"]
-        )
+        ),
     ]
 )

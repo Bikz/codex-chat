@@ -31,7 +31,7 @@ public struct DiscoveredSkill: Identifiable, Hashable, Sendable, Codable {
         sourceURL: String?,
         optionalMetadata: [String: String]
     ) {
-        self.id = skillPath
+        id = skillPath
         self.name = name
         self.description = description
         self.scope = scope
@@ -85,18 +85,18 @@ public enum SkillCatalogError: LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidSource(let source):
-            return "Invalid skill source: \(source)"
+        case let .invalidSource(source):
+            "Invalid skill source: \(source)"
         case .projectPathRequired:
-            return "Project path is required for project-scoped skill installation."
-        case .installTargetExists(let path):
-            return "Skill destination already exists: \(path)"
+            "Project path is required for project-scoped skill installation."
+        case let .installTargetExists(path):
+            "Skill destination already exists: \(path)"
         case .nodeUnavailable:
-            return "Node/npx is unavailable on PATH for npx installer."
-        case .nonGitSkill(let path):
-            return "Skill is not a git repository and cannot be updated: \(path)"
-        case .commandFailed(let command, let output):
-            return "Skill command failed (\(command)): \(output)"
+            "Node/npx is unavailable on PATH for npx installer."
+        case let .nonGitSkill(path):
+            "Skill is not a git repository and cannot be updated: \(path)"
+        case let .commandFailed(command, output):
+            "Skill command failed (\(command)): \(output)"
         }
     }
 }
@@ -256,7 +256,7 @@ public final class SkillCatalogService: @unchecked Sendable {
     private static let trustedHosts: Set<String> = [
         "github.com",
         "gitlab.com",
-        "bitbucket.org"
+        "bitbucket.org",
     ]
 
     private static func resolveCodexHome(environment: [String: String]) -> URL {
@@ -317,7 +317,7 @@ public final class SkillCatalogService: @unchecked Sendable {
         var bodyStartIndex = 0
 
         if lines.first?.trimmingCharacters(in: .whitespaces) == "---" {
-            for index in 1..<lines.count {
+            for index in 1 ..< lines.count {
                 let line = lines[index].trimmingCharacters(in: .whitespaces)
                 if line == "---" {
                     bodyStartIndex = index + 1
@@ -396,8 +396,10 @@ public final class SkillCatalogService: @unchecked Sendable {
         try process.run()
         process.waitUntilExit()
 
-        let stdout = String(decoding: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        let stderr = String(decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(bytes: stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(bytes: stderrData, encoding: .utf8) ?? ""
         let merged = ([stdout, stderr].joined(separator: "\n"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
 

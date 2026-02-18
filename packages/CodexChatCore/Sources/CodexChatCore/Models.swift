@@ -127,14 +127,14 @@ public extension ProjectSafetySettings {
     static func recommendedDefaults(for trustState: ProjectTrustState) -> ProjectSafetySettings {
         switch trustState {
         case .trusted:
-            return ProjectSafetySettings(
+            ProjectSafetySettings(
                 sandboxMode: .workspaceWrite,
                 approvalPolicy: .onRequest,
                 networkAccess: false,
                 webSearch: .cached
             )
         case .untrusted:
-            return ProjectSafetySettings(
+            ProjectSafetySettings(
                 sandboxMode: .readOnly,
                 approvalPolicy: .untrusted,
                 networkAccess: false,
@@ -272,19 +272,19 @@ public enum TranscriptEntry: Identifiable, Hashable, Sendable {
 
     public var id: UUID {
         switch self {
-        case .message(let message):
-            return message.id
-        case .actionCard(let card):
-            return card.id
+        case let .message(message):
+            message.id
+        case let .actionCard(card):
+            card.id
         }
     }
 
     public var threadID: UUID {
         switch self {
-        case .message(let message):
-            return message.threadId
-        case .actionCard(let card):
-            return card.threadID
+        case let .message(message):
+            message.threadId
+        case let .actionCard(card):
+            card.threadID
         }
     }
 }
@@ -316,8 +316,8 @@ public enum CodexChatCoreError: LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .missingRecord(let identifier):
-            return "Required record was not found: \(identifier)"
+        case let .missingRecord(identifier):
+            "Required record was not found: \(identifier)"
         }
     }
 }

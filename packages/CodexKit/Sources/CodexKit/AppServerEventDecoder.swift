@@ -3,7 +3,8 @@ import Foundation
 enum AppServerEventDecoder {
     static func decodeAll(_ notification: JSONRPCMessageEnvelope) -> [CodexRuntimeEvent] {
         guard notification.isNotification,
-              let method = notification.method else {
+              let method = notification.method
+        else {
             return []
         }
 
@@ -28,7 +29,8 @@ enum AppServerEventDecoder {
 
         case "item/agentMessage/delta":
             guard let delta = params.value(at: ["delta"])?.stringValue,
-                  !delta.isEmpty else {
+                  !delta.isEmpty
+            else {
                 return []
             }
 
@@ -40,9 +42,10 @@ enum AppServerEventDecoder {
 
         case "item/commandExecution/outputDelta":
             guard let itemID = params.value(at: ["itemId"])?.stringValue
-                    ?? params.value(at: ["item", "id"])?.stringValue,
-                  let delta = params.value(at: ["delta"])?.stringValue,
-                  !delta.isEmpty else {
+                ?? params.value(at: ["item", "id"])?.stringValue,
+                let delta = params.value(at: ["delta"])?.stringValue,
+                !delta.isEmpty
+            else {
                 return []
             }
             let output = RuntimeCommandOutputDelta(
@@ -55,7 +58,8 @@ enum AppServerEventDecoder {
 
         case "item/started", "item/completed":
             guard let item = params.value(at: ["item"]),
-                  let itemType = item.value(at: ["type"])?.stringValue else {
+                  let itemType = item.value(at: ["type"])?.stringValue
+            else {
                 return []
             }
 

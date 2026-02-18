@@ -22,8 +22,8 @@ public actor CodexRuntime {
         self.executableResolver = executableResolver
 
         var continuation: AsyncStream<CodexRuntimeEvent>.Continuation?
-        self.eventStream = AsyncStream(bufferingPolicy: .bufferingNewest(512)) { continuation = $0 }
-        self.eventContinuation = continuation!
+        eventStream = AsyncStream(bufferingPolicy: .bufferingNewest(512)) { continuation = $0 }
+        eventContinuation = continuation!
     }
 
     deinit {
@@ -188,7 +188,8 @@ public actor CodexRuntime {
         )
 
         guard let authURLString = result.value(at: ["authUrl"])?.stringValue,
-              let authURL = URL(string: authURLString) else {
+              let authURL = URL(string: authURLString)
+        else {
             throw CodexRuntimeError.invalidResponse("account/login/start(chatgpt) missing authUrl")
         }
 
@@ -204,7 +205,7 @@ public actor CodexRuntime {
             method: "account/login/start",
             params: .object([
                 "type": .string("apiKey"),
-                "apiKey": .string(apiKey)
+                "apiKey": .string(apiKey),
             ]),
             timeoutSeconds: 30
         )
@@ -238,10 +239,10 @@ public actor CodexRuntime {
         try process.run()
 
         self.process = process
-        self.stdinHandle = stdinPipe.fileHandleForWriting
-        self.stdoutHandle = stdoutPipe.fileHandleForReading
-        self.stderrHandle = stderrPipe.fileHandleForReading
-        self.framer = JSONLFramer()
+        stdinHandle = stdinPipe.fileHandleForWriting
+        stdoutHandle = stdoutPipe.fileHandleForReading
+        stderrHandle = stderrPipe.fileHandleForReading
+        framer = JSONLFramer()
 
         installReadHandlers()
     }
@@ -299,10 +300,9 @@ public actor CodexRuntime {
             return
         }
 
-        let message = String(decoding: data, as: UTF8.self)
+        let trimmed = String(bytes: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !message.isEmpty else {
+        guard let message = trimmed, !message.isEmpty else {
             return
         }
 
@@ -339,7 +339,8 @@ public actor CodexRuntime {
 
     private func handleServerRequest(_ request: JSONRPCMessageEnvelope) async throws {
         guard let id = request.id,
-              let method = request.method else {
+              let method = request.method
+        else {
             return
         }
 
@@ -367,8 +368,8 @@ public actor CodexRuntime {
             "clientInfo": .object([
                 "name": .string("codexchat_app"),
                 "title": .string("CodexChat"),
-                "version": .string("0.1.0")
-            ])
+                "version": .string("0.1.0"),
+            ]),
         ])
 
         _ = try await sendRequest(method: "initialize", params: params, timeoutSeconds: 10)
@@ -416,7 +417,7 @@ public actor CodexRuntime {
         try writeMessage(notification)
     }
 
-    private func writeMessage<T: Encodable>(_ payload: T) throws {
+    private func writeMessage(_ payload: some Encodable) throws {
         guard let stdinHandle else {
             throw CodexRuntimeError.processNotRunning
         }
@@ -501,8 +502,8 @@ public actor CodexRuntime {
         var inputItems: [JSONValue] = [
             .object([
                 "type": .string("text"),
-                "text": .string(text)
-            ])
+                "text": .string(text),
+            ]),
         ]
         if !skillInputs.isEmpty {
             inputItems.append(
@@ -510,7 +511,7 @@ public actor CodexRuntime {
                     .object([
                         "type": .string("skill"),
                         "name": .string(input.name),
-                        "path": .string(input.path)
+                        "path": .string(input.path),
                     ])
                 }
             )
@@ -518,7 +519,7 @@ public actor CodexRuntime {
 
         var params: [String: JSONValue] = [
             "threadId": .string(threadID),
-            "input": .array(inputItems)
+            "input": .array(inputItems),
         ]
 
         if let safetyConfiguration {
@@ -550,7 +551,7 @@ public actor CodexRuntime {
             return .object([
                 "type": .string(RuntimeSandboxMode.workspaceWrite.rawValue),
                 "writableRoots": .array(roots.map(JSONValue.string)),
-                "networkAccess": .bool(safetyConfiguration.networkAccess)
+                "networkAccess": .bool(safetyConfiguration.networkAccess),
             ])
         case .dangerFullAccess:
             return .object(["type": .string(RuntimeSandboxMode.dangerFullAccess.rawValue)])
@@ -558,7 +559,7 @@ public actor CodexRuntime {
     }
 
     private static func shouldRetryWithoutWebSearch(error: CodexRuntimeError) -> Bool {
-        guard case .rpcError(_, let message) = error else {
+        guard case let .rpcError(_, message) = error else {
             return false
         }
         let lowered = message.lowercased()
@@ -567,7 +568,7 @@ public actor CodexRuntime {
     }
 
     private static func shouldRetryWithoutSkillInput(error: CodexRuntimeError) -> Bool {
-        guard case .rpcError(_, let message) = error else {
+        guard case let .rpcError(_, message) = error else {
             return false
         }
         let lowered = message.lowercased()
@@ -581,24 +582,22 @@ public actor CodexRuntime {
         params: JSONValue?
     ) -> RuntimeApprovalRequest {
         let payload = params ?? .object([:])
-        let kind: RuntimeApprovalKind
-        if method.contains("commandExecution") {
-            kind = .commandExecution
+        let kind: RuntimeApprovalKind = if method.contains("commandExecution") {
+            .commandExecution
         } else if method.contains("fileChange") {
-            kind = .fileChange
+            .fileChange
         } else {
-            kind = .unknown
+            .unknown
         }
 
-        let command: [String]
-        if let array = payload.value(at: ["command"])?.arrayValue {
-            command = array.compactMap(\.stringValue)
+        let command: [String] = if let array = payload.value(at: ["command"])?.arrayValue {
+            array.compactMap(\.stringValue)
         } else if let parsed = payload.value(at: ["parsedCmd"])?.arrayValue {
-            command = parsed.compactMap(\.stringValue)
+            parsed.compactMap(\.stringValue)
         } else if let single = payload.value(at: ["command"])?.stringValue {
-            command = [single]
+            [single]
         } else {
-            command = []
+            []
         }
 
         let changes: [RuntimeFileChange] = (payload.value(at: ["changes"])?.arrayValue ?? []).compactMap { change in
@@ -626,7 +625,7 @@ public actor CodexRuntime {
         )
     }
 
-    nonisolated public static func defaultExecutableResolver() -> String? {
+    public nonisolated static func defaultExecutableResolver() -> String? {
         let envPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
         let candidates = envPath
             .split(separator: ":")
@@ -640,7 +639,7 @@ public actor CodexRuntime {
         return nil
     }
 
-    nonisolated public static func launchDeviceAuthInTerminal() throws {
+    public nonisolated static func launchDeviceAuthInTerminal() throws {
         guard defaultExecutableResolver() != nil else {
             throw CodexRuntimeError.binaryNotFound
         }
@@ -649,21 +648,21 @@ public actor CodexRuntime {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = [
             "-e", "tell application \"Terminal\" to do script \"codex login --device-auth\"",
-            "-e", "tell application \"Terminal\" to activate"
+            "-e", "tell application \"Terminal\" to activate",
         ]
         try process.run()
     }
 
-    nonisolated private static func authMode(fromAccountType type: String) -> RuntimeAuthMode {
+    private nonisolated static func authMode(fromAccountType type: String) -> RuntimeAuthMode {
         switch type.lowercased() {
         case "apikey":
-            return .apiKey
+            .apiKey
         case "chatgpt":
-            return .chatGPT
+            .chatGPT
         case "chatgptauthtokens":
-            return .chatGPTAuthTokens
+            .chatGPTAuthTokens
         default:
-            return .unknown
+            .unknown
         }
     }
 }

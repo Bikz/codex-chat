@@ -5,7 +5,7 @@ actor RequestCorrelator {
     private var pending: [Int: CheckedContinuation<JSONRPCMessageEnvelope, Error>] = [:]
 
     init(startingID: Int = 1) {
-        self.nextID = startingID
+        nextID = startingID
     }
 
     func makeRequestID() -> Int {
@@ -22,7 +22,8 @@ actor RequestCorrelator {
     @discardableResult
     func resolveResponse(_ response: JSONRPCMessageEnvelope) -> Bool {
         guard let id = response.id,
-              let continuation = pending.removeValue(forKey: id) else {
+              let continuation = pending.removeValue(forKey: id)
+        else {
             return false
         }
 

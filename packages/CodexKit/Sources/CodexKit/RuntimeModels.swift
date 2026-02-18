@@ -141,15 +141,15 @@ public struct RuntimeLoginCompleted: Hashable, Sendable {
 }
 
 public enum RuntimeSandboxMode: String, Hashable, Sendable, Codable {
-    case readOnly = "readOnly"
-    case workspaceWrite = "workspaceWrite"
-    case dangerFullAccess = "dangerFullAccess"
+    case readOnly
+    case workspaceWrite
+    case dangerFullAccess
 }
 
 public enum RuntimeApprovalPolicy: String, Hashable, Sendable, Codable {
     case untrusted = "unlessTrusted"
-    case onRequest = "onRequest"
-    case never = "never"
+    case onRequest
+    case never
 }
 
 public enum RuntimeWebSearchMode: String, Hashable, Sendable, Codable {
@@ -205,13 +205,13 @@ public enum RuntimeApprovalDecision: Hashable, Sendable {
     var rpcResult: JSONValue {
         switch self {
         case .approveOnce:
-            return .string("accept")
+            .string("accept")
         case .approveForSession:
-            return .string("acceptForSession")
+            .string("acceptForSession")
         case .decline:
-            return .string("decline")
+            .string("decline")
         case .cancel:
-            return .string("cancel")
+            .string("cancel")
         }
     }
 }
@@ -332,19 +332,19 @@ public enum CodexRuntimeError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .binaryNotFound:
-            return "Codex CLI was not found on PATH."
+            "Codex CLI was not found on PATH."
         case .processNotRunning:
-            return "Codex runtime process is not running."
-        case .handshakeFailed(let detail):
-            return "Codex runtime handshake failed: \(detail)"
-        case .timedOut(let operation):
-            return "Codex runtime timed out while \(operation)."
-        case .invalidResponse(let detail):
-            return "Codex runtime returned an invalid response: \(detail)"
-        case .rpcError(_, let message):
-            return "Codex runtime RPC error: \(message)"
+            "Codex runtime process is not running."
+        case let .handshakeFailed(detail):
+            "Codex runtime handshake failed: \(detail)"
+        case let .timedOut(operation):
+            "Codex runtime timed out while \(operation)."
+        case let .invalidResponse(detail):
+            "Codex runtime returned an invalid response: \(detail)"
+        case let .rpcError(_, message):
+            "Codex runtime RPC error: \(message)"
         case .transportClosed:
-            return "Codex runtime transport closed unexpectedly."
+            "Codex runtime transport closed unexpectedly."
         }
     }
 }

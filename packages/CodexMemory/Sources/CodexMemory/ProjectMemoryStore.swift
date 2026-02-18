@@ -1,7 +1,7 @@
 import Foundation
 
 #if canImport(NaturalLanguage)
-import NaturalLanguage
+    import NaturalLanguage
 #endif
 
 public actor ProjectMemoryStore {
@@ -30,9 +30,9 @@ public actor ProjectMemoryStore {
 
     public init(projectPath: String, fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        self.projectURL = URL(fileURLWithPath: projectPath, isDirectory: true)
-        self.memoryRootURL = projectURL.appendingPathComponent("memory", isDirectory: true)
-        self.semanticIndexURL = memoryRootURL.appendingPathComponent(".semantic-index.json")
+        projectURL = URL(fileURLWithPath: projectPath, isDirectory: true)
+        memoryRootURL = projectURL.appendingPathComponent("memory", isDirectory: true)
+        semanticIndexURL = memoryRootURL.appendingPathComponent(".semantic-index.json")
     }
 
     public nonisolated var memoryDirectoryPath: String {
@@ -109,38 +109,38 @@ public actor ProjectMemoryStore {
     }
 
     public func semanticSearch(query: String, limit: Int = 10) throws -> [MemorySearchHit] {
-#if canImport(NaturalLanguage)
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
+        #if canImport(NaturalLanguage)
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return [] }
 
-        guard let embedding = NLEmbedding.sentenceEmbedding(for: .english) else {
+            guard let embedding = NLEmbedding.sentenceEmbedding(for: .english) else {
+                throw MemoryStoreError.semanticSearchUnavailable
+            }
+
+            let index = try loadOrBuildSemanticIndex(using: embedding)
+            guard let queryVector = embedding.vector(for: trimmed) else {
+                return []
+            }
+
+            let normalizedQuery = normalize(vector: queryVector)
+            var scored: [(hit: MemorySearchHit, score: Double)] = []
+            scored.reserveCapacity(index.entries.count)
+
+            for entry in index.entries {
+                guard let entryVector = decodeVector(entry.embeddingBase64) else { continue }
+                let score = cosineSimilarity(normalizedQuery, entryVector)
+                scored.append((MemorySearchHit(fileKind: entry.fileKind, excerpt: entry.text, score: score), score))
+            }
+
+            let top = scored
+                .sorted { $0.score > $1.score }
+                .prefix(limit)
+                .map(\.hit)
+
+            return Array(top)
+        #else
             throw MemoryStoreError.semanticSearchUnavailable
-        }
-
-        let index = try loadOrBuildSemanticIndex(using: embedding)
-        guard let queryVector = embedding.vector(for: trimmed) else {
-            return []
-        }
-
-        let normalizedQuery = normalize(vector: queryVector)
-        var scored: [(hit: MemorySearchHit, score: Double)] = []
-        scored.reserveCapacity(index.entries.count)
-
-        for entry in index.entries {
-            guard let entryVector = decodeVector(entry.embeddingBase64) else { continue }
-            let score = cosineSimilarity(normalizedQuery, entryVector)
-            scored.append((MemorySearchHit(fileKind: entry.fileKind, excerpt: entry.text, score: score), score))
-        }
-
-        let top = scored
-            .sorted { $0.score > $1.score }
-            .prefix(limit)
-            .map { $0.hit }
-
-        return Array(top)
-#else
-        throw MemoryStoreError.semanticSearchUnavailable
-#endif
+        #endif
     }
 
     private func ensureFileExists(_ kind: MemoryFileKind) throws -> URL {
@@ -189,79 +189,79 @@ public actor ProjectMemoryStore {
 
     // MARK: - Semantic Index
 
-#if canImport(NaturalLanguage)
-    private func loadOrBuildSemanticIndex(using embedding: NLEmbedding) throws -> SemanticIndexFile {
-        try ensureStructure()
+    #if canImport(NaturalLanguage)
+        private func loadOrBuildSemanticIndex(using embedding: NLEmbedding) throws -> SemanticIndexFile {
+            try ensureStructure()
 
-        let currentSources = try currentSourceSignatures()
-        if let existing = try loadSemanticIndex(), existing.version == 1, existing.sources == currentSources {
-            return existing
+            let currentSources = try currentSourceSignatures()
+            if let existing = try loadSemanticIndex(), existing.version == 1, existing.sources == currentSources {
+                return existing
+            }
+
+            let built = try buildSemanticIndex(using: embedding, sources: currentSources)
+            try saveSemanticIndex(built)
+            return built
         }
 
-        let built = try buildSemanticIndex(using: embedding, sources: currentSources)
-        try saveSemanticIndex(built)
-        return built
-    }
+        private func currentSourceSignatures() throws -> [SemanticIndexFile.SourceSignature] {
+            var signatures: [SemanticIndexFile.SourceSignature] = []
+            signatures.reserveCapacity(MemoryFileKind.allCases.count)
 
-    private func currentSourceSignatures() throws -> [SemanticIndexFile.SourceSignature] {
-        var signatures: [SemanticIndexFile.SourceSignature] = []
-        signatures.reserveCapacity(MemoryFileKind.allCases.count)
+            for kind in MemoryFileKind.allCases {
+                let url = try ensureFileExists(kind)
+                let attrs = try fileManager.attributesOfItem(atPath: url.path)
+                let modifiedAt = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+                let size = attrs[.size] as? Int ?? 0
+                signatures.append(.init(fileKind: kind, modifiedAt: modifiedAt, size: size))
+            }
 
-        for kind in MemoryFileKind.allCases {
-            let url = try ensureFileExists(kind)
-            let attrs = try fileManager.attributesOfItem(atPath: url.path)
-            let modifiedAt = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-            let size = attrs[.size] as? Int ?? 0
-            signatures.append(.init(fileKind: kind, modifiedAt: modifiedAt, size: size))
+            return signatures.sorted { $0.fileKind.rawValue < $1.fileKind.rawValue }
         }
 
-        return signatures.sorted { $0.fileKind.rawValue < $1.fileKind.rawValue }
-    }
-
-    private func loadSemanticIndex() throws -> SemanticIndexFile? {
-        guard fileManager.fileExists(atPath: semanticIndexURL.path) else {
-            return nil
+        private func loadSemanticIndex() throws -> SemanticIndexFile? {
+            guard fileManager.fileExists(atPath: semanticIndexURL.path) else {
+                return nil
+            }
+            let data = try Data(contentsOf: semanticIndexURL)
+            do {
+                let decoder = JSONDecoder()
+                return try decoder.decode(SemanticIndexFile.self, from: data)
+            } catch {
+                throw MemoryStoreError.semanticIndexCorrupt(error.localizedDescription)
+            }
         }
-        let data = try Data(contentsOf: semanticIndexURL)
-        do {
-            let decoder = JSONDecoder()
-            return try decoder.decode(SemanticIndexFile.self, from: data)
-        } catch {
-            throw MemoryStoreError.semanticIndexCorrupt(error.localizedDescription)
+
+        private func saveSemanticIndex(_ index: SemanticIndexFile) throws {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(index)
+            try data.write(to: semanticIndexURL, options: [.atomic])
         }
-    }
 
-    private func saveSemanticIndex(_ index: SemanticIndexFile) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(index)
-        try data.write(to: semanticIndexURL, options: [.atomic])
-    }
+        private func buildSemanticIndex(using embedding: NLEmbedding, sources: [SemanticIndexFile.SourceSignature]) throws -> SemanticIndexFile {
+            var entries: [SemanticIndexFile.Entry] = []
+            entries.reserveCapacity(64)
 
-    private func buildSemanticIndex(using embedding: NLEmbedding, sources: [SemanticIndexFile.SourceSignature]) throws -> SemanticIndexFile {
-        var entries: [SemanticIndexFile.Entry] = []
-        entries.reserveCapacity(64)
-
-        for kind in MemoryFileKind.allCases {
-            let text = try read(kind)
-            let chunks = Self.chunk(text: text, maxCharacters: 600)
-            for chunk in chunks {
-                guard let vector = embedding.vector(for: chunk) else { continue }
-                let normalized = normalize(vector: vector)
-                let base64 = encodeVector(normalized)
-                entries.append(.init(fileKind: kind, text: chunk, embeddingBase64: base64))
+            for kind in MemoryFileKind.allCases {
+                let text = try read(kind)
+                let chunks = Self.chunk(text: text, maxCharacters: 600)
+                for chunk in chunks {
+                    guard let vector = embedding.vector(for: chunk) else { continue }
+                    let normalized = normalize(vector: vector)
+                    let base64 = encodeVector(normalized)
+                    entries.append(.init(fileKind: kind, text: chunk, embeddingBase64: base64))
+                    if entries.count >= 240 {
+                        break
+                    }
+                }
                 if entries.count >= 240 {
                     break
                 }
             }
-            if entries.count >= 240 {
-                break
-            }
-        }
 
-        return SemanticIndexFile(version: 1, sources: sources, entries: entries)
-    }
-#endif
+            return SemanticIndexFile(version: 1, sources: sources, entries: entries)
+        }
+    #endif
 
     // MARK: - Vector Utils
 
@@ -289,13 +289,13 @@ public actor ProjectMemoryStore {
         }
     }
 
-    private func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Double {
-        let count = min(a.count, b.count)
+    private func cosineSimilarity(_ lhs: [Float], _ rhs: [Float]) -> Double {
+        let count = min(lhs.count, rhs.count)
         guard count > 0 else { return 0 }
 
         var dot: Float = 0
-        for idx in 0..<count {
-            dot += a[idx] * b[idx]
+        for idx in 0 ..< count {
+            dot += lhs[idx] * rhs[idx]
         }
         return Double(dot)
     }

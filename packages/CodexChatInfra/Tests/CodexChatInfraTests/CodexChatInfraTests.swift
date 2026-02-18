@@ -1,7 +1,7 @@
 import CodexChatCore
+@testable import CodexChatInfra
 import Foundation
 import GRDB
-@testable import CodexChatInfra
 import XCTest
 
 final class CodexChatInfraTests: XCTestCase {

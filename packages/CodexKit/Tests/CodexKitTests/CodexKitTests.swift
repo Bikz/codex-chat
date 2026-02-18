@@ -1,5 +1,5 @@
-import XCTest
 @testable import CodexKit
+import XCTest
 
 final class CodexKitTests: XCTestCase {
     func testJSONLFramerFramesCompleteLinesAcrossChunks() throws {
@@ -41,12 +41,12 @@ final class CodexKitTests: XCTestCase {
             method: "item/agentMessage/delta",
             params: .object([
                 "itemId": .string("item_1"),
-                "delta": .string("Hello")
+                "delta": .string("Hello"),
             ])
         )
 
         let deltaEvents = AppServerEventDecoder.decodeAll(deltaNotification)
-        guard case .assistantMessageDelta(let itemID, let delta)? = deltaEvents.first else {
+        guard case let .assistantMessageDelta(itemID, delta)? = deltaEvents.first else {
             XCTFail("Expected assistantMessageDelta")
             return
         }
@@ -58,13 +58,13 @@ final class CodexKitTests: XCTestCase {
             params: .object([
                 "turn": .object([
                     "id": .string("turn_1"),
-                    "status": .string("completed")
-                ])
+                    "status": .string("completed"),
+                ]),
             ])
         )
 
         let completionEvents = AppServerEventDecoder.decodeAll(completionNotification)
-        guard case .turnCompleted(let completion)? = completionEvents.first else {
+        guard case let .turnCompleted(completion)? = completionEvents.first else {
             XCTFail("Expected turnCompleted")
             return
         }
@@ -77,7 +77,7 @@ final class CodexKitTests: XCTestCase {
             method: "account/updated",
             params: .object(["authMode": .string("chatgpt")])
         )
-        guard case .accountUpdated(let mode)? = AppServerEventDecoder.decodeAll(updated).first else {
+        guard case let .accountUpdated(mode)? = AppServerEventDecoder.decodeAll(updated).first else {
             XCTFail("Expected accountUpdated")
             return
         }
@@ -88,10 +88,10 @@ final class CodexKitTests: XCTestCase {
             params: .object([
                 "loginId": .string("login_123"),
                 "success": .bool(true),
-                "error": .null
+                "error": .null,
             ])
         )
-        guard case .accountLoginCompleted(let completion)? = AppServerEventDecoder.decodeAll(completed).first else {
+        guard case let .accountLoginCompleted(completion)? = AppServerEventDecoder.decodeAll(completed).first else {
             XCTFail("Expected accountLoginCompleted")
             return
         }
@@ -107,11 +107,11 @@ final class CodexKitTests: XCTestCase {
                 "threadId": .string("thr_1"),
                 "turnId": .string("turn_1"),
                 "itemId": .string("item_cmd_1"),
-                "delta": .string("stdout line")
+                "delta": .string("stdout line"),
             ])
         )
         let commandEvents = AppServerEventDecoder.decodeAll(commandOutput)
-        guard case .commandOutputDelta(let output)? = commandEvents.first else {
+        guard case let .commandOutputDelta(output)? = commandEvents.first else {
             XCTFail("Expected command output delta")
             return
         }
@@ -133,10 +133,10 @@ final class CodexKitTests: XCTestCase {
                         .object([
                             "path": .string("README.md"),
                             "kind": .string("update"),
-                            "diff": .string("@@ -1 +1 @@")
-                        ])
-                    ])
-                ])
+                            "diff": .string("@@ -1 +1 @@"),
+                        ]),
+                    ]),
+                ]),
             ])
         )
 
@@ -147,7 +147,7 @@ final class CodexKitTests: XCTestCase {
             if case .fileChangesUpdated = $0 { return true }
             return false
         }
-        guard case .fileChangesUpdated(let update)? = updateEvent else {
+        guard case let .fileChangesUpdated(update)? = updateEvent else {
             XCTFail("Expected fileChangesUpdated")
             return
         }

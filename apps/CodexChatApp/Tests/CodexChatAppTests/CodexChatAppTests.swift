@@ -1,7 +1,7 @@
+@testable import CodexChatApp
 import CodexChatCore
 import CodexKit
 import XCTest
-@testable import CodexChatApp
 
 final class CodexChatAppTests: XCTestCase {
     func testChatArchiveAppendAndRevealLookup() throws {
@@ -84,7 +84,7 @@ final class CodexChatAppTests: XCTestCase {
             userText: userText,
             assistantText: assistantText,
             actions: [
-                ActionCard(threadID: threadID, method: "tool/run", title: "Ran command", detail: "echo hello")
+                ActionCard(threadID: threadID, method: "tool/run", title: "Ran command", detail: "echo hello"),
             ],
             mode: .summariesOnly
         )
@@ -166,7 +166,7 @@ final class CodexChatAppTests: XCTestCase {
         try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
 
         let changes: [RuntimeFileChange] = [
-            RuntimeFileChange(path: "../mods/evil.json", kind: "modify", diff: "{}")
+            RuntimeFileChange(path: "../mods/evil.json", kind: "modify", diff: "{}"),
         ]
 
         let filtered = ModEditSafety.filterModChanges(

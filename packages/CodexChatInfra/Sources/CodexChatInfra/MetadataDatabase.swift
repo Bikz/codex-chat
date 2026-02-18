@@ -7,13 +7,13 @@ public final class MetadataDatabase: @unchecked Sendable {
     public init(databaseURL: URL) throws {
         var configuration = Configuration()
         configuration.foreignKeysEnabled = true
-        self.dbQueue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
+        dbQueue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         try Self.migrator.migrate(dbQueue)
     }
 
     public static func appSupportDatabaseURL(
         fileManager: FileManager = .default,
-        bundleIdentifier: String = "app.codexchat"
+        bundleIdentifier _: String = "app.codexchat"
     ) throws -> URL {
         let base = try fileManager.url(
             for: .applicationSupportDirectory,
@@ -97,13 +97,13 @@ public final class MetadataDatabase: @unchecked Sendable {
 
         migrator.registerMigration("v5_add_chat_search_index") { db in
             try db.execute(sql: """
-                CREATE VIRTUAL TABLE chat_search_index USING fts5(
-                    threadID UNINDEXED,
-                    projectID UNINDEXED,
-                    source UNINDEXED,
-                    content
-                )
-                """)
+            CREATE VIRTUAL TABLE chat_search_index USING fts5(
+                threadID UNINDEXED,
+                projectID UNINDEXED,
+                source UNINDEXED,
+                content
+            )
+            """)
         }
 
         migrator.registerMigration("v6_add_project_safety_settings") { db in
@@ -117,13 +117,13 @@ public final class MetadataDatabase: @unchecked Sendable {
             // Keep existing trusted projects aligned with recommended defaults.
             try db.execute(
                 sql: """
-                    UPDATE projects
-                    SET sandboxMode = 'workspace-write',
-                        approvalPolicy = 'on-request',
-                        networkAccess = 0,
-                        webSearch = 'cached'
-                    WHERE trustState = 'trusted'
-                    """
+                UPDATE projects
+                SET sandboxMode = 'workspace-write',
+                    approvalPolicy = 'on-request',
+                    networkAccess = 0,
+                    webSearch = 'cached'
+                WHERE trustState = 'trusted'
+                """
             )
         }
 

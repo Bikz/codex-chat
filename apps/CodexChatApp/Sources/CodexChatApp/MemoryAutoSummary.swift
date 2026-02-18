@@ -63,7 +63,7 @@ enum MemoryAutoSummary {
         return String(compact.prefix(max(0, limit - 1))) + "…"
     }
 
-    private static func extractKeyFacts(userText: String, assistantText: String) -> [String] {
+    private static func extractKeyFacts(userText _: String, assistantText: String) -> [String] {
         let lines = assistantText
             .replacingOccurrences(of: "\r\n", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -105,9 +105,9 @@ enum MemoryAutoSummary {
         // Fallback: first couple sentence-like fragments.
         var fragments: [String] = []
         var current = ""
-        for ch in assistantCompact {
-            current.append(ch)
-            if ch == "." || ch == "!" || ch == "?" {
+        for character in assistantCompact {
+            current.append(character)
+            if character == "." || character == "!" || character == "?" {
                 let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
                     fragments.append(trimmed)

@@ -9,33 +9,33 @@ public enum MemoryFileKind: String, CaseIterable, Hashable, Sendable, Codable {
     public var fileName: String {
         switch self {
         case .profile:
-            return "profile.md"
+            "profile.md"
         case .current:
-            return "current.md"
+            "current.md"
         case .decisions:
-            return "decisions.md"
+            "decisions.md"
         case .summaryLog:
-            return "summary-log.md"
+            "summary-log.md"
         }
     }
 
     public var displayName: String {
         switch self {
         case .profile:
-            return "Profile"
+            "Profile"
         case .current:
-            return "Current"
+            "Current"
         case .decisions:
-            return "Decisions"
+            "Decisions"
         case .summaryLog:
-            return "Summary Log"
+            "Summary Log"
         }
     }
 
     public var defaultContents: String {
         switch self {
         case .profile:
-            return """
+            """
             # Profile
 
             Stable facts about the user/project that should rarely change.
@@ -46,7 +46,7 @@ public enum MemoryFileKind: String, CaseIterable, Hashable, Sendable, Codable {
 
             """
         case .current:
-            return """
+            """
             # Current Context
 
             Active context the agent should consider for the next few turns.
@@ -56,7 +56,7 @@ public enum MemoryFileKind: String, CaseIterable, Hashable, Sendable, Codable {
 
             """
         case .decisions:
-            return """
+            """
             # Decisions
 
             Record project decisions with dates and short rationale.
@@ -65,7 +65,7 @@ public enum MemoryFileKind: String, CaseIterable, Hashable, Sendable, Codable {
 
             """
         case .summaryLog:
-            return """
+            """
             # Summary Log
 
             Auto-generated summaries appended after completed turns (if enabled).
@@ -74,4 +74,3 @@ public enum MemoryFileKind: String, CaseIterable, Hashable, Sendable, Codable {
         }
     }
 }
-

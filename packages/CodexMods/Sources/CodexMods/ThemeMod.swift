@@ -190,14 +190,13 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
     ) -> T? {
         switch (base, overlay) {
         case (nil, nil):
-            return nil
+            nil
         case (nil, let overlay?):
-            return overlay
+            overlay
         case (let base?, nil):
-            return base
-        case (let base?, let overlay?):
-            return merge(base, overlay)
+            base
+        case let (base?, overlay?):
+            merge(base, overlay)
         }
     }
 }
-

@@ -1,5 +1,5 @@
-import XCTest
 @testable import CodexMods
+import XCTest
 
 final class CodexModsTests: XCTestCase {
     func testVersionPlaceholder() {

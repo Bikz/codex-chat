@@ -7,7 +7,7 @@ enum APIKeychainStoreError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .osStatus(let status):
+        case let .osStatus(status):
             let text = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown OSStatus"
             return "Keychain operation failed (\(status)): \(text)"
         case .invalidData:
@@ -26,11 +26,11 @@ final class APIKeychainStore: @unchecked Sendable {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
         ]
 
         let attributes: [String: Any] = [
-            kSecValueData as String: data
+            kSecValueData as String: data,
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
@@ -56,7 +56,7 @@ final class APIKeychainStore: @unchecked Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
         var item: CFTypeRef?
@@ -70,7 +70,8 @@ final class APIKeychainStore: @unchecked Sendable {
         }
 
         guard let data = item as? Data,
-              let value = String(data: data, encoding: .utf8) else {
+              let value = String(data: data, encoding: .utf8)
+        else {
             throw APIKeychainStoreError.invalidData
         }
 
@@ -81,7 +82,7 @@ final class APIKeychainStore: @unchecked Sendable {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
         ]
 
         let status = SecItemDelete(query as CFDictionary)

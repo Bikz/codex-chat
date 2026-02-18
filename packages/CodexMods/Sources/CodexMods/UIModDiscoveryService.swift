@@ -48,7 +48,8 @@ public final class UIModDiscoveryService: @unchecked Sendable {
             }
 
             if let expected = definition.manifest.checksum?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !expected.isEmpty {
+               !expected.isEmpty
+            {
                 let normalizedExpected = expected.lowercased()
                 let normalizedActual = "sha256:\(checksum)"
                 if normalizedExpected != normalizedActual {
