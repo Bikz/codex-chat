@@ -51,3 +51,13 @@ Select the `CodexChatApp` scheme and run.
 
 The app integrates the local Codex runtime via `codex app-server`.
 If the `codex` binary is missing, CodexChat will show an “Install Codex” guidance view and remain usable for local-only features.
+
+## Build Release DMG
+
+For signed/notarized/stapled release artifacts, use:
+
+```sh
+make release-dmg
+```
+
+Release credential setup is documented in `docs-public/RELEASE.md`.

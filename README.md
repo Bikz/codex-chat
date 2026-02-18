@@ -71,6 +71,7 @@ make quick
 ## Docs
 
 - `docs-public/INSTALL.md`
+- `docs-public/RELEASE.md`
 - `docs-public/SECURITY_MODEL.md`
 - `docs-public/MODS.md`
 - `docs-public/MODS_SHARING.md`

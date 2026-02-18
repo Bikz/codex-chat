@@ -7,6 +7,7 @@ Private planning and internal memory docs live in `docs/` and are intentionally 
 ## Contents
 
 - `INSTALL.md`: build and test locally.
+- `RELEASE.md`: signed/notarized/stapled DMG release pipeline.
 - `SECURITY_MODEL.md`: safety + permissions model (high level).
 - `MODS.md`: UI mod format, directories, and precedence.
 - `MODS_SHARING.md`: how to create and share custom Skills and Mods.

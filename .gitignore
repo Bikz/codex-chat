@@ -5,7 +5,10 @@ docs/
 .DS_Store
 .build/
 .swiftpm/
+.release-work/
+dist/
 DerivedData/
+apps/CodexChatApp/.deriveddata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: quick ci format format-check lint test-fast test periphery
+.PHONY: quick ci format format-check lint test-fast test periphery release-dmg
 
 quick: format-check lint test-fast
 
@@ -23,3 +23,6 @@ test:
 
 periphery:
 	./scripts/periphery-scan.sh
+
+release-dmg:
+	./scripts/release/build-notarized-dmg.sh
