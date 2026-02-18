@@ -59,14 +59,16 @@ extension AppModel {
             document.fileHash = saveResult.hash
             document.fileModifiedAt = saveResult.modifiedAt
             codexConfigDocument = document
-            codexConfigStatusMessage = restartRuntime
-                ? "Saved config.toml. Restarting runtime…"
-                : "Saved config.toml."
             applyDerivedRuntimeDefaultsFromConfig()
 
             if restartRuntime, runtime != nil {
+                codexConfigStatusMessage = "Saved config.toml. Restarting runtime…"
                 await restartRuntimeSession()
                 codexConfigStatusMessage = "Saved config.toml and restarted runtime."
+            } else if restartRuntime {
+                codexConfigStatusMessage = "Saved config.toml. Changes apply on next runtime start."
+            } else {
+                codexConfigStatusMessage = "Saved config.toml."
             }
         } catch {
             codexConfigStatusMessage = "Failed to save config.toml: \(error.localizedDescription)"

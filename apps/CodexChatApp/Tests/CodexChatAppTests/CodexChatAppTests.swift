@@ -314,7 +314,15 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(model.defaultModel, "gpt-5")
         XCTAssertEqual(model.defaultReasoning, .high)
         XCTAssertEqual(model.defaultWebSearch, .disabled)
-        XCTAssertEqual(model.defaultSafetySettings, safety)
+        XCTAssertEqual(
+            model.defaultSafetySettings,
+            ProjectSafetySettings(
+                sandboxMode: .workspaceWrite,
+                approvalPolicy: .onRequest,
+                networkAccess: true,
+                webSearch: .disabled
+            )
+        )
         let migrationMarker = try await repositories.preferenceRepository.getPreference(key: .runtimeConfigMigrationV1)
         XCTAssertEqual(migrationMarker, "1")
 
