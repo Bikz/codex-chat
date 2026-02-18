@@ -8,6 +8,8 @@ private struct ThreadEntity: Codable, FetchableRecord, PersistableRecord {
     var id: String
     var projectId: String
     var title: String
+    var isPinned: Bool
+    var archivedAt: Date?
     var createdAt: Date
     var updatedAt: Date
 
@@ -15,6 +17,8 @@ private struct ThreadEntity: Codable, FetchableRecord, PersistableRecord {
         id = record.id.uuidString
         projectId = record.projectId.uuidString
         title = record.title
+        isPinned = record.isPinned
+        archivedAt = record.archivedAt
         createdAt = record.createdAt
         updatedAt = record.updatedAt
     }
@@ -24,6 +28,8 @@ private struct ThreadEntity: Codable, FetchableRecord, PersistableRecord {
             id: UUID(uuidString: id) ?? UUID(),
             projectId: UUID(uuidString: projectId) ?? UUID(),
             title: title,
+            isPinned: isPinned,
+            archivedAt: archivedAt,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -37,11 +43,34 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
         self.dbQueue = dbQueue
     }
 
-    public func listThreads(projectID: UUID) async throws -> [ThreadRecord] {
+    public func listThreads(projectID: UUID, scope: ThreadListScope) async throws -> [ThreadRecord] {
+        try await dbQueue.read { db in
+            var request = ThreadEntity
+                .filter(Column("projectId") == projectID.uuidString)
+
+            switch scope {
+            case .active:
+                request = request.filter(Column("archivedAt") == nil)
+                    .order(Column("isPinned").desc)
+                    .order(Column("updatedAt").desc)
+            case .archived:
+                request = request.filter(Column("archivedAt") != nil)
+                    .order(Column("archivedAt").desc)
+            case .all:
+                request = request
+                    .order(Column("isPinned").desc)
+                    .order(Column("updatedAt").desc)
+            }
+
+            return try request.fetchAll(db).map(\.record)
+        }
+    }
+
+    public func listArchivedThreads() async throws -> [ThreadRecord] {
         try await dbQueue.read { db in
             try ThreadEntity
-                .filter(Column("projectId") == projectID.uuidString)
-                .order(Column("updatedAt").desc)
+                .filter(Column("archivedAt") != nil)
+                .order(Column("archivedAt").desc)
                 .fetchAll(db)
                 .map(\.record)
         }
@@ -57,7 +86,14 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
         try await dbQueue.write { db in
             let now = Date()
             let entity = ThreadEntity(
-                record: ThreadRecord(projectId: projectID, title: title, createdAt: now, updatedAt: now)
+                record: ThreadRecord(
+                    projectId: projectID,
+                    title: title,
+                    isPinned: false,
+                    archivedAt: nil,
+                    createdAt: now,
+                    updatedAt: now
+                )
             )
             try entity.insert(db)
             return entity.record
@@ -70,6 +106,54 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
                 throw CodexChatCoreError.missingRecord(id.uuidString)
             }
             entity.title = title
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func setThreadPinned(id: UUID, isPinned: Bool) async throws -> ThreadRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ThreadEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
+            entity.isPinned = entity.archivedAt == nil ? isPinned : false
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func archiveThread(id: UUID, archivedAt: Date) async throws -> ThreadRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ThreadEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
+            entity.archivedAt = archivedAt
+            entity.isPinned = false
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func unarchiveThread(id: UUID) async throws -> ThreadRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ThreadEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
+            entity.archivedAt = nil
+            entity.updatedAt = Date()
+            try entity.update(db)
+            return entity.record
+        }
+    }
+
+    public func touchThread(id: UUID) async throws -> ThreadRecord {
+        try await dbQueue.write { db in
+            guard var entity = try ThreadEntity.fetchOne(db, key: ["id": id.uuidString]) else {
+                throw CodexChatCoreError.missingRecord(id.uuidString)
+            }
             entity.updatedAt = Date()
             try entity.update(db)
             return entity.record

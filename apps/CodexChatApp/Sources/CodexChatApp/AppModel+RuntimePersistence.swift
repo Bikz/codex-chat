@@ -6,6 +6,12 @@ import Foundation
 extension AppModel {
     func persistCompletedTurn(context: ActiveTurnContext) async {
         let assistantText = context.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var isThreadArchived = false
+        if let threadRepository,
+           let thread = try? await threadRepository.getThread(id: context.localThreadID)
+        {
+            isThreadArchived = thread.archivedAt != nil
+        }
 
         let summary = ArchivedTurnSummary(
             timestamp: context.startedAt,
@@ -21,6 +27,13 @@ extension AppModel {
                 turn: summary
             )
             projectStatusMessage = "Archived chat turn to \(archiveURL.lastPathComponent)."
+
+            guard !isThreadArchived else {
+                appendLog(.debug, "Skipped indexing archived thread \(context.localThreadID.uuidString)")
+                return
+            }
+
+            _ = try await threadRepository?.touchThread(id: context.localThreadID)
 
             try await chatSearchRepository?.indexMessageExcerpt(
                 threadID: context.localThreadID,
@@ -39,6 +52,9 @@ extension AppModel {
             appendLog(.error, "Failed to archive turn: \(error.localizedDescription)")
         }
 
+        guard !isThreadArchived else {
+            return
+        }
         await appendMemorySummaryIfEnabled(context: context, assistantText: assistantText)
     }
 

@@ -21,6 +21,13 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("project_secrets"))
         XCTAssertTrue(tableNames.contains("project_skill_enablements"))
         XCTAssertTrue(tableNames.contains("chat_search_index"))
+        XCTAssertTrue(tableNames.contains("follow_up_queue"))
+
+        let threadColumns = try database.dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('threads')")
+        }
+        XCTAssertTrue(threadColumns.contains("isPinned"))
+        XCTAssertTrue(threadColumns.contains("archivedAt"))
     }
 
     func testProjectThreadAndPreferencePersistence() async throws {
@@ -30,7 +37,8 @@ final class CodexChatInfraTests: XCTestCase {
         let project = try await repositories.projectRepository.createProject(
             named: "Inbox",
             path: "/tmp/inbox",
-            trustState: .untrusted
+            trustState: .untrusted,
+            isGeneralProject: false
         )
         XCTAssertEqual(project.name, "Inbox")
         XCTAssertEqual(project.path, "/tmp/inbox")
@@ -44,6 +52,8 @@ final class CodexChatInfraTests: XCTestCase {
 
         let thread = try await repositories.threadRepository.createThread(projectID: project.id, title: "First")
         XCTAssertEqual(thread.projectId, project.id)
+        XCTAssertFalse(thread.isPinned)
+        XCTAssertNil(thread.archivedAt)
 
         let listedProjects = try await repositories.projectRepository.listProjects()
         XCTAssertEqual(listedProjects.count, 1)
@@ -154,6 +164,112 @@ final class CodexChatInfraTests: XCTestCase {
         )
         XCTAssertFalse(searchResults.isEmpty)
         XCTAssertEqual(searchResults.first?.threadID, thread.id)
+
+        _ = try await repositories.threadRepository.archiveThread(id: thread.id, archivedAt: Date())
+        let archivedSearchResults = try await repositories.chatSearchRepository.search(
+            query: "archive persistence",
+            projectID: project.id,
+            limit: 10
+        )
+        XCTAssertTrue(archivedSearchResults.isEmpty)
+    }
+
+    func testThreadPinAndArchiveOrdering() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let project = try await repositories.projectRepository.createProject(
+            named: "Threads",
+            path: "/tmp/threads",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let first = try await repositories.threadRepository.createThread(projectID: project.id, title: "First")
+        let second = try await repositories.threadRepository.createThread(projectID: project.id, title: "Second")
+        _ = try await repositories.threadRepository.touchThread(id: first.id)
+
+        _ = try await repositories.threadRepository.setThreadPinned(id: second.id, isPinned: true)
+        let active = try await repositories.threadRepository.listThreads(projectID: project.id)
+        XCTAssertEqual(active.first?.id, second.id)
+        XCTAssertEqual(active.count, 2)
+
+        _ = try await repositories.threadRepository.archiveThread(id: second.id, archivedAt: Date())
+        let activeAfterArchive = try await repositories.threadRepository.listThreads(projectID: project.id)
+        XCTAssertEqual(activeAfterArchive.map(\.id), [first.id])
+
+        let archived = try await repositories.threadRepository.listArchivedThreads()
+        XCTAssertEqual(archived.first?.id, second.id)
+        XCTAssertEqual(archived.first?.isPinned, false)
+
+        let unarchived = try await repositories.threadRepository.unarchiveThread(id: second.id)
+        XCTAssertNil(unarchived.archivedAt)
+        XCTAssertFalse(unarchived.isPinned)
+    }
+
+    func testFollowUpQueuePersistenceAndOrdering() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let project = try await repositories.projectRepository.createProject(
+            named: "Queue Project",
+            path: "/tmp/queue-project",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let thread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Queue Thread"
+        )
+
+        let first = FollowUpQueueItemRecord(
+            threadID: thread.id,
+            source: .userQueued,
+            dispatchMode: .auto,
+            text: "first",
+            sortIndex: 0
+        )
+        let second = FollowUpQueueItemRecord(
+            threadID: thread.id,
+            source: .assistantSuggestion,
+            dispatchMode: .auto,
+            text: "second",
+            sortIndex: 1,
+            originSuggestionID: "s-1"
+        )
+
+        try await repositories.followUpQueueRepository.enqueue(first)
+        try await repositories.followUpQueueRepository.enqueue(second)
+
+        var loaded = try await repositories.followUpQueueRepository.list(threadID: thread.id)
+        XCTAssertEqual(loaded.map(\.text), ["first", "second"])
+
+        let updated = try await repositories.followUpQueueRepository.updateText(id: second.id, text: "second-updated")
+        XCTAssertEqual(updated.text, "second-updated")
+
+        try await repositories.followUpQueueRepository.move(id: second.id, threadID: thread.id, toSortIndex: 0)
+
+        loaded = try await repositories.followUpQueueRepository.list(threadID: thread.id)
+        XCTAssertEqual(loaded.map(\.text), ["second-updated", "first"])
+        XCTAssertEqual(loaded.map(\.sortIndex), [0, 1])
+
+        let preferred = try await repositories.followUpQueueRepository.listNextAutoCandidate(preferredThreadID: thread.id)
+        XCTAssertEqual(preferred?.id, second.id)
+
+        try await repositories.followUpQueueRepository.markFailed(id: second.id, error: "boom")
+        let afterFailure = try await repositories.followUpQueueRepository.list(threadID: thread.id)
+        let failed = try XCTUnwrap(afterFailure.first(where: { $0.id == second.id }))
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.lastError, "boom")
+
+        try await repositories.followUpQueueRepository.markPending(id: second.id)
+        let pending = try await repositories.followUpQueueRepository.list(threadID: thread.id)
+        XCTAssertEqual(pending.first(where: { $0.id == second.id })?.state, .pending)
+
+        try await repositories.followUpQueueRepository.delete(id: second.id)
+        let afterDelete = try await repositories.followUpQueueRepository.list(threadID: thread.id)
+        XCTAssertEqual(afterDelete.map(\.text), ["first"])
+        XCTAssertEqual(afterDelete.first?.sortIndex, 0)
     }
 
     private func temporaryDatabaseURL() -> URL {

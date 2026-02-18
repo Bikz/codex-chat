@@ -25,8 +25,13 @@ extension AppModel {
 
         do {
             try await refreshProjects()
+            try await ensureGeneralProject()
             try await restoreLastOpenedContext()
+            try await validateAndRepairProjectsOnLaunch()
             try await refreshThreads()
+            try await refreshGeneralThreads()
+            try await refreshArchivedThreads()
+            try await refreshFollowUpQueuesForVisibleThreads()
             try await refreshSkills()
             refreshModsSurface()
             refreshConversationState()
@@ -35,6 +40,7 @@ extension AppModel {
             let message = error.localizedDescription
             projectsState = .failed(message)
             threadsState = .failed(message)
+            archivedThreadsState = .failed(message)
             conversationState = .failed(message)
             skillsState = .failed(message)
             runtimeStatus = .error

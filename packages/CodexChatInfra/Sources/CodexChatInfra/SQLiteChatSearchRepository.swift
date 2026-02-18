@@ -51,14 +51,17 @@ public final class SQLiteChatSearchRepository: ChatSearchRepository, @unchecked 
 
         return try await dbQueue.read { db in
             var sql = """
-            SELECT threadID, projectID, source, snippet(chat_search_index, 3, '', '', ' … ', 18) AS excerpt
+            SELECT chat_search_index.threadID, chat_search_index.projectID, chat_search_index.source,
+                   snippet(chat_search_index, 3, '', '', ' … ', 18) AS excerpt
             FROM chat_search_index
+            JOIN threads ON threads.id = chat_search_index.threadID
             WHERE chat_search_index MATCH ?
+              AND threads.archivedAt IS NULL
             """
             var arguments: StatementArguments = [normalizedQuery]
 
             if let projectID {
-                sql += " AND projectID = ?"
+                sql += " AND chat_search_index.projectID = ?"
                 arguments += [projectID.uuidString]
             }
 

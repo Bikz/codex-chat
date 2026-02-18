@@ -156,6 +156,60 @@ public final class MetadataDatabase: @unchecked Sendable {
             }
         }
 
+        migrator.registerMigration("v10_add_is_general_project") { db in
+            try db.alter(table: "projects") { table in
+                table.add(column: "isGeneralProject", .boolean).notNull().defaults(to: false)
+            }
+        }
+
+        migrator.registerMigration("v11_add_follow_up_queue") { db in
+            try db.create(table: "follow_up_queue") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("threadID", .text).notNull()
+                    .references("threads", onDelete: .cascade)
+                table.column("source", .text).notNull()
+                table.column("dispatchMode", .text).notNull()
+                table.column("state", .text).notNull()
+                table.column("text", .text).notNull()
+                table.column("sortIndex", .integer).notNull()
+                table.column("originTurnID", .text)
+                table.column("originSuggestionID", .text)
+                table.column("lastError", .text)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(
+                index: "idx_follow_up_queue_thread_sort",
+                on: "follow_up_queue",
+                columns: ["threadID", "sortIndex"]
+            )
+            try db.create(
+                index: "idx_follow_up_queue_state_dispatch_created",
+                on: "follow_up_queue",
+                columns: ["state", "dispatchMode", "createdAt"]
+            )
+            try db.execute(
+                sql: """
+                CREATE UNIQUE INDEX idx_follow_up_queue_thread_origin_suggestion_unique
+                ON follow_up_queue(threadID, originSuggestionID)
+                WHERE originSuggestionID IS NOT NULL
+                """
+            )
+        }
+
+        migrator.registerMigration("v12_add_thread_pin_and_archive_state") { db in
+            try db.alter(table: "threads") { table in
+                table.add(column: "isPinned", .boolean).notNull().defaults(to: false)
+                table.add(column: "archivedAt", .datetime)
+            }
+            try db.create(
+                index: "idx_threads_archived_pinned_updated",
+                on: "threads",
+                columns: ["archivedAt", "isPinned", "updatedAt"]
+            )
+        }
+
         return migrator
     }
 }

@@ -27,12 +27,14 @@ public actor ProjectMemoryStore {
     private let projectURL: URL
     private let memoryRootURL: URL
     private let semanticIndexURL: URL
+    private let archivedSummaryRootURL: URL
 
     public init(projectPath: String, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         projectURL = URL(fileURLWithPath: projectPath, isDirectory: true)
         memoryRootURL = projectURL.appendingPathComponent("memory", isDirectory: true)
         semanticIndexURL = memoryRootURL.appendingPathComponent(".semantic-index.json")
+        archivedSummaryRootURL = memoryRootURL.appendingPathComponent(".archived-summary-log", isDirectory: true)
     }
 
     public nonisolated var memoryDirectoryPath: String {
@@ -76,6 +78,72 @@ public actor ProjectMemoryStore {
         if let data = block.data(using: .utf8) {
             try handle.write(contentsOf: data)
         }
+    }
+
+    public func archiveSummaryEntries(for threadID: UUID) throws -> Int {
+        let summaryURL = try ensureFileExists(.summaryLog)
+        let original = try read(.summaryLog)
+        let parsed = Self.parseSummaryLog(original)
+        let marker = "- Thread: `\(threadID.uuidString)`"
+
+        var kept: [String] = []
+        var archived: [String] = []
+        kept.reserveCapacity(parsed.sections.count)
+        archived.reserveCapacity(parsed.sections.count)
+
+        for section in parsed.sections {
+            if section.contains(marker) {
+                archived.append(section)
+            } else {
+                kept.append(section)
+            }
+        }
+
+        guard !archived.isEmpty else {
+            return 0
+        }
+
+        let rewritten = Self.composeSummaryLog(preamble: parsed.preamble, sections: kept)
+        try Data(rewritten.utf8).write(to: summaryURL, options: [.atomic])
+
+        try fileManager.createDirectory(at: archivedSummaryRootURL, withIntermediateDirectories: true)
+        let backupURL = archivedSummaryRootURL.appendingPathComponent("\(threadID.uuidString).md", isDirectory: false)
+        let backup = archived.joined(separator: "\n")
+        try Data(backup.utf8).write(to: backupURL, options: [.atomic])
+        try wipeSemanticIndex()
+
+        return archived.count
+    }
+
+    public func restoreArchivedSummaryEntries(for threadID: UUID) throws -> Int {
+        let backupURL = archivedSummaryRootURL.appendingPathComponent("\(threadID.uuidString).md", isDirectory: false)
+        guard fileManager.fileExists(atPath: backupURL.path) else {
+            return 0
+        }
+
+        let data = try Data(contentsOf: backupURL)
+        guard let archivedText = String(data: data, encoding: .utf8) else {
+            throw MemoryStoreError.invalidUTF8(path: backupURL.path)
+        }
+        let trimmed = archivedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            try fileManager.removeItem(at: backupURL)
+            return 0
+        }
+
+        let summaryURL = try ensureFileExists(.summaryLog)
+        var current = try read(.summaryLog).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !current.isEmpty {
+            current += "\n\n"
+        }
+        current += trimmed
+        current += "\n\n"
+
+        try Data(current.utf8).write(to: summaryURL, options: [.atomic])
+        try fileManager.removeItem(at: backupURL)
+        try wipeSemanticIndex()
+
+        return trimmed.components(separatedBy: "\n## ").count
     }
 
     public func deleteAllMemoryFiles() throws {
@@ -345,5 +413,39 @@ public actor ProjectMemoryStore {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > limit else { return trimmed }
         return String(trimmed.prefix(max(0, limit - 1))) + "…"
+    }
+
+    private static func parseSummaryLog(_ content: String) -> (preamble: String, sections: [String]) {
+        let marker = "\n## "
+        let normalized = content.replacingOccurrences(of: "\r\n", with: "\n")
+
+        if let firstRange = normalized.range(of: "## ") {
+            let preamble = String(normalized[..<firstRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            var sections: [String] = []
+            let body = String(normalized[firstRange.lowerBound...])
+            let rawParts = body.components(separatedBy: marker)
+            for (index, part) in rawParts.enumerated() {
+                let rebuilt = index == 0 ? part : "## " + part
+                let trimmed = rebuilt.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    sections.append(trimmed)
+                }
+            }
+            return (preamble, sections)
+        }
+
+        return (normalized.trimmingCharacters(in: .whitespacesAndNewlines), [])
+    }
+
+    private static func composeSummaryLog(preamble: String, sections: [String]) -> String {
+        var parts: [String] = []
+        if !preamble.isEmpty {
+            parts.append(preamble)
+        }
+        if !sections.isEmpty {
+            parts.append(sections.joined(separator: "\n\n"))
+        }
+        let joined = parts.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? "" : "\(joined)\n\n"
     }
 }

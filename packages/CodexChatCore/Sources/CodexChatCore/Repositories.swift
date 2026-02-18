@@ -1,10 +1,16 @@
 import Foundation
 
+public enum ThreadListScope: String, Sendable, Hashable, Codable {
+    case active
+    case archived
+    case all
+}
+
 public protocol ProjectRepository: Sendable {
     func listProjects() async throws -> [ProjectRecord]
     func getProject(id: UUID) async throws -> ProjectRecord?
     func getProject(path: String) async throws -> ProjectRecord?
-    func createProject(named name: String, path: String, trustState: ProjectTrustState) async throws -> ProjectRecord
+    func createProject(named name: String, path: String, trustState: ProjectTrustState, isGeneralProject: Bool) async throws -> ProjectRecord
     func updateProjectName(id: UUID, name: String) async throws -> ProjectRecord
     func updateProjectTrustState(id: UUID, trustState: ProjectTrustState) async throws -> ProjectRecord
     func updateProjectSafetySettings(id: UUID, settings: ProjectSafetySettings) async throws -> ProjectRecord
@@ -13,10 +19,21 @@ public protocol ProjectRepository: Sendable {
 }
 
 public protocol ThreadRepository: Sendable {
-    func listThreads(projectID: UUID) async throws -> [ThreadRecord]
+    func listThreads(projectID: UUID, scope: ThreadListScope) async throws -> [ThreadRecord]
+    func listArchivedThreads() async throws -> [ThreadRecord]
     func getThread(id: UUID) async throws -> ThreadRecord?
     func createThread(projectID: UUID, title: String) async throws -> ThreadRecord
     func updateThreadTitle(id: UUID, title: String) async throws -> ThreadRecord
+    func setThreadPinned(id: UUID, isPinned: Bool) async throws -> ThreadRecord
+    func archiveThread(id: UUID, archivedAt: Date) async throws -> ThreadRecord
+    func unarchiveThread(id: UUID) async throws -> ThreadRecord
+    func touchThread(id: UUID) async throws -> ThreadRecord
+}
+
+public extension ThreadRepository {
+    func listThreads(projectID: UUID) async throws -> [ThreadRecord] {
+        try await listThreads(projectID: projectID, scope: .active)
+    }
 }
 
 public protocol PreferenceRepository: Sendable {
@@ -28,6 +45,18 @@ public protocol RuntimeThreadMappingRepository: Sendable {
     func setRuntimeThreadID(localThreadID: UUID, runtimeThreadID: String) async throws
     func getRuntimeThreadID(localThreadID: UUID) async throws -> String?
     func getLocalThreadID(runtimeThreadID: String) async throws -> UUID?
+}
+
+public protocol FollowUpQueueRepository: Sendable {
+    func list(threadID: UUID) async throws -> [FollowUpQueueItemRecord]
+    func listNextAutoCandidate(preferredThreadID: UUID?) async throws -> FollowUpQueueItemRecord?
+    func enqueue(_ item: FollowUpQueueItemRecord) async throws
+    func updateText(id: UUID, text: String) async throws -> FollowUpQueueItemRecord
+    func move(id: UUID, threadID: UUID, toSortIndex: Int) async throws
+    func updateDispatchMode(id: UUID, mode: FollowUpDispatchMode) async throws -> FollowUpQueueItemRecord
+    func markFailed(id: UUID, error: String) async throws
+    func markPending(id: UUID) async throws
+    func delete(id: UUID) async throws
 }
 
 public protocol ProjectSecretRepository: Sendable {
