@@ -50,6 +50,8 @@ struct ContentView: View {
             switch newValue {
             case .skills:
                 model.refreshSkillsSurface()
+            case .mods:
+                model.refreshModsSurface()
             case .chats, .memory:
                 break
             }
@@ -65,6 +67,8 @@ struct ContentView: View {
             skillsCanvas
         case .memory:
             MemoryCanvas(model: model)
+        case .mods:
+            ModsCanvas(model: model)
         }
     }
 
@@ -74,6 +78,7 @@ struct ContentView: View {
                 Text("Chats").tag(AppModel.NavigationSection.chats)
                 Text("Skills").tag(AppModel.NavigationSection.skills)
                 Text("Memory").tag(AppModel.NavigationSection.memory)
+                Text("Mods").tag(AppModel.NavigationSection.mods)
             }
             .pickerStyle(.segmented)
 
@@ -141,6 +146,16 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Use the Memory panel to manage `memory/*.md` and control auto-summaries.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            case .mods:
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Mods customize the UI with user-owned token overrides.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Use the Mods panel to enable global and per-project themes.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

@@ -3,6 +3,7 @@ import CodexChatCore
 import CodexChatInfra
 import CodexKit
 import CodexMemory
+import CodexMods
 import CodexSkills
 import Foundation
 
@@ -12,6 +13,7 @@ final class AppModel: ObservableObject {
         case chats
         case skills
         case memory
+        case mods
     }
 
     struct SkillListItem: Identifiable, Hashable {
@@ -19,6 +21,15 @@ final class AppModel: ObservableObject {
         var isEnabledForProject: Bool
 
         var id: String { skill.id }
+    }
+
+    struct ModsSurfaceModel: Hashable {
+        var globalMods: [DiscoveredUIMod]
+        var projectMods: [DiscoveredUIMod]
+        var selectedGlobalModPath: String?
+        var selectedProjectModPath: String?
+        var globalRootPath: String
+        var projectRootPath: String?
     }
 
     enum SurfaceState<Value> {
@@ -59,6 +70,7 @@ final class AppModel: ObservableObject {
     @Published var conversationState: SurfaceState<[TranscriptEntry]> = .idle
     @Published var searchState: SurfaceState<[ChatSearchResult]> = .idle
     @Published var skillsState: SurfaceState<[SkillListItem]> = .idle
+    @Published var modsState: SurfaceState<ModsSurfaceModel> = .idle
 
     @Published var selectedProjectID: UUID?
     @Published var selectedThreadID: UUID?
@@ -79,6 +91,7 @@ final class AppModel: ObservableObject {
     @Published var projectStatusMessage: String?
     @Published var skillStatusMessage: String?
     @Published var memoryStatusMessage: String?
+    @Published var modStatusMessage: String?
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
     @Published var isSkillOperationInProgress = false
@@ -90,6 +103,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
     @Published private(set) var isNodeSkillInstallerAvailable = false
 
+    @Published private(set) var effectiveThemeOverride: ModThemeOverride = ModThemeOverride()
+
     private let projectRepository: (any ProjectRepository)?
     private let threadRepository: (any ThreadRepository)?
     private let preferenceRepository: (any PreferenceRepository)?
@@ -99,6 +114,7 @@ final class AppModel: ObservableObject {
     private let chatSearchRepository: (any ChatSearchRepository)?
     private let runtime: CodexRuntime?
     private let skillCatalogService: SkillCatalogService
+    private let modDiscoveryService: UIModDiscoveryService
     private let keychainStore: APIKeychainStore
 
     private var transcriptStore: [UUID: [TranscriptEntry]] = [:]
@@ -110,12 +126,19 @@ final class AppModel: ObservableObject {
     private var activeTurnContext: ActiveTurnContext?
     private var runtimeEventTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
+    private var modsRefreshTask: Task<Void, Never>?
+    private var modsDebounceTask: Task<Void, Never>?
+
+    private var globalModsWatcher: DirectoryWatcher?
+    private var projectModsWatcher: DirectoryWatcher?
+    private var watchedProjectModsRootPath: String?
 
     init(
         repositories: MetadataRepositories?,
         runtime: CodexRuntime?,
         bootError: String?,
-        skillCatalogService: SkillCatalogService = SkillCatalogService()
+        skillCatalogService: SkillCatalogService = SkillCatalogService(),
+        modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService()
     ) {
         self.projectRepository = repositories?.projectRepository
         self.threadRepository = repositories?.threadRepository
@@ -126,6 +149,7 @@ final class AppModel: ObservableObject {
         self.chatSearchRepository = repositories?.chatSearchRepository
         self.runtime = runtime
         self.skillCatalogService = skillCatalogService
+        self.modDiscoveryService = modDiscoveryService
         self.keychainStore = APIKeychainStore()
         self.isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
 
@@ -145,6 +169,10 @@ final class AppModel: ObservableObject {
     deinit {
         runtimeEventTask?.cancel()
         searchTask?.cancel()
+        modsRefreshTask?.cancel()
+        modsDebounceTask?.cancel()
+        globalModsWatcher?.stop()
+        projectModsWatcher?.stop()
     }
 
     var projects: [ProjectRecord] {
@@ -383,6 +411,7 @@ final class AppModel: ObservableObject {
             try await restoreLastOpenedContext()
             try await refreshThreads()
             try await refreshSkills()
+            refreshModsSurface()
             refreshConversationState()
             appendLog(.info, "Initial metadata load completed")
         } catch {
@@ -424,6 +453,7 @@ final class AppModel: ObservableObject {
                     try await persistSelection()
                     try await refreshThreads()
                     try await refreshSkills()
+                    refreshModsSurface()
                     refreshConversationState()
                     projectStatusMessage = "Opened existing project at \(path)."
                     appendLog(.info, "Opened existing project \(existing.name)")
@@ -442,6 +472,7 @@ final class AppModel: ObservableObject {
                 try await persistSelection()
                 try await refreshThreads()
                 try await refreshSkills()
+                refreshModsSurface()
                 refreshConversationState()
                 projectStatusMessage = trustState == .trusted
                     ? "Project opened and trusted (Git repository detected)."
@@ -680,6 +711,7 @@ final class AppModel: ObservableObject {
                 try await persistSelection()
                 try await refreshThreads()
                 try await refreshSkills()
+                refreshModsSurface()
                 refreshConversationState()
             } catch {
                 appendLog(.error, "Failed to open search result: \(error.localizedDescription)")
@@ -712,6 +744,7 @@ final class AppModel: ObservableObject {
                 try await persistSelection()
                 try await refreshThreads()
                 try await refreshSkills()
+                refreshModsSurface()
                 refreshConversationState()
             } catch {
                 threadsState = .failed(error.localizedDescription)
@@ -864,6 +897,231 @@ final class AppModel: ObservableObject {
 
     func clearSelectedSkillForComposer() {
         selectedSkillIDForComposer = nil
+    }
+
+    func refreshModsSurface() {
+        modsState = .loading
+        modsRefreshTask?.cancel()
+
+        modsRefreshTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let globalRoot = try Self.globalModsRootPath()
+                let projectRoot = selectedProject.map { Self.projectModsRootPath(projectPath: $0.path) }
+
+                let globalMods = try modDiscoveryService.discoverMods(in: globalRoot, scope: .global)
+                let projectMods: [DiscoveredUIMod]
+                if let projectRoot {
+                    projectMods = try modDiscoveryService.discoverMods(in: projectRoot, scope: .project)
+                } else {
+                    projectMods = []
+                }
+
+                let persistedGlobal = try await preferenceRepository?.getPreference(key: .globalUIModPath)
+                let selectedGlobal = Self.normalizedOptionalPath(persistedGlobal)
+                let selectedProject = Self.normalizedOptionalPath(selectedProject?.uiModPath)
+
+                let globalOverride = globalMods.first(where: { $0.directoryPath == selectedGlobal })?.definition.theme
+                let projectOverride = projectMods.first(where: { $0.directoryPath == selectedProject })?.definition.theme
+
+                var effective = ModThemeOverride()
+                if let globalOverride {
+                    effective = effective.merged(with: globalOverride)
+                }
+                if let projectOverride {
+                    effective = effective.merged(with: projectOverride)
+                }
+
+                effectiveThemeOverride = effective
+                modsState = .loaded(
+                    ModsSurfaceModel(
+                        globalMods: globalMods,
+                        projectMods: projectMods,
+                        selectedGlobalModPath: selectedGlobal,
+                        selectedProjectModPath: selectedProject,
+                        globalRootPath: globalRoot,
+                        projectRootPath: projectRoot
+                    )
+                )
+
+                startModWatchersIfNeeded(globalRootPath: globalRoot, projectRootPath: projectRoot)
+            } catch {
+                modsState = .failed(error.localizedDescription)
+                modStatusMessage = "Failed to load mods: \(error.localizedDescription)"
+                appendLog(.error, "Mods refresh failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func setGlobalMod(_ mod: DiscoveredUIMod?) {
+        guard let preferenceRepository else {
+            modStatusMessage = "Preferences unavailable."
+            return
+        }
+
+        let value = mod?.directoryPath ?? ""
+        Task {
+            do {
+                try await preferenceRepository.setPreference(key: .globalUIModPath, value: value)
+                modStatusMessage = mod == nil ? "Global mod disabled." : "Enabled global mod: \(mod?.definition.manifest.name ?? "")."
+                refreshModsSurface()
+            } catch {
+                modStatusMessage = "Failed to update global mod: \(error.localizedDescription)"
+                appendLog(.error, "Update global mod failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func setProjectMod(_ mod: DiscoveredUIMod?) {
+        guard let projectRepository,
+              let selectedProjectID else {
+            modStatusMessage = "Select a project first."
+            return
+        }
+
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectUIModPath(id: selectedProjectID, uiModPath: mod?.directoryPath)
+                try await refreshProjects()
+                modStatusMessage = mod == nil ? "Project mod disabled." : "Enabled project mod: \(mod?.definition.manifest.name ?? "")."
+                refreshModsSurface()
+            } catch {
+                modStatusMessage = "Failed to update project mod: \(error.localizedDescription)"
+                appendLog(.error, "Update project mod failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func revealGlobalModsFolder() {
+        do {
+            let path = try Self.globalModsRootPath()
+            let url = URL(fileURLWithPath: path, isDirectory: true)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            modStatusMessage = "Unable to reveal global mods folder: \(error.localizedDescription)"
+        }
+    }
+
+    func revealProjectModsFolder() {
+        guard let project = selectedProject else {
+            modStatusMessage = "Select a project first."
+            return
+        }
+
+        let url = URL(fileURLWithPath: Self.projectModsRootPath(projectPath: project.path), isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            modStatusMessage = "Unable to reveal project mods folder: \(error.localizedDescription)"
+        }
+    }
+
+    func createSampleGlobalMod() {
+        do {
+            let root = try Self.globalModsRootPath()
+            let definitionURL = try modDiscoveryService.writeSampleMod(to: root, name: "sample-mod")
+            NSWorkspace.shared.activateFileViewerSelecting([definitionURL])
+            modStatusMessage = "Created sample global mod."
+            refreshModsSurface()
+        } catch {
+            modStatusMessage = "Failed to create sample mod: \(error.localizedDescription)"
+        }
+    }
+
+    func createSampleProjectMod() {
+        guard let project = selectedProject else {
+            modStatusMessage = "Select a project first."
+            return
+        }
+
+        let root = Self.projectModsRootPath(projectPath: project.path)
+        do {
+            let definitionURL = try modDiscoveryService.writeSampleMod(to: root, name: "sample-mod")
+            NSWorkspace.shared.activateFileViewerSelecting([definitionURL])
+            modStatusMessage = "Created sample project mod."
+            refreshModsSurface()
+        } catch {
+            modStatusMessage = "Failed to create sample mod: \(error.localizedDescription)"
+        }
+    }
+
+    private func startModWatchersIfNeeded(globalRootPath: String, projectRootPath: String?) {
+        if globalModsWatcher == nil {
+            let watcher = DirectoryWatcher(path: globalRootPath) { [weak self] in
+                Task { @MainActor in
+                    self?.scheduleModsRefresh()
+                }
+            }
+            do {
+                try watcher.start()
+                globalModsWatcher = watcher
+            } catch {
+                appendLog(.warning, "Failed to start global mods watcher: \(error.localizedDescription)")
+            }
+        }
+
+        if watchedProjectModsRootPath != projectRootPath {
+            projectModsWatcher?.stop()
+            projectModsWatcher = nil
+            watchedProjectModsRootPath = projectRootPath
+
+            guard let projectRootPath else { return }
+            let watcher = DirectoryWatcher(path: projectRootPath) { [weak self] in
+                Task { @MainActor in
+                    self?.scheduleModsRefresh()
+                }
+            }
+            do {
+                try watcher.start()
+                projectModsWatcher = watcher
+            } catch {
+                appendLog(.warning, "Failed to start project mods watcher: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func scheduleModsRefresh() {
+        modsDebounceTask?.cancel()
+        modsDebounceTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(nanoseconds: 180_000_000)
+                if Task.isCancelled { return }
+                refreshModsSurface()
+            } catch {
+                return
+            }
+        }
+    }
+
+    private static func globalModsRootPath(fileManager: FileManager = .default) throws -> String {
+        let base = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let root = base
+            .appendingPathComponent("CodexChat", isDirectory: true)
+            .appendingPathComponent("Mods", isDirectory: true)
+            .appendingPathComponent("Global", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        return root.path
+    }
+
+    private static func projectModsRootPath(projectPath: String) -> String {
+        URL(fileURLWithPath: projectPath, isDirectory: true)
+            .appendingPathComponent("mods", isDirectory: true)
+            .standardizedFileURL
+            .path
+    }
+
+    private static func normalizedOptionalPath(_ path: String?) -> String? {
+        let trimmed = (path ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     func sendMessage() {

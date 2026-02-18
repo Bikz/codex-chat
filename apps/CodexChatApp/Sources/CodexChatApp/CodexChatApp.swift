@@ -17,6 +17,9 @@ struct CodexChatApplication: App {
         WindowGroup {
             ContentView(model: model)
                 .designTokens(themeProvider.tokens)
+                .onChange(of: model.effectiveThemeOverride) { override in
+                    themeProvider.apply(override: override)
+                }
         }
         Settings {
             SettingsView(model: model)
