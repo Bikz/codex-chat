@@ -517,7 +517,9 @@ final class AppModel: ObservableObject {
     }
 
     func openSafetyPolicyDocument() {
-        guard let url = Bundle.module.url(forResource: "SafetyPolicy", withExtension: "md") else {
+        let url = Bundle.module.url(forResource: "SafetyPolicy", withExtension: "md")
+            ?? Bundle.module.url(forResource: "SafetyPolicy", withExtension: "md", subdirectory: "Resources")
+        guard let url else {
             projectStatusMessage = "Local safety document is unavailable."
             return
         }
