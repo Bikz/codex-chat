@@ -73,19 +73,6 @@ final class AppModel: ObservableObject {
         var startedAt: Date
     }
 
-    private struct ModSnapshot {
-        var id: UUID
-        var createdAt: Date
-        var rootURL: URL
-
-        var globalRootPath: String
-        var globalSnapshotURL: URL
-
-        var projectRootPath: String
-        var projectSnapshotURL: URL?
-        var projectRootExisted: Bool
-    }
-
     @Published var projectsState: SurfaceState<[ProjectRecord]> = .loading
     @Published var threadsState: SurfaceState<[ThreadRecord]> = .idle
     @Published var conversationState: SurfaceState<[TranscriptEntry]> = .idle
@@ -147,7 +134,7 @@ final class AppModel: ObservableObject {
     private var localThreadIDByCommandItemID: [String: UUID] = [:]
     private var approvalStateMachine = ApprovalStateMachine()
     private var activeTurnContext: ActiveTurnContext?
-    private var activeModSnapshot: ModSnapshot?
+    private var activeModSnapshot: ModEditSafety.Snapshot?
     private var runtimeEventTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var modsRefreshTask: Task<Void, Never>?
@@ -573,7 +560,7 @@ final class AppModel: ObservableObject {
         isModReviewDecisionInProgress = false
 
         if let snapshot = activeModSnapshot {
-            try? FileManager.default.removeItem(at: snapshot.rootURL)
+            ModEditSafety.discard(snapshot: snapshot)
             activeModSnapshot = nil
         }
 
@@ -603,7 +590,7 @@ final class AppModel: ObservableObject {
             defer { isModReviewDecisionInProgress = false }
 
             do {
-                try restoreModsFromSnapshot(snapshot)
+                try ModEditSafety.restore(from: snapshot)
                 pendingModReview = nil
                 activeModSnapshot = nil
                 refreshModsSurface()
@@ -1215,45 +1202,21 @@ final class AppModel: ObservableObject {
         threadID: UUID,
         startedAt: Date,
         fileManager: FileManager = .default
-    ) throws -> ModSnapshot {
-        let snapshotsRoot = try Self.modSnapshotsRootURL(fileManager: fileManager)
-        let timestamp = Self.snapshotTimestamp(startedAt)
-        let snapshotRoot = snapshotsRoot
-            .appendingPathComponent("\(timestamp)-\(threadID.uuidString)", isDirectory: true)
-
-        if fileManager.fileExists(atPath: snapshotRoot.path) {
-            try fileManager.removeItem(at: snapshotRoot)
-        }
-        try fileManager.createDirectory(at: snapshotRoot, withIntermediateDirectories: true)
-
+    ) throws -> ModEditSafety.Snapshot {
+        let snapshotsRootURL = try Self.modSnapshotsRootURL(fileManager: fileManager)
         let globalRootPath = try Self.globalModsRootPath(fileManager: fileManager)
-        let globalRootURL = URL(fileURLWithPath: globalRootPath, isDirectory: true)
-        let globalSnapshotURL = snapshotRoot.appendingPathComponent("global", isDirectory: true)
-        try fileManager.copyItem(at: globalRootURL, to: globalSnapshotURL)
+        let projectRootPath = Self.projectModsRootPath(projectPath: projectPath)
 
-        let projectModsRootPath = Self.projectModsRootPath(projectPath: projectPath)
-        let projectModsRootURL = URL(fileURLWithPath: projectModsRootPath, isDirectory: true)
-        let projectRootExisted = fileManager.fileExists(atPath: projectModsRootURL.path)
-
-        var projectSnapshotURL: URL?
-        if projectRootExisted {
-            let dest = snapshotRoot.appendingPathComponent("project", isDirectory: true)
-            try fileManager.copyItem(at: projectModsRootURL, to: dest)
-            projectSnapshotURL = dest
-        }
-
-        appendLog(.debug, "Captured mod snapshot at \(snapshotRoot.lastPathComponent)")
-
-        return ModSnapshot(
-            id: UUID(),
-            createdAt: startedAt,
-            rootURL: snapshotRoot,
+        let snapshot = try ModEditSafety.captureSnapshot(
+            snapshotsRootURL: snapshotsRootURL,
             globalRootPath: globalRootPath,
-            globalSnapshotURL: globalSnapshotURL,
-            projectRootPath: projectModsRootPath,
-            projectSnapshotURL: projectSnapshotURL,
-            projectRootExisted: projectRootExisted
+            projectRootPath: projectRootPath,
+            threadID: threadID,
+            startedAt: startedAt,
+            fileManager: fileManager
         )
+        appendLog(.debug, "Captured mod snapshot at \(snapshot.rootURL.lastPathComponent)")
+        return snapshot
     }
 
     private static func modSnapshotsRootURL(fileManager: FileManager = .default) throws -> URL {
@@ -1268,14 +1231,6 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("ModSnapshots", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         return root
-    }
-
-    private static func snapshotTimestamp(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter.string(from: date)
     }
 
     func sendMessage() {
@@ -1319,11 +1274,18 @@ final class AppModel: ObservableObject {
                     startedAt: startedAt
                 )
 
-                activeModSnapshot = try? captureModSnapshot(
-                    projectPath: project.path,
-                    threadID: selectedThreadID,
-                    startedAt: startedAt
-                )
+                activeModSnapshot = {
+                    do {
+                        return try captureModSnapshot(
+                            projectPath: project.path,
+                            threadID: selectedThreadID,
+                            startedAt: startedAt
+                        )
+                    } catch {
+                        appendLog(.warning, "Failed to capture mod snapshot: \(error.localizedDescription)")
+                        return nil
+                    }
+                }()
 
                 let turnID = try await runtime.startTurn(
                     threadID: runtimeThreadID,
@@ -1729,13 +1691,12 @@ final class AppModel: ObservableObject {
         let projectRootPath = snapshot?.projectRootPath ?? Self.projectModsRootPath(projectPath: context.projectPath)
         let globalRootPath = snapshot?.globalRootPath ?? (try? Self.globalModsRootPath())
 
-        let modChanges = changes.filter { change in
-            let absolute = Self.absolutePath(for: change.path, projectPath: context.projectPath)
-            if let globalRootPath, Self.isWithin(rootPath: globalRootPath, path: absolute) {
-                return true
-            }
-            return Self.isWithin(rootPath: projectRootPath, path: absolute)
-        }
+        let modChanges = ModEditSafety.filterModChanges(
+            changes: changes,
+            projectPath: context.projectPath,
+            globalRootPath: globalRootPath,
+            projectRootPath: projectRootPath
+        )
 
         guard !modChanges.isEmpty else {
             discardModSnapshotIfPresent()
@@ -1765,56 +1726,8 @@ final class AppModel: ObservableObject {
 
     private func discardModSnapshotIfPresent() {
         guard let snapshot = activeModSnapshot else { return }
-        try? FileManager.default.removeItem(at: snapshot.rootURL)
+        ModEditSafety.discard(snapshot: snapshot)
         activeModSnapshot = nil
-    }
-
-    private func restoreModsFromSnapshot(_ snapshot: ModSnapshot, fileManager: FileManager = .default) throws {
-        let globalDestination = URL(fileURLWithPath: snapshot.globalRootPath, isDirectory: true)
-        if fileManager.fileExists(atPath: globalDestination.path) {
-            try fileManager.removeItem(at: globalDestination)
-        }
-        try fileManager.createDirectory(at: globalDestination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fileManager.copyItem(at: snapshot.globalSnapshotURL, to: globalDestination)
-
-        let projectDestination = URL(fileURLWithPath: snapshot.projectRootPath, isDirectory: true)
-        if fileManager.fileExists(atPath: projectDestination.path) {
-            try fileManager.removeItem(at: projectDestination)
-        }
-
-        if snapshot.projectRootExisted {
-            guard let projectSnapshotURL = snapshot.projectSnapshotURL else {
-                throw CocoaError(.fileReadUnknown)
-            }
-            try fileManager.copyItem(at: projectSnapshotURL, to: projectDestination)
-        }
-
-        if fileManager.fileExists(atPath: snapshot.rootURL.path) {
-            try fileManager.removeItem(at: snapshot.rootURL)
-        }
-    }
-
-    private static func absolutePath(for path: String, projectPath: String) -> String {
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path).standardizedFileURL.path
-        }
-        return URL(fileURLWithPath: projectPath, isDirectory: true)
-            .appendingPathComponent(path)
-            .standardizedFileURL
-            .path
-    }
-
-    private static func isWithin(rootPath: String, path: String) -> Bool {
-        let normalizedRoot = URL(fileURLWithPath: rootPath, isDirectory: true).standardizedFileURL.path
-        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-
-        if normalizedPath == normalizedRoot {
-            return true
-        }
-        if normalizedRoot.hasSuffix("/") {
-            return normalizedPath.hasPrefix(normalizedRoot)
-        }
-        return normalizedPath.hasPrefix(normalizedRoot + "/")
     }
 
     private func refreshAccountState() async throws {
