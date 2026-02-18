@@ -67,7 +67,13 @@ def _main() -> int:
                 continue
 
             if method == "account/read":
-                _send({"jsonrpc": "2.0", "id": msg_id, "result": {"requiresOpenaiAuth": True}})
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"requiresOpenaiAuth": True, "account": {"type": "apikey"}},
+                    }
+                )
                 continue
 
             if method == "thread/start":

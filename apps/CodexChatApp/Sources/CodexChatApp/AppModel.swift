@@ -211,6 +211,11 @@ final class AppModel: ObservableObject {
             && activeApprovalRequest == nil
             && !isApprovalDecisionInProgress
             && !isTurnInProgress
+            && isSignedInForRuntime
+    }
+
+    var isSignedInForRuntime: Bool {
+        !accountState.requiresOpenAIAuth || accountState.account != nil
     }
 
     var selectedProject: ProjectRecord? {

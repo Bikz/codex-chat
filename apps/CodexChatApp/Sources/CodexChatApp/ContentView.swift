@@ -25,6 +25,9 @@ struct ContentView: View {
                 onClose: model.closeDiagnostics
             )
         }
+        .sheet(isPresented: $model.isAPIKeyPromptVisible) {
+            APIKeyLoginSheet(model: model)
+        }
         .sheet(isPresented: $model.isProjectSettingsVisible) {
             ProjectSettingsSheet(model: model)
         }
@@ -296,100 +299,132 @@ struct ContentView: View {
 
     private var conversationCanvas: some View {
         VStack(spacing: 0) {
-            if !model.isSelectedProjectTrusted, model.selectedProjectID != nil {
-                ProjectTrustBanner(
-                    onTrust: model.trustSelectedProject,
-                    onSettings: model.showProjectSettings
-                )
-                .padding(.horizontal, tokens.spacing.medium)
-                .padding(.top, tokens.spacing.small)
-            }
+            if shouldShowChatSetup {
+                ChatSetupView(model: model)
+            } else {
+                if !model.isSelectedProjectTrusted, model.selectedProjectID != nil {
+                    ProjectTrustBanner(
+                        onTrust: model.trustSelectedProject,
+                        onSettings: model.showProjectSettings
+                    )
+                    .padding(.horizontal, tokens.spacing.medium)
+                    .padding(.top, tokens.spacing.small)
+                }
 
-            runtimeAwareConversationSurface
+                runtimeAwareConversationSurface
 
-            Divider()
+                Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: tokens.spacing.small) {
-                    TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1 ... 4)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: tokens.spacing.small) {
+                        TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(1 ... 4)
 
-                    Button("Send") {
-                        model.sendMessage()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color(hex: tokens.palette.accentHex))
-                    .disabled(!model.canSendMessages)
+                        Button("Send") {
+                            model.sendMessage()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color(hex: tokens.palette.accentHex))
+                        .disabled(!model.canSendMessages)
 
-                    Menu {
-                        if model.enabledSkillsForSelectedProject.isEmpty {
-                            Text("No enabled skills")
-                        } else {
-                            ForEach(model.enabledSkillsForSelectedProject) { item in
-                                Button(item.skill.name) {
-                                    model.selectSkillForComposer(item)
+                        Menu {
+                            if model.enabledSkillsForSelectedProject.isEmpty {
+                                Text("No enabled skills")
+                            } else {
+                                ForEach(model.enabledSkillsForSelectedProject) { item in
+                                    Button(item.skill.name) {
+                                        model.selectSkillForComposer(item)
+                                    }
                                 }
                             }
+                        } label: {
+                            Label("Skill", systemImage: "wand.and.stars")
                         }
-                    } label: {
-                        Label("Skill", systemImage: "wand.and.stars")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .disabled(model.enabledSkillsForSelectedProject.isEmpty)
+                        .menuStyle(.borderlessButton)
+                        .disabled(model.enabledSkillsForSelectedProject.isEmpty)
 
-                    Button {
-                        isInsertMemorySheetVisible = true
-                    } label: {
-                        Label("Insert memory snippet", systemImage: "brain")
-                            .labelStyle(.iconOnly)
-                    }
-                    .buttonStyle(.bordered)
-                    .help("Insert memory snippet")
-                    .disabled(model.selectedProjectID == nil)
-
-                    Button("Reveal Chat File") {
-                        model.revealSelectedThreadArchiveInFinder()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.selectedThreadID == nil)
-
-                    Button("Review Changes") {
-                        model.openReviewChanges()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!model.canReviewChanges)
-
-                    Button(model.isLogsDrawerVisible ? "Hide Logs" : "Terminal / Logs") {
-                        model.toggleLogsDrawer()
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-                if let selectedSkill = model.selectedSkillForComposer {
-                    HStack {
-                        Label("Using \(selectedSkill.skill.name)", systemImage: "checkmark.seal")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button("Clear") {
-                            model.clearSelectedSkillForComposer()
+                        Button {
+                            isInsertMemorySheetVisible = true
+                        } label: {
+                            Label("Insert memory snippet", systemImage: "brain")
+                                .labelStyle(.iconOnly)
                         }
-                        .buttonStyle(.borderless)
-                        Spacer()
+                        .buttonStyle(.bordered)
+                        .help("Insert memory snippet")
+                        .disabled(model.selectedProjectID == nil)
+
+                        Button("Reveal Chat File") {
+                            model.revealSelectedThreadArchiveInFinder()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.selectedThreadID == nil)
+
+                        Button("Review Changes") {
+                            model.openReviewChanges()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!model.canReviewChanges)
+
+                        Button(model.isLogsDrawerVisible ? "Hide Logs" : "Terminal / Logs") {
+                            model.toggleLogsDrawer()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    if let selectedSkill = model.selectedSkillForComposer {
+                        HStack {
+                            Label("Using \(selectedSkill.skill.name)", systemImage: "checkmark.seal")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Button("Clear") {
+                                model.clearSelectedSkillForComposer()
+                            }
+                            .buttonStyle(.borderless)
+                            Spacer()
+                        }
                     }
                 }
-            }
-            .padding(tokens.spacing.medium)
-            .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
+                .padding(tokens.spacing.medium)
+                .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
 
-            if model.isLogsDrawerVisible {
-                Divider()
-                ThreadLogsDrawer(entries: model.selectedThreadLogs)
-                    .frame(height: 180)
-                    .background(Color(hex: tokens.palette.panelHex).opacity(0.82))
+                if model.isLogsDrawerVisible {
+                    Divider()
+                    ThreadLogsDrawer(entries: model.selectedThreadLogs)
+                        .frame(height: 180)
+                        .background(Color(hex: tokens.palette.panelHex).opacity(0.82))
+                }
             }
         }
         .navigationTitle("Conversation")
+    }
+
+    private var shouldShowChatSetup: Bool {
+        if model.navigationSection != .chats {
+            return false
+        }
+
+        if case .installCodex? = model.runtimeIssue {
+            return true
+        }
+
+        if model.runtimeStatus != .connected {
+            return true
+        }
+
+        if model.runtimeIssue != nil {
+            return true
+        }
+
+        if !model.isSignedInForRuntime {
+            return true
+        }
+
+        if model.selectedProjectID == nil || model.selectedThreadID == nil {
+            return true
+        }
+
+        return false
     }
 
     private var composerPlaceholder: String {
