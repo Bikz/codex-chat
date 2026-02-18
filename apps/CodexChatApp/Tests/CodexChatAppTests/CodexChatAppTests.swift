@@ -216,6 +216,40 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertTrue(approvalResetCardExists)
     }
 
+    @MainActor
+    func testAccountDisplayNamePrefersRuntimeNameWhenPresent() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.accountState = RuntimeAccountState(
+            account: RuntimeAccountSummary(
+                type: "chatgpt",
+                name: "Bikram Brar",
+                email: "bikram@example.com",
+                planType: "pro"
+            ),
+            authMode: .chatGPT,
+            requiresOpenAIAuth: true
+        )
+
+        XCTAssertEqual(model.accountDisplayName, "Bikram Brar")
+    }
+
+    @MainActor
+    func testAccountDisplayNameFallsBackToEmailWhenNameMissingOrEmpty() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.accountState = RuntimeAccountState(
+            account: RuntimeAccountSummary(
+                type: "chatgpt",
+                name: "   ",
+                email: "bikram@example.com",
+                planType: "pro"
+            ),
+            authMode: .chatGPT,
+            requiresOpenAIAuth: true
+        )
+
+        XCTAssertEqual(model.accountDisplayName, "bikram@example.com")
+    }
+
     func testMemoryAutoSummaryFormattingRespectsMode() {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let threadID = UUID()
@@ -841,6 +875,66 @@ final class CodexChatAppTests: XCTestCase {
             model.isShellWorkspaceVisible
         }
         XCTAssertEqual(model.shellWorkspacesByProjectID[project.id]?.sessions.count, 1)
+    }
+
+    @MainActor
+    func testTogglingShellWorkspaceWithoutProjectShowsStatusMessage() async throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.projectsState = .loaded([])
+        model.selectedProjectID = nil
+
+        model.toggleShellWorkspace()
+        try await waitUntil {
+            model.projectStatusMessage == "Select a project to open Shell Workspace."
+        }
+
+        XCTAssertFalse(model.isShellWorkspaceVisible)
+        XCTAssertTrue(model.shellWorkspacesByProjectID.isEmpty)
+    }
+
+    @MainActor
+    func testDismissingUntrustedShellWarningKeepsWorkspaceClosed() async throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "Untrusted", path: "/tmp/untrusted", trustState: .untrusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        model.toggleShellWorkspace()
+        try await waitUntil {
+            model.activeUntrustedShellWarning?.projectID == project.id
+        }
+
+        model.dismissUntrustedShellWarning()
+
+        XCTAssertNil(model.activeUntrustedShellWarning)
+        XCTAssertFalse(model.isShellWorkspaceVisible)
+        XCTAssertNil(model.shellWorkspacesByProjectID[project.id])
+    }
+
+    @MainActor
+    func testTogglingShellWorkspaceReselectsSessionWhenSelectionMissing() async throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "P1", path: "/tmp/project-root", trustState: .trusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        model.createShellSession()
+        model.createShellSession()
+
+        var workspace = try XCTUnwrap(model.shellWorkspacesByProjectID[project.id])
+        let fallbackSessionID = try XCTUnwrap(workspace.sessions.first?.id)
+        workspace.selectedSessionID = nil
+        model.shellWorkspacesByProjectID[project.id] = workspace
+
+        model.isShellWorkspaceVisible = false
+        model.toggleShellWorkspace()
+        try await waitUntil {
+            model.isShellWorkspaceVisible
+        }
+
+        let updatedWorkspace = try XCTUnwrap(model.shellWorkspacesByProjectID[project.id])
+        XCTAssertEqual(updatedWorkspace.sessions.count, 2)
+        XCTAssertEqual(updatedWorkspace.selectedSessionID, fallbackSessionID)
     }
 
     @MainActor
