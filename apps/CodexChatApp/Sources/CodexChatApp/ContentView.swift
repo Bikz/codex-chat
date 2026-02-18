@@ -124,6 +124,51 @@ struct ContentView: View {
 
     private var conversationCanvas: some View {
         VStack(spacing: 0) {
+            runtimeAwareConversationSurface
+
+            Divider()
+
+            HStack(spacing: tokens.spacing.small) {
+                TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+
+                Button("Send") {
+                    model.sendMessage()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(hex: tokens.palette.accentHex))
+                .disabled(!model.canSendMessages)
+            }
+            .padding(tokens.spacing.medium)
+            .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
+        }
+        .navigationTitle("Conversation")
+    }
+
+    private var composerPlaceholder: String {
+        if case .installCodex? = model.runtimeIssue {
+            return "Install Codex CLI to enable runtime turns…"
+        }
+        if model.runtimeStatus == .starting {
+            return "Connecting to Codex runtime…"
+        }
+        return "Ask CodexChat to do something…"
+    }
+
+    @ViewBuilder
+    private var runtimeAwareConversationSurface: some View {
+        if case .installCodex? = model.runtimeIssue {
+            InstallCodexGuidanceView()
+        } else if let runtimeIssue = model.runtimeIssue {
+            ErrorStateView(
+                title: "Runtime unavailable",
+                message: runtimeIssue.message,
+                actionLabel: "Restart Runtime"
+            ) {
+                model.restartRuntime()
+            }
+        } else {
             switch model.conversationState {
             case .idle:
                 EmptyStateView(
@@ -137,44 +182,96 @@ struct ContentView: View {
                 ErrorStateView(title: "Conversation unavailable", message: message, actionLabel: "Retry") {
                     model.retryLoad()
                 }
-            case .loaded(let messages) where messages.isEmpty:
+            case .loaded(let entries) where entries.isEmpty:
                 EmptyStateView(
                     title: "Thread is empty",
                     message: "Use the composer below to send the first message.",
                     systemImage: "text.cursor"
                 )
-            case .loaded(let messages):
-                List(messages) { message in
-                    VStack(alignment: .leading, spacing: tokens.spacing.xSmall) {
-                        Text(message.role.rawValue.capitalized)
-                            .font(.system(size: tokens.typography.captionSize, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        Text(message.text)
-                            .font(.system(size: tokens.typography.bodySize))
-                            .textSelection(.enabled)
+            case .loaded(let entries):
+                List(entries) { entry in
+                    switch entry {
+                    case .message(let message):
+                        MessageRow(message: message, tokens: tokens)
+                            .padding(.vertical, tokens.spacing.xSmall)
+                            .listRowSeparator(.hidden)
+                    case .actionCard(let card):
+                        ActionCardRow(card: card)
+                            .padding(.vertical, tokens.spacing.xSmall)
+                            .listRowSeparator(.hidden)
                     }
-                    .padding(.vertical, tokens.spacing.xSmall)
                 }
                 .listStyle(.plain)
             }
-
-            Divider()
-
-            HStack(spacing: tokens.spacing.small) {
-                TextField("Ask CodexChat to do something…", text: $model.composerText, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-
-                Button("Send") {
-                    model.sendMessage()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(hex: tokens.palette.accentHex))
-                .disabled(model.selectedThreadID == nil)
-            }
-            .padding(tokens.spacing.medium)
-            .background(Color(hex: tokens.palette.panelHex).opacity(0.5))
         }
-        .navigationTitle("Conversation")
+    }
+}
+
+private struct MessageRow: View {
+    let message: ChatMessage
+    let tokens: DesignTokens
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: tokens.spacing.xSmall) {
+            Text(message.role.rawValue.capitalized)
+                .font(.system(size: tokens.typography.captionSize, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(message.text)
+                .font(.system(size: tokens.typography.bodySize))
+                .textSelection(.enabled)
+        }
+    }
+}
+
+private struct ActionCardRow: View {
+    let card: ActionCard
+    @State private var isExpanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            Text(card.detail)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card.title)
+                    .font(.callout.weight(.semibold))
+                Text(card.method)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct InstallCodexGuidanceView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "wrench.and.screwdriver")
+                .font(.system(size: 30))
+                .foregroundStyle(.secondary)
+
+            Text("Install Codex CLI")
+                .font(.headline)
+
+            Text("CodexChat needs the local `codex` binary to run app-server turns.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            Link("Open Codex install docs", destination: URL(string: "https://developers.openai.com/codex/cli")!)
+                .buttonStyle(.borderedProminent)
+
+            Text("After installation, use Developer → Toggle Diagnostics and press Restart Runtime.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
     }
 }

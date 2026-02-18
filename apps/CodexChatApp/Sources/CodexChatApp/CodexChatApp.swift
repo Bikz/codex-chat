@@ -1,5 +1,6 @@
 import CodexChatInfra
 import CodexChatUI
+import CodexKit
 import SwiftUI
 
 @main
@@ -45,9 +46,9 @@ struct CodexChatApplication: App {
             let databaseURL = try MetadataDatabase.appSupportDatabaseURL()
             let database = try MetadataDatabase(databaseURL: databaseURL)
             let repositories = MetadataRepositories(database: database)
-            return AppModel(repositories: repositories, bootError: nil)
+            return AppModel(repositories: repositories, runtime: CodexRuntime(), bootError: nil)
         } catch {
-            return AppModel(repositories: nil, bootError: error.localizedDescription)
+            return AppModel(repositories: nil, runtime: nil, bootError: error.localizedDescription)
         }
     }
 }
