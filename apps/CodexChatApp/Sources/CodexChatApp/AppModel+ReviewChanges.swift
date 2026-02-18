@@ -3,7 +3,7 @@ import Foundation
 
 extension AppModel {
     func toggleLogsDrawer() {
-        isLogsDrawerVisible.toggle()
+        toggleShellWorkspace()
     }
 
     func openReviewChanges() {

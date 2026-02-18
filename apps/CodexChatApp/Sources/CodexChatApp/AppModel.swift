@@ -9,11 +9,10 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
-    enum NavigationSection: String, CaseIterable {
-        case chats
-        case skills
-        case memory
-        case mods
+    enum DetailDestination: Equatable {
+        case thread
+        case skillsAndMods
+        case none
     }
 
     struct SkillListItem: Identifiable, Hashable {
@@ -74,6 +73,8 @@ final class AppModel: ObservableObject {
 
     @Published var projectsState: SurfaceState<[ProjectRecord]> = .loading
     @Published var threadsState: SurfaceState<[ThreadRecord]> = .idle
+    @Published var generalThreadsState: SurfaceState<[ThreadRecord]> = .idle
+    @Published var archivedThreadsState: SurfaceState<[ThreadRecord]> = .idle
     @Published var conversationState: SurfaceState<[TranscriptEntry]> = .idle
     @Published var searchState: SurfaceState<[ChatSearchResult]> = .idle
     @Published var skillsState: SurfaceState<[SkillListItem]> = .idle
@@ -81,14 +82,16 @@ final class AppModel: ObservableObject {
 
     @Published var selectedProjectID: UUID?
     @Published var selectedThreadID: UUID?
-    @Published var navigationSection: NavigationSection = .chats
+    @Published var detailDestination: DetailDestination = .none
+    @Published var expandedProjectIDs: Set<UUID> = []
+    @Published var showAllProjects: Bool = false
     @Published var composerText = ""
     @Published var searchQuery = ""
     @Published var selectedSkillIDForComposer: String?
 
     @Published var isDiagnosticsVisible = false
     @Published var isProjectSettingsVisible = false
-    @Published var isLogsDrawerVisible = false
+    @Published var isShellWorkspaceVisible = false
     @Published var isReviewChangesVisible = false
     @Published var runtimeStatus: RuntimeStatus = .idle
     @Published var runtimeIssue: RuntimeIssue?
@@ -111,14 +114,21 @@ final class AppModel: ObservableObject {
     @Published var logs: [LogEntry] = []
     @Published var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
     @Published var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
+    @Published var followUpQueueByThreadID: [UUID: [FollowUpQueueItemRecord]] = [:]
+    @Published var followUpStatusMessage: String?
+    @Published var runtimeCapabilities: RuntimeCapabilities = .none
     @Published var isNodeSkillInstallerAvailable = false
+    @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
+    @Published var activeUntrustedShellWarning: UntrustedShellWarningContext?
 
     @Published var effectiveThemeOverride: ModThemeOverride = .init()
+    @Published var effectiveDarkThemeOverride: ModThemeOverride = .init()
 
     let projectRepository: (any ProjectRepository)?
     let threadRepository: (any ThreadRepository)?
     let preferenceRepository: (any PreferenceRepository)?
     let runtimeThreadMappingRepository: (any RuntimeThreadMappingRepository)?
+    let followUpQueueRepository: (any FollowUpQueueRepository)?
     let projectSecretRepository: (any ProjectSecretRepository)?
     let projectSkillEnablementRepository: (any ProjectSkillEnablementRepository)?
     let chatSearchRepository: (any ChatSearchRepository)?
@@ -136,13 +146,20 @@ final class AppModel: ObservableObject {
     var activeTurnContext: ActiveTurnContext?
     var activeModSnapshot: ModEditSafety.Snapshot?
     var runtimeEventTask: Task<Void, Never>?
+    var runtimeAutoRecoveryTask: Task<Void, Never>?
+    var chatGPTLoginPollingTask: Task<Void, Never>?
+    var pendingChatGPTLoginID: String?
     var searchTask: Task<Void, Never>?
+    var followUpDrainTask: Task<Void, Never>?
     var modsRefreshTask: Task<Void, Never>?
     var modsDebounceTask: Task<Void, Never>?
+    var autoDrainPreferredThreadID: UUID?
 
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
     var watchedProjectModsRootPath: String?
+    var untrustedShellAcknowledgedProjectIDs: Set<UUID> = []
+    var didLoadUntrustedShellAcknowledgements = false
 
     init(
         repositories: MetadataRepositories?,
@@ -155,6 +172,7 @@ final class AppModel: ObservableObject {
         threadRepository = repositories?.threadRepository
         preferenceRepository = repositories?.preferenceRepository
         runtimeThreadMappingRepository = repositories?.runtimeThreadMappingRepository
+        followUpQueueRepository = repositories?.followUpQueueRepository
         projectSecretRepository = repositories?.projectSecretRepository
         projectSkillEnablementRepository = repositories?.projectSkillEnablementRepository
         chatSearchRepository = repositories?.chatSearchRepository
@@ -167,6 +185,7 @@ final class AppModel: ObservableObject {
         if let bootError {
             projectsState = .failed(bootError)
             threadsState = .failed(bootError)
+            archivedThreadsState = .failed(bootError)
             conversationState = .failed(bootError)
             skillsState = .failed(bootError)
             runtimeStatus = .error
@@ -178,8 +197,17 @@ final class AppModel: ObservableObject {
     }
 
     deinit {
+        if let runtime, let loginID = pendingChatGPTLoginID {
+            Task.detached {
+                try? await runtime.cancelChatGPTLogin(loginID: loginID)
+            }
+        }
+
         runtimeEventTask?.cancel()
+        runtimeAutoRecoveryTask?.cancel()
+        chatGPTLoginPollingTask?.cancel()
         searchTask?.cancel()
+        followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
         globalModsWatcher?.stop()
@@ -193,11 +221,37 @@ final class AppModel: ObservableObject {
         return []
     }
 
+    var generalProject: ProjectRecord? {
+        projects.first(where: \.isGeneralProject)
+    }
+
+    var namedProjects: [ProjectRecord] {
+        projects.filter { !$0.isGeneralProject }
+    }
+
     var threads: [ThreadRecord] {
         if case let .loaded(threads) = threadsState {
             return threads
         }
         return []
+    }
+
+    var generalThreads: [ThreadRecord] {
+        if case let .loaded(threads) = generalThreadsState {
+            return threads
+        }
+        return []
+    }
+
+    var archivedThreads: [ThreadRecord] {
+        if case let .loaded(threads) = archivedThreadsState {
+            return threads
+        }
+        return []
+    }
+
+    var accountDisplayName: String {
+        accountState.account?.email ?? "Account"
     }
 
     var canSendMessages: Bool {
@@ -208,6 +262,15 @@ final class AppModel: ObservableObject {
             && activeApprovalRequest == nil
             && !isApprovalDecisionInProgress
             && !isTurnInProgress
+            && isSignedInForRuntime
+    }
+
+    var canSubmitComposer: Bool {
+        selectedThreadID != nil
+            && selectedProjectID != nil
+            && runtime != nil
+            && runtimeIssue == nil
+            && runtimeStatus == .connected
             && isSignedInForRuntime
     }
 
@@ -271,17 +334,22 @@ final class AppModel: ObservableObject {
         return reviewChangesByThreadID[selectedThreadID, default: []]
     }
 
+    var selectedFollowUpQueueItems: [FollowUpQueueItemRecord] {
+        guard let selectedThreadID else { return [] }
+        return followUpQueueByThreadID[selectedThreadID, default: []]
+    }
+
     var canReviewChanges: Bool {
         !selectedThreadChanges.isEmpty
     }
 
-    func refreshAccountState() async throws {
+    func refreshAccountState(refreshToken: Bool = false) async throws {
         guard let runtime else {
             accountState = .signedOut
             return
         }
 
-        accountState = try await runtime.readAccount()
+        accountState = try await runtime.readAccount(refreshToken: refreshToken)
     }
 
     func upsertProjectAPIKeyReferenceIfNeeded() async throws {
@@ -372,10 +440,14 @@ final class AppModel: ObservableObject {
         if let selectedThreadID,
            loadedThreads.contains(where: { $0.id == selectedThreadID })
         {
+            try await refreshFollowUpQueue(threadID: selectedThreadID)
             return
         }
 
         selectedThreadID = loadedThreads.first?.id
+        if let selectedThreadID {
+            try await refreshFollowUpQueue(threadID: selectedThreadID)
+        }
     }
 
     func refreshSkills() async throws {
@@ -424,13 +496,10 @@ final class AppModel: ObservableObject {
     func persistSelection() async throws {
         guard let preferenceRepository else { return }
 
-        if let selectedProjectID {
-            try await preferenceRepository.setPreference(key: .lastOpenedProjectID, value: selectedProjectID.uuidString)
-        }
-
-        if let selectedThreadID {
-            try await preferenceRepository.setPreference(key: .lastOpenedThreadID, value: selectedThreadID.uuidString)
-        }
+        let projectValue = selectedProjectID?.uuidString ?? ""
+        let threadValue = selectedThreadID?.uuidString ?? ""
+        try await preferenceRepository.setPreference(key: .lastOpenedProjectID, value: projectValue)
+        try await preferenceRepository.setPreference(key: .lastOpenedThreadID, value: threadValue)
     }
 
     func refreshConversationState() {

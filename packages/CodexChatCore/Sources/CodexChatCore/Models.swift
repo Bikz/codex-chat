@@ -81,6 +81,7 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var name: String
     public var path: String
+    public var isGeneralProject: Bool
     public var trustState: ProjectTrustState
     public var sandboxMode: ProjectSandboxMode
     public var approvalPolicy: ProjectApprovalPolicy
@@ -96,6 +97,7 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         id: UUID = UUID(),
         name: String,
         path: String,
+        isGeneralProject: Bool = false,
         trustState: ProjectTrustState,
         sandboxMode: ProjectSandboxMode = .readOnly,
         approvalPolicy: ProjectApprovalPolicy = .untrusted,
@@ -110,6 +112,7 @@ public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
         self.id = id
         self.name = name
         self.path = path
+        self.isGeneralProject = isGeneralProject
         self.trustState = trustState
         self.sandboxMode = sandboxMode
         self.approvalPolicy = approvalPolicy
@@ -148,6 +151,8 @@ public struct ThreadRecord: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public let projectId: UUID
     public var title: String
+    public var isPinned: Bool
+    public var archivedAt: Date?
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -155,12 +160,74 @@ public struct ThreadRecord: Identifiable, Hashable, Sendable, Codable {
         id: UUID = UUID(),
         projectId: UUID,
         title: String,
+        isPinned: Bool = false,
+        archivedAt: Date? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
         self.id = id
         self.projectId = projectId
         self.title = title
+        self.isPinned = isPinned
+        self.archivedAt = archivedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public enum FollowUpSource: String, Codable, Hashable, Sendable {
+    case userQueued
+    case assistantSuggestion
+}
+
+public enum FollowUpDispatchMode: String, Codable, Hashable, Sendable {
+    case auto
+    case manual
+}
+
+public enum FollowUpState: String, Codable, Hashable, Sendable {
+    case pending
+    case failed
+}
+
+public struct FollowUpQueueItemRecord: Identifiable, Hashable, Sendable, Codable {
+    public let id: UUID
+    public let threadID: UUID
+    public let source: FollowUpSource
+    public var dispatchMode: FollowUpDispatchMode
+    public var state: FollowUpState
+    public var text: String
+    public var sortIndex: Int
+    public var originTurnID: String?
+    public var originSuggestionID: String?
+    public var lastError: String?
+    public let createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        threadID: UUID,
+        source: FollowUpSource,
+        dispatchMode: FollowUpDispatchMode,
+        state: FollowUpState = .pending,
+        text: String,
+        sortIndex: Int,
+        originTurnID: String? = nil,
+        originSuggestionID: String? = nil,
+        lastError: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.source = source
+        self.dispatchMode = dispatchMode
+        self.state = state
+        self.text = text
+        self.sortIndex = sortIndex
+        self.originTurnID = originTurnID
+        self.originSuggestionID = originSuggestionID
+        self.lastError = lastError
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -217,6 +284,7 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case lastOpenedProjectID = "last_opened_project_id"
     case lastOpenedThreadID = "last_opened_thread_id"
     case globalUIModPath = "global_ui_mod_path"
+    case untrustedShellAcknowledgements = "untrusted_shell_acknowledgements"
 }
 
 public enum ChatMessageRole: String, Codable, Hashable, Sendable {

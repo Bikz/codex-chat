@@ -15,6 +15,7 @@ let package = Package(
         .package(path: "../../packages/CodexSkills"),
         .package(path: "../../packages/CodexMemory"),
         .package(path: "../../packages/CodexMods"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.10.1"),
     ],
     targets: [
         .executableTarget(
@@ -27,6 +28,7 @@ let package = Package(
                 "CodexSkills",
                 "CodexMemory",
                 "CodexMods",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
             resources: [
                 .copy("Resources"),

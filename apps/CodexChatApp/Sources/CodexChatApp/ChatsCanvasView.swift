@@ -26,6 +26,8 @@ struct ChatsCanvasView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
+                    FollowUpQueueView(model: model)
+
                     if let selectedSkill = model.selectedSkillForComposer {
                         HStack(spacing: 8) {
                             Label("Using \(selectedSkill.skill.name)", systemImage: "wand.and.stars")
@@ -36,6 +38,7 @@ struct ChatsCanvasView: View {
                                 model.clearSelectedSkillForComposer()
                             }
                             .buttonStyle(.borderless)
+                            .accessibilityLabel("Clear selected skill")
 
                             Spacer()
                         }
@@ -56,9 +59,11 @@ struct ChatsCanvasView: View {
                         } label: {
                             Image(systemName: "wand.and.stars")
                                 .foregroundStyle(.secondary)
+                                .symbolRenderingMode(.hierarchical)
                                 .frame(width: 22, height: 22)
                         }
                         .menuStyle(.borderlessButton)
+                        .accessibilityLabel("Insert skill trigger")
                         .help("Insert skill trigger")
                         .disabled(model.enabledSkillsForSelectedProject.isEmpty)
 
@@ -67,48 +72,65 @@ struct ChatsCanvasView: View {
                         } label: {
                             Image(systemName: "brain")
                                 .foregroundStyle(.secondary)
+                                .symbolRenderingMode(.hierarchical)
                                 .frame(width: 22, height: 22)
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel("Insert memory snippet")
                         .help("Insert memory snippet")
                         .disabled(model.selectedProjectID == nil)
 
                         TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
                             .textFieldStyle(.plain)
+                            .font(.system(size: tokens.typography.bodySize))
                             .lineLimit(1 ... 6)
                             .padding(.vertical, 10)
+                            .onSubmit {
+                                model.submitComposerWithQueuePolicy()
+                            }
+                            .accessibilityLabel("Message input")
 
                         Button {
-                            model.sendMessage()
+                            model.submitComposerWithQueuePolicy()
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundStyle(Color(hex: tokens.palette.accentHex))
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel("Send message")
                         .help("Send")
-                        .disabled(!model.canSendMessages)
+                        .keyboardShortcut(.return, modifiers: [.command])
+                        .disabled(!model.canSubmitComposer)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(tokens.materials.panelMaterial.material, in: RoundedRectangle(cornerRadius: tokens.radius.large))
                     .overlay(
                         RoundedRectangle(cornerRadius: tokens.radius.large)
-                            .strokeBorder(Color.primary.opacity(0.08))
+                            .strokeBorder(Color.primary.opacity(0.05))
                     )
                     .padding(.horizontal, tokens.spacing.medium)
                     .padding(.vertical, tokens.spacing.small)
+
+                    if let followUpStatus = model.followUpStatusMessage {
+                        Text(followUpStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, tokens.spacing.medium)
+                    }
                 }
 
-                if model.isLogsDrawerVisible {
+                if model.isShellWorkspaceVisible {
                     Divider()
-                    ThreadLogsDrawer(entries: model.selectedThreadLogs)
-                        .frame(height: 180)
+                    ShellWorkspaceDrawer(model: model)
+                        .frame(height: 280)
                         .background(tokens.materials.panelMaterial.material)
                 }
             }
         }
-        .navigationTitle("Conversation")
+        .navigationTitle("")
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
             if !shouldShowChatSetup {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -118,6 +140,7 @@ struct ChatsCanvasView: View {
                         Label("Review Changes", systemImage: "doc.text.magnifyingglass")
                             .labelStyle(.iconOnly)
                     }
+                    .accessibilityLabel("Review pending changes")
                     .help("Review changes")
                     .disabled(!model.canReviewChanges)
 
@@ -127,26 +150,24 @@ struct ChatsCanvasView: View {
                         Label("Reveal Chat File", systemImage: "doc.text")
                             .labelStyle(.iconOnly)
                     }
+                    .accessibilityLabel("Reveal chat archive in Finder")
                     .help("Reveal latest chat archive")
                     .disabled(model.selectedThreadID == nil)
 
                     Button {
-                        model.toggleLogsDrawer()
+                        model.toggleShellWorkspace()
                     } label: {
-                        Label("Terminal / Logs", systemImage: "terminal")
+                        Label("Shell Workspace", systemImage: "terminal")
                             .labelStyle(.iconOnly)
                     }
-                    .help("Toggle terminal/logs drawer")
+                    .accessibilityLabel("Toggle shell workspace")
+                    .help("Toggle shell workspace")
                 }
             }
         }
     }
 
     private var shouldShowChatSetup: Bool {
-        if model.navigationSection != .chats {
-            return false
-        }
-
         if case .installCodex? = model.runtimeIssue {
             return true
         }

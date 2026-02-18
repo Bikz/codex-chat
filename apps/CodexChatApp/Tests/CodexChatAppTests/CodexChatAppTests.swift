@@ -1,6 +1,9 @@
 @testable import CodexChatApp
 import CodexChatCore
+import CodexChatInfra
 import CodexKit
+import CodexMemory
+import CodexMods
 import XCTest
 
 final class CodexChatAppTests: XCTestCase {
@@ -37,6 +40,113 @@ final class CodexChatAppTests: XCTestCase {
         )
     }
 
+    func testChatArchiveAppendPreservesPriorTurns() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-archive-multi-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        let t1 = t0.addingTimeInterval(60)
+
+        _ = try ChatArchiveStore.appendTurn(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                timestamp: t0,
+                userText: "First question",
+                assistantText: "First answer",
+                actions: []
+            )
+        )
+
+        let archiveURL = try ChatArchiveStore.appendTurn(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                timestamp: t1,
+                userText: "Second question",
+                assistantText: "Second answer",
+                actions: []
+            )
+        )
+
+        let content = try String(contentsOf: archiveURL, encoding: .utf8)
+        XCTAssertEqual(
+            content.components(separatedBy: "# Chat Archive for \(threadID.uuidString)").count - 1,
+            1
+        )
+        XCTAssertTrue(content.contains("First question"))
+        XCTAssertTrue(content.contains("First answer"))
+        XCTAssertTrue(content.contains("Second question"))
+        XCTAssertTrue(content.contains("Second answer"))
+    }
+
+    @MainActor
+    func testLaunchHealthCheckRepairsExistingProjectAndRecoversSelectionFromMissingPath() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-launch-health-\(UUID().uuidString)", isDirectory: true)
+        let healthyURL = root.appendingPathComponent("healthy-project", isDirectory: true)
+        let missingURL = root.appendingPathComponent("missing-project", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+
+        try FileManager.default.createDirectory(at: healthyURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        let missingProject = try await repositories.projectRepository.createProject(
+            named: "Missing",
+            path: missingURL.path,
+            trustState: .untrusted,
+            isGeneralProject: false
+        )
+        let healthyProject = try await repositories.projectRepository.createProject(
+            named: "Healthy",
+            path: healthyURL.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let staleThread = try await repositories.threadRepository.createThread(
+            projectID: missingProject.id,
+            title: "Stale thread"
+        )
+
+        try await repositories.preferenceRepository.setPreference(
+            key: .lastOpenedProjectID,
+            value: missingProject.id.uuidString
+        )
+        try await repositories.preferenceRepository.setPreference(
+            key: .lastOpenedThreadID,
+            value: staleThread.id.uuidString
+        )
+
+        try await model.refreshProjects()
+        try await model.restoreLastOpenedContext()
+        XCTAssertEqual(model.selectedProjectID, missingProject.id)
+        XCTAssertEqual(model.selectedThreadID, staleThread.id)
+
+        try await model.validateAndRepairProjectsOnLaunch()
+
+        XCTAssertEqual(model.selectedProjectID, healthyProject.id)
+        XCTAssertNil(model.selectedThreadID)
+        XCTAssertTrue(model.projectStatusMessage?.contains("not found") ?? false)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: healthyURL.appendingPathComponent("chats").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: healthyURL.appendingPathComponent("artifacts").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: healthyURL.appendingPathComponent("mods").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: healthyURL.appendingPathComponent(".agents/skills").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: healthyURL.appendingPathComponent("memory/profile.md").path))
+
+        let persistedProjectID = try await repositories.preferenceRepository.getPreference(key: .lastOpenedProjectID)
+        let persistedThreadID = try await repositories.preferenceRepository.getPreference(key: .lastOpenedThreadID)
+        XCTAssertEqual(persistedProjectID, healthyProject.id.uuidString)
+        XCTAssertEqual(persistedThreadID, "")
+    }
+
     func testApprovalStateMachineQueuesAndResolvesInOrder() {
         var state = ApprovalStateMachine()
         let first = makeApprovalRequest(id: 1)
@@ -66,6 +176,44 @@ final class CodexChatAppTests: XCTestCase {
 
         XCTAssertEqual(state.activeRequest?.id, 42)
         XCTAssertTrue(state.queuedRequests.isEmpty)
+    }
+
+    @MainActor
+    func testRuntimeTerminationResetsPendingApprovalWithExplicitMessage() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        let projectID = UUID()
+        let request = makeApprovalRequest(id: 101)
+        model.selectedThreadID = threadID
+        model.activeTurnContext = AppModel.ActiveTurnContext(
+            localThreadID: threadID,
+            projectID: projectID,
+            projectPath: "/tmp",
+            runtimeThreadID: "thr_1",
+            userText: "hello",
+            assistantText: "",
+            actions: [],
+            startedAt: Date()
+        )
+        model.approvalStateMachine.enqueue(request)
+        model.activeApprovalRequest = model.approvalStateMachine.activeRequest
+        model.isApprovalDecisionInProgress = true
+
+        model.handleRuntimeTermination(detail: "Simulated runtime crash.")
+
+        XCTAssertFalse(model.approvalStateMachine.hasPendingApprovals)
+        XCTAssertNil(model.activeApprovalRequest)
+        XCTAssertFalse(model.isApprovalDecisionInProgress)
+        XCTAssertTrue(model.approvalStatusMessage?.contains("Approval request was reset") ?? false)
+
+        let entries = model.transcriptStore[threadID, default: []]
+        let approvalResetCardExists = entries.contains { entry in
+            guard case let .actionCard(card) = entry else {
+                return false
+            }
+            return card.method == "approval/reset" && card.title == "Approval reset"
+        }
+        XCTAssertTrue(approvalResetCardExists)
     }
 
     func testMemoryAutoSummaryFormattingRespectsMode() {
@@ -100,6 +248,144 @@ final class CodexChatAppTests: XCTestCase {
         )
         XCTAssertTrue(markdownWithFacts.contains("Key facts"))
         XCTAssertTrue(markdownWithFacts.contains("Prefer SwiftUI"))
+    }
+
+    @MainActor
+    func testSteerFailureMarksQueuedItemFailed() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-followup-failure-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Failure Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let thread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Failure Thread"
+        )
+
+        let item = FollowUpQueueItemRecord(
+            threadID: thread.id,
+            source: .userQueued,
+            dispatchMode: .auto,
+            text: "Will fail",
+            sortIndex: 0
+        )
+        try await repositories.followUpQueueRepository.enqueue(item)
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        model.selectedProjectID = project.id
+        model.selectedThreadID = thread.id
+        model.runtimeStatus = .connected
+        try await model.refreshFollowUpQueue(threadID: thread.id)
+
+        model.steerFollowUp(item.id)
+
+        let deadline = Date().addingTimeInterval(2.0)
+        while Date() < deadline {
+            if let failed = model.selectedFollowUpQueueItems.first(where: { $0.id == item.id }) {
+                if failed.state == .failed {
+                    XCTAssertNotNil(failed.lastError)
+                    return
+                }
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        XCTFail("Expected queued item to transition to failed state")
+    }
+
+    func testResolvedThemeOverridesPreferProjectThemeForLightMode() {
+        let globalMod = makeMod(
+            path: "/global/green",
+            theme: ModThemeOverride(
+                typography: .init(titleSize: 20, bodySize: 13, captionSize: 11),
+                palette: .init(accentHex: "#2E7D32", backgroundHex: "#F1F3F1", panelHex: "#FAFFFA")
+            )
+        )
+        let projectMod = makeMod(
+            scope: .project,
+            path: "/project/orange",
+            theme: ModThemeOverride(
+                typography: .init(titleSize: nil, bodySize: 15, captionSize: nil),
+                palette: .init(accentHex: "#FF5500", backgroundHex: nil, panelHex: "#FFF4EE")
+            )
+        )
+
+        let resolved = AppModel.resolvedThemeOverrides(
+            globalMods: [globalMod],
+            projectMods: [projectMod],
+            selectedGlobalPath: "/global/green",
+            selectedProjectPath: "/project/orange"
+        )
+
+        XCTAssertEqual(resolved.light.palette?.accentHex, "#FF5500")
+        XCTAssertEqual(resolved.light.palette?.backgroundHex, "#F1F3F1")
+        XCTAssertEqual(resolved.light.palette?.panelHex, "#FFF4EE")
+        XCTAssertEqual(resolved.light.typography?.bodySize, 15)
+    }
+
+    func testResolvedThemeOverridesDarkFallbackStripsLightColorsWithoutDarkTheme() {
+        let globalMod = makeMod(
+            path: "/global/light-only",
+            theme: ModThemeOverride(
+                typography: .init(titleSize: 21, bodySize: 16, captionSize: 12),
+                palette: .init(accentHex: "#10A37F", backgroundHex: "#F7F8F7", panelHex: "#FFFFFF"),
+                materials: .init(panelMaterial: "thin", cardMaterial: "regular"),
+                bubbles: .init(style: "solid", userBackgroundHex: "#10A37F", assistantBackgroundHex: "#FFFFFF")
+            )
+        )
+
+        let resolved = AppModel.resolvedThemeOverrides(
+            globalMods: [globalMod],
+            projectMods: [],
+            selectedGlobalPath: "/global/light-only",
+            selectedProjectPath: nil
+        )
+
+        XCTAssertNil(resolved.dark.resolvedPaletteAccentHex)
+        XCTAssertNil(resolved.dark.resolvedPaletteBackgroundHex)
+        XCTAssertNil(resolved.dark.resolvedPalettePanelHex)
+        XCTAssertNil(resolved.dark.bubbles?.userBackgroundHex)
+        XCTAssertNil(resolved.dark.bubbles?.assistantBackgroundHex)
+        XCTAssertEqual(resolved.dark.bubbles?.style, "solid")
+        XCTAssertEqual(resolved.dark.typography?.bodySize, 16)
+        XCTAssertEqual(resolved.dark.materials?.panelMaterial, "thin")
+    }
+
+    func testResolvedThemeOverridesDarkThemeOverridesFallbackColors() {
+        let globalMod = makeMod(
+            path: "/global/dual-theme",
+            theme: ModThemeOverride(
+                typography: .init(titleSize: 21, bodySize: 14, captionSize: 12),
+                palette: .init(accentHex: "#10A37F", backgroundHex: "#F7F8F7", panelHex: "#FFFFFF"),
+                bubbles: .init(style: "solid", userBackgroundHex: "#10A37F", assistantBackgroundHex: "#FFFFFF")
+            ),
+            darkTheme: ModThemeOverride(
+                palette: .init(accentHex: "#10A37F", backgroundHex: "#000000", panelHex: "#121212"),
+                bubbles: .init(style: "glass", userBackgroundHex: "#10A37F", assistantBackgroundHex: "#1C1C1E")
+            )
+        )
+
+        let resolved = AppModel.resolvedThemeOverrides(
+            globalMods: [globalMod],
+            projectMods: [],
+            selectedGlobalPath: "/global/dual-theme",
+            selectedProjectPath: nil
+        )
+
+        XCTAssertEqual(resolved.dark.palette?.backgroundHex, "#000000")
+        XCTAssertEqual(resolved.dark.palette?.panelHex, "#121212")
+        XCTAssertEqual(resolved.dark.bubbles?.style, "glass")
+        XCTAssertEqual(resolved.dark.bubbles?.assistantBackgroundHex, "#1C1C1E")
+        XCTAssertEqual(resolved.dark.typography?.titleSize, 21)
     }
 
     func testModEditSafetyAbsolutePathResolvesRelativePathsWithinProject() throws {
@@ -222,6 +508,276 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: snapshot.rootURL.path))
     }
 
+    @MainActor
+    func testArchivingSelectedThreadReselectsFallbackThread() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-archive-select-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Archive Select",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let first = try await repositories.threadRepository.createThread(projectID: project.id, title: "First")
+        let second = try await repositories.threadRepository.createThread(projectID: project.id, title: "Second")
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        model.selectedProjectID = project.id
+        try await model.refreshThreads()
+        model.selectedThreadID = first.id
+        try await model.persistSelection()
+
+        model.archiveThread(threadID: first.id)
+
+        try await waitUntil {
+            model.selectedThreadID == second.id
+                && model.archivedThreads.contains(where: { $0.id == first.id })
+        }
+    }
+
+    @MainActor
+    func testArchiveRemovesMemoryInfluenceAndUnarchiveRestoresIt() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-archive-memory-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Archive Memory",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let thread = try await repositories.threadRepository.createThread(projectID: project.id, title: "Memory Thread")
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        model.selectedProjectID = project.id
+        try await model.refreshThreads()
+        try await model.refreshArchivedThreads()
+
+        let store = ProjectMemoryStore(projectPath: project.path)
+        try await store.ensureStructure()
+        try await store.write(
+            .summaryLog,
+            text: """
+            # Summary Log
+
+            ## 2026-02-18 12:00:00
+
+            - Thread: `\(thread.id.uuidString)`
+            - User: keep this memory
+            - Assistant: remembered phrase for archive test
+
+            """
+        )
+        let before = try await store.keywordSearch(query: "remembered phrase")
+        XCTAssertFalse(before.isEmpty)
+
+        model.archiveThread(threadID: thread.id)
+        try await waitUntil {
+            model.archivedThreads.contains(where: { $0.id == thread.id })
+        }
+
+        let hidden = try await store.keywordSearch(query: "remembered phrase")
+        XCTAssertTrue(hidden.isEmpty)
+
+        model.unarchiveThread(threadID: thread.id)
+        try await waitUntil {
+            !model.archivedThreads.contains(where: { $0.id == thread.id })
+        }
+
+        let restored = try await store.keywordSearch(query: "remembered phrase")
+        XCTAssertFalse(restored.isEmpty)
+    }
+
+    @MainActor
+    func testCreateGlobalNewChatAlwaysTargetsGeneralProject() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-global-chat-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Work Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        try await model.ensureGeneralProject()
+        try await model.refreshProjects()
+        model.selectedProjectID = project.id
+        try await model.refreshGeneralThreads()
+
+        let generalID = try XCTUnwrap(model.generalProject?.id)
+        let baseline = model.generalThreads.count
+        model.createGlobalNewChat()
+
+        try await waitUntil {
+            model.selectedProjectID == generalID
+                && model.generalThreads.count == baseline + 1
+                && model.selectedThreadID != nil
+        }
+    }
+
+    func testShellSplitTreeSupportsRecursiveSplitAndCloseCollapse() {
+        let pane1 = ShellPaneState(id: UUID(), cwd: "/tmp/one")
+        let pane2 = ShellPaneState(id: UUID(), cwd: "/tmp/two")
+        let pane3 = ShellPaneState(id: UUID(), cwd: "/tmp/three")
+
+        var root: ShellSplitNode = .leaf(pane1)
+        XCTAssertTrue(ShellSplitTree.splitLeaf(in: &root, paneID: pane1.id, axis: .horizontal, newPane: pane2))
+        XCTAssertTrue(ShellSplitTree.splitLeaf(in: &root, paneID: pane2.id, axis: .vertical, newPane: pane3))
+        XCTAssertEqual(root.leafCount(), 3)
+        XCTAssertEqual(ShellSplitTree.findLeaf(in: root, paneID: pane3.id)?.cwd, "/tmp/three")
+
+        let closePane2 = ShellSplitTree.closeLeaf(in: root, paneID: pane2.id)
+        XCTAssertTrue(closePane2.didClose)
+        guard let afterClosePane2 = closePane2.root else {
+            XCTFail("Expected non-empty tree after closing pane2")
+            return
+        }
+        XCTAssertEqual(afterClosePane2.leafCount(), 2)
+        XCTAssertNotNil(ShellSplitTree.findLeaf(in: afterClosePane2, paneID: pane3.id))
+
+        let closePane1 = ShellSplitTree.closeLeaf(in: afterClosePane2, paneID: pane1.id)
+        XCTAssertTrue(closePane1.didClose)
+        guard let afterClosePane1 = closePane1.root else {
+            XCTFail("Expected one-pane tree after closing pane1")
+            return
+        }
+        XCTAssertEqual(afterClosePane1.leafCount(), 1)
+        XCTAssertNotNil(ShellSplitTree.findLeaf(in: afterClosePane1, paneID: pane3.id))
+
+        let closePane3 = ShellSplitTree.closeLeaf(in: afterClosePane1, paneID: pane3.id)
+        XCTAssertTrue(closePane3.didClose)
+        XCTAssertNil(closePane3.root)
+    }
+
+    @MainActor
+    func testShellWorkspaceIsScopedPerProjectAndNotRestoredInNewModel() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project1 = ProjectRecord(name: "P1", path: "/tmp/p1", trustState: .trusted)
+        let project2 = ProjectRecord(name: "P2", path: "/tmp/p2", trustState: .trusted)
+        model.projectsState = .loaded([project1, project2])
+
+        model.selectedProjectID = project1.id
+        model.createShellSession()
+        XCTAssertEqual(model.shellWorkspacesByProjectID[project1.id]?.sessions.count, 1)
+
+        model.selectedProjectID = project2.id
+        model.createShellSession()
+        XCTAssertEqual(model.shellWorkspacesByProjectID[project2.id]?.sessions.count, 1)
+        XCTAssertEqual(model.shellWorkspacesByProjectID[project1.id]?.sessions.count, 1)
+
+        let secondModel = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        XCTAssertTrue(secondModel.shellWorkspacesByProjectID.isEmpty)
+    }
+
+    @MainActor
+    func testSplitShellPaneInheritsCurrentPaneDirectory() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "P1", path: "/tmp/project-root", trustState: .trusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+        model.createShellSession()
+
+        guard var session = model.selectedShellSession else {
+            XCTFail("Missing selected shell session")
+            return
+        }
+        let sourcePaneID = session.activePaneID
+        XCTAssertEqual(
+            ShellSplitTree.findLeaf(in: session.rootNode, paneID: sourcePaneID)?.cwd,
+            "/tmp/project-root"
+        )
+
+        model.splitShellPane(sessionID: session.id, paneID: sourcePaneID, axis: .horizontal)
+        guard let updatedWorkspace = model.shellWorkspacesByProjectID[project.id],
+              let updatedSession = updatedWorkspace.selectedSession()
+        else {
+            XCTFail("Missing updated shell workspace")
+            return
+        }
+        session = updatedSession
+        XCTAssertEqual(session.rootNode.leafCount(), 2)
+
+        guard let activePane = ShellSplitTree.findLeaf(in: session.rootNode, paneID: session.activePaneID) else {
+            XCTFail("Missing active pane after split")
+            return
+        }
+        XCTAssertEqual(activePane.cwd, "/tmp/project-root")
+    }
+
+    @MainActor
+    func testClosingLastPaneAutoClosesSession() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "P1", path: "/tmp/project-root", trustState: .trusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+        model.createShellSession()
+
+        guard let session = model.selectedShellSession else {
+            XCTFail("Missing selected shell session")
+            return
+        }
+
+        model.closeShellPane(sessionID: session.id, paneID: session.activePaneID)
+        let workspace = model.shellWorkspacesByProjectID[project.id]
+        XCTAssertEqual(workspace?.sessions.count, 0)
+        XCTAssertNil(workspace?.selectedSessionID)
+    }
+
+    @MainActor
+    func testUntrustedShellWarningAppearsOncePerProject() async throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "Untrusted", path: "/tmp/untrusted", trustState: .untrusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        model.toggleShellWorkspace()
+        try await waitUntil {
+            model.activeUntrustedShellWarning?.projectID == project.id
+        }
+        XCTAssertFalse(model.isShellWorkspaceVisible)
+
+        model.confirmUntrustedShellWarning()
+        try await waitUntil {
+            model.isShellWorkspaceVisible
+        }
+        XCTAssertNil(model.activeUntrustedShellWarning)
+
+        model.isShellWorkspaceVisible = false
+        model.toggleShellWorkspace()
+        try await waitUntil {
+            model.isShellWorkspaceVisible
+        }
+        XCTAssertNil(model.activeUntrustedShellWarning)
+    }
+
+    func testUntrustedShellAcknowledgementsCodecRoundTrips() {
+        let values: Set<UUID> = [UUID(), UUID()]
+        let encoded = UntrustedShellAcknowledgementsCodec.encode(values)
+        let decoded = UntrustedShellAcknowledgementsCodec.decode(encoded)
+        XCTAssertEqual(decoded, values)
+    }
+
     private func makeApprovalRequest(id: Int) -> RuntimeApprovalRequest {
         RuntimeApprovalRequest(
             id: id,
@@ -237,5 +793,47 @@ final class CodexChatAppTests: XCTestCase {
             changes: [],
             detail: "{}"
         )
+    }
+
+    private func makeMod(
+        scope: ModScope = .global,
+        path: String,
+        theme: ModThemeOverride,
+        darkTheme: ModThemeOverride? = nil
+    ) -> DiscoveredUIMod {
+        let manifest = UIModManifest(
+            id: path.replacingOccurrences(of: "/", with: "-"),
+            name: "TestMod-\(path)",
+            version: "1.0.0"
+        )
+        let definition = UIModDefinition(
+            schemaVersion: 1,
+            manifest: manifest,
+            theme: theme,
+            darkTheme: darkTheme
+        )
+        return DiscoveredUIMod(
+            scope: scope,
+            directoryPath: path,
+            definitionPath: "\(path)/ui.mod.json",
+            definition: definition,
+            computedChecksum: nil
+        )
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeout: TimeInterval = 3.0,
+        pollInterval: UInt64 = 50_000_000,
+        _ condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            try await Task.sleep(nanoseconds: pollInterval)
+        }
+        XCTFail("Condition not satisfied before timeout.")
     }
 }

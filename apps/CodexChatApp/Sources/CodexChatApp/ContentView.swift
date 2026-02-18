@@ -10,11 +10,13 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(model: model)
-                .navigationSplitViewColumnWidth(min: 260, ideal: 320)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
         } detail: {
             detailSurface
+                .background(Color(hex: tokens.palette.backgroundHex))
         }
-        .background(Color(hex: tokens.palette.backgroundHex))
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .navigationTitle("")
         .sheet(isPresented: $model.isDiagnosticsVisible) {
             DiagnosticsView(
                 runtimeStatus: model.runtimeStatus,
@@ -49,16 +51,23 @@ struct ContentView: View {
             ApprovalRequestSheet(model: model, request: request)
                 .interactiveDismissDisabled(model.isApprovalDecisionInProgress)
         }
+        .sheet(item: Binding(get: {
+            model.activeUntrustedShellWarning
+        }, set: { _ in })) { warning in
+            UntrustedShellWarningSheet(
+                context: warning,
+                onCancel: model.dismissUntrustedShellWarning,
+                onContinue: model.confirmUntrustedShellWarning
+            )
+        }
         .onAppear {
             model.onAppear()
         }
-        .onChange(of: model.navigationSection) { newValue in
+        .onChange(of: model.detailDestination) { newValue in
             switch newValue {
-            case .skills:
-                model.refreshSkillsSurface()
-            case .mods:
+            case .skillsAndMods:
                 model.refreshModsSurface()
-            case .chats, .memory:
+            case .thread, .none:
                 break
             }
         }
@@ -66,15 +75,13 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailSurface: some View {
-        switch model.navigationSection {
-        case .chats:
+        switch model.detailDestination {
+        case .thread:
             ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
-        case .skills:
-            SkillsCanvasView(model: model, isInstallSkillSheetVisible: $isInstallSkillSheetVisible)
-        case .memory:
-            MemoryCanvas(model: model)
-        case .mods:
-            ModsCanvas(model: model)
+        case .skillsAndMods:
+            SkillsModsCanvasView(model: model, isInstallSkillSheetVisible: $isInstallSkillSheetVisible)
+        case .none:
+            ChatSetupView(model: model)
         }
     }
 }

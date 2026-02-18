@@ -13,9 +13,14 @@ CodexChat is a local-first macOS SwiftUI chat app that integrates the local Code
 - Streaming assistant responses in the transcript.
 - Inline, reviewable Action Cards (tool runs, file changes, approvals).
 - Local chat archives written as Markdown in the project for grep/search.
+- Per-thread persistent follow-up queue: Enter sends when idle, auto-queues when busy, with edit/delete/re-prioritize and Auto FIFO drain.
+- In-flight `Steer` dispatch for capable runtimes, with deterministic fallback to "queue next" on legacy runtimes.
 - Skills discovery + install + per-project enablement (progressive disclosure).
 - Memory system stored as editable project files, with optional advanced retrieval.
-- UI Mods: token overrides with precedence `defaults < global < project`, hot reload, and **mandatory review** for agent-proposed mod edits.
+- System light/dark defaults with UI Mods overrides (including optional dark-specific overrides) and precedence `defaults < global < project`, hot reload, and **mandatory review** for agent-proposed mod edits.
+- Tokenized card/panel surfaces across sidebar lists and major sheets/canvases so Mods material overrides apply consistently.
+- Composer input uses tokenized body typography and supports `Cmd+Return` to send.
+- First-class Shell Workspace drawer with per-project multi-session shell panes, recursive splits, and close/restart controls.
 - Diagnostics surface for runtime status + logs.
 
 ## Repo Layout
@@ -32,8 +37,11 @@ CodexChat is a local-first macOS SwiftUI chat app that integrates the local Code
 
 - macOS 13+
 - Xcode 16+ (Swift tools version `6.0`)
-- Homebrew (for SwiftFormat / SwiftLint)
-- Node 22+ (for `corepack` / `pnpm`; used only for workspace scripts)
+- Homebrew
+- Node 22+ (for `corepack` / `pnpm` and git hooks)
+- **gitleaks** (for secret scanning): `brew install gitleaks`
+- **SwiftLint** (for linting): `brew install swiftlint`
+- **SwiftFormat** (for formatting): `brew install swiftformat`
 
 ### Setup
 
@@ -43,7 +51,7 @@ From the repo root:
 corepack enable
 pnpm install
 
-brew install swiftformat swiftlint
+brew install swiftformat swiftlint gitleaks
 ```
 
 ### Full Checks

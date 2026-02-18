@@ -17,6 +17,13 @@ CodexChat applies project-level safety settings to Codex turns:
 
 CodexChat ships with a local, readable policy note in the app bundle (`SafetyPolicy.md`) and exposes a UI path to open it.
 
+## Shell Workspace
+
+- Shell panes run as local interactive processes and are intentionally independent from Codex runtime safety controls.
+- Project `sandbox_mode`, `approval_policy`, network, and web-search settings apply to runtime agent turns, not shell-pane commands.
+- For untrusted projects, CodexChat requires a one-time explicit warning acknowledgement before opening the shell workspace.
+- Shell pane activity is not copied into chat transcript archives.
+
 ## Secrets
 
 - API keys are stored in macOS Keychain.
@@ -31,4 +38,3 @@ If the agent proposes edits to files inside mod roots, CodexChat forces an expli
 - A snapshot of mod roots is captured at turn start.
 - At turn completion, mod-file changes trigger a mandatory review sheet.
 - The user can accept changes or revert back to the snapshot.
-
