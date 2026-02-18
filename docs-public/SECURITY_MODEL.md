@@ -42,3 +42,16 @@ When runtime proposes edits in mod roots, CodexChat enforces review:
 - capture pre-turn snapshot
 - show mandatory review sheet on completion
 - allow explicit accept or full revert
+
+## Extension Runtime Safety
+
+Schema v2 mods can define hooks and automations. These capabilities are permission-gated.
+
+- Permission keys: `projectRead`, `projectWrite`, `network`, `runtimeControl`, `runWhenAppClosed`
+- Privileged permissions are prompted on first use per mod.
+- Background automations require:
+  - per-mod `runWhenAppClosed` permission
+  - one-time global background automation permission
+- Worker execution uses isolated subprocess invocation with hard timeouts and output caps.
+- Artifact writes are confined to project roots; traversal outside project root is rejected.
+- Extension diagnostics sanitize token-like secret patterns before logging.

@@ -10,6 +10,10 @@ public struct MetadataRepositories: Sendable {
     public let projectSecretRepository: any ProjectSecretRepository
     public let projectSkillEnablementRepository: any ProjectSkillEnablementRepository
     public let chatSearchRepository: any ChatSearchRepository
+    public let extensionInstallRepository: any ExtensionInstallRepository
+    public let extensionPermissionRepository: any ExtensionPermissionRepository
+    public let extensionHookStateRepository: any ExtensionHookStateRepository
+    public let extensionAutomationStateRepository: any ExtensionAutomationStateRepository
 
     public init(database: MetadataDatabase) {
         projectRepository = SQLiteProjectRepository(dbQueue: database.dbQueue)
@@ -20,5 +24,9 @@ public struct MetadataRepositories: Sendable {
         projectSecretRepository = SQLiteProjectSecretRepository(dbQueue: database.dbQueue)
         projectSkillEnablementRepository = SQLiteProjectSkillEnablementRepository(dbQueue: database.dbQueue)
         chatSearchRepository = SQLiteChatSearchRepository(dbQueue: database.dbQueue)
+        extensionInstallRepository = SQLiteExtensionInstallRepository(dbQueue: database.dbQueue)
+        extensionPermissionRepository = SQLiteExtensionPermissionRepository(dbQueue: database.dbQueue)
+        extensionHookStateRepository = SQLiteExtensionHookStateRepository(dbQueue: database.dbQueue)
+        extensionAutomationStateRepository = SQLiteExtensionAutomationStateRepository(dbQueue: database.dbQueue)
     }
 }

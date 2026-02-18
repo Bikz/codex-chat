@@ -64,6 +64,18 @@ extension AppModel {
                 )
             }
             projectStatusMessage = "Archived chat turn to \(archiveURL.lastPathComponent)."
+            emitExtensionEvent(
+                .transcriptPersisted,
+                projectID: context.projectID,
+                projectPath: context.projectPath,
+                threadID: context.localThreadID,
+                turnID: context.localTurnID.uuidString,
+                turnStatus: turnStatus.rawValue,
+                payload: [
+                    "archivePath": archiveURL.path,
+                    "status": turnStatus.rawValue,
+                ]
+            )
 
             guard !isThreadArchived else {
                 appendLog(.debug, "Skipped indexing archived thread \(context.localThreadID.uuidString)")

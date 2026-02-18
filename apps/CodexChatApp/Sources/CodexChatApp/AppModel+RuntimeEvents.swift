@@ -1,4 +1,5 @@
 import CodexChatCore
+import CodexExtensions
 import CodexKit
 import Foundation
 
@@ -7,6 +8,16 @@ extension AppModel {
         switch event {
         case let .threadStarted(threadID):
             appendLog(.debug, "Runtime thread started: \(threadID)")
+            if let context = activeTurnContext {
+                emitExtensionEvent(
+                    .threadStarted,
+                    projectID: context.projectID,
+                    projectPath: context.projectPath,
+                    threadID: context.localThreadID,
+                    turnID: context.localTurnID.uuidString,
+                    payload: ["runtimeThreadID": threadID]
+                )
+            }
 
         case let .turnStarted(turnID):
             if let context = activeTurnContext {
@@ -21,6 +32,13 @@ extension AppModel {
                     ),
                     to: context.localThreadID
                 )
+                emitExtensionEvent(
+                    .turnStarted,
+                    projectID: context.projectID,
+                    projectPath: context.projectPath,
+                    threadID: context.localThreadID,
+                    turnID: turnID
+                )
             }
 
         case let .assistantMessageDelta(itemID, delta):
@@ -33,6 +51,14 @@ extension AppModel {
             var updatedContext = context
             updatedContext.assistantText += delta
             activeTurnContext = updatedContext
+            emitExtensionEvent(
+                .assistantDelta,
+                projectID: context.projectID,
+                projectPath: context.projectPath,
+                threadID: context.localThreadID,
+                turnID: context.localTurnID.uuidString,
+                payload: ["itemID": itemID, "delta": delta]
+            )
 
         case let .commandOutputDelta(output):
             handleCommandOutputDelta(output)
@@ -73,6 +99,20 @@ extension AppModel {
                 assistantMessageIDsByItemID[context.localThreadID] = [:]
                 localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != context.localThreadID }
                 processModChangesIfNeeded(context: context)
+                let eventName: ExtensionEventName = isFailureCompletion(completion) ? .turnFailed : .turnCompleted
+                var payload = ["status": completion.status]
+                if let errorMessage = completion.errorMessage {
+                    payload["error"] = errorMessage
+                }
+                emitExtensionEvent(
+                    eventName,
+                    projectID: context.projectID,
+                    projectPath: context.projectPath,
+                    threadID: context.localThreadID,
+                    turnID: completion.turnID ?? context.localTurnID.uuidString,
+                    turnStatus: completion.status,
+                    payload: payload
+                )
                 activeTurnContext = nil
 
                 Task {
@@ -139,6 +179,20 @@ extension AppModel {
             detail: action.detail
         )
         appendEntry(.actionCard(card), to: localThreadID)
+        if let context = extensionProjectContext(forThreadID: localThreadID) {
+            emitExtensionEvent(
+                .actionCard,
+                projectID: context.projectID,
+                projectPath: context.projectPath,
+                threadID: localThreadID,
+                turnID: action.turnID,
+                payload: [
+                    "method": action.method,
+                    "title": action.title,
+                    "detail": action.detail,
+                ]
+            )
+        }
 
         if var context = activeTurnContext,
            context.localThreadID == localThreadID
@@ -207,6 +261,19 @@ extension AppModel {
             ),
             to: localThreadID
         )
+        if let context = extensionProjectContext(forThreadID: localThreadID) {
+            emitExtensionEvent(
+                .approvalRequested,
+                projectID: context.projectID,
+                projectPath: context.projectPath,
+                threadID: localThreadID,
+                payload: [
+                    "method": request.method,
+                    "summary": summary,
+                    "kind": request.kind.rawValue,
+                ]
+            )
+        }
     }
 
     func resolveLocalThreadID(runtimeThreadID: String?, itemID: String?) -> UUID? {
@@ -224,5 +291,15 @@ extension AppModel {
         }
 
         return nil
+    }
+
+    private func isFailureCompletion(_ completion: RuntimeTurnCompletion) -> Bool {
+        if completion.errorMessage != nil {
+            return true
+        }
+        let normalized = completion.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.contains("fail")
+            || normalized.contains("error")
+            || normalized.contains("cancel")
     }
 }

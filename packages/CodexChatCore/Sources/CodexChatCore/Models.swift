@@ -289,9 +289,128 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case runtimeDefaultReasoning = "runtime.default.reasoning"
     case runtimeDefaultWebSearch = "runtime.default.web_search"
     case runtimeDefaultSafety = "runtime.default.safety"
-    case runtimeExperimentalFlags = "runtime.experimental.flags"
     case generalProjectSafetyMigrationV1 = "general_project_safety_migration_v1"
     case runtimeConfigMigrationV1 = "runtime_config_migration_v1"
+    case extensionsBackgroundAutomationPermission = "extensions.background_automation_permission"
+    case extensionsInspectorVisibilityByThread = "extensions.inspector_visibility_by_thread"
+}
+
+public enum ExtensionInstallScope: String, CaseIterable, Hashable, Sendable, Codable {
+    case global
+    case project
+}
+
+public struct ExtensionInstallRecord: Identifiable, Hashable, Sendable, Codable {
+    public let id: String
+    public let modID: String
+    public let scope: ExtensionInstallScope
+    public var sourceURL: String?
+    public var installedPath: String
+    public var enabled: Bool
+    public let createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: String,
+        modID: String,
+        scope: ExtensionInstallScope,
+        sourceURL: String? = nil,
+        installedPath: String,
+        enabled: Bool,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.modID = modID
+        self.scope = scope
+        self.sourceURL = sourceURL
+        self.installedPath = installedPath
+        self.enabled = enabled
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public enum ExtensionPermissionKey: String, CaseIterable, Hashable, Sendable, Codable {
+    case projectRead
+    case projectWrite
+    case network
+    case runtimeControl
+    case runWhenAppClosed
+}
+
+public enum ExtensionPermissionStatus: String, CaseIterable, Hashable, Sendable, Codable {
+    case granted
+    case denied
+}
+
+public struct ExtensionPermissionRecord: Hashable, Sendable, Codable {
+    public let modID: String
+    public let permissionKey: ExtensionPermissionKey
+    public var status: ExtensionPermissionStatus
+    public var grantedAt: Date
+
+    public init(
+        modID: String,
+        permissionKey: ExtensionPermissionKey,
+        status: ExtensionPermissionStatus,
+        grantedAt: Date = Date()
+    ) {
+        self.modID = modID
+        self.permissionKey = permissionKey
+        self.status = status
+        self.grantedAt = grantedAt
+    }
+}
+
+public struct ExtensionHookStateRecord: Hashable, Sendable, Codable {
+    public let modID: String
+    public let hookID: String
+    public var lastRunAt: Date?
+    public var lastStatus: String
+    public var lastError: String?
+
+    public init(
+        modID: String,
+        hookID: String,
+        lastRunAt: Date? = nil,
+        lastStatus: String,
+        lastError: String? = nil
+    ) {
+        self.modID = modID
+        self.hookID = hookID
+        self.lastRunAt = lastRunAt
+        self.lastStatus = lastStatus
+        self.lastError = lastError
+    }
+}
+
+public struct ExtensionAutomationStateRecord: Hashable, Sendable, Codable {
+    public let modID: String
+    public let automationID: String
+    public var nextRunAt: Date?
+    public var lastRunAt: Date?
+    public var lastStatus: String
+    public var lastError: String?
+    public var launchdLabel: String?
+
+    public init(
+        modID: String,
+        automationID: String,
+        nextRunAt: Date? = nil,
+        lastRunAt: Date? = nil,
+        lastStatus: String,
+        lastError: String? = nil,
+        launchdLabel: String? = nil
+    ) {
+        self.modID = modID
+        self.automationID = automationID
+        self.nextRunAt = nextRunAt
+        self.lastRunAt = lastRunAt
+        self.lastStatus = lastStatus
+        self.lastError = lastError
+        self.launchdLabel = launchdLabel
+    }
 }
 
 public enum ChatMessageRole: String, Codable, Hashable, Sendable {

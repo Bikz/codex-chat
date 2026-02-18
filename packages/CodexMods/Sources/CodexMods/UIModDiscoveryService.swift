@@ -40,7 +40,7 @@ public final class UIModDiscoveryService: @unchecked Sendable {
                 throw UIModDiscoveryError.unreadableDefinition(error.localizedDescription)
             }
 
-            guard definition.schemaVersion == 1 else {
+            guard definition.schemaVersion == 1 || definition.schemaVersion == 2 else {
                 throw UIModDiscoveryError.invalidSchemaVersion(definition.schemaVersion)
             }
             guard !definition.manifest.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -117,10 +117,36 @@ public final class UIModDiscoveryService: @unchecked Sendable {
         )
 
         let definition = UIModDefinition(
-            schemaVersion: 1,
+            schemaVersion: 2,
             manifest: manifest,
             theme: theme,
-            darkTheme: darkTheme
+            darkTheme: darkTheme,
+            hooks: [
+                ModHookDefinition(
+                    id: "turn-summary",
+                    event: .turnCompleted,
+                    handler: ModExtensionHandler(command: ["node", "scripts/hook.js"], cwd: "."),
+                    permissions: .init(projectRead: true),
+                    timeoutMs: 8000,
+                    debounceMs: 0
+                ),
+            ],
+            automations: [
+                ModAutomationDefinition(
+                    id: "daily-notes",
+                    schedule: "0 9 * * *",
+                    handler: ModExtensionHandler(command: ["python3", "scripts/automation.py"], cwd: "."),
+                    permissions: .init(projectRead: true, projectWrite: true, runWhenAppClosed: true),
+                    timeoutMs: 60000
+                ),
+            ],
+            uiSlots: .init(
+                rightInspector: .init(
+                    enabled: true,
+                    title: "Summary",
+                    source: .init(type: "handlerOutput", hookID: "turn-summary")
+                )
+            )
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

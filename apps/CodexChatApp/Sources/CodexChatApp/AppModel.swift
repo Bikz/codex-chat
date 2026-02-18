@@ -1,6 +1,7 @@
 import AppKit
 import CodexChatCore
 import CodexChatInfra
+import CodexExtensions
 import CodexKit
 import CodexMemory
 import CodexMods
@@ -37,6 +38,24 @@ final class AppModel: ObservableObject {
         let changes: [RuntimeFileChange]
         let reason: String
         let canRevert: Bool
+    }
+
+    struct ExtensionInspectorState: Hashable {
+        let title: String?
+        let markdown: String
+        let updatedAt: Date
+    }
+
+    struct ResolvedExtensionHook: Hashable {
+        let modID: String
+        let modDirectoryPath: String
+        let definition: ModHookDefinition
+    }
+
+    struct ResolvedExtensionAutomation: Hashable {
+        let modID: String
+        let modDirectoryPath: String
+        let definition: ModAutomationDefinition
     }
 
     enum SurfaceState<Value> {
@@ -146,6 +165,7 @@ final class AppModel: ObservableObject {
     @Published var skillStatusMessage: String?
     @Published var memoryStatusMessage: String?
     @Published var modStatusMessage: String?
+    @Published var extensionStatusMessage: String?
     @Published var storageStatusMessage: String?
     @Published var runtimeDefaultsStatusMessage: String?
     @Published var voiceCaptureState: VoiceCaptureState = .idle
@@ -153,6 +173,7 @@ final class AppModel: ObservableObject {
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
     @Published var isSkillOperationInProgress = false
+    @Published var isModOperationInProgress = false
     @Published var isAPIKeyPromptVisible = false
     @Published var pendingAPIKey = ""
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
@@ -168,6 +189,10 @@ final class AppModel: ObservableObject {
     @Published var isNodeSkillInstallerAvailable = false
     @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
     @Published var activeUntrustedShellWarning: UntrustedShellWarningContext?
+    @Published var extensionInspectorByThreadID: [UUID: ExtensionInspectorState] = [:]
+    @Published var extensionInspectorVisibilityByThreadID: [UUID: Bool] = [:]
+    @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
+    @Published var activeRightInspectorSlot: ModUISlots.RightInspector?
 
     @Published var effectiveThemeOverride: ModThemeOverride = .init()
     @Published var effectiveDarkThemeOverride: ModThemeOverride = .init()
@@ -180,15 +205,23 @@ final class AppModel: ObservableObject {
     let projectSecretRepository: (any ProjectSecretRepository)?
     let projectSkillEnablementRepository: (any ProjectSkillEnablementRepository)?
     let chatSearchRepository: (any ChatSearchRepository)?
+    let extensionInstallRepository: (any ExtensionInstallRepository)?
+    let extensionPermissionRepository: (any ExtensionPermissionRepository)?
+    let extensionHookStateRepository: (any ExtensionHookStateRepository)?
+    let extensionAutomationStateRepository: (any ExtensionAutomationStateRepository)?
     let runtime: CodexRuntime?
     let skillCatalogService: SkillCatalogService
     let modDiscoveryService: UIModDiscoveryService
+    let modCatalogProvider: any ModCatalogProvider
     let keychainStore: APIKeychainStore
     let storagePaths: CodexChatStoragePaths
     let voiceCaptureService: any VoiceCaptureService
     let codexConfigFileStore: CodexConfigFileStore
     let codexConfigSchemaLoader: CodexConfigSchemaLoader
     let codexConfigValidator = CodexConfigValidator()
+    let extensionWorkerRunner = ExtensionWorkerRunner()
+    let extensionStateStore = ExtensionStateStore()
+    let extensionEventBus = ExtensionEventBus()
 
     var transcriptStore: [UUID: [TranscriptEntry]] = [:]
     var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
@@ -210,6 +243,10 @@ final class AppModel: ObservableObject {
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
     var voiceAutoStopTask: Task<Void, Never>?
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
+    var activeExtensionHooks: [ResolvedExtensionHook] = []
+    var activeExtensionAutomations: [ResolvedExtensionAutomation] = []
+    var extensionHookDebounceTimestamps: [String: Date] = [:]
+    var extensionAutomationScheduler = ExtensionAutomationScheduler()
 
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
@@ -223,6 +260,7 @@ final class AppModel: ObservableObject {
         bootError: String?,
         skillCatalogService: SkillCatalogService = SkillCatalogService(),
         modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService(),
+        modCatalogProvider: any ModCatalogProvider = EmptyModCatalogProvider(),
         voiceCaptureService: (any VoiceCaptureService)? = nil,
         storagePaths: CodexChatStoragePaths = .current()
     ) {
@@ -234,9 +272,14 @@ final class AppModel: ObservableObject {
         projectSecretRepository = repositories?.projectSecretRepository
         projectSkillEnablementRepository = repositories?.projectSkillEnablementRepository
         chatSearchRepository = repositories?.chatSearchRepository
+        extensionInstallRepository = repositories?.extensionInstallRepository
+        extensionPermissionRepository = repositories?.extensionPermissionRepository
+        extensionHookStateRepository = repositories?.extensionHookStateRepository
+        extensionAutomationStateRepository = repositories?.extensionAutomationStateRepository
         self.runtime = runtime
         self.skillCatalogService = skillCatalogService
         self.modDiscoveryService = modDiscoveryService
+        self.modCatalogProvider = modCatalogProvider
         self.storagePaths = storagePaths
         self.voiceCaptureService = voiceCaptureService ?? AppleSpeechVoiceCaptureService()
         storageRootPath = storagePaths.rootURL.path
@@ -285,6 +328,10 @@ final class AppModel: ObservableObject {
         voiceAutoStopTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
+        let scheduler = extensionAutomationScheduler
+        Task.detached {
+            await scheduler.stopAll()
+        }
     }
 
     var projects: [ProjectRecord] {
@@ -423,6 +470,20 @@ final class AppModel: ObservableObject {
     var selectedFollowUpQueueItems: [FollowUpQueueItemRecord] {
         guard let selectedThreadID else { return [] }
         return followUpQueueByThreadID[selectedThreadID, default: []]
+    }
+
+    var selectedExtensionInspectorState: ExtensionInspectorState? {
+        guard let selectedThreadID else { return nil }
+        return extensionInspectorByThreadID[selectedThreadID]
+    }
+
+    var isInspectorVisibleForSelectedThread: Bool {
+        guard let selectedThreadID else { return false }
+        return extensionInspectorVisibilityByThreadID[selectedThreadID, default: false]
+    }
+
+    var isInspectorAvailableForSelectedThread: Bool {
+        selectedThreadID != nil && (activeRightInspectorSlot?.enabled ?? false)
     }
 
     var canReviewChanges: Bool {

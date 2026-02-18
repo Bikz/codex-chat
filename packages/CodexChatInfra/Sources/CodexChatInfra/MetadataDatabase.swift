@@ -210,6 +210,48 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v13_add_extension_tables") { db in
+            try db.create(table: "extension_installs") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("modID", .text).notNull()
+                table.column("scope", .text).notNull()
+                table.column("sourceURL", .text)
+                table.column("installedPath", .text).notNull()
+                table.column("enabled", .boolean).notNull().defaults(to: true)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(index: "idx_extension_installs_mod_scope", on: "extension_installs", columns: ["modID", "scope"], unique: true)
+
+            try db.create(table: "extension_permissions") { table in
+                table.column("modID", .text).notNull()
+                table.column("permissionKey", .text).notNull()
+                table.column("status", .text).notNull()
+                table.column("grantedAt", .datetime).notNull()
+                table.primaryKey(["modID", "permissionKey"])
+            }
+
+            try db.create(table: "extension_hook_state") { table in
+                table.column("modID", .text).notNull()
+                table.column("hookID", .text).notNull()
+                table.column("lastRunAt", .datetime)
+                table.column("lastStatus", .text).notNull()
+                table.column("lastError", .text)
+                table.primaryKey(["modID", "hookID"])
+            }
+
+            try db.create(table: "extension_automation_state") { table in
+                table.column("modID", .text).notNull()
+                table.column("automationID", .text).notNull()
+                table.column("nextRunAt", .datetime)
+                table.column("lastRunAt", .datetime)
+                table.column("lastStatus", .text).notNull()
+                table.column("lastError", .text)
+                table.column("launchdLabel", .text)
+                table.primaryKey(["modID", "automationID"])
+            }
+        }
+
         return migrator
     }
 }

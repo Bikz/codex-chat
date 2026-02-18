@@ -78,3 +78,24 @@ public protocol ChatSearchRepository: Sendable {
     func indexMessageExcerpt(threadID: UUID, projectID: UUID, text: String) async throws
     func search(query: String, projectID: UUID?, limit: Int) async throws -> [ChatSearchResult]
 }
+
+public protocol ExtensionInstallRepository: Sendable {
+    func list() async throws -> [ExtensionInstallRecord]
+    func upsert(_ record: ExtensionInstallRecord) async throws -> ExtensionInstallRecord
+    func delete(id: String) async throws
+}
+
+public protocol ExtensionPermissionRepository: Sendable {
+    func list(modID: String) async throws -> [ExtensionPermissionRecord]
+    func set(modID: String, permissionKey: ExtensionPermissionKey, status: ExtensionPermissionStatus, grantedAt: Date) async throws
+}
+
+public protocol ExtensionHookStateRepository: Sendable {
+    func list(modID: String) async throws -> [ExtensionHookStateRecord]
+    func upsert(_ record: ExtensionHookStateRecord) async throws -> ExtensionHookStateRecord
+}
+
+public protocol ExtensionAutomationStateRepository: Sendable {
+    func list(modID: String) async throws -> [ExtensionAutomationStateRecord]
+    func upsert(_ record: ExtensionAutomationStateRecord) async throws -> ExtensionAutomationStateRecord
+}

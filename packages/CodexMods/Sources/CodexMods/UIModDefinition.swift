@@ -60,6 +60,9 @@ public struct UIModDefinition: Hashable, Sendable, Codable {
     public var manifest: UIModManifest
     public var theme: ModThemeOverride
     public var darkTheme: ModThemeOverride?
+    public var hooks: [ModHookDefinition]
+    public var automations: [ModAutomationDefinition]
+    public var uiSlots: ModUISlots?
     public var future: Future?
 
     public init(
@@ -67,13 +70,42 @@ public struct UIModDefinition: Hashable, Sendable, Codable {
         manifest: UIModManifest,
         theme: ModThemeOverride,
         darkTheme: ModThemeOverride? = nil,
+        hooks: [ModHookDefinition] = [],
+        automations: [ModAutomationDefinition] = [],
+        uiSlots: ModUISlots? = nil,
         future: Future? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.manifest = manifest
         self.theme = theme
         self.darkTheme = darkTheme
+        self.hooks = hooks
+        self.automations = automations
+        self.uiSlots = uiSlots
         self.future = future
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case manifest
+        case theme
+        case darkTheme
+        case hooks
+        case automations
+        case uiSlots
+        case future
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        manifest = try container.decode(UIModManifest.self, forKey: .manifest)
+        theme = try container.decode(ModThemeOverride.self, forKey: .theme)
+        darkTheme = try container.decodeIfPresent(ModThemeOverride.self, forKey: .darkTheme)
+        hooks = (try? container.decode([ModHookDefinition].self, forKey: .hooks)) ?? []
+        automations = (try? container.decode([ModAutomationDefinition].self, forKey: .automations)) ?? []
+        uiSlots = try? container.decodeIfPresent(ModUISlots.self, forKey: .uiSlots)
+        future = try? container.decodeIfPresent(Future.self, forKey: .future)
     }
 }
 

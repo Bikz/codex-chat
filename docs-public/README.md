@@ -13,10 +13,14 @@ This folder contains contributor-facing documentation tracked in git.
 ## Feature Docs
 
 - `MODS.md` — UI mod format and precedence.
+- `EXTENSIONS.md` — extension hooks, automations, inspector slot protocol (experimental).
 - `MODS_SHARING.md` — creating and sharing Skills/Mods.
+- `ADR-EXTENSIONS-RUNTIME.md` — extension runtime architecture decision.
 
 ## Notes
 
 - `docs/` is private planning memory and intentionally not part of public contributor docs.
 - Canonical GUI entrypoint is `apps/CodexChatHost`.
 - `apps/CodexChatApp` is shared logic + contributor CLI (`CodexChatCLI`).
+- Preferred onboarding command is `bash scripts/bootstrap.sh`.
+- Preferred OSS smoke command is `make oss-smoke`.

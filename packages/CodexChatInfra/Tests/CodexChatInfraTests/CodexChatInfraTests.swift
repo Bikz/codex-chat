@@ -22,6 +22,10 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("project_skill_enablements"))
         XCTAssertTrue(tableNames.contains("chat_search_index"))
         XCTAssertTrue(tableNames.contains("follow_up_queue"))
+        XCTAssertTrue(tableNames.contains("extension_installs"))
+        XCTAssertTrue(tableNames.contains("extension_permissions"))
+        XCTAssertTrue(tableNames.contains("extension_hook_state"))
+        XCTAssertTrue(tableNames.contains("extension_automation_state"))
 
         let threadColumns = try database.dbQueue.read { db in
             try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('threads')")
@@ -172,6 +176,43 @@ final class CodexChatInfraTests: XCTestCase {
             limit: 10
         )
         XCTAssertTrue(archivedSearchResults.isEmpty)
+
+        let extensionInstall = ExtensionInstallRecord(
+            id: "global:com.example.mod",
+            modID: "com.example.mod",
+            scope: .global,
+            sourceURL: "https://github.com/example/mod",
+            installedPath: "/tmp/mod",
+            enabled: true
+        )
+        let storedInstall = try await repositories.extensionInstallRepository.upsert(extensionInstall)
+        XCTAssertEqual(storedInstall.modID, extensionInstall.modID)
+
+        try await repositories.extensionPermissionRepository.set(
+            modID: extensionInstall.modID,
+            permissionKey: .projectRead,
+            status: .granted,
+            grantedAt: Date()
+        )
+        let permissions = try await repositories.extensionPermissionRepository.list(modID: extensionInstall.modID)
+        XCTAssertEqual(permissions.count, 1)
+        XCTAssertEqual(permissions.first?.status, .granted)
+
+        let hookState = try await repositories.extensionHookStateRepository.upsert(
+            ExtensionHookStateRecord(modID: extensionInstall.modID, hookID: "turn-summary", lastStatus: "ok")
+        )
+        XCTAssertEqual(hookState.hookID, "turn-summary")
+
+        let automationState = try await repositories.extensionAutomationStateRepository.upsert(
+            ExtensionAutomationStateRecord(
+                modID: extensionInstall.modID,
+                automationID: "daily-notes",
+                nextRunAt: Date().addingTimeInterval(3600),
+                lastStatus: "scheduled",
+                launchdLabel: "app.codexchat.daily-notes"
+            )
+        )
+        XCTAssertEqual(automationState.automationID, "daily-notes")
     }
 
     func testThreadPinAndArchiveOrdering() async throws {

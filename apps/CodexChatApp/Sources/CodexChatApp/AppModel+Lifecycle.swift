@@ -30,6 +30,7 @@ extension AppModel {
             await reloadCodexConfigSchema()
             try await ensureGeneralProject()
             try await restoreLastOpenedContext()
+            await restoreExtensionInspectorVisibility()
             try await validateAndRepairProjectsOnLaunch()
             try await refreshThreads()
             try await refreshGeneralThreads()

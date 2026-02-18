@@ -1,3 +1,4 @@
+import CodexChatCore
 import CodexChatUI
 import CodexMods
 import SwiftUI
@@ -6,6 +7,7 @@ import SwiftUI
 struct ModsCanvas: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
+    @State private var isInstallModSheetVisible = false
     private let sharingGuideURL = URL(string: "https://github.com/bikz/codexchat/blob/main/docs-public/MODS_SHARING.md")
     private let modCardColumns = [
         GridItem(.flexible(minimum: 220), spacing: 10, alignment: .top),
@@ -21,6 +23,9 @@ struct ModsCanvas: View {
         .navigationTitle("")
         .onAppear {
             model.refreshModsSurface()
+        }
+        .sheet(isPresented: $isInstallModSheetVisible) {
+            InstallModSheet(model: model, isPresented: $isInstallModSheetVisible)
         }
     }
 
@@ -50,6 +55,13 @@ struct ModsCanvas: View {
             }
             .buttonStyle(.bordered)
             .disabled(model.selectedProject == nil)
+
+            Button {
+                isInstallModSheetVisible = true
+            } label: {
+                Label("Install Mod", systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(.borderedProminent)
 
             Spacer(minLength: 0)
         }
@@ -86,6 +98,7 @@ struct ModsCanvas: View {
                     modGuideSection
                     globalSection(surface: surface)
                     projectSection(surface: surface)
+                    catalogSection
 
                     if let status = model.modStatusMessage {
                         Text(status)
@@ -330,6 +343,164 @@ struct ModsCanvas: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var catalogSection: some View {
+        switch model.extensionCatalogState {
+        case .idle:
+            EmptyView()
+        case .loading:
+            SkillsModsCard {
+                LoadingStateView(title: "Loading catalog…")
+            }
+        case let .failed(message):
+            SkillsModsCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Catalog unavailable")
+                        .font(.headline)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case let .loaded(listings):
+            if listings.isEmpty {
+                EmptyView()
+            } else {
+                SkillsModsCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Curated Catalog")
+                            .font(.title3.weight(.semibold))
+
+                        ForEach(listings) { listing in
+                            HStack(alignment: .top, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(listing.name)
+                                        .font(.headline)
+                                    Text("v\(listing.version)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+
+                                    if let summary = listing.summary, !summary.isEmpty {
+                                        Text(summary)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                    }
+
+                                    if let trustMetadata = listing.trustMetadata, !trustMetadata.isEmpty {
+                                        Text(trustMetadata)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer(minLength: 0)
+
+                                Menu {
+                                    Button("Install to Project") {
+                                        model.installCatalogMod(listing, scope: .project)
+                                    }
+                                    .disabled(model.selectedProject == nil)
+
+                                    Button("Install Globally") {
+                                        model.installCatalogMod(listing, scope: .global)
+                                    }
+                                } label: {
+                                    Label("Install", systemImage: "square.and.arrow.down")
+                                }
+                                .menuStyle(.borderlessButton)
+                            }
+                            .padding(.vertical, 4)
+
+                            if listing.id != listings.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct InstallModSheet: View {
+    @ObservedObject var model: AppModel
+    @Binding var isPresented: Bool
+
+    @State private var source = ""
+    @State private var scope: ExtensionInstallScope = .project
+    @State private var trustConfirmed = false
+
+    private var isTrustedSource: Bool {
+        model.isTrustedModSource(source)
+    }
+
+    private var canSubmit: Bool {
+        !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (isTrustedSource || trustConfirmed)
+            && (scope == .global || model.selectedProject != nil)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Install Mod")
+                .font(.title3.weight(.semibold))
+
+            Text("Install from a git URL or a local folder containing `ui.mod.json`. Installed mods are enabled immediately.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            TextField("https://github.com/org/mod-repo.git", text: $source)
+                .textFieldStyle(.roundedBorder)
+
+            Picker("Scope", selection: $scope) {
+                Text("Project").tag(ExtensionInstallScope.project)
+                Text("Global").tag(ExtensionInstallScope.global)
+            }
+            .pickerStyle(.segmented)
+
+            if scope == .project, model.selectedProject == nil {
+                Text("Select a project to install a project-scoped mod.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            if !isTrustedSource {
+                Toggle("I trust this source and want to install it anyway.", isOn: $trustConfirmed)
+                    .toggleStyle(.switch)
+
+                Text("Unknown source detected. Installing may include unreviewed scripts or handlers.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            if let status = model.modStatusMessage {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Spacer()
+
+                Button("Cancel") {
+                    isPresented = false
+                }
+
+                Button("Install") {
+                    model.installMod(source: source, scope: scope)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSubmit || model.isModOperationInProgress)
+            }
+        }
+        .padding(22)
+        .frame(minWidth: 580)
+        .onChange(of: source) { _, _ in
+            trustConfirmed = false
         }
     }
 }

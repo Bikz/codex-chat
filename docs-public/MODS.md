@@ -1,6 +1,11 @@
 # UI Mods
 
-CodexChat supports UI mods that override design tokens (palette, typography, spacing, radius, materials, bubbles).
+CodexChat supports UI mods that can:
+
+- override design tokens (palette, typography, spacing, radius, materials, bubbles)
+- register extension hooks
+- register scheduled automations
+- expose an optional right-side inspector slot
 
 ## Mod Roots
 
@@ -22,14 +27,17 @@ MyMod/
 
 CodexChat discovers mods by scanning immediate subdirectories of each mod root.
 
-## Schema (`ui.mod.json`, v1)
+## Schema (`ui.mod.json`)
 
 Top-level fields:
 
-- `schemaVersion` (int): currently `1`
+- `schemaVersion` (int): `1` (theme-only) or `2` (theme + extensions)
 - `manifest` (object): `id`, `name`, `version`, optional metadata fields
 - `theme` (object): token overrides
 - `darkTheme` (optional object): dark-mode token overrides
+- `hooks` (schema v2, optional array): event handlers
+- `automations` (schema v2, optional array): cron-based automation handlers
+- `uiSlots` (schema v2, optional object): optional inspector slot contract
 - `future` (optional object): reserved for future surfaces
 
 Theme override groups (all optional):
@@ -59,3 +67,9 @@ Accepted formats:
 ## Hot Reload
 
 CodexChat watches global and active project mod roots and refreshes mod lists when files change.
+
+## Extension Compatibility
+
+- `schemaVersion: 1` mods continue to work unchanged.
+- `schemaVersion: 2` enables `hooks`, `automations`, and `uiSlots`.
+- If v2 extension sections are malformed, CodexChat still loads the theme and disables extension sections for that mod.

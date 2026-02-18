@@ -48,6 +48,16 @@ struct ChatsCanvasView: View {
         }
         .navigationTitle("")
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .onAppear {
+            Task {
+                await model.refreshExtensionInspectorForSelectedThread()
+            }
+        }
+        .onChange(of: model.selectedThreadID) { _, _ in
+            Task {
+                await model.refreshExtensionInspectorForSelectedThread()
+            }
+        }
         .toolbar {
             if !shouldShowChatSetup {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -79,6 +89,17 @@ struct ChatsCanvasView: View {
                     }
                     .accessibilityLabel("Toggle shell workspace")
                     .help("Toggle shell workspace")
+
+                    if model.isInspectorAvailableForSelectedThread {
+                        Button {
+                            model.toggleExtensionInspector()
+                        } label: {
+                            Label("Inspector", systemImage: "sidebar.right")
+                                .labelStyle(.iconOnly)
+                        }
+                        .accessibilityLabel("Toggle inspector")
+                        .help("Toggle inspector")
+                    }
                 }
             }
         }
@@ -340,46 +361,42 @@ struct ChatsCanvasView: View {
         } else {
             switch model.conversationState {
             case .idle:
-                EmptyStateView(
-                    title: "No active thread",
-                    message: "Choose or create a thread to start chatting.",
-                    systemImage: "bubble.left.and.bubble.right"
-                )
+                conversationWithInspector {
+                    EmptyStateView(
+                        title: "No active thread",
+                        message: "Choose or create a thread to start chatting.",
+                        systemImage: "bubble.left.and.bubble.right"
+                    )
+                }
             case .loading:
-                LoadingStateView(title: "Preparing conversation…")
+                conversationWithInspector {
+                    LoadingStateView(title: "Preparing conversation…")
+                }
             case let .failed(message):
-                ErrorStateView(title: "Conversation unavailable", message: message, actionLabel: "Retry") {
-                    model.retryLoad()
+                conversationWithInspector {
+                    ErrorStateView(title: "Conversation unavailable", message: message, actionLabel: "Retry") {
+                        model.retryLoad()
+                    }
                 }
             case let .loaded(entries) where entries.isEmpty:
-                EmptyStateView(
-                    title: "Thread is empty",
-                    message: "Use the composer below to send the first message.",
-                    systemImage: "text.cursor"
-                )
+                conversationWithInspector {
+                    EmptyStateView(
+                        title: "Thread is empty",
+                        message: "Use the composer below to send the first message.",
+                        systemImage: "text.cursor"
+                    )
+                }
             case let .loaded(entries):
-                ScrollViewReader { proxy in
-                    List(entries) { entry in
-                        switch entry {
-                        case let .message(message):
-                            MessageRow(
-                                message: message,
-                                tokens: tokens,
-                                allowsExternalMarkdownContent: model.isSelectedProjectTrusted
-                            )
-                            .padding(.vertical, tokens.spacing.xSmall)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(
-                                EdgeInsets(
-                                    top: 0,
-                                    leading: tokens.spacing.medium,
-                                    bottom: 0,
-                                    trailing: tokens.spacing.medium
+                conversationWithInspector {
+                    ScrollViewReader { proxy in
+                        List(entries) { entry in
+                            switch entry {
+                            case let .message(message):
+                                MessageRow(
+                                    message: message,
+                                    tokens: tokens,
+                                    allowsExternalMarkdownContent: model.isSelectedProjectTrusted
                                 )
-                            )
-                        case let .actionCard(card):
-                            ActionCardRow(card: card)
                                 .padding(.vertical, tokens.spacing.xSmall)
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
@@ -391,18 +408,53 @@ struct ChatsCanvasView: View {
                                         trailing: tokens.spacing.medium
                                     )
                                 )
+                            case let .actionCard(card):
+                                ActionCardRow(card: card)
+                                    .padding(.vertical, tokens.spacing.xSmall)
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(
+                                        EdgeInsets(
+                                            top: 0,
+                                            leading: tokens.spacing.medium,
+                                            bottom: 0,
+                                            trailing: tokens.spacing.medium
+                                        )
+                                    )
+                            }
                         }
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .onAppear {
-                        scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: false)
-                    }
-                    .onChange(of: entries.last?.id) { _, _ in
-                        scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: true)
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .onAppear {
+                            scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: false)
+                        }
+                        .onChange(of: entries.last?.id) { _, _ in
+                            scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: true)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func conversationWithInspector(
+        @ViewBuilder _ content: () -> some View
+    ) -> some View {
+        if model.isInspectorAvailableForSelectedThread {
+            HStack(spacing: 0) {
+                content()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if model.isInspectorVisibleForSelectedThread {
+                    Divider()
+                    ExtensionInspectorView(model: model)
+                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 440)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+        } else {
+            content()
         }
     }
 

@@ -117,4 +117,35 @@ final class CodexModsTests: XCTestCase {
         XCTAssertEqual(resolved.bubbles?.style, "glass")
         XCTAssertEqual(resolved.bubbles?.assistantBackgroundHex, "#1C1C1E")
     }
+
+    func testSchemaV2MalformedExtensionFieldsStillDecodeTheme() throws {
+        let json = """
+        {
+          "schemaVersion": 2,
+          "manifest": {
+            "id": "v2-mod",
+            "name": "V2 Mod",
+            "version": "1.0.0"
+          },
+          "theme": {
+            "palette": {
+              "accentHex": "#10A37F"
+            }
+          },
+          "hooks": {
+            "invalid": true
+          },
+          "automations": "invalid",
+          "uiSlots": 123
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(UIModDefinition.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.schemaVersion, 2)
+        XCTAssertEqual(decoded.manifest.id, "v2-mod")
+        XCTAssertEqual(decoded.theme.palette?.accentHex, "#10A37F")
+        XCTAssertTrue(decoded.hooks.isEmpty)
+        XCTAssertTrue(decoded.automations.isEmpty)
+        XCTAssertNil(decoded.uiSlots)
+    }
 }
