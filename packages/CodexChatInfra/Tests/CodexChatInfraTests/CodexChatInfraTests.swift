@@ -19,14 +19,20 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("preferences"))
         XCTAssertTrue(tableNames.contains("runtime_thread_mappings"))
         XCTAssertTrue(tableNames.contains("project_secrets"))
+        XCTAssertTrue(tableNames.contains("chat_search_index"))
     }
 
     func testProjectThreadAndPreferencePersistence() async throws {
         let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
         let repositories = MetadataRepositories(database: database)
 
-        let project = try await repositories.projectRepository.createProject(named: "Inbox")
+        let project = try await repositories.projectRepository.createProject(
+            named: "Inbox",
+            path: "/tmp/inbox",
+            trustState: .untrusted
+        )
         XCTAssertEqual(project.name, "Inbox")
+        XCTAssertEqual(project.path, "/tmp/inbox")
 
         let thread = try await repositories.threadRepository.createThread(projectID: project.id, title: "First")
         XCTAssertEqual(thread.projectId, project.id)
@@ -68,6 +74,25 @@ final class CodexChatInfraTests: XCTestCase {
         try await repositories.projectSecretRepository.deleteSecret(id: secret.id)
         let afterDelete = try await repositories.projectSecretRepository.listSecrets(projectID: project.id)
         XCTAssertTrue(afterDelete.isEmpty)
+
+        try await repositories.chatSearchRepository.indexThreadTitle(
+            threadID: thread.id,
+            projectID: project.id,
+            title: "First thread"
+        )
+        try await repositories.chatSearchRepository.indexMessageExcerpt(
+            threadID: thread.id,
+            projectID: project.id,
+            text: "Need to fix archive persistence"
+        )
+
+        let searchResults = try await repositories.chatSearchRepository.search(
+            query: "archive persistence",
+            projectID: project.id,
+            limit: 10
+        )
+        XCTAssertFalse(searchResults.isEmpty)
+        XCTAssertEqual(searchResults.first?.threadID, thread.id)
     }
 
     private func temporaryDatabaseURL() -> URL {

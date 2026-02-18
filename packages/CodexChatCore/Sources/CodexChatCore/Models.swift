@@ -1,14 +1,30 @@
 import Foundation
 
+public enum ProjectTrustState: String, CaseIterable, Hashable, Sendable, Codable {
+    case untrusted
+    case trusted
+}
+
 public struct ProjectRecord: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var name: String
+    public var path: String
+    public var trustState: ProjectTrustState
     public let createdAt: Date
     public var updatedAt: Date
 
-    public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), updatedAt: Date = Date()) {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        path: String,
+        trustState: ProjectTrustState,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
         self.id = id
         self.name = name
+        self.path = path
+        self.trustState = trustState
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -155,6 +171,28 @@ public enum TranscriptEntry: Identifiable, Hashable, Sendable {
         case .actionCard(let card):
             return card.threadID
         }
+    }
+}
+
+public struct ChatSearchResult: Identifiable, Hashable, Sendable {
+    public let id: UUID
+    public let threadID: UUID
+    public let projectID: UUID
+    public let source: String
+    public let excerpt: String
+
+    public init(
+        id: UUID = UUID(),
+        threadID: UUID,
+        projectID: UUID,
+        source: String,
+        excerpt: String
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.projectID = projectID
+        self.source = source
+        self.excerpt = excerpt
     }
 }
 

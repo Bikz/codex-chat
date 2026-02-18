@@ -3,8 +3,10 @@ import Foundation
 public protocol ProjectRepository: Sendable {
     func listProjects() async throws -> [ProjectRecord]
     func getProject(id: UUID) async throws -> ProjectRecord?
-    func createProject(named name: String) async throws -> ProjectRecord
+    func getProject(path: String) async throws -> ProjectRecord?
+    func createProject(named name: String, path: String, trustState: ProjectTrustState) async throws -> ProjectRecord
     func updateProjectName(id: UUID, name: String) async throws -> ProjectRecord
+    func updateProjectTrustState(id: UUID, trustState: ProjectTrustState) async throws -> ProjectRecord
 }
 
 public protocol ThreadRepository: Sendable {
@@ -28,4 +30,10 @@ public protocol ProjectSecretRepository: Sendable {
     func listSecrets(projectID: UUID) async throws -> [ProjectSecretRecord]
     func upsertSecret(projectID: UUID, name: String, keychainAccount: String) async throws -> ProjectSecretRecord
     func deleteSecret(id: UUID) async throws
+}
+
+public protocol ChatSearchRepository: Sendable {
+    func indexThreadTitle(threadID: UUID, projectID: UUID, title: String) async throws
+    func indexMessageExcerpt(threadID: UUID, projectID: UUID, text: String) async throws
+    func search(query: String, projectID: UUID?, limit: Int) async throws -> [ChatSearchResult]
 }

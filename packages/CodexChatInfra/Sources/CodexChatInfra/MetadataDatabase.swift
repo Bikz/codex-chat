@@ -87,6 +87,25 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v4_add_project_paths_and_trust_state") { db in
+            try db.alter(table: "projects") { table in
+                table.add(column: "path", .text).notNull().defaults(to: "")
+                table.add(column: "trustState", .text).notNull().defaults(to: "untrusted")
+            }
+            try db.create(index: "idx_projects_path", on: "projects", columns: ["path"])
+        }
+
+        migrator.registerMigration("v5_add_chat_search_index") { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE chat_search_index USING fts5(
+                    threadID UNINDEXED,
+                    projectID UNINDEXED,
+                    source UNINDEXED,
+                    content
+                )
+                """)
+        }
+
         return migrator
     }
 }
