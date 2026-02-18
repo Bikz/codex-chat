@@ -1,6 +1,5 @@
 import CodexChatUI
 import CodexMods
-import Foundation
 import SwiftUI
 
 @MainActor
@@ -279,7 +278,7 @@ struct ModsCanvas: View {
                         .lineLimit(1)
                 }
 
-                Text(URL(fileURLWithPath: mod.directoryPath).lastPathComponent)
+                Text(SkillsModsPresentation.modDirectoryName(mod))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

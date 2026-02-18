@@ -90,7 +90,7 @@ struct SkillsCanvasView: View {
             )
             .padding(SkillsModsTheme.pageHorizontalInset)
         case let .loaded(skills):
-            let visibleSkills = filteredSkills(from: skills)
+            let visibleSkills = SkillsModsPresentation.filteredSkills(skills, query: query)
             if visibleSkills.isEmpty {
                 EmptyStateView(
                     title: "No matching skills",
@@ -148,17 +148,6 @@ struct SkillsCanvasView: View {
                     animateCards = true
                 }
             }
-        }
-    }
-
-    private func filteredSkills(from skills: [AppModel.SkillListItem]) -> [AppModel.SkillListItem] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return skills }
-
-        return skills.filter { item in
-            item.skill.name.localizedCaseInsensitiveContains(trimmed)
-                || item.skill.description.localizedCaseInsensitiveContains(trimmed)
-                || item.skill.scope.rawValue.localizedCaseInsensitiveContains(trimmed)
         }
     }
 }
