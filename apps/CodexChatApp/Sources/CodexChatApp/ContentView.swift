@@ -599,39 +599,56 @@ private struct MessageRow: View {
     let tokens: DesignTokens
 
     var body: some View {
-        let bubbleHex = message.role == .user ? tokens.bubbles.userBackgroundHex : tokens.bubbles.assistantBackgroundHex
-        let isPlain = tokens.bubbles.style == .plain
-        let foreground: Color = {
-            if message.role == .user, !isPlain {
-                return .white
-            }
-            return .primary
-        }()
+        let isUser = message.role == .user
+        let bubbleHex = isUser ? tokens.bubbles.userBackgroundHex : tokens.bubbles.assistantBackgroundHex
+        let style = tokens.bubbles.style
+        let foreground = bubbleForeground(isUser: isUser, style: style)
 
-        VStack(alignment: .leading, spacing: tokens.spacing.xSmall) {
-            Text(message.role.rawValue.capitalized)
-                .font(.system(size: tokens.typography.captionSize, weight: .medium))
-                .foregroundStyle(isPlain ? .secondary : foreground.opacity(0.9))
+        HStack(alignment: .top, spacing: 0) {
+            if isUser {
+                Spacer(minLength: 44)
+            }
+
             Text(message.text)
                 .font(.system(size: tokens.typography.bodySize))
                 .foregroundStyle(foreground)
                 .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: 560, alignment: .leading)
+                .background(bubbleBackground(style: style, colorHex: bubbleHex, isUser: isUser))
+
+            if !isUser {
+                Spacer(minLength: 44)
+            }
         }
-        .padding(12)
-        .background(bubbleBackground(style: tokens.bubbles.style, colorHex: bubbleHex, tokens: tokens))
+        .frame(maxWidth: .infinity)
+    }
+
+    private func bubbleForeground(isUser: Bool, style: DesignTokens.BubbleStyle) -> Color {
+        if isUser, style == .solid {
+            return .white
+        }
+        return .primary
     }
 
     @ViewBuilder
-    private func bubbleBackground(style: DesignTokens.BubbleStyle, colorHex: String, tokens: DesignTokens) -> some View {
-        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium)
+    private func bubbleBackground(style: DesignTokens.BubbleStyle, colorHex: String, isUser: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
+
         switch style {
         case .plain:
             shape.fill(Color.clear)
         case .glass:
-            shape.fill(tokens.materials.cardMaterial.material)
-                .overlay(shape.fill(Color(hex: colorHex).opacity(0.12)))
+            shape
+                .fill(tokens.materials.cardMaterial.material)
+                .overlay(shape.fill(Color(hex: colorHex).opacity(isUser ? 0.14 : 0.08)))
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.06)))
         case .solid:
-            shape.fill(Color(hex: colorHex))
+            shape
+                .fill(Color(hex: colorHex))
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.06)))
         }
     }
 }
