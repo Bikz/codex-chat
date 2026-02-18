@@ -1,0 +1,17 @@
+{
+  "materials": {
+    "cardMaterial": "regular",
+    "panelMaterial": "thin"
+  },
+  "palette": {
+    "accentHex": "#111111",
+    "backgroundHex": "#222222",
+    "panelHex": "#333333"
+  },
+  "typography": {
+    "bodySize": 13,
+    "captionSize": 11,
+    "titleSize": 18
+  }
+}
+

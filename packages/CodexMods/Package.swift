@@ -9,6 +9,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "CodexMods"),
-        .testTarget(name: "CodexModsTests", dependencies: ["CodexMods"]),
+        .testTarget(
+            name: "CodexModsTests",
+            dependencies: ["CodexMods"],
+            resources: [
+                .process("Fixtures"),
+            ]
+        ),
     ]
 )
