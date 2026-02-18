@@ -14,7 +14,7 @@ struct ShellWorkspaceDrawer: View {
                     sessionsSidebar(workspace: workspace)
                         .frame(width: 220)
                     Divider()
-                    sessionSurface(projectID: project.id, workspace: workspace)
+                    sessionSurface(projectName: project.name, projectID: project.id, workspace: workspace)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
@@ -25,40 +25,48 @@ struct ShellWorkspaceDrawer: View {
                 )
             }
         }
+        .background(tokens.materials.panelMaterial.material)
     }
 
     private func sessionsSidebar(workspace: ProjectShellWorkspaceState) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Shell Workspace")
-                    .font(.headline)
+                Text("Shells")
+                    .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button {
                     model.createShellSession()
                 } label: {
                     Image(systemName: "plus")
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.borderless)
                 .help("New shell session")
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(tokens.materials.cardMaterial.material)
 
             Divider()
 
             if workspace.sessions.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("No sessions")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Create a session to run commands in this project.")
-                        .font(.caption)
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+
+                    Text("Starting shell session...")
+                        .font(.caption.weight(.semibold))
+
+                    Text("If it does not start, create one manually.")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Button("New Session") {
+
+                    Button("Start Session") {
                         model.createShellSession()
                     }
                     .buttonStyle(.bordered)
                 }
-                .padding(12)
+                .padding(10)
                 Spacer()
             } else {
                 ScrollView {
@@ -68,17 +76,21 @@ struct ShellWorkspaceDrawer: View {
                                 Button {
                                     model.selectShellSession(session.id)
                                 } label: {
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: 9) {
                                         Image(systemName: workspace.selectedSessionID == session.id ? "terminal.fill" : "terminal")
+                                            .font(.system(size: 12, weight: .medium))
+
                                         Text(session.name)
+                                            .font(.system(size: 13, weight: workspace.selectedSessionID == session.id ? .semibold : .regular))
                                             .lineLimit(1)
+
                                         Spacer(minLength: 6)
                                     }
-                                    .padding(.vertical, 6)
+                                    .frame(height: 28)
                                     .padding(.horizontal, 8)
                                     .background(
                                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .fill(workspace.selectedSessionID == session.id ? Color(hex: tokens.palette.accentHex).opacity(0.12) : Color.clear)
+                                            .fill(workspace.selectedSessionID == session.id ? Color.primary.opacity(0.1) : Color.clear)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -87,7 +99,7 @@ struct ShellWorkspaceDrawer: View {
                                     model.closeShellSession(session.id)
                                 } label: {
                                     Image(systemName: "xmark")
-                                        .font(.caption.weight(.semibold))
+                                        .font(.system(size: 11, weight: .semibold))
                                 }
                                 .buttonStyle(.borderless)
                                 .help("Close session")
@@ -98,36 +110,61 @@ struct ShellWorkspaceDrawer: View {
                 }
             }
         }
-        .background(tokens.materials.panelMaterial.material)
+        .background(tokens.materials.cardMaterial.material)
     }
 
     @ViewBuilder
-    private func sessionSurface(projectID: UUID, workspace: ProjectShellWorkspaceState) -> some View {
+    private func sessionSurface(projectName: String, projectID: UUID, workspace: ProjectShellWorkspaceState) -> some View {
         if workspace.sessions.isEmpty {
-            VStack(spacing: 10) {
-                EmptyStateView(
-                    title: "No shell sessions",
-                    message: "Create a session to start an interactive shell in this project.",
-                    systemImage: "terminal"
-                )
+            VStack(spacing: 8) {
+                ProgressView()
+                Text("Starting shell...")
+                    .font(.subheadline.weight(.semibold))
+                Text("No session is active yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-                Button("New Session") {
+                Button("Start Session") {
                     model.createShellSession()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
             }
         } else if let session = workspace.selectedSession() {
             VStack(spacing: 0) {
                 HStack {
                     Text(session.name)
-                        .font(.headline)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+
+                    if let activePane = ShellSplitTree.findLeaf(in: session.rootNode, paneID: session.activePaneID) {
+                        Text(activePane.cwd)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text(projectName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
                     Spacer()
+
+                    Button {
+                        model.createShellSession()
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("New shell session")
+
                     Text("\(session.rootNode.leafCount()) pane(s)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .frame(height: 34)
                 .background(tokens.materials.cardMaterial.material)
 
                 Divider()

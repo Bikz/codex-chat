@@ -7,7 +7,7 @@ struct ShellSplitContainerView: View {
 
     var body: some View {
         splitNodeView(sessionID: session.id, node: session.rootNode)
-            .padding(8)
+            .padding(6)
     }
 
     private func splitNodeView(sessionID: UUID, node: ShellSplitNode) -> AnyView {

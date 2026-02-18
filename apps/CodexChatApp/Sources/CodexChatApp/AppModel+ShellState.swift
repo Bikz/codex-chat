@@ -256,6 +256,7 @@ extension AppModel {
         }
 
         ensureWorkspaceExists(for: project.id)
+        ensureWorkspaceHasActiveSession(for: project)
         isShellWorkspaceVisible = true
     }
 
@@ -279,6 +280,24 @@ extension AppModel {
                 sessions: [],
                 selectedSessionID: nil
             )
+        }
+    }
+
+    private func ensureWorkspaceHasActiveSession(for project: ProjectRecord) {
+        mutateWorkspace(projectID: project.id) { workspace in
+            if workspace.sessions.isEmpty {
+                let session = makeShellSession(
+                    name: nextShellSessionName(in: workspace),
+                    cwd: project.path
+                )
+                workspace.sessions = [session]
+                workspace.selectedSessionID = session.id
+                return
+            }
+
+            if workspace.selectedSessionID == nil {
+                workspace.selectedSessionID = workspace.sessions.first?.id
+            }
         }
     }
 

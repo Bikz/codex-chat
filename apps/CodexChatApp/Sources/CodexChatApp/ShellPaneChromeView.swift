@@ -45,7 +45,7 @@ struct ShellPaneChromeView<Content: View>: View {
                     .lineLimit(1)
 
                 Text(pane.cwd)
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
@@ -56,6 +56,7 @@ struct ShellPaneChromeView<Content: View>: View {
                         onRestart()
                     } label: {
                         Image(systemName: "arrow.clockwise")
+                            .frame(width: 18, height: 18)
                     }
                     .buttonStyle(.borderless)
                     .help("Restart shell")
@@ -65,6 +66,7 @@ struct ShellPaneChromeView<Content: View>: View {
                     onSplitHorizontal()
                 } label: {
                     Image(systemName: "rectangle.split.2x1")
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.borderless)
                 .help("Split horizontally")
@@ -73,6 +75,7 @@ struct ShellPaneChromeView<Content: View>: View {
                     onSplitVertical()
                 } label: {
                     Image(systemName: "rectangle.split.1x2")
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.borderless)
                 .help("Split vertically")
@@ -81,12 +84,13 @@ struct ShellPaneChromeView<Content: View>: View {
                     onClose()
                 } label: {
                     Image(systemName: "xmark")
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.borderless)
                 .help("Close pane")
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .frame(height: 30)
             .background(tokens.materials.cardMaterial.material)
 
             Divider()
@@ -96,10 +100,10 @@ struct ShellPaneChromeView<Content: View>: View {
         }
         .background(tokens.materials.panelMaterial.material)
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(isActive ? Color(hex: tokens.palette.accentHex) : Color.primary.opacity(0.08), lineWidth: isActive ? 1.4 : 1)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(isActive ? Color(hex: tokens.palette.accentHex) : Color.primary.opacity(0.12), lineWidth: isActive ? 1.2 : 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture(perform: onFocus)
     }

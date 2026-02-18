@@ -745,6 +745,40 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testTogglingShellWorkspaceAutoCreatesInitialSession() async throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "P1", path: "/tmp/project-root", trustState: .trusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        model.toggleShellWorkspace()
+        try await waitUntil {
+            model.isShellWorkspaceVisible
+        }
+
+        guard let workspace = model.shellWorkspacesByProjectID[project.id],
+              let session = workspace.selectedSession()
+        else {
+            XCTFail("Missing shell workspace after opening drawer")
+            return
+        }
+        XCTAssertEqual(workspace.sessions.count, 1)
+        XCTAssertEqual(
+            ShellSplitTree.findLeaf(in: session.rootNode, paneID: session.activePaneID)?.cwd,
+            project.path
+        )
+
+        model.toggleShellWorkspace()
+        XCTAssertFalse(model.isShellWorkspaceVisible)
+
+        model.toggleShellWorkspace()
+        try await waitUntil {
+            model.isShellWorkspaceVisible
+        }
+        XCTAssertEqual(model.shellWorkspacesByProjectID[project.id]?.sessions.count, 1)
+    }
+
+    @MainActor
     func testUntrustedShellWarningAppearsOncePerProject() async throws {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let project = ProjectRecord(name: "Untrusted", path: "/tmp/untrusted", trustState: .untrusted)
@@ -762,6 +796,7 @@ final class CodexChatAppTests: XCTestCase {
             model.isShellWorkspaceVisible
         }
         XCTAssertNil(model.activeUntrustedShellWarning)
+        XCTAssertEqual(model.shellWorkspacesByProjectID[project.id]?.sessions.count, 1)
 
         model.isShellWorkspaceVisible = false
         model.toggleShellWorkspace()
@@ -769,6 +804,7 @@ final class CodexChatAppTests: XCTestCase {
             model.isShellWorkspaceVisible
         }
         XCTAssertNil(model.activeUntrustedShellWarning)
+        XCTAssertEqual(model.shellWorkspacesByProjectID[project.id]?.sessions.count, 1)
     }
 
     func testUntrustedShellAcknowledgementsCodecRoundTrips() {
