@@ -526,6 +526,7 @@ extension AppModel {
     func handleRuntimeTermination(detail: String) {
         runtimeStatus = .error
         runtimeCapabilities = .none
+        cancelVoiceCapture()
         reconcileStaleApprovalState(reason: "the runtime stopped unexpectedly")
         runtimeIssue = .recoverable(detail)
         clearActiveTurnState()
@@ -537,6 +538,7 @@ extension AppModel {
     func handleRuntimeError(_ error: Error) {
         runtimeStatus = .error
         runtimeCapabilities = .none
+        cancelVoiceCapture()
         reconcileStaleApprovalState(reason: "runtime communication failed")
         clearActiveTurnState()
         resetRuntimeThreadCaches()

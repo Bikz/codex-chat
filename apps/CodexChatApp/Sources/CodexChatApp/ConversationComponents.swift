@@ -7,6 +7,7 @@ import SwiftUI
 struct MessageRow: View {
     let message: ChatMessage
     let tokens: DesignTokens
+    let allowsExternalMarkdownContent: Bool
 
     var body: some View {
         let isUser = message.role == .user
@@ -39,7 +40,10 @@ struct MessageRow: View {
     @ViewBuilder
     private func messageText(message: ChatMessage) -> some View {
         if message.role == .assistant {
-            MarkdownMessageView(text: message.text)
+            MarkdownMessageView(
+                text: message.text,
+                allowsExternalContent: allowsExternalMarkdownContent
+            )
         } else {
             Text(message.text)
         }
@@ -94,18 +98,26 @@ struct ActionCardRow: View {
                     .accessibilityLabel("Action: \(card.method)")
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(card.title)
-                        .font(.callout.weight(.semibold))
+                    HStack(spacing: 6) {
+                        Text(card.title)
+                            .font(.callout.weight(.semibold))
+                        Text(methodCategory(card.method))
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(methodColor(card.method).opacity(0.12), in: Capsule())
+                            .foregroundStyle(methodColor(card.method))
+                    }
                     Text(card.method)
-                        .font(.caption)
+                        .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
             }
             .accessibilityLabel("\(card.title) — \(card.method)")
         }
         .padding(10)
-        .background(tokens.materials.cardMaterial.material, in: shape)
-        .overlay(shape.strokeBorder(methodColor(card.method).opacity(0.25)))
+        .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
+        .overlay(shape.strokeBorder(methodColor(card.method).opacity(0.32)))
     }
 
     private func methodColor(_ method: String) -> Color {
@@ -115,10 +127,27 @@ struct ActionCardRow: View {
         } else if lower.contains("exec") || lower.contains("run") || lower.contains("shell") {
             return .red
         } else if lower.contains("read") || lower.contains("search") || lower.contains("list") {
-            return .blue
+            return Color(hex: tokens.palette.accentHex)
         } else {
             return .secondary
         }
+    }
+
+    private func methodCategory(_ method: String) -> String {
+        let lower = method.lowercased()
+        if lower.contains("approval") {
+            return "approval"
+        }
+        if lower.contains("write") || lower.contains("delete") || lower.contains("remove") {
+            return "write"
+        }
+        if lower.contains("exec") || lower.contains("run") || lower.contains("shell") {
+            return "exec"
+        }
+        if lower.contains("read") || lower.contains("search") || lower.contains("list") {
+            return "read"
+        }
+        return "event"
     }
 }
 

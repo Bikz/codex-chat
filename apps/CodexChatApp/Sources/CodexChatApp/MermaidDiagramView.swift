@@ -9,6 +9,10 @@ struct MermaidDiagramView: View {
             flowchartView(flowchart)
         } else if let sequence = MermaidSequenceParser.parse(source) {
             sequenceView(sequence)
+        } else if let classDiagram = MermaidClassParser.parse(source) {
+            classDiagramView(classDiagram)
+        } else if let erDiagram = MermaidERParser.parse(source) {
+            erDiagramView(erDiagram)
         } else {
             unsupportedDiagramView
         }
@@ -74,6 +78,76 @@ struct MermaidDiagramView: View {
                         .foregroundStyle(.secondary)
                     nodeBadge(text: message.toID)
                     Text(message.text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.08))
+        )
+    }
+
+    private func classDiagramView(_ diagram: MermaidClassDiagram) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Class Diagram")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if !diagram.classes.isEmpty {
+                Text(diagram.classes.joined(separator: "  |  "))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(Array(diagram.relations.enumerated()), id: \.offset) { _, relation in
+                HStack(alignment: .top, spacing: 8) {
+                    nodeBadge(text: relation.fromClass)
+                    Text(relation.relation)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                    nodeBadge(text: relation.toClass)
+                    if let label = relation.label, !label.isEmpty {
+                        Text(label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.08))
+        )
+    }
+
+    private func erDiagramView(_ diagram: MermaidERDiagram) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ER Diagram")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if !diagram.entities.isEmpty {
+                Text(diagram.entities.map(\.name).joined(separator: "  |  "))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(Array(diagram.relations.enumerated()), id: \.offset) { _, relation in
+                HStack(alignment: .top, spacing: 8) {
+                    nodeBadge(text: relation.leftEntity)
+                    Text(relation.cardinality)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                    nodeBadge(text: relation.rightEntity)
+                    Text(relation.label)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)

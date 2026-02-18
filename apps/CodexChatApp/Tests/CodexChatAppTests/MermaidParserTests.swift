@@ -1,4 +1,4 @@
-@testable import CodexChatApp
+@testable import CodexChatShared
 import XCTest
 
 final class MermaidParserTests: XCTestCase {
@@ -50,11 +50,56 @@ final class MermaidParserTests: XCTestCase {
 
     func testUnsupportedMermaidTypesReturnNilFromParsers() {
         let unsupported = """
-        classDiagram
-        Animal <|-- Duck
+        pie
+        title Pets adopted by type
+        "Dogs" : 386
         """
 
         XCTAssertNil(MermaidFlowchartParser.parse(unsupported))
         XCTAssertNil(MermaidSequenceParser.parse(unsupported))
+        XCTAssertNil(MermaidClassParser.parse(unsupported))
+        XCTAssertNil(MermaidERParser.parse(unsupported))
+    }
+
+    func testClassParserReadsClassesAndRelationships() {
+        let source = """
+        classDiagram
+        Animal <|-- Duck : inherits
+        Animal <|-- Fish
+        class Zoo
+        Zoo --> Animal : keeps
+        """
+
+        guard let diagram = MermaidClassParser.parse(source) else {
+            XCTFail("Expected class diagram")
+            return
+        }
+
+        XCTAssertEqual(diagram.classes, ["Animal", "Duck", "Fish", "Zoo"])
+        XCTAssertEqual(diagram.relations.count, 3)
+        XCTAssertEqual(diagram.relations[0].relation, "<|--")
+        XCTAssertEqual(diagram.relations[0].label, "inherits")
+        XCTAssertEqual(diagram.relations[2].fromClass, "Zoo")
+    }
+
+    func testERParserReadsEntitiesAndRelationships() {
+        let source = """
+        erDiagram
+        CUSTOMER ||--o{ ORDER : places
+        ORDER ||--|{ LINE_ITEM : contains
+        CUSTOMER {
+          string id
+        }
+        """
+
+        guard let diagram = MermaidERParser.parse(source) else {
+            XCTFail("Expected ER diagram")
+            return
+        }
+
+        XCTAssertEqual(diagram.entities.map(\.name), ["CUSTOMER", "ORDER", "LINE_ITEM"])
+        XCTAssertEqual(diagram.relations.count, 2)
+        XCTAssertEqual(diagram.relations[0].cardinality, "||--o{")
+        XCTAssertEqual(diagram.relations[0].label, "places")
     }
 }

@@ -6,6 +6,7 @@ struct ChatsCanvasView: View {
     @ObservedObject var model: AppModel
     @Binding var isInsertMemorySheetVisible: Bool
     @Environment(\.designTokens) private var tokens
+    @FocusState private var isComposerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -116,7 +117,7 @@ struct ChatsCanvasView: View {
             ComposerControlBar(model: model)
 
             Divider()
-                .opacity(0.55)
+                .opacity(tokens.surfaces.hairlineOpacity)
 
             HStack(alignment: .bottom, spacing: tokens.spacing.small) {
                 Button {
@@ -137,10 +138,50 @@ struct ChatsCanvasView: View {
                     .font(.system(size: tokens.typography.bodySize + 0.5, weight: .medium))
                     .lineLimit(1 ... 6)
                     .padding(.vertical, 10)
+                    .focused($isComposerFocused)
+                    .onTapGesture {
+                        isComposerFocused = true
+                    }
+                    .onChange(of: isComposerFocused) { _, focused in
+                        #if DEBUG
+                            if focused {
+                                NSLog("Composer focused")
+                            }
+                        #endif
+                    }
                     .onSubmit {
                         model.submitComposerWithQueuePolicy()
                     }
                     .accessibilityLabel("Message input")
+
+                Button {
+                    model.toggleVoiceCapture()
+                } label: {
+                    Group {
+                        if model.isVoiceCaptureRecording {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 12, weight: .bold))
+                        } else if case .transcribing = model.voiceCaptureState {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .controlSize(.mini)
+                        } else {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(voiceButtonForegroundColor)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(voiceButtonBackgroundColor)
+                    )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("v", modifiers: [.option])
+                .accessibilityLabel(voiceButtonAccessibilityLabel)
+                .help("Toggle voice capture")
+                .disabled(!model.canToggleVoiceCapture)
 
                 Button {
                     model.submitComposerWithQueuePolicy()
@@ -151,7 +192,7 @@ struct ChatsCanvasView: View {
                         .frame(width: 30, height: 30)
                         .background(
                             Circle()
-                                .fill(model.canSubmitComposer ? Color.blue : Color.blue.opacity(0.35))
+                                .fill(model.canSubmitComposer ? Color(hex: tokens.palette.accentHex) : Color(hex: tokens.palette.accentHex).opacity(0.35))
                         )
                 }
                 .buttonStyle(.plain)
@@ -160,16 +201,118 @@ struct ChatsCanvasView: View {
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(!model.canSubmitComposer)
             }
+
+            if model.shouldShowComposerStarterPrompts {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.composerStarterPrompts, id: \.self) { prompt in
+                            Button(prompt) {
+                                model.insertStarterPrompt(prompt)
+                                isComposerFocused = true
+                            }
+                            .buttonStyle(.plain)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                            )
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                            )
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+
+            if let voiceStatus = model.voiceCaptureStatusMessage {
+                HStack(spacing: 6) {
+                    switch model.voiceCaptureState {
+                    case .recording:
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 7, height: 7)
+                    case .transcribing:
+                        ProgressView()
+                            .controlSize(.small)
+                    case .failed:
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                    case .idle, .requestingPermission:
+                        EmptyView()
+                    }
+
+                    Text(voiceStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if case .recording = model.voiceCaptureState {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if let elapsed = model.voiceRecordingElapsed(now: context.date) {
+                                Text(elapsed)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .onExitCommand {
+            guard model.isVoiceCaptureInProgress else { return }
+            model.cancelVoiceCapture()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(tokens.materials.panelMaterial.material, in: RoundedRectangle(cornerRadius: tokens.radius.large))
+        .background(
+            Color.primary.opacity(tokens.surfaces.baseOpacity),
+            in: RoundedRectangle(cornerRadius: tokens.radius.large)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: tokens.radius.large)
-                .strokeBorder(Color.primary.opacity(0.08))
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
         )
         .padding(.horizontal, tokens.spacing.medium)
         .padding(.vertical, tokens.spacing.small)
+    }
+
+    private var voiceButtonForegroundColor: Color {
+        if model.isVoiceCaptureRecording {
+            return .white
+        }
+        if case .transcribing = model.voiceCaptureState {
+            return Color(hex: tokens.palette.accentHex)
+        }
+        return .secondary
+    }
+
+    private var voiceButtonBackgroundColor: Color {
+        if model.isVoiceCaptureRecording {
+            return .red.opacity(0.85)
+        }
+        if case .transcribing = model.voiceCaptureState {
+            return Color(hex: tokens.palette.accentHex).opacity(0.12)
+        }
+        return Color.primary.opacity(tokens.surfaces.baseOpacity)
+    }
+
+    private var voiceButtonAccessibilityLabel: String {
+        switch model.voiceCaptureState {
+        case .recording:
+            "Stop voice capture"
+        case .transcribing:
+            "Transcribing voice input"
+        case .requestingPermission:
+            "Requesting voice capture permissions"
+        case .idle, .failed:
+            "Start voice capture"
+        }
     }
 
     private var composerPlaceholder: String {
@@ -219,18 +362,22 @@ struct ChatsCanvasView: View {
                     List(entries) { entry in
                         switch entry {
                         case let .message(message):
-                            MessageRow(message: message, tokens: tokens)
-                                .padding(.vertical, tokens.spacing.xSmall)
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(
-                                    EdgeInsets(
-                                        top: 0,
-                                        leading: tokens.spacing.medium,
-                                        bottom: 0,
-                                        trailing: tokens.spacing.medium
-                                    )
+                            MessageRow(
+                                message: message,
+                                tokens: tokens,
+                                allowsExternalMarkdownContent: model.isSelectedProjectTrusted
+                            )
+                            .padding(.vertical, tokens.spacing.xSmall)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(
+                                EdgeInsets(
+                                    top: 0,
+                                    leading: tokens.spacing.medium,
+                                    bottom: 0,
+                                    trailing: tokens.spacing.medium
                                 )
+                            )
                         case let .actionCard(card):
                             ActionCardRow(card: card)
                                 .padding(.vertical, tokens.spacing.xSmall)
@@ -267,7 +414,7 @@ struct ChatsCanvasView: View {
         guard let lastID = entries.last?.id else { return }
         DispatchQueue.main.async {
             if animated {
-                withAnimation(.easeOut(duration: 0.22)) {
+                withAnimation(.easeOut(duration: tokens.motion.transitionDuration)) {
                     proxy.scrollTo(lastID, anchor: .bottom)
                 }
             } else {
@@ -323,7 +470,7 @@ private struct ComposerControlBar: View {
                         title: "Reasoning",
                         value: model.defaultReasoning.title,
                         systemImage: "brain.head.profile",
-                        tint: Color.blue.opacity(0.9),
+                        tint: Color(hex: tokens.palette.accentHex).opacity(0.78),
                         minWidth: 140
                     )
                 }
@@ -408,10 +555,13 @@ private struct ComposerControlBar: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .frame(minWidth: minWidth, alignment: .leading)
-        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(
+            Color.primary.opacity(tokens.surfaces.baseOpacity),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12))
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
         )
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
