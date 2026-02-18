@@ -1,8 +1,27 @@
+import AppKit
 import CodexChatCore
 import CodexKit
 import Foundation
 
 extension AppModel {
+    func installCodexWithHomebrew() {
+        do {
+            try CodexRuntime.launchCodexInstallInTerminal()
+            runtimeSetupMessage = "Opened Terminal and started Codex install. When it finishes, click Restart Runtime."
+            appendLog(.info, "Launched Codex install command in Terminal")
+        } catch {
+            runtimeSetupMessage = "Unable to start Codex install automatically: \(error.localizedDescription)"
+            appendLog(.error, "Failed to launch Codex install command: \(error.localizedDescription)")
+        }
+    }
+
+    func copyCodexInstallCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(CodexRuntime.codexInstallCommand, forType: .string)
+        runtimeSetupMessage = "Copied install command to clipboard: \(CodexRuntime.codexInstallCommand)"
+        appendLog(.debug, "Copied Codex install command to clipboard")
+    }
+
     func sendMessage() {
         submitComposerWithQueuePolicy()
     }
@@ -203,6 +222,7 @@ extension AppModel {
 
         runtimeStatus = .connected
         runtimeIssue = nil
+        runtimeSetupMessage = nil
         runtimeCapabilities = await runtime.capabilities()
         reconcileStaleApprovalState(
             reason: restarting ? "the runtime restarted" : "the runtime reconnected"

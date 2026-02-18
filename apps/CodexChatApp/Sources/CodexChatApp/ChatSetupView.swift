@@ -115,9 +115,19 @@ struct ChatSetupView: View {
 
             if case .installCodex? = model.runtimeIssue {
                 HStack {
+                    Button("Install with Homebrew") {
+                        model.installCodexWithHomebrew()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(hex: tokens.palette.accentHex))
+
+                    Button("Copy Command") {
+                        model.copyCodexInstallCommand()
+                    }
+                    .buttonStyle(.bordered)
+
                     Link("Open Install Docs", destination: URL(string: "https://developers.openai.com/codex/cli")!)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color(hex: tokens.palette.accentHex))
+                        .buttonStyle(.bordered)
 
                     Button("Restart Runtime") {
                         model.restartRuntime()
@@ -130,6 +140,12 @@ struct ChatSetupView: View {
                 Text("After installation, press Restart Runtime to connect.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if let runtimeSetupMessage = model.runtimeSetupMessage {
+                    Text(runtimeSetupMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else if model.runtimeStatus == .error || model.runtimeIssue != nil {
                 HStack {
                     Button("Restart Runtime") {

@@ -140,6 +140,7 @@ final class AppModel: ObservableObject {
     @Published var isReviewChangesVisible = false
     @Published var runtimeStatus: RuntimeStatus = .idle
     @Published var runtimeIssue: RuntimeIssue?
+    @Published var runtimeSetupMessage: String?
     @Published var accountState: RuntimeAccountState = .signedOut
     @Published var accountStatusMessage: String?
     @Published var approvalStatusMessage: String?
