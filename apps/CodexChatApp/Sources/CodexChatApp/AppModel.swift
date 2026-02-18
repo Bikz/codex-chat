@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatCore
 import CodexChatInfra
 import CodexKit
@@ -43,13 +44,20 @@ final class AppModel: ObservableObject {
     @Published var isDiagnosticsVisible = false
     @Published var runtimeStatus: RuntimeStatus = .idle
     @Published var runtimeIssue: RuntimeIssue?
+    @Published var accountState: RuntimeAccountState = .signedOut
+    @Published var accountStatusMessage: String?
+    @Published var isAccountOperationInProgress = false
+    @Published var isAPIKeyPromptVisible = false
+    @Published var pendingAPIKey = ""
     @Published private(set) var logs: [LogEntry] = []
 
     private let projectRepository: (any ProjectRepository)?
     private let threadRepository: (any ThreadRepository)?
     private let preferenceRepository: (any PreferenceRepository)?
     private let runtimeThreadMappingRepository: (any RuntimeThreadMappingRepository)?
+    private let projectSecretRepository: (any ProjectSecretRepository)?
     private let runtime: CodexRuntime?
+    private let keychainStore: APIKeychainStore
 
     private var transcriptStore: [UUID: [TranscriptEntry]] = [:]
     private var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
@@ -61,7 +69,9 @@ final class AppModel: ObservableObject {
         self.threadRepository = repositories?.threadRepository
         self.preferenceRepository = repositories?.preferenceRepository
         self.runtimeThreadMappingRepository = repositories?.runtimeThreadMappingRepository
+        self.projectSecretRepository = repositories?.projectSecretRepository
         self.runtime = runtime
+        self.keychainStore = APIKeychainStore()
 
         if let bootError {
             self.projectsState = .failed(bootError)
@@ -97,6 +107,27 @@ final class AppModel: ObservableObject {
         selectedThreadID != nil && runtimeIssue == nil && runtimeStatus == .connected
     }
 
+    var accountSummaryText: String {
+        guard let account = accountState.account else {
+            return "Signed out"
+        }
+
+        switch account.type.lowercased() {
+        case "chatgpt":
+            if let email = account.email, let plan = account.planType {
+                return "ChatGPT (\(plan)) - \(email)"
+            }
+            if let email = account.email {
+                return "ChatGPT - \(email)"
+            }
+            return "ChatGPT"
+        case "apikey":
+            return "API key login"
+        default:
+            return account.type
+        }
+    }
+
     func onAppear() {
         Task {
             await loadInitialData()
@@ -121,6 +152,128 @@ final class AppModel: ObservableObject {
     func restartRuntime() {
         Task {
             await restartRuntimeSession()
+        }
+    }
+
+    func signInWithChatGPT() {
+        guard let runtime else { return }
+
+        isAccountOperationInProgress = true
+        accountStatusMessage = nil
+
+        Task {
+            defer { isAccountOperationInProgress = false }
+
+            do {
+                let loginStart = try await runtime.startChatGPTLogin()
+                NSWorkspace.shared.open(loginStart.authURL)
+                accountStatusMessage = "Complete sign-in in your browser."
+                appendLog(.info, "Started ChatGPT login flow")
+            } catch {
+                accountStatusMessage = "ChatGPT sign-in failed: \(error.localizedDescription)"
+                handleRuntimeError(error)
+            }
+        }
+    }
+
+    func presentAPIKeyPrompt() {
+        pendingAPIKey = ""
+        isAPIKeyPromptVisible = true
+    }
+
+    func cancelAPIKeyPrompt() {
+        pendingAPIKey = ""
+        isAPIKeyPromptVisible = false
+    }
+
+    func submitAPIKeyLogin() {
+        let apiKey = pendingAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingAPIKey = ""
+        isAPIKeyPromptVisible = false
+
+        guard !apiKey.isEmpty else {
+            accountStatusMessage = "API key was empty."
+            return
+        }
+
+        signInWithAPIKey(apiKey)
+    }
+
+    func signInWithAPIKey(_ apiKey: String) {
+        guard let runtime else { return }
+
+        isAccountOperationInProgress = true
+        accountStatusMessage = nil
+
+        Task {
+            defer { isAccountOperationInProgress = false }
+
+            do {
+                try await runtime.startAPIKeyLogin(apiKey: apiKey)
+                try keychainStore.saveSecret(apiKey, account: APIKeychainStore.runtimeAPIKeyAccount)
+                try await upsertProjectAPIKeyReferenceIfNeeded()
+                try await refreshAccountState()
+                accountStatusMessage = "Signed in with API key."
+                appendLog(.info, "Signed in with API key")
+            } catch {
+                accountStatusMessage = "API key sign-in failed: \(error.localizedDescription)"
+                handleRuntimeError(error)
+            }
+        }
+    }
+
+    func logoutAccount() {
+        guard let runtime else { return }
+
+        isAccountOperationInProgress = true
+        accountStatusMessage = nil
+
+        Task {
+            defer { isAccountOperationInProgress = false }
+
+            do {
+                try await runtime.logoutAccount()
+                try keychainStore.deleteSecret(account: APIKeychainStore.runtimeAPIKeyAccount)
+                try await refreshAccountState()
+                accountStatusMessage = "Logged out."
+                appendLog(.info, "Account logged out")
+            } catch {
+                accountStatusMessage = "Logout failed: \(error.localizedDescription)"
+                handleRuntimeError(error)
+            }
+        }
+    }
+
+    func launchDeviceCodeLogin() {
+        do {
+            try CodexRuntime.launchDeviceAuthInTerminal()
+            accountStatusMessage = "Device-auth started in Terminal. Availability depends on workspace settings."
+            appendLog(.info, "Launched device-auth login in Terminal")
+        } catch {
+            accountStatusMessage = "Unable to start device-auth login: \(error.localizedDescription)"
+            handleRuntimeError(error)
+        }
+    }
+
+    func copyDiagnosticsBundle() {
+        do {
+            let snapshot = DiagnosticsBundleSnapshot(
+                generatedAt: Date(),
+                runtimeStatus: runtimeStatus,
+                runtimeIssue: runtimeIssue?.message,
+                accountSummary: accountSummaryText,
+                logs: logs
+            )
+            let bundleURL = try DiagnosticsBundleExporter.export(snapshot: snapshot)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(bundleURL.path, forType: .string)
+            accountStatusMessage = "Diagnostics bundle created and copied: \(bundleURL.lastPathComponent)"
+            appendLog(.info, "Diagnostics bundle exported")
+        } catch DiagnosticsBundleExporterError.cancelled {
+            appendLog(.debug, "Diagnostics export cancelled")
+        } catch {
+            accountStatusMessage = "Failed to export diagnostics: \(error.localizedDescription)"
+            appendLog(.error, "Diagnostics export failed: \(error.localizedDescription)")
         }
     }
 
@@ -277,6 +430,7 @@ final class AppModel: ObservableObject {
             runtimeStatus = .connected
             runtimeIssue = nil
             appendLog(.info, "Runtime connected")
+            try await refreshAccountState()
         } catch {
             handleRuntimeError(error)
         }
@@ -293,6 +447,7 @@ final class AppModel: ObservableObject {
             runtimeStatus = .connected
             runtimeIssue = nil
             appendLog(.info, "Runtime restarted")
+            try await refreshAccountState()
         } catch {
             handleRuntimeError(error)
         }
@@ -390,6 +545,25 @@ final class AppModel: ObservableObject {
                 assistantMessageIDsByItemID[context.localThreadID] = [:]
                 activeTurnContext = nil
             }
+
+        case .accountUpdated(let authMode):
+            appendLog(.info, "Account mode updated: \(authMode.rawValue)")
+            Task {
+                try? await refreshAccountState()
+            }
+
+        case .accountLoginCompleted(let completion):
+            if completion.success {
+                accountStatusMessage = "Login completed."
+                appendLog(.info, "Login completed")
+            } else {
+                let detail = completion.error ?? "Unknown error"
+                accountStatusMessage = "Login failed: \(detail)"
+                appendLog(.error, "Login failed: \(detail)")
+            }
+            Task {
+                try? await refreshAccountState()
+            }
         }
     }
 
@@ -411,6 +585,28 @@ final class AppModel: ObservableObject {
 
         appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
         return runtimeThreadID
+    }
+
+    private func refreshAccountState() async throws {
+        guard let runtime else {
+            accountState = .signedOut
+            return
+        }
+
+        accountState = try await runtime.readAccount()
+    }
+
+    private func upsertProjectAPIKeyReferenceIfNeeded() async throws {
+        guard let projectID = selectedProjectID,
+              let projectSecretRepository else {
+            return
+        }
+
+        _ = try await projectSecretRepository.upsertSecret(
+            projectID: projectID,
+            name: "OPENAI_API_KEY",
+            keychainAccount: APIKeychainStore.runtimeAPIKeyAccount
+        )
     }
 
     private func appendEntry(_ entry: TranscriptEntry, to threadID: UUID) {
@@ -542,9 +738,28 @@ final class AppModel: ObservableObject {
     }
 
     private func appendLog(_ level: LogLevel, _ message: String) {
-        logs.append(LogEntry(level: level, message: message))
+        logs.append(LogEntry(level: level, message: redactSensitiveText(in: message)))
         if logs.count > 500 {
             logs.removeFirst(logs.count - 500)
         }
+    }
+
+    private func redactSensitiveText(in text: String) -> String {
+        var sanitized = text
+        let patterns = [
+            "sk-[A-Za-z0-9_-]{16,}",
+            "(?i)api[_-]?key\\s*[:=]\\s*[^\\s]+",
+            "(?i)authorization\\s*:\\s*bearer\\s+[^\\s]+"
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else {
+                continue
+            }
+            let range = NSRange(sanitized.startIndex..., in: sanitized)
+            sanitized = regex.stringByReplacingMatches(in: sanitized, range: range, withTemplate: "[REDACTED]")
+        }
+
+        return sanitized
     }
 }

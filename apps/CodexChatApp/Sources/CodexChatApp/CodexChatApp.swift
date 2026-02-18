@@ -18,6 +18,10 @@ struct CodexChatApplication: App {
             ContentView(model: model)
                 .designTokens(themeProvider.tokens)
         }
+        Settings {
+            SettingsView(model: model)
+                .designTokens(themeProvider.tokens)
+        }
         .commands {
             CommandGroup(after: .newItem) {
                 Button("New Project") {
