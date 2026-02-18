@@ -1,28 +1,42 @@
 # CodexChat
 
-CodexChat is a macOS 26-native SwiftUI app focused on safe, local-first agentic chat workflows.
+CodexChat is a local-first macOS SwiftUI chat app that integrates the local Codex runtime (app-server) so everyday users can safely benefit from agentic capabilities (files, commands, skills, artifacts).
 
-## Prompt 1 Baseline Goals
-- Two-pane shell: sidebar for projects/threads + conversation canvas.
-- Modular architecture across Swift packages.
-- Local metadata persistence for projects, threads, and last-opened context.
-- Design tokens with injectable theming for future mods.
-- Hidden diagnostics surface with runtime placeholder and logs.
+## Product Rules
 
-## Repository Layout
-- `apps/CodexChatApp`: macOS app entrypoint.
-- `packages/*`: modular Swift packages (`UI`, `Core`, `Infra`, `CodexKit`, `Skills`, `Memory`, `Mods`).
-- `.github/workflows`: CI workflows.
-- `docs/`: local private planning memory (ignored by git by design).
+- Default UI is **two-pane**: sidebar (Projects + Threads) + conversation canvas.
+- A persistent third pane is future scope (the architecture is designed to support it later).
 
-## Local Setup
-1. Install Xcode 26+.
-2. Ensure Swift 6.2+ is available.
-3. Use `pnpm` for non-Swift tooling scaffolding.
-4. Build and test from package directories:
-   - `cd apps/CodexChatApp && swift build && swift test`
-   - `cd packages/CodexChatInfra && swift test`
+## Key Features
 
-## Notes
-- `docs/` intentionally remains private and untracked.
-- Prompt 1 uses runtime placeholders only (no live Codex app-server event integration yet).
+- Projects as real folders (trusted/untrusted) with per-project safety settings.
+- Streaming assistant responses in the transcript.
+- Inline, reviewable Action Cards (tool runs, file changes, approvals).
+- Local chat archives written as Markdown in the project for grep/search.
+- Skills discovery + install + per-project enablement (progressive disclosure).
+- Memory system stored as editable project files, with optional advanced retrieval.
+- UI Mods: token overrides with precedence `defaults < global < project`, hot reload, and **mandatory review** for agent-proposed mod edits.
+- Diagnostics surface for runtime status + logs.
+
+## Repo Layout
+
+- `apps/CodexChatApp`: macOS app.
+- `packages/*`: modular Swift packages (`Core`, `Infra`, `UI`, `CodexKit`, `Skills`, `Memory`, `Mods`).
+- `.github/workflows`: CI.
+- `docs/`: private planning memory (ignored by git by design).
+- `docs-public/`: public documentation (tracked).
+
+## Build + Test
+
+From the repo root:
+
+```sh
+pnpm -s run check
+```
+
+## Docs
+
+- `docs-public/INSTALL.md`
+- `docs-public/SECURITY_MODEL.md`
+- `docs-public/MODS.md`
+- `docs-public/CONTRIBUTING.md`
