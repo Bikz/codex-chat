@@ -14,6 +14,13 @@ struct ContentView: View {
             conversationCanvas
         }
         .background(Color(hex: tokens.palette.backgroundHex))
+        .sheet(isPresented: $model.isDiagnosticsVisible) {
+            DiagnosticsView(
+                runtimeStatus: model.runtimeStatus,
+                logs: model.logs,
+                onClose: model.closeDiagnostics
+            )
+        }
         .onAppear {
             model.onAppear()
         }

@@ -1,5 +1,6 @@
 import CodexChatCore
 import CodexChatInfra
+import CodexKit
 import Foundation
 
 @MainActor
@@ -19,6 +20,10 @@ final class AppModel: ObservableObject {
     @Published var selectedThreadID: UUID?
     @Published var composerText = ""
 
+    @Published var isDiagnosticsVisible = false
+    @Published var runtimeStatus: RuntimeStatus = .idle
+    @Published private(set) var logs: [LogEntry] = []
+
     private let projectRepository: (any ProjectRepository)?
     private let threadRepository: (any ThreadRepository)?
     private let preferenceRepository: (any PreferenceRepository)?
@@ -34,6 +39,10 @@ final class AppModel: ObservableObject {
             self.projectsState = .failed(bootError)
             self.threadsState = .failed(bootError)
             self.conversationState = .failed(bootError)
+            runtimeStatus = .error
+            appendLog(.error, bootError)
+        } else {
+            appendLog(.info, "App model initialized")
         }
     }
 
@@ -57,6 +66,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func toggleDiagnostics() {
+        isDiagnosticsVisible.toggle()
+        appendLog(.debug, "Diagnostics toggled: \(isDiagnosticsVisible)")
+    }
+
+    func closeDiagnostics() {
+        isDiagnosticsVisible = false
+    }
+
     func retryLoad() {
         Task {
             await loadInitialData()
@@ -64,17 +82,24 @@ final class AppModel: ObservableObject {
     }
 
     func loadInitialData() async {
+        runtimeStatus = .starting
+        appendLog(.info, "Loading initial metadata")
         projectsState = .loading
+
         do {
             try await refreshProjects()
             try await restoreLastOpenedContext()
             try await refreshThreads()
             refreshConversationState()
+            runtimeStatus = .connected
+            appendLog(.info, "Initial metadata load completed")
         } catch {
             let message = error.localizedDescription
             projectsState = .failed(message)
             threadsState = .failed(message)
             conversationState = .failed(message)
+            runtimeStatus = .error
+            appendLog(.error, "Failed to load initial data: \(message)")
         }
     }
 
@@ -84,6 +109,8 @@ final class AppModel: ObservableObject {
             do {
                 let name = "Project \(projects.count + 1)"
                 let project = try await projectRepository.createProject(named: name)
+                appendLog(.info, "Created project \(project.name)")
+
                 try await refreshProjects()
                 selectedProjectID = project.id
                 try await persistSelection()
@@ -91,6 +118,7 @@ final class AppModel: ObservableObject {
                 refreshConversationState()
             } catch {
                 projectsState = .failed(error.localizedDescription)
+                appendLog(.error, "Create project failed: \(error.localizedDescription)")
             }
         }
     }
@@ -99,12 +127,15 @@ final class AppModel: ObservableObject {
         Task {
             selectedProjectID = projectID
             selectedThreadID = nil
+            appendLog(.debug, "Selected project: \(projectID?.uuidString ?? "none")")
+
             do {
                 try await persistSelection()
                 try await refreshThreads()
                 refreshConversationState()
             } catch {
                 threadsState = .failed(error.localizedDescription)
+                appendLog(.error, "Select project failed: \(error.localizedDescription)")
             }
         }
     }
@@ -115,12 +146,15 @@ final class AppModel: ObservableObject {
             do {
                 let title = "Thread \(threads.count + 1)"
                 let thread = try await threadRepository.createThread(projectID: projectID, title: title)
+                appendLog(.info, "Created thread \(thread.title)")
+
                 try await refreshThreads()
                 selectedThreadID = thread.id
                 try await persistSelection()
                 refreshConversationState()
             } catch {
                 threadsState = .failed(error.localizedDescription)
+                appendLog(.error, "Create thread failed: \(error.localizedDescription)")
             }
         }
     }
@@ -128,11 +162,13 @@ final class AppModel: ObservableObject {
     func selectThread(_ threadID: UUID?) {
         Task {
             selectedThreadID = threadID
+            appendLog(.debug, "Selected thread: \(threadID?.uuidString ?? "none")")
             do {
                 try await persistSelection()
                 refreshConversationState()
             } catch {
                 conversationState = .failed(error.localizedDescription)
+                appendLog(.error, "Select thread failed: \(error.localizedDescription)")
             }
         }
     }
@@ -155,6 +191,7 @@ final class AppModel: ObservableObject {
 
         messageStore[selectedThreadID, default: []].append(userMessage)
         messageStore[selectedThreadID, default: []].append(assistantMessage)
+        appendLog(.info, "Queued placeholder response for thread \(selectedThreadID.uuidString)")
         refreshConversationState()
     }
 
@@ -207,6 +244,8 @@ final class AppModel: ObservableObject {
            let threadID = UUID(uuidString: threadIDString) {
             selectedThreadID = threadID
         }
+
+        appendLog(.debug, "Restored last-opened context")
     }
 
     private func persistSelection() async throws {
@@ -229,5 +268,12 @@ final class AppModel: ObservableObject {
 
         let messages = messageStore[selectedThreadID, default: []]
         conversationState = .loaded(messages)
+    }
+
+    private func appendLog(_ level: LogLevel, _ message: String) {
+        logs.append(LogEntry(level: level, message: message))
+        if logs.count > 300 {
+            logs.removeFirst(logs.count - 300)
+        }
     }
 }

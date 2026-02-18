@@ -29,6 +29,13 @@ struct CodexChatApplication: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             }
+
+            CommandMenu("Developer") {
+                Button("Toggle Diagnostics") {
+                    model.toggleDiagnostics()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+            }
         }
     }
 
