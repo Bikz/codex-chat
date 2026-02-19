@@ -152,7 +152,52 @@ def _main() -> int:
                 )
                 continue
 
-            steer_text = params.get("text") or ""
+            expected_turn_id = params.get("expectedTurnId")
+            input_items = params.get("input")
+            if expected_turn_id != active_turn_id:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {
+                            "code": -32600,
+                            "message": "invalid request: expectedTurnId did not match active turn",
+                            "data": None,
+                        },
+                    }
+                )
+                continue
+
+            if not isinstance(input_items, list) or len(input_items) == 0:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {
+                            "code": -32600,
+                            "message": "invalid request: missing field input",
+                            "data": None,
+                        },
+                    }
+                )
+                continue
+
+            first_input = input_items[0] if isinstance(input_items[0], dict) else {}
+            if first_input.get("type") != "text":
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {
+                            "code": -32600,
+                            "message": "invalid request: first input item must be text",
+                            "data": None,
+                        },
+                    }
+                )
+                continue
+
+            steer_text = first_input.get("text") or ""
             _send({"jsonrpc": "2.0", "id": msg_id, "result": {"accepted": True}})
             _send(
                 {

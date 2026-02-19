@@ -114,7 +114,7 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
         XCTAssertTrue(capabilities.supportsFollowUpSuggestions)
 
         let turnID = try await runtime.startTurn(threadID: threadID, text: "Start a long turn")
-        try await runtime.steerTurn(threadID: threadID, text: "Steer now", turnID: turnID)
+        try await runtime.steerTurn(threadID: threadID, text: "Steer now", expectedTurnID: turnID)
 
         let outcome = try await withTimeout(seconds: 2.0) {
             var sawSuggestions = false
@@ -137,6 +137,35 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
 
         XCTAssertTrue(outcome.0)
         XCTAssertTrue(outcome.1.contains("Steered: Steer now"))
+    }
+
+    func testSteerTurnFallsBackToLegacyPayloadWhenRuntimeExpectsLegacySchema() async throws {
+        let fakeCodexPath = try Self.makeLegacySteerFixtureExecutable()
+        let runtime = CodexRuntime(executableResolver: { fakeCodexPath })
+        defer { Task { await runtime.stop() } }
+
+        let stream = await runtime.events()
+        let threadID = try await runtime.startThread(cwd: FileManager.default.temporaryDirectory.path)
+        let turnID = try await runtime.startTurn(threadID: threadID, text: "Start a long turn")
+        try await runtime.steerTurn(threadID: threadID, text: "Legacy steer", expectedTurnID: turnID)
+
+        let outcome = try await withTimeout(seconds: 2.0) {
+            var delta = ""
+            for await event in stream {
+                switch event {
+                case let .assistantMessageDelta(_, chunk):
+                    delta += chunk
+                case .turnCompleted:
+                    return delta
+                default:
+                    continue
+                }
+            }
+
+            throw XCTestError(.failureWhileWaiting)
+        }
+
+        XCTAssertTrue(outcome.contains("Steered via legacy payload: Legacy steer"))
     }
 
     private static func resolveFakeCodexPath(filePath: String = #filePath) throws -> String {
@@ -240,6 +269,150 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
                 continue
 
             send({"jsonrpc": "2.0", "id": msg_id, "error": {"code": -32601, "message": f"method not found: {method}", "data": None}})
+        """
+
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: scriptURL.path
+        )
+        return scriptURL.path
+    }
+
+    private static func makeLegacySteerFixtureExecutable() throws -> String {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-legacy-steer-fixture-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let scriptURL = root.appendingPathComponent("fake-codex-legacy-steer")
+
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        def send(message):
+            sys.stdout.write(json.dumps(message) + "\\n")
+            sys.stdout.flush()
+
+        args = sys.argv[1:]
+        if len(args) != 1 or args[0] != "app-server":
+            sys.stderr.write("usage: fake-codex-legacy-steer app-server\\n")
+            raise SystemExit(2)
+
+        thread_id = "thr_legacy"
+        active_turn_id = None
+        initialized = False
+        thread_started = False
+
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line:
+                continue
+
+            try:
+                msg = json.loads(line)
+            except Exception:
+                continue
+
+            msg_id = msg.get("id")
+            method = msg.get("method")
+            params = msg.get("params") or {}
+            result = msg.get("result")
+            error = msg.get("error")
+
+            is_request = msg_id is not None and method is not None and result is None and error is None
+            is_notification = msg_id is None and method is not None and result is None and error is None
+
+            if is_notification:
+                if method == "initialized":
+                    initialized = True
+                continue
+
+            if not is_request:
+                continue
+
+            if method == "initialize":
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "capabilities": {
+                            "turnSteer": True,
+                            "followUpSuggestions": {"version": 1}
+                        }
+                    }
+                })
+                continue
+
+            if not initialized:
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {"code": -32002, "message": "not initialized", "data": None}
+                })
+                continue
+
+            if method == "thread/start":
+                thread_started = True
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"thread": {"id": thread_id}}})
+                continue
+
+            if method == "turn/start":
+                if not thread_started or params.get("threadId") != thread_id:
+                    send({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {"code": -32010, "message": "unknown thread", "data": None}
+                    })
+                    continue
+
+                active_turn_id = "turn_legacy"
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"turn": {"id": active_turn_id}}})
+                continue
+
+            if method == "turn/steer":
+                if "expectedTurnId" in params or "input" in params:
+                    send({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {"code": -32600, "message": "invalid request: unknown field expectedTurnId", "data": None}
+                    })
+                    continue
+
+                steer_turn_id = params.get("turnId")
+                steer_text = params.get("text")
+                if steer_turn_id != active_turn_id or not isinstance(steer_text, str):
+                    send({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {"code": -32600, "message": "invalid request: missing legacy fields", "data": None}
+                    })
+                    continue
+
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"accepted": True}})
+                send({
+                    "jsonrpc": "2.0",
+                    "method": "item/agentMessage/delta",
+                    "params": {
+                        "threadId": thread_id,
+                        "turnId": active_turn_id,
+                        "itemId": "msg_legacy",
+                        "delta": f"Steered via legacy payload: {steer_text}"
+                    }
+                })
+                send({
+                    "jsonrpc": "2.0",
+                    "method": "turn/completed",
+                    "params": {"threadId": thread_id, "turn": {"id": active_turn_id, "status": "completed"}}
+                })
+                active_turn_id = None
+                continue
+
+            send({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32601, "message": f"method not found: {method}", "data": None}
+            })
         """
 
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)

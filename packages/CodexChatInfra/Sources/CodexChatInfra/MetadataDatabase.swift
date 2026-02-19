@@ -252,6 +252,30 @@ public final class MetadataDatabase: @unchecked Sendable {
             }
         }
 
+        migrator.registerMigration("v14_add_skill_enablements") { db in
+            try db.create(table: "skill_enablements") { table in
+                table.column("target", .text).notNull()
+                table.column("projectID", .text)
+                table.column("skillPath", .text).notNull()
+                table.column("enabled", .boolean).notNull().defaults(to: true)
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_skill_enablements_target_project",
+                on: "skill_enablements",
+                columns: ["target", "projectID"]
+            )
+            try db.execute(sql: """
+            CREATE UNIQUE INDEX idx_skill_enablements_target_project_skill
+            ON skill_enablements(target, IFNULL(projectID, ''), skillPath)
+            """)
+            try db.execute(sql: """
+            INSERT INTO skill_enablements (target, projectID, skillPath, enabled, updatedAt)
+            SELECT 'project', projectID, skillPath, enabled, updatedAt
+            FROM project_skill_enablements
+            """)
+        }
+
         return migrator
     }
 }

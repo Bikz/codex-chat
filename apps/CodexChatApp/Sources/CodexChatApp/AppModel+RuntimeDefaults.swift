@@ -155,7 +155,7 @@ extension AppModel {
 
         return RuntimeTurnOptions(
             model: effectiveModel,
-            reasoningEffort: defaultReasoning.rawValue,
+            effort: defaultReasoning.rawValue,
             experimental: [:]
         )
     }

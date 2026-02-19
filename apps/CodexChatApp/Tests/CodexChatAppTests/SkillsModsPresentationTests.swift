@@ -1,3 +1,4 @@
+import CodexChatCore
 @testable import CodexChatShared
 import CodexMods
 import CodexSkills
@@ -158,6 +159,27 @@ final class SkillsModsPresentationTests: XCTestCase {
         )
     }
 
+    func testUpdateActionLabelMapping() {
+        XCTAssertEqual(SkillsModsPresentation.updateActionLabel(for: .gitUpdate), "Update")
+        XCTAssertEqual(SkillsModsPresentation.updateActionLabel(for: .reinstall), "Reinstall")
+        XCTAssertEqual(SkillsModsPresentation.updateActionLabel(for: .unavailable), "Unavailable")
+    }
+
+    func testEnabledTargetsSummaryIncludesProjectContextSuffix() {
+        var item = makeSkillItem(
+            name: "Atlas",
+            description: "Control Atlas app.",
+            scope: .global,
+            path: "/tmp/skills/atlas"
+        )
+        item.enabledTargets = [.global, .project]
+
+        XCTAssertEqual(
+            SkillsModsPresentation.enabledTargetsSummary(for: item, hasSelectedProject: true),
+            "Enabled in: Global, Project (this)"
+        )
+    }
+
     private func makeSkillItem(
         name: String,
         description: String,
@@ -174,7 +196,14 @@ final class SkillsModsPresentationTests: XCTestCase {
             sourceURL: nil,
             optionalMetadata: [:]
         )
-        return AppModel.SkillListItem(skill: skill, isEnabledForProject: true)
+        return AppModel.SkillListItem(
+            skill: skill,
+            enabledTargets: [.project],
+            isEnabledForSelectedProject: true,
+            updateCapability: .unavailable,
+            updateSource: nil,
+            updateInstaller: nil
+        )
     }
 
     private func makeMod(path: String, definition: UIModDefinition? = nil) -> DiscoveredUIMod {

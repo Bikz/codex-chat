@@ -282,7 +282,26 @@ final class CodexKitTests: XCTestCase {
         XCTAssertTrue(candidates.contains("/Users/tester/bin/codex"))
     }
 
-    func testMakeTurnStartParamsIncludesModelReasoningAndExperimentalOptions() {
+    func testMakeThreadStartParamsUsesCurrentApprovalPolicyAndSandboxFields() {
+        let safety = RuntimeSafetyConfiguration(
+            sandboxMode: .workspaceWrite,
+            approvalPolicy: .onRequest,
+            networkAccess: true,
+            webSearch: .cached,
+            writableRoots: ["/tmp/workspace"]
+        )
+        let params = CodexRuntime.makeThreadStartParams(
+            cwd: "/tmp/workspace",
+            safetyConfiguration: safety,
+            includeWebSearch: true
+        )
+
+        XCTAssertEqual(params.value(at: ["approvalPolicy"])?.stringValue, "on-request")
+        XCTAssertEqual(params.value(at: ["sandbox"])?.stringValue, "workspace-write")
+        XCTAssertNil(params.value(at: ["sandboxPolicy"]))
+    }
+
+    func testMakeTurnStartParamsIncludesModelEffortAndExperimentalOptions() {
         let params = CodexRuntime.makeTurnStartParams(
             threadID: "thr_1",
             text: "hello",
@@ -290,15 +309,34 @@ final class CodexKitTests: XCTestCase {
             skillInputs: [],
             turnOptions: RuntimeTurnOptions(
                 model: "gpt-5-codex",
-                reasoningEffort: "high",
+                effort: "high",
                 experimental: ["parallelToolCalls": true]
             ),
             includeWebSearch: true
         )
 
         XCTAssertEqual(params.value(at: ["model"])?.stringValue, "gpt-5-codex")
-        XCTAssertEqual(params.value(at: ["reasoningEffort"])?.stringValue, "high")
+        XCTAssertEqual(params.value(at: ["effort"])?.stringValue, "high")
         XCTAssertEqual(params.value(at: ["experimental", "parallelToolCalls"])?.boolValue, true)
+    }
+
+    func testMakeTurnStartParamsUsesLegacyReasoningEffortWhenRequested() {
+        let params = CodexRuntime.makeTurnStartParams(
+            threadID: "thr_1",
+            text: "hello",
+            safetyConfiguration: nil,
+            skillInputs: [],
+            turnOptions: RuntimeTurnOptions(
+                model: "gpt-5-codex",
+                effort: "medium",
+                experimental: [:]
+            ),
+            includeWebSearch: true,
+            useLegacyReasoningEffortField: true
+        )
+
+        XCTAssertEqual(params.value(at: ["reasoningEffort"])?.stringValue, "medium")
+        XCTAssertNil(params.value(at: ["effort"]))
     }
 
     func testMakeTurnStartParamsOmitsEmptyTurnOptions() {
@@ -307,12 +345,44 @@ final class CodexKitTests: XCTestCase {
             text: "hello",
             safetyConfiguration: nil,
             skillInputs: [],
-            turnOptions: RuntimeTurnOptions(model: "   ", reasoningEffort: "", experimental: [:]),
+            turnOptions: RuntimeTurnOptions(model: "   ", effort: "", experimental: [:]),
             includeWebSearch: true
         )
 
         XCTAssertNil(params.value(at: ["model"]))
-        XCTAssertNil(params.value(at: ["reasoningEffort"]))
+        XCTAssertNil(params.value(at: ["effort"]))
         XCTAssertNil(params.value(at: ["experimental"]))
+    }
+
+    func testMakeTurnSteerParamsUsesExpectedTurnIdAndInputArray() {
+        let params = CodexRuntime.makeTurnSteerParams(
+            threadID: "thr_1",
+            text: "Continue with tests",
+            expectedTurnID: "turn_1"
+        )
+
+        XCTAssertEqual(params.value(at: ["threadId"])?.stringValue, "thr_1")
+        XCTAssertEqual(params.value(at: ["expectedTurnId"])?.stringValue, "turn_1")
+        let firstInput = params.value(at: ["input"])?.arrayValue?.first
+        XCTAssertEqual(firstInput?.value(at: ["type"])?.stringValue, "text")
+        XCTAssertEqual(firstInput?.value(at: ["text"])?.stringValue, "Continue with tests")
+    }
+
+    func testShouldRetryWithLegacyTurnSteerPayloadSkipsActiveTurnMismatchWordings() {
+        let error = CodexRuntimeError.rpcError(
+            code: -32600,
+            message: "invalid request: expectedTurnId did not match active turn"
+        )
+
+        XCTAssertFalse(CodexRuntime.shouldRetryWithLegacyTurnSteerPayload(error: error))
+    }
+
+    func testShouldRetryWithLegacyTurnSteerPayloadOnSchemaMismatch() {
+        let error = CodexRuntimeError.rpcError(
+            code: -32600,
+            message: "invalid request: unknown field expectedTurnId"
+        )
+
+        XCTAssertTrue(CodexRuntime.shouldRetryWithLegacyTurnSteerPayload(error: error))
     }
 }

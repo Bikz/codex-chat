@@ -6,9 +6,10 @@ struct ContentView: View {
     @Environment(\.designTokens) private var tokens
     @State private var isInstallSkillSheetVisible = false
     @State private var isInsertMemorySheetVisible = false
+    @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $splitViewVisibility) {
             SidebarView(model: model)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
         } detail: {
@@ -65,6 +66,7 @@ struct ContentView: View {
         }
         .onAppear {
             model.onAppear()
+            syncSplitViewVisibility(isOnboardingActive: model.isOnboardingActive)
         }
         .onChange(of: model.detailDestination) { _, newValue in
             switch newValue {
@@ -74,17 +76,28 @@ struct ContentView: View {
                 break
             }
         }
+        .onChange(of: model.isOnboardingActive) { _, isOnboardingActive in
+            syncSplitViewVisibility(isOnboardingActive: isOnboardingActive)
+        }
     }
 
     @ViewBuilder
     private var detailSurface: some View {
-        switch model.detailDestination {
-        case .thread:
-            ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
-        case .skillsAndMods:
-            SkillsModsCanvasView(model: model, isInstallSkillSheetVisible: $isInstallSkillSheetVisible)
-        case .none:
-            ChatSetupView(model: model)
+        if model.isOnboardingActive {
+            OnboardingView(model: model)
+        } else {
+            switch model.detailDestination {
+            case .thread:
+                ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
+            case .skillsAndMods:
+                SkillsModsCanvasView(model: model, isInstallSkillSheetVisible: $isInstallSkillSheetVisible)
+            case .none:
+                ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
+            }
         }
+    }
+
+    private func syncSplitViewVisibility(isOnboardingActive: Bool) {
+        splitViewVisibility = isOnboardingActive ? .detailOnly : .all
     }
 }

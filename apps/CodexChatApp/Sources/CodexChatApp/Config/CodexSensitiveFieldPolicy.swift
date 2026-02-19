@@ -1,8 +1,8 @@
 import Foundation
 
-struct CodexSensitiveFieldPolicy {
+enum CodexSensitiveFieldPolicy {
     static func isSensitive(path: [CodexConfigPathSegment], key: String? = nil) -> Bool {
-        var components = path.map { $0.display }
+        var components = path.map(\.display)
         if let key {
             components.append(key)
         }
@@ -25,7 +25,7 @@ struct CodexSensitiveFieldPolicy {
             return true
         }
 
-        if lowered.contains("mcp_servers") && lowered.contains("http_headers") {
+        if lowered.contains("mcp_servers"), lowered.contains("http_headers") {
             return true
         }
 

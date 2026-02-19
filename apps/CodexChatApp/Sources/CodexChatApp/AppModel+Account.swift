@@ -91,6 +91,7 @@ extension AppModel {
                 try await refreshAccountState()
                 accountStatusMessage = "Signed in with API key."
                 appendLog(.info, "Signed in with API key")
+                completeOnboardingIfReady()
                 requestAutoDrain(reason: "account signed in")
             } catch {
                 if let runtimeError = error as? CodexRuntimeError,
@@ -123,6 +124,7 @@ extension AppModel {
                 } else {
                     accountState = .signedOut
                 }
+                enterOnboarding(reason: .signedOut)
                 accountStatusMessage = "Logged out."
                 appendLog(.info, "Account logged out")
             } catch {
@@ -194,6 +196,7 @@ extension AppModel {
                         pendingChatGPTLoginID = nil
                         accountStatusMessage = "Signed in with ChatGPT."
                         appendLog(.info, "ChatGPT login confirmed by account polling")
+                        completeOnboardingIfReady()
                         return
                     }
                 } catch {

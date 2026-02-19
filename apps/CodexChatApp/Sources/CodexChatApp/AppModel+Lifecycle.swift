@@ -47,6 +47,7 @@ extension AppModel {
             try await refreshArchivedThreads()
             try await refreshFollowUpQueuesForVisibleThreads()
             try await refreshSkills()
+            await refreshSkillsCatalog()
             if let selectedThreadID {
                 await rehydrateThreadTranscript(threadID: selectedThreadID)
             }
@@ -67,5 +68,10 @@ extension AppModel {
         }
 
         await startRuntimeSession()
+        if isOnboardingReadyToComplete {
+            completeOnboardingIfReady()
+        } else {
+            enterOnboarding(reason: .startup)
+        }
     }
 }

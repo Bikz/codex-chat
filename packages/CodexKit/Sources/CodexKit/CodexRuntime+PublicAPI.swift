@@ -39,22 +39,32 @@ public extension CodexRuntime {
     ) async throws -> String {
         try await start()
 
-        var params = Self.makeThreadStartParams(
-            cwd: cwd,
-            safetyConfiguration: safetyConfiguration,
-            includeWebSearch: true
-        )
+        var includeWebSearch = true
+        var useLegacySandboxPolicy = false
         let result: JSONValue
-        do {
-            result = try await sendRequest(method: "thread/start", params: params)
-        } catch let error as CodexRuntimeError where Self.shouldRetryWithoutWebSearch(error: error) {
-            params = Self.makeThreadStartParams(
+        while true {
+            let params = Self.makeThreadStartParams(
                 cwd: cwd,
                 safetyConfiguration: safetyConfiguration,
-                includeWebSearch: false
+                includeWebSearch: includeWebSearch,
+                useLegacySandboxPolicy: useLegacySandboxPolicy
             )
-            result = try await sendRequest(method: "thread/start", params: params)
+            do {
+                result = try await sendRequest(method: "thread/start", params: params)
+                break
+            } catch let error as CodexRuntimeError {
+                if includeWebSearch, Self.shouldRetryWithoutWebSearch(error: error) {
+                    includeWebSearch = false
+                    continue
+                }
+                if !useLegacySandboxPolicy, Self.shouldRetryWithLegacyThreadStartSandboxField(error: error) {
+                    useLegacySandboxPolicy = true
+                    continue
+                }
+                throw error
+            }
         }
+
         guard let threadID = result.value(at: ["thread", "id"])?.stringValue else {
             throw CodexRuntimeError.invalidResponse("thread/start missing result.thread.id")
         }
@@ -71,38 +81,40 @@ public extension CodexRuntime {
     ) async throws -> String {
         try await start()
 
-        var params = Self.makeTurnStartParams(
-            threadID: threadID,
-            text: text,
-            safetyConfiguration: safetyConfiguration,
-            skillInputs: skillInputs,
-            turnOptions: turnOptions,
-            includeWebSearch: true
-        )
+        var includeWebSearch = true
+        var includeSkillInputs = !skillInputs.isEmpty
+        var useLegacyReasoningEffortField = false
         let result: JSONValue
-        do {
-            result = try await sendRequest(method: "turn/start", params: params)
-        } catch let error as CodexRuntimeError where Self.shouldRetryWithoutWebSearch(error: error) {
-            params = Self.makeTurnStartParams(
+        while true {
+            let params = Self.makeTurnStartParams(
                 threadID: threadID,
                 text: text,
                 safetyConfiguration: safetyConfiguration,
-                skillInputs: skillInputs,
+                skillInputs: includeSkillInputs ? skillInputs : [],
                 turnOptions: turnOptions,
-                includeWebSearch: false
+                includeWebSearch: includeWebSearch,
+                useLegacyReasoningEffortField: useLegacyReasoningEffortField
             )
-            result = try await sendRequest(method: "turn/start", params: params)
-        } catch let error as CodexRuntimeError where Self.shouldRetryWithoutSkillInput(error: error) && !skillInputs.isEmpty {
-            params = Self.makeTurnStartParams(
-                threadID: threadID,
-                text: text,
-                safetyConfiguration: safetyConfiguration,
-                skillInputs: [],
-                turnOptions: turnOptions,
-                includeWebSearch: true
-            )
-            result = try await sendRequest(method: "turn/start", params: params)
+            do {
+                result = try await sendRequest(method: "turn/start", params: params)
+                break
+            } catch let error as CodexRuntimeError {
+                if !useLegacyReasoningEffortField, Self.shouldRetryWithLegacyReasoningEffortField(error: error) {
+                    useLegacyReasoningEffortField = true
+                    continue
+                }
+                if includeWebSearch, Self.shouldRetryWithoutWebSearch(error: error) {
+                    includeWebSearch = false
+                    continue
+                }
+                if includeSkillInputs, Self.shouldRetryWithoutSkillInput(error: error) {
+                    includeSkillInputs = false
+                    continue
+                }
+                throw error
+            }
         }
+
         guard let turnID = result.value(at: ["turn", "id"])?.stringValue else {
             throw CodexRuntimeError.invalidResponse("turn/start missing result.turn.id")
         }
@@ -113,19 +125,30 @@ public extension CodexRuntime {
     func steerTurn(
         threadID: String,
         text: String,
-        turnID: String? = nil
+        expectedTurnID: String
     ) async throws {
         try await start()
 
-        var payload: [String: JSONValue] = [
-            "threadId": .string(threadID),
-            "text": .string(text),
-        ]
-        if let turnID, !turnID.isEmpty {
-            payload["turnId"] = .string(turnID)
+        let normalizedTurnID = expectedTurnID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTurnID.isEmpty else {
+            throw CodexRuntimeError.invalidResponse("turn/steer requires expectedTurnID")
         }
 
-        _ = try await sendRequest(method: "turn/steer", params: .object(payload))
+        let params = Self.makeTurnSteerParams(
+            threadID: threadID,
+            text: text,
+            expectedTurnID: normalizedTurnID
+        )
+        do {
+            _ = try await sendRequest(method: "turn/steer", params: params)
+        } catch let error as CodexRuntimeError where Self.shouldRetryWithLegacyTurnSteerPayload(error: error) {
+            let legacyParams = Self.makeLegacyTurnSteerParams(
+                threadID: threadID,
+                text: text,
+                turnID: normalizedTurnID
+            )
+            _ = try await sendRequest(method: "turn/steer", params: legacyParams)
+        }
     }
 
     func readAccount(refreshToken: Bool = false) async throws -> RuntimeAccountState {

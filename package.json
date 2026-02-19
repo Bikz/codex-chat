@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
+    "bootstrap": "bash scripts/bootstrap.sh",
+    "oss:smoke": "bash scripts/oss-smoke.sh",
     "quick": "make quick",
     "ci": "make ci",
     "swift:build": "bash scripts/swift-build-all.sh",

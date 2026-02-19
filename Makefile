@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: quick ci format format-check lint test-fast test periphery release-dmg host-metadata-check parity-check
+.PHONY: quick ci format format-check lint test-fast test periphery release-dmg host-metadata-check parity-check oss-smoke bootstrap
 
 quick: host-metadata-check parity-check format-check lint test-fast
 
@@ -32,3 +32,9 @@ host-metadata-check:
 
 parity-check:
 	./scripts/verify-build-settings-parity.sh
+
+oss-smoke:
+	./scripts/oss-smoke.sh
+
+bootstrap:
+	./scripts/bootstrap.sh

@@ -7,31 +7,21 @@
 - Node 22+
 - Homebrew
 
-Install tooling:
-
-```sh
-brew install swiftformat swiftlint gitleaks
-```
-
-Optional tooling:
-
-```sh
-brew install periphery
-```
-
 ## Setup
 
 From repo root:
 
 ```sh
-corepack enable
-pnpm install
+bash scripts/bootstrap.sh
 ```
+
+`bootstrap.sh` validates/install tooling (`pnpm`, `swiftformat`, `swiftlint`, `gitleaks`), installs workspace deps, and runs `make quick`.
 
 ## Validate
 
 ```sh
 make quick
+make oss-smoke
 pnpm -s run check
 ```
 
@@ -55,12 +45,15 @@ swift run CodexChatCLI repro --fixture basic-turn
 ```
 
 Use CLI commands for diagnostics/smoke/repro only. Do GUI QA in host app.
+Use `CodexChatCLI` explicitly for contributor workflows; do not use SwiftPM GUI fallback targets.
 
 ## Runtime Dependency
 
 CodexChat integrates with local Codex runtime via `codex app-server`.
 
 If `codex` is missing, the app remains usable for local-only flows and shows setup guidance.
+
+CodexChat targets the current app-server protocol (`approvalPolicy` values like `untrusted`/`on-request`, turn `effort`, steer `expectedTurnId` + `input[]`). If you see runtime schema mismatch errors (for example unknown variant or missing field), update Codex CLI and restart runtime.
 
 ## Voice Input Permissions
 

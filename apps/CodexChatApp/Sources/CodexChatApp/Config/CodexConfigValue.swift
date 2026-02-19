@@ -178,11 +178,10 @@ enum CodexConfigValue: Hashable, Sendable {
         let remaining = Array(path.dropFirst())
         switch first {
         case let .key(key):
-            var object: [String: CodexConfigValue]
-            if case let .object(existing) = self {
-                object = existing
+            var object: [String: CodexConfigValue] = if case let .object(existing) = self {
+                existing
             } else {
-                object = [:]
+                [:]
             }
 
             if remaining.isEmpty {
@@ -204,11 +203,10 @@ enum CodexConfigValue: Hashable, Sendable {
                 return
             }
 
-            var array: [CodexConfigValue]
-            if case let .array(existing) = self {
-                array = existing
+            var array: [CodexConfigValue] = if case let .array(existing) = self {
+                existing
             } else {
-                array = []
+                []
             }
 
             while array.count <= index {

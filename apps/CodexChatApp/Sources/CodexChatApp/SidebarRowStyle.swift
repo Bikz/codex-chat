@@ -100,7 +100,10 @@ struct SidebarSectionHeader: View {
     let actionSystemImage: String?
     let actionAccessibilityLabel: String?
     let trailingAlignmentWidth: CGFloat?
+    let trailingPadding: CGFloat
     let action: (() -> Void)?
+
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         title: String,
@@ -108,6 +111,7 @@ struct SidebarSectionHeader: View {
         actionSystemImage: String? = nil,
         actionAccessibilityLabel: String? = nil,
         trailingAlignmentWidth: CGFloat? = nil,
+        trailingPadding: CGFloat = 0,
         action: (() -> Void)? = nil
     ) {
         self.title = title
@@ -115,7 +119,15 @@ struct SidebarSectionHeader: View {
         self.actionSystemImage = actionSystemImage
         self.actionAccessibilityLabel = actionAccessibilityLabel
         self.trailingAlignmentWidth = trailingAlignmentWidth
+        self.trailingPadding = trailingPadding
         self.action = action
+    }
+
+    private var actionIconColor: Color {
+        if colorScheme == .dark {
+            return Color.primary.opacity(0.85)
+        }
+        return Color.primary.opacity(0.68)
     }
 
     var body: some View {
@@ -129,14 +141,16 @@ struct SidebarSectionHeader: View {
             if let action, let actionSystemImage {
                 Button(action: action) {
                     Image(systemName: actionSystemImage)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(actionIconColor)
+                        .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(actionAccessibilityLabel ?? title)
                 .frame(width: trailingAlignmentWidth, alignment: .trailing)
+                .padding(.trailing, trailingPadding)
             }
         }
         .padding(.top, 8)

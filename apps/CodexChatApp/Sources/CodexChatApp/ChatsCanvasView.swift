@@ -10,44 +10,40 @@ struct ChatsCanvasView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if shouldShowChatSetup {
-                ChatSetupView(model: model)
-            } else {
-                if !model.isSelectedProjectTrusted, model.selectedProjectID != nil {
-                    ProjectTrustBanner(
-                        onTrust: model.trustSelectedProject,
-                        onSettings: model.showProjectSettings
-                    )
+            if !model.isSelectedProjectTrusted, model.selectedProjectID != nil {
+                ProjectTrustBanner(
+                    onTrust: model.trustSelectedProject,
+                    onSettings: model.showProjectSettings
+                )
+                .padding(.horizontal, tokens.spacing.medium)
+                .padding(.top, tokens.spacing.small)
+            }
+
+            runtimeAwareConversationSurface
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                FollowUpQueueView(model: model)
+                composerSurface
+
+                if let followUpStatus = model.followUpStatusMessage {
+                    Text(followUpStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, tokens.spacing.medium)
+                }
+            }
+
+            if model.isShellWorkspaceVisible {
+                Divider()
+                    .opacity(tokens.surfaces.hairlineOpacity)
+                ShellWorkspaceDrawer(model: model)
+                    .frame(height: 300)
                     .padding(.horizontal, tokens.spacing.medium)
                     .padding(.top, tokens.spacing.small)
-                }
-
-                runtimeAwareConversationSurface
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    FollowUpQueueView(model: model)
-                    composerSurface
-
-                    if let followUpStatus = model.followUpStatusMessage {
-                        Text(followUpStatus)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, tokens.spacing.medium)
-                    }
-                }
-
-                if model.isShellWorkspaceVisible {
-                    Divider()
-                        .opacity(tokens.surfaces.hairlineOpacity)
-                    ShellWorkspaceDrawer(model: model)
-                        .frame(height: 300)
-                        .padding(.horizontal, tokens.spacing.medium)
-                        .padding(.top, tokens.spacing.small)
-                        .padding(.bottom, tokens.spacing.medium)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+                    .padding(.bottom, tokens.spacing.medium)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .navigationTitle("")
@@ -63,78 +59,48 @@ struct ChatsCanvasView: View {
             }
         }
         .toolbar {
-            if !shouldShowChatSetup {
-                ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    model.openReviewChanges()
+                } label: {
+                    Label("Review Changes", systemImage: "doc.text.magnifyingglass")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel("Review pending changes")
+                .help("Review changes")
+                .disabled(!model.canReviewChanges)
+
+                Button {
+                    model.revealSelectedThreadArchiveInFinder()
+                } label: {
+                    Label("Reveal Chat File", systemImage: "doc.text")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel("Reveal thread transcript file in Finder")
+                .help("Reveal thread transcript file")
+                .disabled(model.selectedThreadID == nil)
+
+                Button {
+                    model.toggleShellWorkspace()
+                } label: {
+                    Label("Shell Workspace", systemImage: "terminal")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel("Toggle shell workspace")
+                .help("Toggle shell workspace")
+
+                if model.canToggleInspectorForSelectedThread {
                     Button {
-                        model.openReviewChanges()
+                        model.toggleExtensionInspector()
                     } label: {
-                        Label("Review Changes", systemImage: "doc.text.magnifyingglass")
+                        Label("Inspector", systemImage: "sidebar.right")
                             .labelStyle(.iconOnly)
                     }
-                    .accessibilityLabel("Review pending changes")
-                    .help("Review changes")
-                    .disabled(!model.canReviewChanges)
-
-                    Button {
-                        model.revealSelectedThreadArchiveInFinder()
-                    } label: {
-                        Label("Reveal Chat File", systemImage: "doc.text")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Reveal thread transcript file in Finder")
-                    .help("Reveal thread transcript file")
-                    .disabled(model.selectedThreadID == nil)
-
-                    Button {
-                        model.toggleShellWorkspace()
-                    } label: {
-                        Label("Shell Workspace", systemImage: "terminal")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Toggle shell workspace")
-                    .help("Toggle shell workspace")
-
-                    if model.canToggleInspectorForSelectedThread {
-                        Button {
-                            model.toggleExtensionInspector()
-                        } label: {
-                            Label("Inspector", systemImage: "sidebar.right")
-                                .labelStyle(.iconOnly)
-                        }
-                        .accessibilityLabel("Toggle inspector")
-                        .help(SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: model.isInspectorAvailableForSelectedThread))
-                    }
+                    .accessibilityLabel("Toggle inspector")
+                    .help(SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: model.isInspectorAvailableForSelectedThread))
                 }
             }
         }
-    }
-
-    private var shouldShowChatSetup: Bool {
-        if case .installCodex? = model.runtimeIssue {
-            return true
-        }
-
-        if model.runtimeStatus != .connected {
-            return true
-        }
-
-        if model.runtimeIssue != nil {
-            return true
-        }
-
-        if !model.isSignedInForRuntime {
-            return true
-        }
-
-        if model.selectedProjectID == nil {
-            return true
-        }
-
-        if model.selectedThreadID == nil, !model.hasActiveDraftChatForSelectedProject {
-            return true
-        }
-
-        return false
     }
 
     private var composerSurface: some View {

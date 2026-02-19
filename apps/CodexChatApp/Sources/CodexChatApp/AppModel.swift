@@ -16,12 +16,42 @@ final class AppModel: ObservableObject {
         case none
     }
 
+    enum OnboardingMode: Equatable {
+        case active
+        case inactive
+    }
+
+    enum OnboardingReason: Equatable {
+        case startup
+        case signedOut
+    }
+
     struct SkillListItem: Identifiable, Hashable {
         let skill: DiscoveredSkill
-        var isEnabledForProject: Bool
+        var enabledTargets: Set<SkillEnablementTarget>
+        var isEnabledForSelectedProject: Bool
+        var updateCapability: SkillUpdateCapability
+        var updateSource: String?
+        var updateInstaller: SkillInstallerKind?
 
         var id: String {
             skill.id
+        }
+
+        var isEnabledGlobally: Bool {
+            enabledTargets.contains(.global)
+        }
+
+        var isEnabledForGeneral: Bool {
+            enabledTargets.contains(.general)
+        }
+
+        var isEnabledForProjectTarget: Bool {
+            enabledTargets.contains(.project)
+        }
+
+        var isEnabledForProject: Bool {
+            isEnabledForSelectedProject
         }
     }
 
@@ -110,6 +140,7 @@ final class AppModel: ObservableObject {
         var projectID: UUID
         var projectPath: String
         var runtimeThreadID: String
+        var runtimeTurnID: String?
         var userText: String
         var assistantText: String
         var actions: [ActionCard]
@@ -123,17 +154,25 @@ final class AppModel: ObservableObject {
     @Published var conversationState: SurfaceState<[TranscriptEntry]> = .idle
     @Published var searchState: SurfaceState<[ChatSearchResult]> = .idle
     @Published var skillsState: SurfaceState<[SkillListItem]> = .idle
+    @Published var availableSkillsCatalogState: SurfaceState<[CatalogSkillListing]> = .idle
     @Published var modsState: SurfaceState<ModsSurfaceModel> = .idle
 
     @Published var selectedProjectID: UUID?
-    @Published var selectedThreadID: UUID?
+    @Published var selectedThreadID: UUID? {
+        didSet {
+            clearUnreadMarker(for: selectedThreadID)
+        }
+    }
+
     @Published var draftChatProjectID: UUID?
     @Published var detailDestination: DetailDestination = .none
+    @Published var onboardingMode: OnboardingMode = .inactive
     @Published var expandedProjectIDs: Set<UUID> = []
     @Published var showAllProjects: Bool = false
     @Published var composerText = ""
     @Published var searchQuery = ""
     @Published var selectedSkillIDForComposer: String?
+    @Published var skillEnablementTargetSelectionBySkillID: [String: SkillEnablementTarget] = [:]
     @Published var defaultModel = "gpt-5-codex"
     @Published var defaultReasoning: ReasoningLevel = .medium
     @Published var defaultWebSearch: ProjectWebSearchMode = .cached
@@ -184,6 +223,7 @@ final class AppModel: ObservableObject {
     @Published var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
     @Published var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
     @Published var followUpQueueByThreadID: [UUID: [FollowUpQueueItemRecord]] = [:]
+    @Published var unreadThreadIDs: Set<UUID> = []
     @Published var followUpStatusMessage: String?
     @Published var runtimeCapabilities: RuntimeCapabilities = .none
     @Published var isNodeSkillInstallerAvailable = false
@@ -211,6 +251,7 @@ final class AppModel: ObservableObject {
     let extensionAutomationStateRepository: (any ExtensionAutomationStateRepository)?
     let runtime: CodexRuntime?
     let skillCatalogService: SkillCatalogService
+    let skillCatalogProvider: any SkillCatalogProvider
     let modDiscoveryService: UIModDiscoveryService
     let modCatalogProvider: any ModCatalogProvider
     let keychainStore: APIKeychainStore
@@ -233,6 +274,7 @@ final class AppModel: ObservableObject {
     var activeModSnapshot: ModEditSafety.Snapshot?
     var runtimeEventTask: Task<Void, Never>?
     var runtimeAutoRecoveryTask: Task<Void, Never>?
+    var onboardingCompletionTask: Task<Void, Never>?
     var chatGPTLoginPollingTask: Task<Void, Never>?
     var pendingChatGPTLoginID: String?
     var searchTask: Task<Void, Never>?
@@ -259,6 +301,7 @@ final class AppModel: ObservableObject {
         runtime: CodexRuntime?,
         bootError: String?,
         skillCatalogService: SkillCatalogService = SkillCatalogService(),
+        skillCatalogProvider: any SkillCatalogProvider = EmptySkillCatalogProvider(),
         modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService(),
         modCatalogProvider: any ModCatalogProvider = EmptyModCatalogProvider(),
         voiceCaptureService: (any VoiceCaptureService)? = nil,
@@ -278,6 +321,7 @@ final class AppModel: ObservableObject {
         extensionAutomationStateRepository = repositories?.extensionAutomationStateRepository
         self.runtime = runtime
         self.skillCatalogService = skillCatalogService
+        self.skillCatalogProvider = skillCatalogProvider
         self.modDiscoveryService = modDiscoveryService
         self.modCatalogProvider = modCatalogProvider
         self.storagePaths = storagePaths
@@ -303,6 +347,7 @@ final class AppModel: ObservableObject {
             archivedThreadsState = .failed(bootError)
             conversationState = .failed(bootError)
             skillsState = .failed(bootError)
+            availableSkillsCatalogState = .failed(bootError)
             runtimeStatus = .error
             runtimeIssue = .recoverable(bootError)
             appendLog(.error, bootError)
@@ -320,6 +365,7 @@ final class AppModel: ObservableObject {
 
         runtimeEventTask?.cancel()
         runtimeAutoRecoveryTask?.cancel()
+        onboardingCompletionTask?.cancel()
         chatGPTLoginPollingTask?.cancel()
         searchTask?.cancel()
         followUpDrainTask?.cancel()
@@ -411,6 +457,16 @@ final class AppModel: ObservableObject {
         !accountState.requiresOpenAIAuth || accountState.account != nil
     }
 
+    var isOnboardingActive: Bool {
+        onboardingMode == .active
+    }
+
+    var isOnboardingReadyToComplete: Bool {
+        isSignedInForRuntime
+            && runtimeStatus == .connected
+            && runtimeIssue == nil
+    }
+
     var selectedProject: ProjectRecord? {
         guard let selectedProjectID else { return nil }
         return projects.first(where: { $0.id == selectedProjectID })
@@ -449,12 +505,12 @@ final class AppModel: ObservableObject {
     }
 
     var enabledSkillsForSelectedProject: [SkillListItem] {
-        skills.filter(\.isEnabledForProject)
+        skills.filter(\.isEnabledForSelectedProject)
     }
 
     var selectedSkillForComposer: SkillListItem? {
         guard let selectedSkillIDForComposer else { return nil }
-        return skills.first(where: { $0.id == selectedSkillIDForComposer })
+        return skills.first(where: { $0.id == selectedSkillIDForComposer && $0.isEnabledForSelectedProject })
     }
 
     var selectedThreadLogs: [ThreadLogEntry] {
@@ -497,10 +553,12 @@ final class AppModel: ObservableObject {
     func refreshAccountState(refreshToken: Bool = false) async throws {
         guard let runtime else {
             accountState = .signedOut
+            completeOnboardingIfReady()
             return
         }
 
         accountState = try await runtime.readAccount(refreshToken: refreshToken)
+        completeOnboardingIfReady()
     }
 
     func upsertProjectAPIKeyReferenceIfNeeded() async throws {
@@ -609,22 +667,75 @@ final class AppModel: ObservableObject {
         skillsState = .loading
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
-        let enabledPaths: Set<String> = if let selectedProjectID,
-                                           let projectSkillEnablementRepository
+        let selectedProjectID = selectedProjectID
+        let globalEnabledPaths: Set<String> = if let projectSkillEnablementRepository {
+            try await projectSkillEnablementRepository.enabledSkillPaths(target: .global, projectID: nil)
+        } else {
+            []
+        }
+        let generalEnabledPaths: Set<String> = if let projectSkillEnablementRepository {
+            try await projectSkillEnablementRepository.enabledSkillPaths(target: .general, projectID: nil)
+        } else {
+            []
+        }
+        let projectEnabledPaths: Set<String> = if let selectedProjectID,
+                                                  let projectSkillEnablementRepository
         {
-            try await projectSkillEnablementRepository.enabledSkillPaths(projectID: selectedProjectID)
+            try await projectSkillEnablementRepository.enabledSkillPaths(target: .project, projectID: selectedProjectID)
+        } else {
+            []
+        }
+        let resolvedEnabledPaths: Set<String> = if let projectSkillEnablementRepository {
+            try await projectSkillEnablementRepository.resolvedEnabledSkillPaths(
+                forProjectID: selectedProjectID,
+                generalProjectID: generalProject?.id
+            )
         } else {
             []
         }
 
         let items = discovered.map { skill in
-            SkillListItem(skill: skill, isEnabledForProject: enabledPaths.contains(skill.skillPath))
+            var enabledTargets = Set<SkillEnablementTarget>()
+            if globalEnabledPaths.contains(skill.skillPath) {
+                enabledTargets.insert(.global)
+            }
+            if generalEnabledPaths.contains(skill.skillPath) {
+                enabledTargets.insert(.general)
+            }
+            if projectEnabledPaths.contains(skill.skillPath) {
+                enabledTargets.insert(.project)
+            }
+
+            let updateCapability = skillCatalogService.updateCapability(for: skill)
+            let mappedCapability: SkillUpdateCapability = switch updateCapability.kind {
+            case .gitUpdate:
+                .gitUpdate
+            case .reinstall:
+                .reinstall
+            case .unavailable:
+                .unavailable
+            }
+
+            return SkillListItem(
+                skill: skill,
+                enabledTargets: enabledTargets,
+                isEnabledForSelectedProject: resolvedEnabledPaths.contains(skill.skillPath),
+                updateCapability: mappedCapability,
+                updateSource: updateCapability.source,
+                updateInstaller: updateCapability.installer
+            )
         }
 
         skillsState = .loaded(items)
 
+        let activeSkillIDs = Set(items.map(\.id))
+        skillEnablementTargetSelectionBySkillID = skillEnablementTargetSelectionBySkillID.filter { activeSkillIDs.contains($0.key) }
+        for item in items where skillEnablementTargetSelectionBySkillID[item.id] == nil {
+            skillEnablementTargetSelectionBySkillID[item.id] = selectedProjectID == nil ? .global : .project
+        }
+
         if let selectedSkillIDForComposer,
-           !items.contains(where: { $0.id == selectedSkillIDForComposer && $0.isEnabledForProject })
+           !items.contains(where: { $0.id == selectedSkillIDForComposer && $0.isEnabledForSelectedProject })
         {
             self.selectedSkillIDForComposer = nil
         }
@@ -665,5 +776,30 @@ final class AppModel: ObservableObject {
 
         let entries = transcriptStore[selectedThreadID, default: []]
         conversationState = .loaded(entries)
+    }
+
+    func isThreadWorking(_ threadID: UUID) -> Bool {
+        guard isTurnInProgress else {
+            return false
+        }
+        return activeTurnContext?.localThreadID == threadID
+    }
+
+    func isThreadUnread(_ threadID: UUID) -> Bool {
+        unreadThreadIDs.contains(threadID)
+    }
+
+    func markThreadUnreadIfNeeded(_ threadID: UUID) {
+        guard selectedThreadID != threadID else {
+            return
+        }
+        unreadThreadIDs.insert(threadID)
+    }
+
+    func clearUnreadMarker(for threadID: UUID?) {
+        guard let threadID else {
+            return
+        }
+        unreadThreadIDs.remove(threadID)
     }
 }

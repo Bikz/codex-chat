@@ -1,4 +1,6 @@
+import CodexChatCore
 import CodexMods
+import CodexSkills
 import Foundation
 
 enum SkillsModsPresentation {
@@ -28,6 +30,7 @@ enum SkillsModsPresentation {
     Inspector content comes from the active mod. Hidden by default, and opens automatically when new inspector output arrives.
     """
     static let inspectorToolbarEmptyHelp = "No active inspector mod. Install one in Skills & Mods > Mods."
+    static let skillsSectionDescription = "Installed skills are shown first. Available skills from skills.sh are listed below."
     static let modArchetypes: [ModArchetype] = [
         .init(title: "Theme Packs", detail: "Visual token overrides (`schemaVersion: 1/2`)."),
         .init(title: "Turn/Thread Hooks", detail: "Event-driven summaries and side effects."),
@@ -43,6 +46,93 @@ enum SkillsModsPresentation {
             item.skill.name.localizedCaseInsensitiveContains(trimmed)
                 || item.skill.description.localizedCaseInsensitiveContains(trimmed)
                 || item.skill.scope.rawValue.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    static func filteredCatalogSkills(_ items: [CatalogSkillListing], query: String) -> [CatalogSkillListing] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return items }
+
+        return items.filter { item in
+            item.name.localizedCaseInsensitiveContains(trimmed)
+                || item.summary?.localizedCaseInsensitiveContains(trimmed) == true
+                || item.repositoryURL?.localizedCaseInsensitiveContains(trimmed) == true
+        }
+    }
+
+    static func availableCatalogSkills(
+        from catalog: [CatalogSkillListing],
+        installedSkills: [AppModel.SkillListItem]
+    ) -> [CatalogSkillListing] {
+        let installedIDs = Set(installedSkills.compactMap { $0.skill.optionalMetadata["id"]?.lowercased() })
+        let installedRepos = Set(installedSkills.compactMap { ($0.skill.installMetadata?.source ?? $0.skill.sourceURL)?.lowercased() })
+        let installedNames = Set(installedSkills.map { $0.skill.name.lowercased() })
+
+        return catalog.filter { listing in
+            let listingID = listing.id.lowercased()
+            if installedIDs.contains(listingID) {
+                return false
+            }
+            if let repo = (listing.installSource ?? listing.repositoryURL)?.lowercased(),
+               installedRepos.contains(repo)
+            {
+                return false
+            }
+            if installedNames.contains(listing.name.lowercased()) {
+                return false
+            }
+            return true
+        }
+    }
+
+    static func updateActionLabel(for capability: SkillUpdateCapability) -> String {
+        switch capability {
+        case .gitUpdate:
+            "Update"
+        case .reinstall:
+            "Reinstall"
+        case .unavailable:
+            "Unavailable"
+        }
+    }
+
+    static func updateActionHelp(for capability: SkillUpdateCapability) -> String {
+        switch capability {
+        case .gitUpdate:
+            "Pull latest changes from git."
+        case .reinstall:
+            "Reinstall this skill from its install source."
+        case .unavailable:
+            "No source metadata available for update."
+        }
+    }
+
+    static func enabledTargetsSummary(for item: AppModel.SkillListItem, hasSelectedProject: Bool) -> String {
+        var labels: [String] = []
+        if item.isEnabledGlobally {
+            labels.append("Global")
+        }
+        if item.isEnabledForGeneral {
+            labels.append("General")
+        }
+        if item.isEnabledForProjectTarget {
+            labels.append(hasSelectedProject ? "Project (this)" : "Project")
+        }
+
+        guard !labels.isEmpty else {
+            return "Enabled in: None"
+        }
+        return "Enabled in: \(labels.joined(separator: ", "))"
+    }
+
+    static func scopeLabel(for target: SkillEnablementTarget) -> String {
+        switch target {
+        case .global:
+            "Global"
+        case .general:
+            "General"
+        case .project:
+            "Project"
         }
     }
 

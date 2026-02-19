@@ -29,13 +29,15 @@ The bar is production-quality, reliability-first software.
 ## Delivery Loop
 1. Clarify acceptance criteria and affected user journey.
 2. Implement in small increments.
-3. Run fast checks (`make quick`), then full checks (`pnpm -s run check`).
+3. Run fast checks (`make quick`), contributor smoke checks (`make oss-smoke`), then full checks (`pnpm -s run check`).
 4. Add/adjust tests for changed behavior.
 5. Update docs when behavior, architecture, or ops guidance changes.
 6. Commit atomically with clear scope in the message.
 
 ## Architecture Standards
 - Keep modules focused (`apps/`, `packages/` boundaries must remain clear).
+- `apps/CodexChatHost` is the canonical GUI entrypoint and release source.
+- `apps/CodexChatApp` houses `CodexChatShared` behavior and `CodexChatCLI` contributor tooling.
 - Prefer explicit data flow and small composable types over opaque abstraction layers.
 - Store app metadata in Infra repositories; keep UI logic in app layer.
 - Preserve two-pane IA and established design-system patterns.

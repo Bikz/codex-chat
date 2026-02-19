@@ -98,6 +98,40 @@ jobs:
       - name: Full checks
         run: make ci
 
+  pr-host-app-artifact:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-14
+    needs: fast-checks
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build unsigned host app
+        run: |
+          DERIVED_DATA="$RUNNER_TEMP/DerivedData"
+          xcodebuild \
+            -project apps/CodexChatHost/CodexChatHost.xcodeproj \
+            -scheme CodexChatHost \
+            -configuration Debug \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+          APP_PATH="$DERIVED_DATA/Build/Products/Debug/CodexChatHost.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "Expected host app not found: $APP_PATH" >&2
+            exit 1
+          fi
+
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$RUNNER_TEMP/CodexChatHost-unsigned.zip"
+
+      - name: Upload unsigned host app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodexChatHost-unsigned-pr
+          path: ${{ runner.temp }}/CodexChatHost-unsigned.zip
+
   release-dry-run:
     runs-on: macos-14
     needs: fast-checks

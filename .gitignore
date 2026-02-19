@@ -1,5 +1,8 @@
 # Private planning and memory docs
 docs/
+.agent/
+.agents/
+.factory/
 
 # macOS / Xcode / Swift
 .DS_Store
@@ -21,3 +24,12 @@ node_modules/
 # Logs and temp
 *.log
 .tmp/
+
+# Local editor and env
+.idea/
+.vscode/
+*.swp
+*.swo
+.env
+.env.local
+.env.*.local

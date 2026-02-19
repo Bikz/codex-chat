@@ -7,18 +7,6 @@ struct CodexConfigDocument: Hashable, Sendable {
     var fileHash: String
     var fileModifiedAt: Date?
 
-    init(
-        root: CodexConfigValue,
-        rawText: String,
-        fileHash: String,
-        fileModifiedAt: Date?
-    ) {
-        self.root = root
-        self.rawText = rawText
-        self.fileHash = fileHash
-        self.fileModifiedAt = fileModifiedAt
-    }
-
     static func empty() -> CodexConfigDocument {
         CodexConfigDocument(root: .object([:]), rawText: "", fileHash: "", fileModifiedAt: nil)
     }

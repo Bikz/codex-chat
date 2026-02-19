@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please keep requests focused and tied to a user journey.
+        Keep requests tied to a concrete user journey and architecture boundaries.
 
   - type: textarea
     id: problem
@@ -21,7 +21,7 @@ body:
     id: proposed
     attributes:
       label: Proposed solution
-      description: What do you think the solution should look like?
+      description: What should change?
       placeholder: Describe a concrete approach...
     validations:
       required: true
@@ -30,13 +30,14 @@ body:
     id: alternatives
     attributes:
       label: Alternatives considered
-      placeholder: Other approaches you considered...
+      placeholder: Other approaches considered...
 
   - type: checkboxes
     id: guardrails
     attributes:
       label: Guardrails
       options:
-        - label: This request preserves the two-pane default UI (no persistent third pane).
+        - label: Preserves two-pane default UI (no persistent third pane).
           required: true
-
+        - label: Fits host/CLI/shared module boundaries documented in `docs-public/ARCHITECTURE_CONTRACT.md`.
+          required: true

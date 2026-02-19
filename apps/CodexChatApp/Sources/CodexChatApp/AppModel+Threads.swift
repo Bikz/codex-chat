@@ -135,17 +135,34 @@ extension AppModel {
     }
 
     func selectThread(_ threadID: UUID?) {
+        selectedThreadID = threadID
+        if threadID != nil {
+            draftChatProjectID = nil
+            detailDestination = .thread
+        }
+        appendLog(.debug, "Selected thread: \(threadID?.uuidString ?? "none")")
+
         Task {
-            selectedThreadID = threadID
-            if threadID != nil {
-                draftChatProjectID = nil
-            }
-            if threadID != nil {
-                detailDestination = .thread
-            }
-            appendLog(.debug, "Selected thread: \(threadID?.uuidString ?? "none")")
             do {
+                let didAlignProject = await alignSelectedProjectToSelectedThreadIfNeeded(threadID: threadID)
+                guard selectedThreadID == threadID else {
+                    return
+                }
+
                 try await persistSelection()
+
+                if didAlignProject {
+                    do {
+                        try await refreshSkills()
+                        refreshModsSurface()
+                    } catch {
+                        appendLog(
+                            .warning,
+                            "Failed to refresh project-scoped surfaces after thread selection: \(error.localizedDescription)"
+                        )
+                    }
+                }
+
                 if let threadID {
                     try await refreshFollowUpQueue(threadID: threadID)
                     await rehydrateThreadTranscript(threadID: threadID)
@@ -156,6 +173,42 @@ extension AppModel {
                 conversationState = .failed(error.localizedDescription)
                 appendLog(.error, "Select thread failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private func alignSelectedProjectToSelectedThreadIfNeeded(threadID: UUID?) async -> Bool {
+        guard let threadID else {
+            return false
+        }
+
+        guard let resolvedProjectID = await projectIDForSelectedThread(threadID: threadID) else {
+            return false
+        }
+
+        guard selectedProjectID != resolvedProjectID else {
+            return false
+        }
+
+        selectedProjectID = resolvedProjectID
+        appendLog(.debug, "Aligned selected project to thread project: \(resolvedProjectID.uuidString)")
+        return true
+    }
+
+    private func projectIDForSelectedThread(threadID: UUID) async -> UUID? {
+        if let selected = (threads + generalThreads + archivedThreads).first(where: { $0.id == threadID }) {
+            return selected.projectId
+        }
+
+        guard let threadRepository else {
+            return nil
+        }
+
+        do {
+            let thread = try await threadRepository.getThread(id: threadID)
+            return thread?.projectId
+        } catch {
+            appendLog(.warning, "Failed to resolve project for selected thread \(threadID.uuidString): \(error.localizedDescription)")
+            return nil
         }
     }
 

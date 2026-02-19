@@ -484,7 +484,12 @@ final class CodexChatAppTests: XCTestCase {
         )
         XCTAssertTrue(
             model.shouldRetryWithoutTurnOptions(
-                CodexRuntimeError.rpcError(code: -32602, message: "Invalid reasoningEffort value")
+                CodexRuntimeError.rpcError(code: -32602, message: "Invalid effort value")
+            )
+        )
+        XCTAssertTrue(
+            model.shouldRetryWithoutTurnOptions(
+                CodexRuntimeError.rpcError(code: -32600, message: "unsupported value for reasoning.effort")
             )
         )
         XCTAssertFalse(
@@ -492,6 +497,47 @@ final class CodexChatAppTests: XCTestCase {
                 CodexRuntimeError.rpcError(code: -32601, message: "Unknown method")
             )
         )
+    }
+
+    @MainActor
+    func testUnreadThreadStateMarksOnRuntimeUpdatesAndClearsOnSelection() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let selectedThreadID = UUID()
+        let activeThreadID = UUID()
+
+        model.selectedThreadID = selectedThreadID
+        model.isTurnInProgress = true
+        model.activeTurnContext = AppModel.ActiveTurnContext(
+            localTurnID: UUID(),
+            localThreadID: activeThreadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "thr_active",
+            runtimeTurnID: "turn_active",
+            userText: "Start work",
+            assistantText: "",
+            actions: [],
+            startedAt: Date()
+        )
+
+        model.handleRuntimeEvent(.assistantMessageDelta(itemID: "msg_1", delta: "Working"))
+        XCTAssertTrue(model.isThreadUnread(activeThreadID))
+        XCTAssertTrue(model.isThreadWorking(activeThreadID))
+        XCTAssertFalse(model.isThreadUnread(selectedThreadID))
+
+        model.handleRuntimeEvent(
+            .turnCompleted(
+                RuntimeTurnCompletion(
+                    turnID: "turn_active",
+                    status: "completed",
+                    errorMessage: nil
+                )
+            )
+        )
+        XCTAssertTrue(model.isThreadUnread(activeThreadID))
+
+        model.selectedThreadID = activeThreadID
+        XCTAssertFalse(model.isThreadUnread(activeThreadID))
     }
 
     func testMemoryAutoSummaryFormattingRespectsMode() {
@@ -911,6 +957,142 @@ final class CodexChatAppTests: XCTestCase {
                 && model.draftChatProjectID == generalID
                 && model.detailDestination == .thread
         }
+    }
+
+    @MainActor
+    func testLoadInitialDataEntersOnboardingWhenRuntimeIsUnavailable() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-onboarding-startup-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil, storagePaths: paths)
+
+        await model.loadInitialData()
+
+        XCTAssertTrue(model.isOnboardingActive)
+        XCTAssertEqual(model.detailDestination, .none)
+    }
+
+    @MainActor
+    func testCompleteOnboardingActivatesGeneralDraftWithoutPersistingThread() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-onboarding-complete-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil, storagePaths: paths)
+
+        model.onboardingMode = .active
+        model.runtimeStatus = .connected
+        model.runtimeIssue = nil
+        model.accountState = RuntimeAccountState(account: nil, authMode: .unknown, requiresOpenAIAuth: false)
+
+        model.completeOnboardingIfReady()
+
+        try await waitUntil {
+            !model.isOnboardingActive
+                && model.generalProject != nil
+                && model.selectedProjectID == model.generalProject?.id
+                && model.draftChatProjectID == model.generalProject?.id
+                && model.selectedThreadID == nil
+                && model.detailDestination == .thread
+        }
+
+        let generalID = try XCTUnwrap(model.generalProject?.id)
+        let persistedGeneralThreads = try await repositories.threadRepository.listThreads(projectID: generalID)
+        XCTAssertTrue(persistedGeneralThreads.isEmpty)
+    }
+
+    @MainActor
+    func testEnterOnboardingFromSignedOutResetsThreadSelection() {
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil
+        )
+
+        model.onboardingMode = .inactive
+        model.selectedProjectID = UUID()
+        model.selectedThreadID = UUID()
+        model.draftChatProjectID = UUID()
+        model.detailDestination = .thread
+
+        model.enterOnboarding(reason: .signedOut)
+
+        XCTAssertTrue(model.isOnboardingActive)
+        XCTAssertNil(model.selectedThreadID)
+        XCTAssertNil(model.draftChatProjectID)
+        XCTAssertEqual(model.detailDestination, .none)
+    }
+
+    @MainActor
+    func testRuntimeTerminationDoesNotForceOnboardingWhenInactive() {
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil
+        )
+
+        model.onboardingMode = .inactive
+        model.runtimeStatus = .connected
+        model.runtimeIssue = nil
+
+        model.handleRuntimeTermination(detail: "Simulated runtime stop")
+
+        XCTAssertFalse(model.isOnboardingActive)
+    }
+
+    @MainActor
+    func testSelectingGeneralThreadSwitchesSelectedProjectAndPersistsSelection() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-general-thread-selection-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Work Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        try await model.ensureGeneralProject()
+        try await model.refreshProjects()
+
+        let generalID = try XCTUnwrap(model.generalProject?.id)
+        let generalThread = try await repositories.threadRepository.createThread(
+            projectID: generalID,
+            title: "General existing thread"
+        )
+        try await model.refreshGeneralThreads(generalProjectID: generalID)
+
+        model.selectedProjectID = project.id
+        try await model.refreshThreads()
+
+        model.selectThread(generalThread.id)
+
+        try await waitUntil(timeout: 8.0) {
+            model.selectedProjectID == generalID
+                && model.selectedThreadID == generalThread.id
+        }
+
+        let persistedProjectID = try await repositories.preferenceRepository.getPreference(key: .lastOpenedProjectID)
+        let persistedThreadID = try await repositories.preferenceRepository.getPreference(key: .lastOpenedThreadID)
+        XCTAssertEqual(persistedProjectID, generalID.uuidString)
+        XCTAssertEqual(persistedThreadID, generalThread.id.uuidString)
+        XCTAssertFalse(model.isProjectSidebarVisuallySelected(project.id))
     }
 
     func testAutoTitleFromFirstTurnPrefersAssistantAndCleansPreamble() {

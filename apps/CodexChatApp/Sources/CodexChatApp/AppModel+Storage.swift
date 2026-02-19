@@ -144,14 +144,13 @@ extension AppModel {
                     _ = try await projectRepository.updateProjectUIModPath(id: project.id, uiModPath: rewrittenModPath)
                 }
             }
+        }
 
-            if let projectSkillEnablementRepository {
-                try await projectSkillEnablementRepository.rewriteSkillPaths(
-                    projectID: project.id,
-                    fromRootPath: oldRootPath,
-                    toRootPath: newRootPath
-                )
-            }
+        if let projectSkillEnablementRepository {
+            try await projectSkillEnablementRepository.rewriteSkillPaths(
+                fromRootPath: oldRootPath,
+                toRootPath: newRootPath
+            )
         }
 
         if let preferenceRepository {

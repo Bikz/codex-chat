@@ -25,15 +25,14 @@ CodexChat is a local-first macOS SwiftUI chat app that integrates the local Code
 ## Setup
 
 ```sh
-corepack enable
-pnpm install
-brew install swiftformat swiftlint gitleaks
+bash scripts/bootstrap.sh
 ```
 
 ## Validation
 
 ```sh
 make quick
+make oss-smoke
 pnpm -s run check
 ```
 
@@ -54,6 +53,14 @@ cd apps/CodexChatApp
 swift run CodexChatCLI doctor
 swift run CodexChatCLI smoke
 swift run CodexChatCLI repro --fixture basic-turn
+```
+
+Use `CodexChatCLI` explicitly for contributor tooling; host app remains the only canonical GUI run path.
+
+One-command contributor smoke path:
+
+```sh
+make oss-smoke
 ```
 
 ## Docs

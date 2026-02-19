@@ -119,6 +119,261 @@ final class CodexSkillsTests: XCTestCase {
         XCTAssertNotEqual(URL(fileURLWithPath: result.installedPath).lastPathComponent, ".")
     }
 
+    func testRemoteJSONSkillCatalogProviderParsesDirectAndWrappedPayloads() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-catalog-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let directURL = root.appendingPathComponent("direct.json", isDirectory: false)
+        try """
+        [
+          {
+            "id": "skill.browser",
+            "name": "Agent Browser",
+            "summary": "Automate browser workflows",
+            "repositoryURL": "https://github.com/example/agent-browser",
+            "installSource": "https://github.com/example/agent-browser.git",
+            "rank": 0.9
+          }
+        ]
+        """.write(to: directURL, atomically: true, encoding: .utf8)
+
+        let wrappedURL = root.appendingPathComponent("wrapped.json", isDirectory: false)
+        try """
+        {
+          "skills": [
+            {
+              "id": "skill.docs",
+              "name": "OpenAI Docs",
+              "summary": "Find OpenAI docs",
+              "repositoryURL": "https://github.com/example/openai-docs",
+              "installSource": "https://github.com/example/openai-docs.git",
+              "rank": 0.7
+            }
+          ]
+        }
+        """.write(to: wrappedURL, atomically: true, encoding: .utf8)
+
+        let directProvider = RemoteJSONSkillCatalogProvider(indexURL: directURL)
+        let wrappedProvider = RemoteJSONSkillCatalogProvider(indexURL: wrappedURL)
+
+        let direct = try await directProvider.listAvailableSkills()
+        let wrapped = try await wrappedProvider.listAvailableSkills()
+
+        XCTAssertEqual(direct.count, 1)
+        XCTAssertEqual(direct.first?.id, "skill.browser")
+        XCTAssertEqual(wrapped.count, 1)
+        XCTAssertEqual(wrapped.first?.id, "skill.docs")
+    }
+
+    func testUpdateCapabilityClassification() {
+        let service = SkillCatalogService(processRunner: { _, _ in "" })
+
+        let gitSkill = DiscoveredSkill(
+            name: "git-skill",
+            description: "Git backed",
+            scope: .global,
+            skillPath: "/tmp/skills/git-skill",
+            skillDefinitionPath: "/tmp/skills/git-skill/SKILL.md",
+            hasScripts: false,
+            sourceURL: "https://github.com/example/git-skill.git",
+            optionalMetadata: [:],
+            installMetadata: nil,
+            isGitRepository: true
+        )
+        let gitCapability = service.updateCapability(for: gitSkill)
+        XCTAssertEqual(gitCapability.kind, .gitUpdate)
+
+        let reinstallSkill = DiscoveredSkill(
+            name: "reinstall-skill",
+            description: "Reinstall supported",
+            scope: .global,
+            skillPath: "/tmp/skills/reinstall-skill",
+            skillDefinitionPath: "/tmp/skills/reinstall-skill/SKILL.md",
+            hasScripts: false,
+            sourceURL: nil,
+            optionalMetadata: [:],
+            installMetadata: SkillInstallMetadata(
+                source: "https://github.com/example/reinstall.git",
+                installer: .npx
+            ),
+            isGitRepository: false
+        )
+        let reinstallCapability = service.updateCapability(for: reinstallSkill)
+        XCTAssertEqual(reinstallCapability.kind, .reinstall)
+        XCTAssertEqual(reinstallCapability.installer, .npx)
+
+        let unavailable = DiscoveredSkill(
+            name: "unavailable-skill",
+            description: "No metadata",
+            scope: .global,
+            skillPath: "/tmp/skills/unavailable-skill",
+            skillDefinitionPath: "/tmp/skills/unavailable-skill/SKILL.md",
+            hasScripts: false,
+            sourceURL: nil,
+            optionalMetadata: [:],
+            installMetadata: nil,
+            isGitRepository: false
+        )
+        let unavailableCapability = service.updateCapability(for: unavailable)
+        XCTAssertEqual(unavailableCapability.kind, .unavailable)
+    }
+
+    func testNpxInstallInfersInstalledDirectoryAndWritesMetadata() throws {
+        final class RunnerState: @unchecked Sendable {
+            private let lock = NSLock()
+            var installRoot: String?
+
+            func setInstallRoot(_ path: String) {
+                lock.lock()
+                installRoot = path
+                lock.unlock()
+            }
+
+            func getInstallRoot() -> String? {
+                lock.lock()
+                defer { lock.unlock() }
+                return installRoot
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-npx-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let state = RunnerState()
+        let source = "https://github.com/example/my-skill.git"
+        let expectedName = "my-skill"
+
+        let service = SkillCatalogService(
+            codexHomeURL: codexHome,
+            agentsHomeURL: root.appendingPathComponent(".agents", isDirectory: true),
+            processRunner: { argv, cwd in
+                if argv == ["npx", "--version"] {
+                    return "10.0.0"
+                }
+                if argv == ["npx", "skills", "add", source], let cwd {
+                    state.setInstallRoot(cwd)
+                    let installed = URL(fileURLWithPath: cwd, isDirectory: true)
+                        .appendingPathComponent(expectedName, isDirectory: true)
+                    try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+                    try "# My Skill".write(
+                        to: installed.appendingPathComponent("SKILL.md", isDirectory: false),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    return "installed"
+                }
+                return ""
+            }
+        )
+
+        let result = try service.installSkill(
+            SkillInstallRequest(
+                source: source,
+                scope: .global,
+                projectPath: nil,
+                installer: .npx
+            )
+        )
+
+        XCTAssertEqual(result.installedPath, try URL(fileURLWithPath: XCTUnwrap(state.getInstallRoot()), isDirectory: true).appendingPathComponent(expectedName, isDirectory: true).path)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: URL(fileURLWithPath: result.installedPath, isDirectory: true)
+                    .appendingPathComponent(".codexchat-install.json", isDirectory: false).path
+            )
+        )
+    }
+
+    func testReinstallRollsBackWhenAtomicReplaceFailsMidSwap() throws {
+        final class FailingSecondMoveFileManager: FileManager, @unchecked Sendable {
+            private let lock = NSLock()
+            private var moveCount = 0
+            let failDestinationLastPathComponent: String
+
+            init(failDestinationLastPathComponent: String) {
+                self.failDestinationLastPathComponent = failDestinationLastPathComponent
+                super.init()
+            }
+
+            override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+                lock.lock()
+                moveCount += 1
+                let currentMoveCount = moveCount
+                lock.unlock()
+
+                if currentMoveCount == 2, dstURL.lastPathComponent == failDestinationLastPathComponent {
+                    throw NSError(
+                        domain: "CodexSkillsTests",
+                        code: 42,
+                        userInfo: [NSLocalizedDescriptionKey: "Injected swap failure"]
+                    )
+                }
+
+                try super.moveItem(at: srcURL, to: dstURL)
+            }
+        }
+
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-reinstall-rollback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let codexHome = base.appendingPathComponent(".codex", isDirectory: true)
+        let skillDirectory = codexHome.appendingPathComponent("skills/rollback-skill", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
+        try "old-content".write(
+            to: skillDirectory.appendingPathComponent("SKILL.md", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let fileManager = FailingSecondMoveFileManager(failDestinationLastPathComponent: "rollback-skill")
+        let source = "https://github.com/example/rollback-skill.git"
+        let service = SkillCatalogService(
+            fileManager: fileManager,
+            codexHomeURL: codexHome,
+            agentsHomeURL: base.appendingPathComponent(".agents", isDirectory: true),
+            processRunner: { argv, _ in
+                if argv.count >= 6, argv[0] == "git", argv[1] == "clone", argv[4] == source {
+                    let destination = URL(fileURLWithPath: argv[5], isDirectory: true)
+                    try "# New Skill\n".write(
+                        to: destination.appendingPathComponent("SKILL.md", isDirectory: false),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    return "cloned"
+                }
+                return ""
+            }
+        )
+
+        let discovered = DiscoveredSkill(
+            name: "rollback-skill",
+            description: "test",
+            scope: .global,
+            skillPath: skillDirectory.path,
+            skillDefinitionPath: skillDirectory.appendingPathComponent("SKILL.md", isDirectory: false).path,
+            hasScripts: false,
+            sourceURL: nil,
+            optionalMetadata: [:],
+            installMetadata: SkillInstallMetadata(source: source, installer: .git),
+            isGitRepository: false
+        )
+
+        XCTAssertThrowsError(try service.reinstallSkill(discovered))
+
+        let restoredContent = try String(
+            contentsOf: skillDirectory.appendingPathComponent("SKILL.md", isDirectory: false),
+            encoding: .utf8
+        )
+        XCTAssertEqual(restoredContent, "old-content")
+    }
+
     private func createSkill(at directoryURL: URL, body: String, includeScripts: Bool = false) throws {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let skillFile = directoryURL.appendingPathComponent("SKILL.md", isDirectory: false)

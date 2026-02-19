@@ -63,6 +63,18 @@ public enum SkillInstallScope: String, CaseIterable, Hashable, Sendable, Codable
     case global
 }
 
+public enum SkillEnablementTarget: String, CaseIterable, Hashable, Sendable, Codable {
+    case global
+    case general
+    case project
+}
+
+public enum SkillUpdateCapability: String, CaseIterable, Hashable, Sendable, Codable {
+    case gitUpdate
+    case reinstall
+    case unavailable
+}
+
 public struct ProjectSkillEnablementRecord: Hashable, Sendable, Codable {
     public let projectID: UUID
     public let skillPath: String

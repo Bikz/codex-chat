@@ -10,6 +10,132 @@ public enum SkillInstallerKind: String, CaseIterable, Hashable, Sendable, Codabl
     case npx
 }
 
+public enum SkillUpdateCapabilityKind: String, CaseIterable, Hashable, Sendable, Codable {
+    case gitUpdate
+    case reinstall
+    case unavailable
+}
+
+public struct SkillInstallMetadata: Hashable, Sendable, Codable {
+    public let source: String
+    public let installer: SkillInstallerKind
+    public let installedAt: Date?
+    public let updatedAt: Date?
+
+    public init(source: String, installer: SkillInstallerKind, installedAt: Date? = nil, updatedAt: Date? = nil) {
+        self.source = source
+        self.installer = installer
+        self.installedAt = installedAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public struct SkillUpdateCapabilityResult: Hashable, Sendable {
+    public let kind: SkillUpdateCapabilityKind
+    public let source: String?
+    public let installer: SkillInstallerKind?
+
+    public init(kind: SkillUpdateCapabilityKind, source: String?, installer: SkillInstallerKind?) {
+        self.kind = kind
+        self.source = source
+        self.installer = installer
+    }
+}
+
+public struct CatalogSkillListing: Hashable, Sendable, Codable, Identifiable {
+    public let id: String
+    public let name: String
+    public let summary: String?
+    public let repositoryURL: String?
+    public let installSource: String?
+    public let rank: Double?
+
+    public init(
+        id: String,
+        name: String,
+        summary: String? = nil,
+        repositoryURL: String? = nil,
+        installSource: String? = nil,
+        rank: Double? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.summary = summary
+        self.repositoryURL = repositoryURL
+        self.installSource = installSource
+        self.rank = rank
+    }
+}
+
+public protocol SkillCatalogProvider: Sendable {
+    func listAvailableSkills() async throws -> [CatalogSkillListing]
+}
+
+public struct EmptySkillCatalogProvider: SkillCatalogProvider {
+    public init() {}
+
+    public func listAvailableSkills() async throws -> [CatalogSkillListing] {
+        []
+    }
+}
+
+public struct RemoteJSONSkillCatalogProvider: SkillCatalogProvider {
+    public static let defaultIndexURL = URL(string: "https://skills.sh/index.json")!
+
+    public let indexURL: URL
+    public let urlSession: URLSession
+
+    private struct WrappedIndex: Codable {
+        var skills: [CatalogSkillListing]
+    }
+
+    public init(indexURL: URL = RemoteJSONSkillCatalogProvider.defaultIndexURL, urlSession: URLSession = .shared) {
+        self.indexURL = indexURL
+        self.urlSession = urlSession
+    }
+
+    public func listAvailableSkills() async throws -> [CatalogSkillListing] {
+        let (data, response) = try await urlSession.data(from: indexURL)
+        if let response = response as? HTTPURLResponse,
+           !(200 ... 299).contains(response.statusCode)
+        {
+            throw NSError(
+                domain: "CodexSkills.RemoteCatalog",
+                code: response.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Catalog request failed with status \(response.statusCode)."]
+            )
+        }
+
+        let decoder = JSONDecoder()
+        let listings: [CatalogSkillListing]
+        do {
+            listings = try decoder.decode([CatalogSkillListing].self, from: data)
+        } catch {
+            do {
+                listings = try decoder.decode(WrappedIndex.self, from: data).skills
+            } catch {
+                throw NSError(
+                    domain: "CodexSkills.RemoteCatalog",
+                    code: -1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Catalog payload could not be decoded.",
+                        NSUnderlyingErrorKey: error,
+                    ]
+                )
+            }
+        }
+
+        return listings.sorted {
+            let lhs = $0.rank ?? -Double.greatestFiniteMagnitude
+            let rhs = $1.rank ?? -Double.greatestFiniteMagnitude
+            if lhs == rhs {
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+            return lhs > rhs
+        }
+    }
+}
+
 public struct DiscoveredSkill: Identifiable, Hashable, Sendable, Codable {
     public let id: String
     public let name: String
@@ -20,6 +146,8 @@ public struct DiscoveredSkill: Identifiable, Hashable, Sendable, Codable {
     public let hasScripts: Bool
     public let sourceURL: String?
     public let optionalMetadata: [String: String]
+    public let installMetadata: SkillInstallMetadata?
+    public let isGitRepository: Bool
 
     public init(
         name: String,
@@ -29,7 +157,9 @@ public struct DiscoveredSkill: Identifiable, Hashable, Sendable, Codable {
         skillDefinitionPath: String,
         hasScripts: Bool,
         sourceURL: String?,
-        optionalMetadata: [String: String]
+        optionalMetadata: [String: String],
+        installMetadata: SkillInstallMetadata? = nil,
+        isGitRepository: Bool = false
     ) {
         id = skillPath
         self.name = name
@@ -40,6 +170,8 @@ public struct DiscoveredSkill: Identifiable, Hashable, Sendable, Codable {
         self.hasScripts = hasScripts
         self.sourceURL = sourceURL
         self.optionalMetadata = optionalMetadata
+        self.installMetadata = installMetadata
+        self.isGitRepository = isGitRepository
     }
 }
 
@@ -79,8 +211,11 @@ public enum SkillCatalogError: LocalizedError, Sendable {
     case invalidSource(String)
     case projectPathRequired
     case installTargetExists(String)
+    case installPathUnresolved(String)
     case nodeUnavailable
     case nonGitSkill(String)
+    case installMetadataMissing(String)
+    case reinstallSourceMissing(String)
     case commandFailed(command: String, output: String)
 
     public var errorDescription: String? {
@@ -91,10 +226,16 @@ public enum SkillCatalogError: LocalizedError, Sendable {
             "Project path is required for project-scoped skill installation."
         case let .installTargetExists(path):
             "Skill destination already exists: \(path)"
+        case let .installPathUnresolved(path):
+            "Skill install path could not be determined under \(path)."
         case .nodeUnavailable:
             "Node/npx is unavailable on PATH for npx installer."
         case let .nonGitSkill(path):
             "Skill is not a git repository and cannot be updated: \(path)"
+        case let .installMetadataMissing(path):
+            "Skill install metadata is missing: \(path)"
+        case let .reinstallSourceMissing(path):
+            "Skill reinstall source is unavailable: \(path)"
         case let .commandFailed(command, output):
             "Skill command failed (\(command)): \(output)"
         }
@@ -108,6 +249,13 @@ public final class SkillCatalogService: @unchecked Sendable {
         let name: String
         let description: String
         let optionalMetadata: [String: String]
+    }
+
+    private struct InstallMetadataPayload: Codable {
+        let source: String
+        let installer: SkillInstallerKind
+        let installedAt: Date
+        let updatedAt: Date?
     }
 
     private let fileManager: FileManager
@@ -151,7 +299,9 @@ public final class SkillCatalogService: @unchecked Sendable {
 
                 let metadata = try parseSkillMetadata(at: entry)
                 let hasScripts = directoryExists(skillDirectory.appendingPathComponent("scripts", isDirectory: true).path)
+                let isGitRepository = directoryExists(skillDirectory.appendingPathComponent(".git", isDirectory: true).path)
                 let sourceURL = try? gitRemoteURL(for: skillDirectory.path)
+                let installMetadata = try? readInstallMetadata(at: skillDirectory)
 
                 let skill = DiscoveredSkill(
                     name: metadata.name,
@@ -161,7 +311,9 @@ public final class SkillCatalogService: @unchecked Sendable {
                     skillDefinitionPath: entry.standardizedFileURL.path,
                     hasScripts: hasScripts,
                     sourceURL: sourceURL,
-                    optionalMetadata: metadata.optionalMetadata
+                    optionalMetadata: metadata.optionalMetadata,
+                    installMetadata: installMetadata,
+                    isGitRepository: isGitRepository
                 )
                 skillsByPath[standardizedPath] = skill
             }
@@ -199,14 +351,34 @@ public final class SkillCatalogService: @unchecked Sendable {
                 ["git", "clone", "--depth", "1", source, destination.path],
                 nil
             )
+            if directoryExists(destination.path) {
+                try? writeInstallMetadata(
+                    at: destination,
+                    metadata: SkillInstallMetadata(source: source, installer: .git, installedAt: Date(), updatedAt: Date())
+                )
+            }
             return SkillInstallResult(installedPath: destination.path, output: output)
 
         case .npx:
             guard isNodeInstallerAvailable() else {
                 throw SkillCatalogError.nodeUnavailable
             }
+            let before = directoryChildren(in: root)
             let output = try processRunner(["npx", "skills", "add", source], root.path)
-            return SkillInstallResult(installedPath: root.path, output: output)
+            let after = directoryChildren(in: root)
+            guard let installedPath = inferInstalledPath(
+                source: source,
+                root: root,
+                beforeDirectories: before,
+                afterDirectories: after
+            ) else {
+                throw SkillCatalogError.installPathUnresolved(root.path)
+            }
+            try? writeInstallMetadata(
+                at: URL(fileURLWithPath: installedPath, isDirectory: true),
+                metadata: SkillInstallMetadata(source: source, installer: .npx, installedAt: Date(), updatedAt: Date())
+            )
+            return SkillInstallResult(installedPath: installedPath, output: output)
         }
     }
 
@@ -220,7 +392,89 @@ public final class SkillCatalogService: @unchecked Sendable {
         }
 
         let output = try processRunner(["git", "-C", path, "pull", "--ff-only"], nil)
+        if var metadata = try? readInstallMetadata(at: URL(fileURLWithPath: path, isDirectory: true)) {
+            metadata = SkillInstallMetadata(
+                source: metadata.source,
+                installer: metadata.installer,
+                installedAt: metadata.installedAt,
+                updatedAt: Date()
+            )
+            try? writeInstallMetadata(at: URL(fileURLWithPath: path, isDirectory: true), metadata: metadata)
+        }
         return SkillUpdateResult(output: output)
+    }
+
+    public func reinstallSkill(_ skill: DiscoveredSkill) throws -> SkillInstallResult {
+        let capability = updateCapability(for: skill)
+        guard capability.kind == .reinstall, let source = capability.source, let installer = capability.installer else {
+            throw SkillCatalogError.reinstallSourceMissing(skill.skillPath)
+        }
+
+        let skillURL = URL(fileURLWithPath: skill.skillPath, isDirectory: true)
+        let parent = skillURL.deletingLastPathComponent()
+
+        switch installer {
+        case .git:
+            let stagingURL = try createStagingDirectory(in: parent)
+            defer { try? fileManager.removeItem(at: stagingURL) }
+
+            let output = try processRunner(["git", "clone", "--depth", "1", source, stagingURL.path], nil)
+            try writeInstallMetadata(
+                at: stagingURL,
+                metadata: SkillInstallMetadata(source: source, installer: .git, installedAt: Date(), updatedAt: Date())
+            )
+            try replaceDirectoryAtomically(existingURL: skillURL, replacementURL: stagingURL)
+            return SkillInstallResult(installedPath: skillURL.path, output: output)
+
+        case .npx:
+            guard isNodeInstallerAvailable() else {
+                throw SkillCatalogError.nodeUnavailable
+            }
+
+            let stagingRootURL = try createStagingDirectory(in: parent)
+            defer { try? fileManager.removeItem(at: stagingRootURL) }
+
+            let before = directoryChildren(in: stagingRootURL)
+            let output = try processRunner(["npx", "skills", "add", source], stagingRootURL.path)
+            let after = directoryChildren(in: stagingRootURL)
+            guard let installedPath = inferInstalledPath(
+                source: source,
+                root: stagingRootURL,
+                beforeDirectories: before,
+                afterDirectories: after
+            ) else {
+                throw SkillCatalogError.installPathUnresolved(stagingRootURL.path)
+            }
+
+            let installedURL = URL(fileURLWithPath: installedPath, isDirectory: true)
+            try writeInstallMetadata(
+                at: installedURL,
+                metadata: SkillInstallMetadata(source: source, installer: .npx, installedAt: Date(), updatedAt: Date())
+            )
+            try replaceDirectoryAtomically(existingURL: skillURL, replacementURL: installedURL)
+
+            return SkillInstallResult(installedPath: skillURL.path, output: output)
+        }
+    }
+
+    public func updateCapability(for skill: DiscoveredSkill) -> SkillUpdateCapabilityResult {
+        if skill.isGitRepository {
+            return SkillUpdateCapabilityResult(kind: .gitUpdate, source: skill.sourceURL, installer: .git)
+        }
+
+        if let metadata = skill.installMetadata,
+           !metadata.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return SkillUpdateCapabilityResult(kind: .reinstall, source: metadata.source, installer: metadata.installer)
+        }
+
+        if let sourceURL = skill.sourceURL,
+           !sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return SkillUpdateCapabilityResult(kind: .reinstall, source: sourceURL, installer: .git)
+        }
+
+        return SkillUpdateCapabilityResult(kind: .unavailable, source: nil, installer: nil)
     }
 
     public func isNodeInstallerAvailable() -> Bool {
@@ -396,6 +650,137 @@ public final class SkillCatalogService: @unchecked Sendable {
         var isDirectory: ObjCBool = false
         let exists = fileManager.fileExists(atPath: path, isDirectory: &isDirectory)
         return exists && isDirectory.boolValue
+    }
+
+    private func directoryChildren(in root: URL) -> Set<String> {
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        var names: Set<String> = []
+        for url in urls {
+            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]), values.isDirectory == true else {
+                continue
+            }
+            names.insert(url.lastPathComponent)
+        }
+        return names
+    }
+
+    private func createStagingDirectory(in parent: URL) throws -> URL {
+        let directory = parent.appendingPathComponent(".codexchat-skill-stage-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private func replaceDirectoryAtomically(existingURL: URL, replacementURL: URL) throws {
+        let normalizedExistingPath = existingURL.standardizedFileURL.path
+        let normalizedReplacementPath = replacementURL.standardizedFileURL.path
+        guard normalizedExistingPath != normalizedReplacementPath else { return }
+
+        let parentURL = existingURL.deletingLastPathComponent()
+        let backupURL = parentURL.appendingPathComponent(".\(existingURL.lastPathComponent).backup-\(UUID().uuidString)", isDirectory: true)
+        let hasExisting = fileManager.fileExists(atPath: existingURL.path)
+        if hasExisting {
+            try fileManager.moveItem(at: existingURL, to: backupURL)
+        }
+
+        do {
+            try fileManager.moveItem(at: replacementURL, to: existingURL)
+            if fileManager.fileExists(atPath: backupURL.path) {
+                try fileManager.removeItem(at: backupURL)
+            }
+        } catch {
+            if fileManager.fileExists(atPath: existingURL.path) {
+                try? fileManager.removeItem(at: existingURL)
+            }
+            if fileManager.fileExists(atPath: backupURL.path) {
+                try? fileManager.moveItem(at: backupURL, to: existingURL)
+            }
+            throw error
+        }
+    }
+
+    private func inferInstalledPath(
+        source: String,
+        root: URL,
+        beforeDirectories: Set<String>,
+        afterDirectories: Set<String>
+    ) -> String? {
+        let added = afterDirectories.subtracting(beforeDirectories)
+
+        let addedWithSkillFile = added.compactMap { name -> String? in
+            let candidateURL = root.appendingPathComponent(name, isDirectory: true)
+            let skillFileURL = candidateURL.appendingPathComponent("SKILL.md", isDirectory: false)
+            return fileManager.fileExists(atPath: skillFileURL.path) ? candidateURL.path : nil
+        }
+        if addedWithSkillFile.count == 1 {
+            return addedWithSkillFile[0]
+        }
+
+        if added.count == 1, let only = added.first {
+            let candidateURL = root.appendingPathComponent(only, isDirectory: true)
+            return candidateURL.path
+        }
+
+        let preferred = Self.destinationName(from: source)
+        if afterDirectories.contains(preferred) {
+            return root.appendingPathComponent(preferred, isDirectory: true).path
+        }
+
+        let fallbackName = URL(string: source)?.lastPathComponent
+            ?? source.split(separator: "/").last.map(String.init)
+        if let fallbackName,
+           afterDirectories.contains(fallbackName)
+        {
+            return root.appendingPathComponent(fallbackName, isDirectory: true).path
+        }
+
+        let rootSkillDefinitionURL = root.appendingPathComponent("SKILL.md", isDirectory: false)
+        if fileManager.fileExists(atPath: rootSkillDefinitionURL.path) {
+            return root.path
+        }
+
+        return nil
+    }
+
+    private func installMetadataURL(for skillDirectory: URL) -> URL {
+        skillDirectory.appendingPathComponent(".codexchat-install.json", isDirectory: false)
+    }
+
+    private func writeInstallMetadata(at skillDirectory: URL, metadata: SkillInstallMetadata) throws {
+        let payload = InstallMetadataPayload(
+            source: metadata.source,
+            installer: metadata.installer,
+            installedAt: metadata.installedAt ?? Date(),
+            updatedAt: metadata.updatedAt
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(payload)
+        try data.write(to: installMetadataURL(for: skillDirectory), options: [.atomic])
+    }
+
+    private func readInstallMetadata(at skillDirectory: URL) throws -> SkillInstallMetadata {
+        let url = installMetadataURL(for: skillDirectory)
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw SkillCatalogError.installMetadataMissing(skillDirectory.path)
+        }
+
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let payload = try decoder.decode(InstallMetadataPayload.self, from: data)
+        return SkillInstallMetadata(
+            source: payload.source,
+            installer: payload.installer,
+            installedAt: payload.installedAt,
+            updatedAt: payload.updatedAt
+        )
     }
 
     public static func defaultProcessRunner(_ argv: [String], _ cwd: String?) throws -> String {

@@ -67,6 +67,12 @@ public protocol ProjectSecretRepository: Sendable {
 }
 
 public protocol ProjectSkillEnablementRepository: Sendable {
+    func setSkillEnabled(target: SkillEnablementTarget, projectID: UUID?, skillPath: String, enabled: Bool) async throws
+    func isSkillEnabled(target: SkillEnablementTarget, projectID: UUID?, skillPath: String) async throws -> Bool
+    func enabledSkillPaths(target: SkillEnablementTarget, projectID: UUID?) async throws -> Set<String>
+    func resolvedEnabledSkillPaths(forProjectID projectID: UUID?, generalProjectID: UUID?) async throws -> Set<String>
+    func rewriteSkillPaths(fromRootPath: String, toRootPath: String) async throws
+
     func setSkillEnabled(projectID: UUID, skillPath: String, enabled: Bool) async throws
     func isSkillEnabled(projectID: UUID, skillPath: String) async throws -> Bool
     func enabledSkillPaths(projectID: UUID) async throws -> Set<String>

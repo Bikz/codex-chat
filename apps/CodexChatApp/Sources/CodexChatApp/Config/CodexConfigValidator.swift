@@ -28,7 +28,7 @@ struct CodexConfigValidationIssue: Identifiable, Hashable, Sendable {
             return "root"
         }
 
-        return path.map { $0.display }.joined(separator: ".")
+        return path.map(\.display).joined(separator: ".")
     }
 }
 

@@ -20,6 +20,7 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("runtime_thread_mappings"))
         XCTAssertTrue(tableNames.contains("project_secrets"))
         XCTAssertTrue(tableNames.contains("project_skill_enablements"))
+        XCTAssertTrue(tableNames.contains("skill_enablements"))
         XCTAssertTrue(tableNames.contains("chat_search_index"))
         XCTAssertTrue(tableNames.contains("follow_up_queue"))
         XCTAssertTrue(tableNames.contains("extension_installs"))
@@ -149,6 +150,18 @@ final class CodexChatInfraTests: XCTestCase {
             skillPath: "/tmp/inbox/.agents/skills/my-skill"
         )
         XCTAssertFalse(isEnabledAfterDisable)
+
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            target: .global,
+            projectID: nil,
+            skillPath: "/tmp/inbox/.agents/skills/my-skill",
+            enabled: true
+        )
+        let resolved = try await repositories.projectSkillEnablementRepository.resolvedEnabledSkillPaths(
+            forProjectID: project.id,
+            generalProjectID: nil
+        )
+        XCTAssertTrue(resolved.contains("/tmp/inbox/.agents/skills/my-skill"))
 
         try await repositories.chatSearchRepository.indexThreadTitle(
             threadID: thread.id,
@@ -356,6 +369,60 @@ final class CodexChatInfraTests: XCTestCase {
             skillPath: "/tmp/new-root/projects/skills/.agents/skills/b"
         )
         XCTAssertFalse(newDisabledState)
+    }
+
+    func testTargetScopedEnablementSupportsGlobalGeneralAndProject() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let project = try await repositories.projectRepository.createProject(
+            named: "Scoped Skills",
+            path: "/tmp/scoped/projects/skills",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            target: .global,
+            projectID: nil,
+            skillPath: "/tmp/scoped/projects/skills/.agents/skills/a",
+            enabled: true
+        )
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            target: .general,
+            projectID: nil,
+            skillPath: "/tmp/scoped/projects/skills/.agents/skills/b",
+            enabled: true
+        )
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            target: .project,
+            projectID: project.id,
+            skillPath: "/tmp/scoped/projects/skills/.agents/skills/c",
+            enabled: true
+        )
+
+        let global = try await repositories.projectSkillEnablementRepository.enabledSkillPaths(target: .global, projectID: nil)
+        let general = try await repositories.projectSkillEnablementRepository.enabledSkillPaths(target: .general, projectID: nil)
+        let projectScoped = try await repositories.projectSkillEnablementRepository.enabledSkillPaths(
+            target: .project,
+            projectID: project.id
+        )
+        XCTAssertTrue(global.contains("/tmp/scoped/projects/skills/.agents/skills/a"))
+        XCTAssertTrue(general.contains("/tmp/scoped/projects/skills/.agents/skills/b"))
+        XCTAssertTrue(projectScoped.contains("/tmp/scoped/projects/skills/.agents/skills/c"))
+
+        let resolved = try await repositories.projectSkillEnablementRepository.resolvedEnabledSkillPaths(
+            forProjectID: project.id,
+            generalProjectID: nil
+        )
+        XCTAssertEqual(
+            resolved,
+            Set([
+                "/tmp/scoped/projects/skills/.agents/skills/a",
+                "/tmp/scoped/projects/skills/.agents/skills/b",
+                "/tmp/scoped/projects/skills/.agents/skills/c",
+            ])
+        )
     }
 
     private func temporaryDatabaseURL() -> URL {

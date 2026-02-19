@@ -20,7 +20,9 @@ extension AppModel {
             }
 
         case let .turnStarted(turnID):
-            if let context = activeTurnContext {
+            if var context = activeTurnContext {
+                context.runtimeTurnID = turnID
+                activeTurnContext = context
                 appendEntry(
                     .actionCard(
                         ActionCard(
@@ -39,6 +41,7 @@ extension AppModel {
                     threadID: context.localThreadID,
                     turnID: turnID
                 )
+                markThreadUnreadIfNeeded(context.localThreadID)
             }
 
         case let .assistantMessageDelta(itemID, delta):
@@ -59,6 +62,7 @@ extension AppModel {
                 turnID: context.localTurnID.uuidString,
                 payload: ["itemID": itemID, "delta": delta]
             )
+            markThreadUnreadIfNeeded(context.localThreadID)
 
         case let .commandOutputDelta(output):
             handleCommandOutputDelta(output)
@@ -113,6 +117,7 @@ extension AppModel {
                     turnStatus: completion.status,
                     payload: payload
                 )
+                markThreadUnreadIfNeeded(context.localThreadID)
                 activeTurnContext = nil
 
                 Task {
@@ -179,6 +184,7 @@ extension AppModel {
             detail: action.detail
         )
         appendEntry(.actionCard(card), to: localThreadID)
+        markThreadUnreadIfNeeded(localThreadID)
         if let context = extensionProjectContext(forThreadID: localThreadID) {
             emitExtensionEvent(
                 .actionCard,
@@ -261,6 +267,7 @@ extension AppModel {
             ),
             to: localThreadID
         )
+        markThreadUnreadIfNeeded(localThreadID)
         if let context = extensionProjectContext(forThreadID: localThreadID) {
             emitExtensionEvent(
                 .approvalRequested,

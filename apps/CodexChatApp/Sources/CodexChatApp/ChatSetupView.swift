@@ -1,7 +1,7 @@
 import CodexChatUI
 import SwiftUI
 
-struct ChatSetupView: View {
+struct OnboardingView: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
 
@@ -12,7 +12,6 @@ struct ChatSetupView: View {
             VStack(spacing: tokens.spacing.medium) {
                 accountCard
                 runtimeCard
-                projectCard
             }
             .frame(maxWidth: 560)
 
@@ -32,7 +31,7 @@ struct ChatSetupView: View {
             Text("Welcome to CodexChat")
                 .font(.system(size: 30, weight: .bold))
 
-            Text("Sign in, pick a project folder, and start a local-first chat with reviewable actions.")
+            Text("Sign in and connect your runtime to start a local-first chat with reviewable actions.")
                 .font(.system(size: tokens.typography.bodySize))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -164,35 +163,6 @@ struct ChatSetupView: View {
             } else if model.runtimeStatus == .connected, model.runtimeIssue == nil {
                 SetupSuccessRow(text: "Runtime ready")
             }
-        }
-    }
-
-    private var projectCard: some View {
-        let projectTitle = model.selectedProject?.name ?? "Choose or create a project"
-        let projectPath = model.selectedProject?.path
-
-        return SetupCard(title: "Project Folder", subtitle: projectTitle) {
-            if let projectPath {
-                Text(projectPath)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-
-            HStack {
-                Button(model.selectedProject == nil ? "New Project…" : "Switch Project…") {
-                    model.presentNewProjectSheet()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(hex: tokens.palette.accentHex))
-                .accessibilityHint("Opens project options to create new or add existing folders")
-
-                Spacer()
-            }
-
-            Text("CodexChat stores readable files in your project: `chats/`, `memory/`, `mods/`, and `artifacts/`.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 }

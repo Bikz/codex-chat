@@ -4,7 +4,8 @@ extension CodexRuntime {
     static func makeThreadStartParams(
         cwd: String?,
         safetyConfiguration: RuntimeSafetyConfiguration?,
-        includeWebSearch: Bool
+        includeWebSearch: Bool,
+        useLegacySandboxPolicy: Bool = false
     ) -> JSONValue {
         var params: [String: JSONValue] = [:]
         if let cwd {
@@ -13,10 +14,14 @@ extension CodexRuntime {
 
         if let safetyConfiguration {
             params["approvalPolicy"] = .string(safetyConfiguration.approvalPolicy.rawValue)
-            params["sandboxPolicy"] = makeSandboxPolicy(
-                cwd: cwd,
-                safetyConfiguration: safetyConfiguration
-            )
+            if useLegacySandboxPolicy {
+                params["sandboxPolicy"] = makeSandboxPolicy(
+                    cwd: cwd,
+                    safetyConfiguration: safetyConfiguration
+                )
+            } else {
+                params["sandbox"] = .string(makeThreadSandboxMode(safetyConfiguration.sandboxMode))
+            }
             if includeWebSearch {
                 params["webSearch"] = .string(safetyConfiguration.webSearch.rawValue)
             }
@@ -31,7 +36,8 @@ extension CodexRuntime {
         safetyConfiguration: RuntimeSafetyConfiguration?,
         skillInputs: [RuntimeSkillInput],
         turnOptions: RuntimeTurnOptions?,
-        includeWebSearch: Bool
+        includeWebSearch: Bool,
+        useLegacyReasoningEffortField: Bool = false
     ) -> JSONValue {
         var inputItems: [JSONValue] = [
             .object([
@@ -74,10 +80,10 @@ extension CodexRuntime {
                 params["model"] = .string(model)
             }
 
-            if let reasoningEffort = turnOptions.reasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !reasoningEffort.isEmpty
+            if let effort = turnOptions.effort?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !effort.isEmpty
             {
-                params["reasoningEffort"] = .string(reasoningEffort)
+                params[useLegacyReasoningEffortField ? "reasoningEffort" : "effort"] = .string(effort)
             }
 
             if !turnOptions.experimental.isEmpty {
@@ -113,13 +119,45 @@ extension CodexRuntime {
         }
     }
 
+    static func makeTurnSteerParams(
+        threadID: String,
+        text: String,
+        expectedTurnID: String
+    ) -> JSONValue {
+        .object([
+            "threadId": .string(threadID),
+            "expectedTurnId": .string(expectedTurnID),
+            "input": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string(text),
+                ]),
+            ]),
+        ])
+    }
+
+    static func makeLegacyTurnSteerParams(
+        threadID: String,
+        text: String,
+        turnID: String
+    ) -> JSONValue {
+        .object([
+            "threadId": .string(threadID),
+            "turnId": .string(turnID),
+            "text": .string(text),
+        ])
+    }
+
     static func shouldRetryWithoutWebSearch(error: CodexRuntimeError) -> Bool {
         guard case let .rpcError(_, message) = error else {
             return false
         }
         let lowered = message.lowercased()
+        let indicatesSchemaIssue = lowered.contains("unknown")
+            || lowered.contains("invalid")
+            || lowered.contains("unsupported")
         return (lowered.contains("websearch") || lowered.contains("web_search"))
-            && (lowered.contains("unknown") || lowered.contains("invalid"))
+            && indicatesSchemaIssue
     }
 
     static func shouldRetryWithoutSkillInput(error: CodexRuntimeError) -> Bool {
@@ -127,8 +165,74 @@ extension CodexRuntime {
             return false
         }
         let lowered = message.lowercased()
+        let indicatesSchemaIssue = lowered.contains("unknown")
+            || lowered.contains("invalid")
+            || lowered.contains("unsupported")
         return lowered.contains("skill")
-            && (lowered.contains("unknown") || lowered.contains("invalid"))
+            && indicatesSchemaIssue
+    }
+
+    static func shouldRetryWithLegacyThreadStartSandboxField(error: CodexRuntimeError) -> Bool {
+        guard case let .rpcError(_, message) = error else {
+            return false
+        }
+        let lowered = message.lowercased()
+        let mentionsSandboxField = lowered.contains("sandbox")
+        let indicatesSchemaMismatch = lowered.contains("unknown field")
+            || lowered.contains("missing field")
+            || lowered.contains("invalid type")
+        return mentionsSandboxField && indicatesSchemaMismatch
+    }
+
+    static func shouldRetryWithLegacyReasoningEffortField(error: CodexRuntimeError) -> Bool {
+        guard case let .rpcError(_, message) = error else {
+            return false
+        }
+        let lowered = message.lowercased()
+        guard lowered.contains("effort"), !lowered.contains("unsupported value") else {
+            return false
+        }
+        return lowered.contains("unknown field")
+            || lowered.contains("missing field")
+            || lowered.contains("invalid type")
+    }
+
+    static func shouldRetryWithLegacyTurnSteerPayload(error: CodexRuntimeError) -> Bool {
+        guard case let .rpcError(code, message) = error else {
+            return false
+        }
+        if code == -32601 {
+            return false
+        }
+
+        let lowered = message.lowercased()
+        let indicatesSchemaMismatch = lowered.contains("invalid request")
+            || lowered.contains("unknown field")
+            || lowered.contains("missing field")
+            || lowered.contains("invalid type")
+        guard indicatesSchemaMismatch else {
+            return false
+        }
+
+        let mentionsPayloadFields = lowered.contains("expectedturnid")
+            || lowered.contains("turnid")
+            || lowered.contains("input")
+            || lowered.contains("text")
+        let mentionsActiveTurnIssue = lowered.contains("no active turn")
+            || lowered.contains("does not match")
+            || lowered.contains("did not match")
+        return mentionsPayloadFields && !mentionsActiveTurnIssue
+    }
+
+    static func makeThreadSandboxMode(_ sandboxMode: RuntimeSandboxMode) -> String {
+        switch sandboxMode {
+        case .readOnly:
+            "read-only"
+        case .workspaceWrite:
+            "workspace-write"
+        case .dangerFullAccess:
+            "danger-full-access"
+        }
     }
 
     static func decodeApprovalRequest(

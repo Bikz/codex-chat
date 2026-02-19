@@ -99,7 +99,7 @@ struct CodexConfigFormField: Identifiable {
     let schema: CodexConfigSchemaNode
 
     var id: String {
-        (["root"] + path.map { $0.display }).joined(separator: ".") + ".\(key)"
+        (["root"] + path.map(\.display)).joined(separator: ".") + ".\(key)"
     }
 }
 

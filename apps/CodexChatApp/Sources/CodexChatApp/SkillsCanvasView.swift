@@ -44,13 +44,12 @@ struct SkillsCanvasView: View {
                     Label("Install", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.selectedProjectID == nil)
 
                 Spacer(minLength: 0)
             }
 
-            Text("Installed skills")
-                .font(.caption.weight(.semibold))
+            Text(SkillsModsPresentation.skillsSectionDescription)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, SkillsModsTheme.pageHorizontalInset)
@@ -69,73 +68,143 @@ struct SkillsCanvasView: View {
                 model.refreshSkillsSurface()
             }
             .padding(SkillsModsTheme.pageHorizontalInset)
-        case let .loaded(skills) where skills.isEmpty:
-            EmptyStateView(
-                title: "No skills discovered",
-                message: "Install a skill from git or npx, then enable it for this project.",
-                systemImage: "square.stack.3d.up"
-            )
-            .padding(SkillsModsTheme.pageHorizontalInset)
         case let .loaded(skills):
+            ScrollView {
+                VStack(alignment: .leading, spacing: tokens.spacing.small) {
+                    if let skillStatusMessage = model.skillStatusMessage {
+                        Text(skillStatusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(SkillsModsTheme.cardBackground(tokens: tokens))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens))
+                            )
+                    }
+
+                    installedSkillsSection(skills)
+                    availableSkillsSection(installedSkills: skills)
+                }
+                .padding(.horizontal, SkillsModsTheme.pageHorizontalInset)
+                .padding(.top, 16)
+                .padding(.bottom, tokens.spacing.large)
+            }
+            .onAppear {
+                animateCards = true
+            }
+        }
+    }
+
+    private func installedSkillsSection(_ skills: [AppModel.SkillListItem]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Installed skills")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
             let visibleSkills = SkillsModsPresentation.filteredSkills(skills, query: query)
-            if visibleSkills.isEmpty {
+            if skills.isEmpty {
                 EmptyStateView(
-                    title: "No matching skills",
+                    title: "No installed skills yet",
+                    message: "Install a skill from git or npx, then enable it for Global, General, or Project.",
+                    systemImage: "square.stack.3d.up"
+                )
+            } else if visibleSkills.isEmpty {
+                EmptyStateView(
+                    title: "No matching installed skills",
                     message: "Try a different search term.",
                     systemImage: "magnifyingglass"
                 )
-                .padding(SkillsModsTheme.pageHorizontalInset)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: tokens.spacing.small) {
-                        if let skillStatusMessage = model.skillStatusMessage {
-                            Text(skillStatusMessage)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(SkillsModsTheme.cardBackground(tokens: tokens))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens))
-                                )
-                        }
-
-                        LazyVGrid(columns: cardColumns, alignment: .leading, spacing: 12) {
-                            ForEach(Array(visibleSkills.enumerated()), id: \.element.id) { index, item in
-                                SkillRow(
-                                    item: item,
-                                    hasSelectedProject: model.selectedProjectID != nil,
-                                    onToggle: { enabled in
-                                        model.setSkillEnabled(item, enabled: enabled)
-                                    },
-                                    onInsert: {
-                                        model.selectSkillForComposer(item)
-                                        model.detailDestination = .thread
-                                    },
-                                    onUpdate: {
-                                        model.updateSkill(item)
-                                    }
-                                )
-                                .opacity(animateCards ? 1 : 0)
-                                .offset(y: animateCards ? 0 : 8)
-                                .animation(
-                                    .easeOut(duration: tokens.motion.transitionDuration).delay(Double(index) * 0.02),
-                                    value: animateCards
-                                )
+                LazyVGrid(columns: cardColumns, alignment: .leading, spacing: 12) {
+                    ForEach(Array(visibleSkills.enumerated()), id: \.element.id) { index, item in
+                        SkillRow(
+                            item: item,
+                            hasSelectedProject: model.selectedProjectID != nil,
+                            selectedEnablementTarget: model.selectedSkillEnablementTarget(for: item),
+                            onEnablementTargetChanged: { target in
+                                model.setSkillEnablementTarget(target, for: item.id)
+                            },
+                            onToggle: { enabled in
+                                model.setSkillEnabled(item, enabled: enabled)
+                            },
+                            onInsert: {
+                                model.selectSkillForComposer(item)
+                                model.detailDestination = .thread
+                            },
+                            onUpdate: {
+                                model.updateSkill(item)
                             }
+                        )
+                        .opacity(animateCards ? 1 : 0)
+                        .offset(y: animateCards ? 0 : 8)
+                        .animation(
+                            .easeOut(duration: tokens.motion.transitionDuration).delay(Double(index) * 0.02),
+                            value: animateCards
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func availableSkillsSection(installedSkills: [AppModel.SkillListItem]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Available skills")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            switch model.availableSkillsCatalogState {
+            case .idle, .loading:
+                LoadingStateView(title: "Loading skills.sh catalog…")
+            case let .failed(message):
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Catalog unavailable")
+                        .font(.headline)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(SkillsModsTheme.cardBackground(tokens: tokens))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens))
+                )
+            case let .loaded(catalog):
+                let notInstalled = SkillsModsPresentation.availableCatalogSkills(from: catalog, installedSkills: installedSkills)
+                let visible = SkillsModsPresentation.filteredCatalogSkills(notInstalled, query: query)
+
+                if visible.isEmpty {
+                    EmptyStateView(
+                        title: "No catalog skills available",
+                        message: "All known catalog skills may already be installed, or no entries matched your search.",
+                        systemImage: "tray"
+                    )
+                } else {
+                    LazyVGrid(columns: cardColumns, alignment: .leading, spacing: 12) {
+                        ForEach(visible) { listing in
+                            CatalogSkillRow(
+                                listing: listing,
+                                canInstallToProject: model.selectedProjectID != nil,
+                                onInstallProject: {
+                                    model.installCatalogSkill(listing, scope: .project)
+                                },
+                                onInstallGlobal: {
+                                    model.installCatalogSkill(listing, scope: .global)
+                                }
+                            )
                         }
                     }
-                    .padding(.horizontal, SkillsModsTheme.pageHorizontalInset)
-                    .padding(.top, 16)
-                    .padding(.bottom, tokens.spacing.large)
-                }
-                .onAppear {
-                    animateCards = true
                 }
             }
         }

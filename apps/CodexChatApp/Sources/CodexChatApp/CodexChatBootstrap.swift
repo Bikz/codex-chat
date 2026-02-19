@@ -59,6 +59,7 @@ public enum CodexChatBootstrap {
                 runtime: dependencies.runtime,
                 bootError: nil,
                 skillCatalogService: dependencies.skillCatalogService,
+                skillCatalogProvider: dependencies.skillCatalogProvider,
                 storagePaths: dependencies.storagePaths
             )
         } catch {
@@ -207,6 +208,9 @@ public enum CodexChatBootstrap {
             codexHomeURL: storagePaths.codexHomeURL,
             agentsHomeURL: storagePaths.agentsHomeURL
         )
+        let skillCatalogProvider = RemoteJSONSkillCatalogProvider(
+            indexURL: URL(string: "https://skills.sh/index.json")!
+        )
         let runtime = CodexRuntime(
             environmentOverrides: [
                 "CODEX_HOME": storagePaths.codexHomeURL.path,
@@ -218,6 +222,7 @@ public enum CodexChatBootstrap {
             repositories: repositories,
             runtime: runtime,
             skillCatalogService: skillCatalogService,
+            skillCatalogProvider: skillCatalogProvider,
             storagePaths: storagePaths
         )
     }
@@ -249,6 +254,7 @@ private extension CodexChatBootstrap {
         let repositories: MetadataRepositories
         let runtime: CodexRuntime
         let skillCatalogService: SkillCatalogService
+        let skillCatalogProvider: any SkillCatalogProvider
         let storagePaths: CodexChatStoragePaths
     }
 

@@ -87,7 +87,6 @@ struct SidebarView: View {
                     bodyFont: sidebarBodyFont,
                     iconFont: sidebarBodyIconFont,
                     isActive: model.detailDestination == .skillsAndMods,
-                    iconColor: .secondary,
                     action: model.openSkillsAndMods
                 )
             }
@@ -104,6 +103,7 @@ struct SidebarView: View {
                         actionSystemImage: "plus",
                         actionAccessibilityLabel: "New project",
                         trailingAlignmentWidth: threadTrailingWidth,
+                        trailingPadding: rowHorizontalPadding,
                         action: model.presentNewProjectSheet
                     )
                 }
@@ -121,6 +121,7 @@ struct SidebarView: View {
                         actionSystemImage: "square.and.pencil",
                         actionAccessibilityLabel: "New chat",
                         trailingAlignmentWidth: threadTrailingWidth,
+                        trailingPadding: rowHorizontalPadding,
                         action: model.createGlobalNewChat
                     )
                 }
@@ -205,7 +206,7 @@ struct SidebarView: View {
 
             if model.expandedProjectIDs.contains(project.id), model.selectedProjectID == project.id {
                 ForEach(model.threads) { thread in
-                    threadRow(thread)
+                    threadRow(thread, isGeneralThread: false)
                 }
             }
         }
@@ -345,12 +346,12 @@ struct SidebarView: View {
             EmptyView()
         case let .loaded(threads):
             ForEach(threads) { thread in
-                threadRow(thread)
+                threadRow(thread, isGeneralThread: true)
             }
         }
     }
 
-    private func threadRow(_ thread: ThreadRecord) -> some View {
+    private func threadRow(_ thread: ThreadRecord, isGeneralThread: Bool) -> some View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
 
@@ -359,7 +360,9 @@ struct SidebarView: View {
                 model.selectThread(thread.id)
             } label: {
                 HStack(spacing: 8) {
-                    threadStatusMarker(for: thread.id)
+                    if !isGeneralThread {
+                        threadStatusMarker(for: thread.id)
+                    }
 
                     Text(thread.title)
                         .font(sidebarBodyFont)
@@ -372,7 +375,8 @@ struct SidebarView: View {
                         .frame(width: threadTrailingWidth)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, rowHorizontalPadding)
+                .padding(.leading, isGeneralThread ? 0 : rowHorizontalPadding)
+                .padding(.trailing, rowHorizontalPadding)
                 .padding(.vertical, rowVerticalPadding)
                 .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
             }
@@ -594,11 +598,11 @@ private struct SidebarActionRow: View {
     let bodyFont: Font
     let iconFont: Font
     let isActive: Bool
-    let iconColor: Color
     let action: () -> Void
 
     @State private var isHovered = false
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         icon: String,
@@ -610,7 +614,6 @@ private struct SidebarActionRow: View {
         bodyFont: Font,
         iconFont: Font,
         isActive: Bool = false,
-        iconColor: Color = .secondary,
         action: @escaping () -> Void
     ) {
         self.icon = icon
@@ -622,8 +625,14 @@ private struct SidebarActionRow: View {
         self.bodyFont = bodyFont
         self.iconFont = iconFont
         self.isActive = isActive
-        self.iconColor = iconColor
         self.action = action
+    }
+
+    private var actionIconColor: Color {
+        if colorScheme == .dark {
+            return Color.primary.opacity(0.85)
+        }
+        return Color.primary.opacity(0.68)
     }
 
     var body: some View {
@@ -632,7 +641,7 @@ private struct SidebarActionRow: View {
                 Image(systemName: icon)
                     .font(iconFont)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(actionIconColor)
                     .frame(width: iconColumnWidth, alignment: .leading)
 
                 Text(title)

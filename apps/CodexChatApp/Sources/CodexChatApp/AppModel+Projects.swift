@@ -490,6 +490,7 @@ extension AppModel {
             } catch {
                 appendLog(.error, "Failed to refresh skills: \(error.localizedDescription)")
             }
+            await refreshSkillsCatalog()
             refreshModsSurface()
         }
     }

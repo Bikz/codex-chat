@@ -8,6 +8,15 @@
 - `CodexChatCLI` for headless contributor tooling (`doctor`, `smoke`, `repro`).
 - Release artifacts must come from host archive output, never from a SwiftPM GUI executable.
 
+## Transition Policy
+
+- Any temporary SwiftPM GUI fallback is migration-only and must stay undocumented.
+- Fallback paths are excluded from release scripts and CI release inputs.
+- Host app remains the only user-facing run and distribution path.
+- Current migration artifacts in `apps/CodexChatApp/Package.swift`:
+- `CodexChatDesktopFallback` (deprecated GUI fallback target)
+- `CodexChatApp` (CLI compatibility executable aliasing `CodexChatCLI`)
+
 ## Boundary Rules
 
 - Shared app/runtime behavior belongs in `CodexChatShared`.

@@ -164,8 +164,9 @@ public enum RuntimeSandboxMode: String, Hashable, Sendable, Codable {
 }
 
 public enum RuntimeApprovalPolicy: String, Hashable, Sendable, Codable {
-    case untrusted = "unlessTrusted"
-    case onRequest
+    case untrusted
+    case onFailure = "on-failure"
+    case onRequest = "on-request"
     case never
 }
 
@@ -209,16 +210,21 @@ public struct RuntimeSkillInput: Hashable, Sendable, Codable {
 
 public struct RuntimeTurnOptions: Hashable, Sendable, Codable {
     public let model: String?
-    public let reasoningEffort: String?
+    public let effort: String?
     public let experimental: [String: Bool]
+
+    public var reasoningEffort: String? {
+        effort
+    }
 
     public init(
         model: String? = nil,
+        effort: String? = nil,
         reasoningEffort: String? = nil,
         experimental: [String: Bool] = [:]
     ) {
         self.model = model
-        self.reasoningEffort = reasoningEffort
+        self.effort = effort ?? reasoningEffort
         self.experimental = experimental
     }
 }

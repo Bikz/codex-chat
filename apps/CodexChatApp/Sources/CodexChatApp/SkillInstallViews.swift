@@ -6,9 +6,26 @@ import SwiftUI
 struct SkillRow: View {
     let item: AppModel.SkillListItem
     let hasSelectedProject: Bool
+    let selectedEnablementTarget: SkillEnablementTarget
+    let onEnablementTargetChanged: (SkillEnablementTarget) -> Void
     let onToggle: (Bool) -> Void
     let onInsert: () -> Void
     let onUpdate: () -> Void
+
+    private var isEnabledForSelectedTarget: Bool {
+        switch selectedEnablementTarget {
+        case .global:
+            item.isEnabledGlobally
+        case .general:
+            item.isEnabledForGeneral
+        case .project:
+            item.isEnabledForProjectTarget
+        }
+    }
+
+    private var canToggleSelectedTarget: Bool {
+        selectedEnablementTarget != .project || hasSelectedProject
+    }
 
     var body: some View {
         SkillsModsCard(padding: 12) {
@@ -21,8 +38,9 @@ struct SkillRow: View {
                     .lineLimit(2)
 
                 badgeRow
+                targetPicker
+                enabledSummary
                 metadata
-
                 actions
             }
         }
@@ -48,20 +66,26 @@ struct SkillRow: View {
 
             Spacer()
 
-            Button {
+            Button(SkillsModsPresentation.updateActionLabel(for: item.updateCapability)) {
                 onUpdate()
-            } label: {
-                Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .help("Update skill")
-            .accessibilityLabel("Update \(item.skill.name)")
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(item.updateCapability == .unavailable)
+            .help(SkillsModsPresentation.updateActionHelp(for: item.updateCapability))
+            .accessibilityLabel("\(SkillsModsPresentation.updateActionLabel(for: item.updateCapability)) \(item.skill.name)")
         }
     }
 
     private var badgeRow: some View {
         HStack(spacing: 6) {
+            Text("Installed")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
+
             Text(item.skill.scope.rawValue.capitalized)
                 .font(.caption2.weight(.semibold))
                 .padding(.horizontal, 7)
@@ -70,16 +94,35 @@ struct SkillRow: View {
                 .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
 
             if item.skill.hasScripts {
-                Label("Scripts", systemImage: "exclamationmark.triangle.fill")
+                Label("Scripts", systemImage: "terminal")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(Color.orange.opacity(0.10), in: Capsule())
+                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
             }
 
             Spacer(minLength: 0)
         }
+    }
+
+    private var targetPicker: some View {
+        Picker("Enable target", selection: Binding(
+            get: { selectedEnablementTarget },
+            set: { onEnablementTargetChanged($0) }
+        )) {
+            Text("Global").tag(SkillEnablementTarget.global)
+            Text("General").tag(SkillEnablementTarget.general)
+            Text("Project").tag(SkillEnablementTarget.project).disabled(!hasSelectedProject)
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private var enabledSummary: some View {
+        Text(SkillsModsPresentation.enabledTargetsSummary(for: item, hasSelectedProject: hasSelectedProject))
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     private var metadata: some View {
@@ -95,33 +138,78 @@ struct SkillRow: View {
 
     private var actions: some View {
         HStack(spacing: 8) {
-            if item.isEnabledForProject {
-                Button("Use in Composer") {
-                    onInsert()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-
-                Button {
-                    onToggle(false)
-                } label: {
-                    Label("Disable", systemImage: "xmark.circle")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!hasSelectedProject)
-            } else {
-                Button {
-                    onToggle(true)
-                } label: {
-                    Label("Enable", systemImage: "checkmark.circle")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(!hasSelectedProject)
+            Button("Use in next message") {
+                onInsert()
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(!item.isEnabledForSelectedProject)
+
+            Button {
+                onToggle(!isEnabledForSelectedTarget)
+            } label: {
+                Label(isEnabledForSelectedTarget ? "Disable" : "Enable", systemImage: isEnabledForSelectedTarget ? "xmark.circle" : "checkmark.circle")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!canToggleSelectedTarget)
 
             Spacer()
+        }
+    }
+}
+
+struct CatalogSkillRow: View {
+    let listing: CatalogSkillListing
+    let canInstallToProject: Bool
+    let onInstallProject: () -> Void
+    let onInstallGlobal: () -> Void
+
+    var body: some View {
+        SkillsModsCard(padding: 12) {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color(hex: "#3B82F6").opacity(0.18))
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Image(systemName: "shippingbox.fill")
+                                .font(.caption2)
+                                .foregroundStyle(Color(hex: "#2563EB"))
+                        )
+
+                    Text(listing.name)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Menu {
+                        Button("Install to Project", action: onInstallProject)
+                            .disabled(!canInstallToProject)
+                        Button("Install Globally", action: onInstallGlobal)
+                    } label: {
+                        Label("Install", systemImage: "square.and.arrow.down")
+                    }
+                    .menuStyle(.borderlessButton)
+                }
+
+                if let summary = listing.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                if let source = listing.installSource ?? listing.repositoryURL {
+                    Text(source)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+            }
         }
     }
 }
@@ -142,6 +230,7 @@ struct InstallSkillSheet: View {
     private var canSubmit: Bool {
         !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && (isTrustedSource || trustConfirmed)
+            && (scope == .global || model.selectedProject != nil)
     }
 
     var body: some View {
@@ -149,7 +238,7 @@ struct InstallSkillSheet: View {
             Text("Install Skill")
                 .font(.title3.weight(.semibold))
 
-            Text("Install from a git source or run the optional npx installer. Project installs go to `.agents/skills`.")
+            Text("Installing adds skill files. Enabling controls where a skill is active: Global, General, or Project.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
@@ -161,6 +250,12 @@ struct InstallSkillSheet: View {
                 Text("Global").tag(SkillInstallScope.global)
             }
             .pickerStyle(.segmented)
+
+            if scope == .project, model.selectedProject == nil {
+                Text("Select a project to install a project-scoped skill.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Picker("Installer", selection: $installer) {
                 Text("Git Clone").tag(SkillInstallerKind.git)

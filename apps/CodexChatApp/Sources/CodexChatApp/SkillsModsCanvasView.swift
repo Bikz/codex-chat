@@ -33,6 +33,7 @@ struct SkillsModsCanvasView: View {
             case .skills:
                 Task {
                     do { try await model.refreshSkills() } catch {}
+                    await model.refreshSkillsCatalog()
                 }
             case .mods:
                 model.refreshModsSurface()
