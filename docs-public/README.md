@@ -5,7 +5,7 @@ This folder contains contributor-facing documentation tracked in git.
 ## Read First
 
 1. `INSTALL.md` — local setup, build, test, run paths.
-2. `CONTRIBUTING.md` — contribution workflow and guardrails.
+2. `../CONTRIBUTING.md` — canonical contribution workflow and guardrails.
 3. `ARCHITECTURE_CONTRACT.md` — canonical host/CLI/shared boundaries and storage layout.
 4. `SECURITY_MODEL.md` — safety model, secrets, and trust boundaries.
 5. `RELEASE.md` — signed/notarized DMG pipeline from host archive output.
