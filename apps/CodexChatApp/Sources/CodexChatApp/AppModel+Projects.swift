@@ -465,6 +465,7 @@ extension AppModel {
                 Task {
                     do {
                         selectedProjectID = projectID
+                        await Task.yield()
                         try await refreshThreads()
                         try await refreshSkills()
                         refreshModsSurface()
