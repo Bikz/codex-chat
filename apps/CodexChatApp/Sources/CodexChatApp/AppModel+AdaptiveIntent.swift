@@ -33,6 +33,15 @@ extension AppModel {
         return true
     }
 
+    func triggerAdaptiveIntent(_ intent: AdaptiveIntent, originalText: String? = nil) {
+        Task {
+            await executeAdaptiveIntent(
+                intent,
+                originalText: originalText ?? defaultPrompt(for: intent)
+            )
+        }
+    }
+
     func adaptiveIntent(for text: String) -> AdaptiveIntent? {
         let lowered = text.lowercased()
 
@@ -200,6 +209,25 @@ extension AppModel {
         return String(text[pathRange])
     }
 
+    private func defaultPrompt(for intent: AdaptiveIntent) -> String {
+        switch intent {
+        case .desktopCleanup:
+            "Clean up desktop"
+        case .calendarToday:
+            "What's on my calendar today?"
+        case let .messagesSend(recipient, body):
+            "Send message to \(recipient): \(body)"
+        case let .planRun(planPath):
+            if let planPath {
+                "Run plan \(planPath)"
+            } else {
+                "Run plan"
+            }
+        case .agentRoleSetup:
+            "Set up an agent role profile"
+        }
+    }
+
     private func preparePlanRunIntent(
         threadID: UUID,
         projectID: UUID,
@@ -218,7 +246,11 @@ extension AppModel {
             to: threadID
         )
 
-        followUpStatusMessage = "Plan run routing is ready. Use the upcoming Plan Runner sheet to execute dependencies."
+        if let planPath {
+            planRunnerSourcePath = planPath
+        }
+        openPlanRunnerSheet(pathHint: planPath)
+        followUpStatusMessage = "Opened Plan Runner. Review the parsed plan and start execution."
         appendLog(.info, "Queued adaptive plan-run request for project \(projectID.uuidString)")
     }
 

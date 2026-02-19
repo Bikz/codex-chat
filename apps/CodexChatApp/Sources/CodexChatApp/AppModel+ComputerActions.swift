@@ -11,6 +11,12 @@ extension AppModel {
         threadID: UUID,
         projectID: UUID
     ) async throws {
+        guard areNativeComputerActionsEnabled else {
+            throw ComputerActionError.unsupported(
+                "Native computer actions are disabled by config (features.native_computer_actions = false)."
+            )
+        }
+
         guard let provider = computerActionRegistry.provider(for: actionID) else {
             throw ComputerActionError.unsupported("Unknown computer action: \(actionID)")
         }
@@ -312,5 +318,11 @@ extension AppModel {
             return nil
         }
         return try? JSONDecoder().decode([String: String].self, from: data)
+    }
+
+    var areNativeComputerActionsEnabled: Bool {
+        codexConfigDocument
+            .value(at: [.key("features"), .key("native_computer_actions")])?
+            .booleanValue ?? true
     }
 }

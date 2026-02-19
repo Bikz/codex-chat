@@ -112,6 +112,74 @@ extension AppModel {
         isProjectSettingsVisible = false
     }
 
+    func removeSelectedProjectFromCodexChat() {
+        guard let selectedProject,
+              let projectRepository
+        else {
+            projectStatusMessage = "Select a project first."
+            return
+        }
+
+        guard !selectedProject.isGeneralProject else {
+            projectStatusMessage = "The General project cannot be removed."
+            return
+        }
+
+        let removedProject = selectedProject
+        let fallbackProjectID = projects.first(where: { $0.id != removedProject.id && $0.isGeneralProject })?.id
+            ?? projects.first(where: { $0.id != removedProject.id })?.id
+
+        Task {
+            do {
+                try await projectRepository.deleteProject(id: removedProject.id)
+
+                expandedProjectIDs.remove(removedProject.id)
+                if selectedProjectID == removedProject.id {
+                    selectedProjectID = fallbackProjectID
+                    selectedThreadID = nil
+                    draftChatProjectID = nil
+                }
+
+                try await refreshProjects()
+
+                let hasValidSelection = selectedProjectID.map { id in
+                    projects.contains { $0.id == id }
+                } ?? false
+                if !hasValidSelection {
+                    selectedProjectID = fallbackProjectID ?? projects.first?.id
+                }
+
+                if let selectedProjectID {
+                    if generalProject?.id == selectedProjectID {
+                        try await refreshGeneralThreads(generalProjectID: selectedProjectID)
+                    } else {
+                        try await refreshThreads()
+                    }
+                } else {
+                    threadsState = .loaded([])
+                    selectedThreadID = nil
+                    draftChatProjectID = nil
+                    detailDestination = .none
+                }
+
+                try await refreshArchivedThreads()
+                try await refreshSkills()
+                refreshModsSurface()
+                refreshConversationState()
+                try await persistSelection()
+
+                projectStatusMessage = "Removed \(removedProject.name) from CodexChat. Files remain on disk."
+                appendLog(
+                    .info,
+                    "Disconnected project \(removedProject.name) (\(removedProject.id.uuidString)) from app metadata."
+                )
+            } catch {
+                projectStatusMessage = "Failed to remove project: \(error.localizedDescription)"
+                appendLog(.error, "Failed to remove project \(removedProject.id.uuidString): \(error.localizedDescription)")
+            }
+        }
+    }
+
     func requiresDangerConfirmation(
         sandboxMode: ProjectSandboxMode,
         approvalPolicy: ProjectApprovalPolicy

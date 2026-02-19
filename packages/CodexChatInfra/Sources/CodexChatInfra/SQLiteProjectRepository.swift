@@ -111,6 +111,42 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
         }
     }
 
+    public func deleteProject(id: UUID) async throws {
+        try await dbQueue.write { db in
+            let projectID = id.uuidString
+            let projectKey = projectID.lowercased()
+
+            try db.execute(
+                sql: "DELETE FROM chat_search_index WHERE projectID = ?",
+                arguments: [projectID]
+            )
+
+            // These tables are scoped by project but are not enforced via foreign keys.
+            try db.execute(
+                sql: "DELETE FROM skill_enablements WHERE target = 'project' AND projectID = ?",
+                arguments: [projectID]
+            )
+            try db.execute(
+                sql: "DELETE FROM project_skill_enablements WHERE projectID = ?",
+                arguments: [projectID]
+            )
+            try db.execute(
+                sql: "DELETE FROM extension_installs WHERE scope = 'project' AND projectID = ?",
+                arguments: [projectID]
+            )
+            try db.execute(
+                sql: "DELETE FROM computer_action_permissions WHERE projectID = ? OR projectKey = ?",
+                arguments: [projectID, projectKey]
+            )
+
+            // Project deletion cascades to threads, follow-ups, mappings, and other FK-backed tables.
+            try db.execute(
+                sql: "DELETE FROM projects WHERE id = ?",
+                arguments: [projectID]
+            )
+        }
+    }
+
     public func updateProjectName(id: UUID, name: String) async throws -> ProjectRecord {
         try await dbQueue.write { db in
             guard var entity = try ProjectEntity.fetchOne(db, key: ["id": id.uuidString]) else {

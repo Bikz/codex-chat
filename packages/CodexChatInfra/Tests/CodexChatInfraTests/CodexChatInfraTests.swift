@@ -376,6 +376,133 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(installs.contains { $0.projectID == secondProject.id })
     }
 
+    func testDeleteProjectRemovesProjectScopedDataAndCascadesThreads() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let firstProject = try await repositories.projectRepository.createProject(
+            named: "First",
+            path: "/tmp/delete-first",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let secondProject = try await repositories.projectRepository.createProject(
+            named: "Second",
+            path: "/tmp/delete-second",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let firstThread = try await repositories.threadRepository.createThread(
+            projectID: firstProject.id,
+            title: "First thread"
+        )
+        let secondThread = try await repositories.threadRepository.createThread(
+            projectID: secondProject.id,
+            title: "Second thread"
+        )
+
+        try await repositories.chatSearchRepository.indexThreadTitle(
+            threadID: firstThread.id,
+            projectID: firstProject.id,
+            title: "Cleanup candidate"
+        )
+        try await repositories.chatSearchRepository.indexMessageExcerpt(
+            threadID: firstThread.id,
+            projectID: firstProject.id,
+            text: "Delete this project metadata"
+        )
+        try await repositories.chatSearchRepository.indexThreadTitle(
+            threadID: secondThread.id,
+            projectID: secondProject.id,
+            title: "Keep this project"
+        )
+
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            target: .project,
+            projectID: firstProject.id,
+            skillPath: "/tmp/delete-first/.agents/skills/demo",
+            enabled: true
+        )
+
+        let firstInstall = ExtensionInstallRecord(
+            id: "project:\(firstProject.id.uuidString.lowercased()):com.example.first",
+            modID: "com.example.first",
+            scope: .project,
+            projectID: firstProject.id,
+            sourceURL: "https://github.com/example/first",
+            installedPath: "/tmp/delete-first/mods/first",
+            enabled: true
+        )
+        let secondInstall = ExtensionInstallRecord(
+            id: "project:\(secondProject.id.uuidString.lowercased()):com.example.second",
+            modID: "com.example.second",
+            scope: .project,
+            projectID: secondProject.id,
+            sourceURL: "https://github.com/example/second",
+            installedPath: "/tmp/delete-second/mods/second",
+            enabled: true
+        )
+        _ = try await repositories.extensionInstallRepository.upsert(firstInstall)
+        _ = try await repositories.extensionInstallRepository.upsert(secondInstall)
+
+        _ = try await repositories.computerActionPermissionRepository.set(
+            actionID: "desktop.cleanup",
+            projectID: firstProject.id,
+            decision: .granted,
+            decidedAt: Date()
+        )
+        _ = try await repositories.computerActionPermissionRepository.set(
+            actionID: "desktop.cleanup",
+            projectID: nil,
+            decision: .granted,
+            decidedAt: Date()
+        )
+
+        try await repositories.projectRepository.deleteProject(id: firstProject.id)
+
+        let deletedProject = try await repositories.projectRepository.getProject(id: firstProject.id)
+        XCTAssertNil(deletedProject)
+        let retainedProject = try await repositories.projectRepository.getProject(id: secondProject.id)
+        XCTAssertNotNil(retainedProject)
+
+        let remainingThreads = try await repositories.threadRepository.listThreads(projectID: secondProject.id)
+        XCTAssertEqual(remainingThreads.map(\.id), [secondThread.id])
+        let deletedThread = try await repositories.threadRepository.getThread(id: firstThread.id)
+        XCTAssertNil(deletedThread)
+
+        let deletedProjectResults = try await repositories.chatSearchRepository.search(
+            query: "delete this project metadata",
+            projectID: firstProject.id,
+            limit: 10
+        )
+        XCTAssertTrue(deletedProjectResults.isEmpty)
+
+        let allResults = try await repositories.chatSearchRepository.search(
+            query: "project",
+            projectID: nil,
+            limit: 20
+        )
+        XCTAssertFalse(allResults.contains { $0.threadID == firstThread.id })
+        XCTAssertTrue(allResults.contains { $0.threadID == secondThread.id })
+
+        let firstProjectEnabled = try await repositories.projectSkillEnablementRepository.enabledSkillPaths(
+            target: .project,
+            projectID: firstProject.id
+        )
+        XCTAssertTrue(firstProjectEnabled.isEmpty)
+
+        let installs = try await repositories.extensionInstallRepository.list()
+        XCTAssertFalse(installs.contains { $0.projectID == firstProject.id })
+        XCTAssertTrue(installs.contains { $0.projectID == secondProject.id })
+
+        let deletedProjectPermissions = try await repositories.computerActionPermissionRepository.list(projectID: firstProject.id)
+        XCTAssertTrue(deletedProjectPermissions.isEmpty)
+
+        let globalPermissions = try await repositories.computerActionPermissionRepository.list(projectID: nil)
+        XCTAssertEqual(globalPermissions.map(\.actionID), ["desktop.cleanup"])
+    }
+
     func testRewriteSkillPathsMigratesEnabledEntriesToNewRoot() async throws {
         let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
         let repositories = MetadataRepositories(database: database)

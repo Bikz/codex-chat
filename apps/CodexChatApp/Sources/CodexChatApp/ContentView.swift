@@ -70,6 +70,16 @@ struct ContentView: View {
             ComputerActionPreviewSheet(model: model, preview: preview)
                 .interactiveDismissDisabled(model.isComputerActionExecutionInProgress)
         }
+        .sheet(item: Binding(get: {
+            model.activeWorkerTraceEntry
+        }, set: { _ in
+            model.dismissWorkerTraceSheet()
+        })) { entry in
+            WorkerTraceDetailsSheet(model: model, entry: entry)
+        }
+        .sheet(isPresented: $model.isPlanRunnerSheetVisible) {
+            PlanRunnerSheet(model: model)
+        }
         .onAppear {
             model.onAppear()
             syncSplitViewVisibility(isOnboardingActive: model.isOnboardingActive)

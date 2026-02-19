@@ -230,6 +230,13 @@ extension AppModel {
             title: action.title,
             detail: transcriptDetail
         )
+
+        captureWorkerTraceIfPresent(
+            runtimeAction: action,
+            threadID: localThreadID,
+            transcriptDetail: transcriptDetail
+        )
+
         appendEntry(.actionCard(card), to: localThreadID)
         markThreadUnreadIfNeeded(localThreadID)
         if let context = extensionProjectContext(forThreadID: localThreadID) {

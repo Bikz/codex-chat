@@ -17,23 +17,30 @@ struct ProjectSettingsSheet: View {
     @State private var approvalPolicy: ProjectApprovalPolicy = .untrusted
     @State private var networkAccess = false
     @State private var webSearchMode: ProjectWebSearchMode = .cached
+    @State private var memoryWriteMode: ProjectMemoryWriteMode = .off
+    @State private var memoryEmbeddingsEnabled = false
     @State private var confirmationInput = ""
     @State private var confirmationError: String?
     @State private var isDangerConfirmationVisible = false
+    @State private var isRemoveProjectConfirmationVisible = false
     @State private var pendingSafetySettings: ProjectSafetySettings?
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: tokens.spacing.small) {
                 SettingsInlineHeader(
                     eyebrow: "Settings",
-                    title: "Project Settings",
-                    subtitle: "Per-project trust, safety, and archived chat controls."
+                    title: "Project",
+                    subtitle: "Project-specific trust, safety, memory, and archived chat controls."
                 )
 
                 if let project = model.selectedProject {
                     projectSummaryCard(project)
                     trustAndSafetyCard(project)
+                    memoryCard
+                    if !project.isGeneralProject {
+                        projectDisconnectCard(project)
+                    }
                     archivedChatsCard
                 } else {
                     SettingsSectionCard(
@@ -52,22 +59,22 @@ struct ProjectSettingsSheet: View {
                         .padding(.horizontal, 2)
                 }
             }
-            .padding(16)
+            .padding(tokens.spacing.medium)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .navigationTitle("")
         .tint(Color(hex: tokens.palette.accentHex))
         .background(Color(hex: tokens.palette.backgroundHex))
-        .frame(minWidth: 700, minHeight: 500)
+        .frame(minWidth: 760, minHeight: 620)
         .onAppear {
-            syncSafetyStateFromSelectedProject()
+            syncStateFromSelectedProject()
             Task {
                 try? await model.refreshArchivedThreads()
             }
         }
         .onChange(of: model.selectedProject?.id) { _, _ in
-            syncSafetyStateFromSelectedProject()
+            syncStateFromSelectedProject()
             Task {
                 try? await model.refreshArchivedThreads()
             }
@@ -102,11 +109,23 @@ struct ProjectSettingsSheet: View {
                 }
             )
         }
+        .alert("Remove project from CodexChat?", isPresented: $isRemoveProjectConfirmationVisible) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                model.removeSelectedProjectFromCodexChat()
+            }
+        } message: {
+            if let project = model.selectedProject {
+                Text("\"\(project.name)\" will be disconnected from CodexChat. Project files stay on disk.")
+            } else {
+                Text("This project will be disconnected from CodexChat. Project files stay on disk.")
+            }
+        }
     }
 
     private func projectSummaryCard(_ project: ProjectRecord) -> some View {
         SettingsSectionCard(
-            title: "Project Summary",
+            title: "Project",
             subtitle: "Identity and trust posture for the selected project."
         ) {
             VStack(alignment: .leading, spacing: 12) {
@@ -149,11 +168,11 @@ struct ProjectSettingsSheet: View {
     private func trustAndSafetyCard(_ project: ProjectRecord) -> some View {
         SettingsSectionCard(
             title: "Trust & Safety",
-            subtitle: "Runtime guardrails and approval policy for this project."
+            subtitle: "Controls for sandboxing, approvals, network access, and web search."
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Button("Trust Project") {
+                    Button("Trust") {
                         model.trustSelectedProject()
                     }
                     .buttonStyle(.bordered)
@@ -216,10 +235,68 @@ struct ProjectSettingsSheet: View {
         }
     }
 
+    private var memoryCard: some View {
+        SettingsSectionCard(
+            title: "Memory",
+            subtitle: "Memory write and retrieval behavior for this project."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("After each completed turn", selection: $memoryWriteMode) {
+                    Text("Off").tag(ProjectMemoryWriteMode.off)
+                    Text("Summaries only").tag(ProjectMemoryWriteMode.summariesOnly)
+                    Text("Summaries + key facts").tag(ProjectMemoryWriteMode.summariesAndKeyFacts)
+                }
+                .pickerStyle(.menu)
+
+                Toggle("Enable semantic retrieval (advanced)", isOn: $memoryEmbeddingsEnabled)
+
+                Button("Save Memory Settings") {
+                    model.updateSelectedProjectMemorySettings(
+                        writeMode: memoryWriteMode,
+                        embeddingsEnabled: memoryEmbeddingsEnabled
+                    )
+                }
+                .buttonStyle(.bordered)
+
+                Text("Project memory is stored under this project's `memory/*.md` files.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let memoryStatus = model.memoryStatusMessage {
+                    Text(memoryStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func projectDisconnectCard(_ project: ProjectRecord) -> some View {
+        SettingsSectionCard(
+            title: "Project Membership",
+            subtitle: "Disconnect this project from CodexChat without deleting files.",
+            emphasis: .secondary
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Removes project metadata, chats, and per-project settings from this app. Files in \"\(project.path)\" remain untouched.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button(role: .destructive) {
+                    isRemoveProjectConfirmationVisible = true
+                } label: {
+                    Label("Remove Project from CodexChat", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Disconnects this project from CodexChat while keeping files on disk.")
+            }
+        }
+    }
+
     private var archivedChatsCard: some View {
         SettingsSectionCard(
             title: "Archived Chats",
-            subtitle: "Manage archived conversation threads.",
+            subtitle: "Manage archived conversation threads for this project.",
             emphasis: .secondary
         ) {
             archivedChatsSection
@@ -257,13 +334,15 @@ struct ProjectSettingsSheet: View {
         )
     }
 
-    private func syncSafetyStateFromSelectedProject() {
+    private func syncStateFromSelectedProject() {
         guard let project = model.selectedProject else { return }
         let draft = Self.safetyDraft(from: project)
         sandboxMode = draft.sandboxMode
         approvalPolicy = draft.approvalPolicy
         networkAccess = draft.networkAccess
         webSearchMode = draft.webSearchMode
+        memoryWriteMode = project.memoryWriteMode
+        memoryEmbeddingsEnabled = project.memoryEmbeddingsEnabled
     }
 
     static func safetyDraft(from project: ProjectRecord) -> ProjectSettingsSafetyDraft {
@@ -284,6 +363,13 @@ struct ProjectSettingsSheet: View {
 
     @ViewBuilder
     private var archivedChatsSection: some View {
+        guard let selectedProjectID = model.selectedProject?.id else {
+            Text("Select a project to view archived chats.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            return
+        }
+
         switch model.archivedThreadsState {
         case .idle, .loading:
             LoadingStateView(title: "Loading archived chats…")
@@ -295,47 +381,42 @@ struct ProjectSettingsSheet: View {
                 }
             }
             .frame(maxHeight: 160)
-        case let .loaded(threads) where threads.isEmpty:
-            Text("No archived chats yet.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        case let .loaded(threads):
-            let projectNamesByID = Dictionary(uniqueKeysWithValues: model.projects.map { ($0.id, $0.name) })
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(threads) { thread in
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(thread.title)
-                                    .font(.subheadline.weight(.medium))
-                                    .lineLimit(1)
-                                Text(projectName(for: thread.projectId, projectNamesByID: projectNamesByID))
+        case let .loaded(allArchivedThreads):
+            let threads = allArchivedThreads.filter { $0.projectId == selectedProjectID }
+            if threads.isEmpty {
+                Text("No archived chats for this project.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(threads) { thread in
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(thread.title)
+                                        .font(.subheadline.weight(.medium))
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                Text(compactRelativeAge(from: thread.archivedAt ?? thread.updatedAt))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+
+                                Button("Unarchive") {
+                                    model.unarchiveThread(threadID: thread.id)
+                                }
+                                .buttonStyle(.borderless)
                             }
-
-                            Spacer()
-
-                            Text(compactRelativeAge(from: thread.archivedAt ?? thread.updatedAt))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Button("Unarchive") {
-                                model.unarchiveThread(threadID: thread.id)
-                            }
-                            .buttonStyle(.borderless)
+                            .padding(8)
+                            .tokenCard(style: .panel, radius: tokens.radius.small, strokeOpacity: 0.08)
                         }
-                        .padding(8)
-                        .tokenCard(style: .panel, radius: tokens.radius.small, strokeOpacity: 0.08)
                     }
                 }
+                .frame(maxHeight: 220)
             }
-            .frame(maxHeight: 220)
         }
-    }
-
-    private func projectName(for projectID: UUID, projectNamesByID: [UUID: String]) -> String {
-        projectNamesByID[projectID] ?? "Unknown project"
     }
 
     private func compactRelativeAge(from date: Date) -> String {

@@ -78,6 +78,7 @@ struct MessageRow: View {
 
 struct ActionCardRow: View {
     let card: ActionCard
+    var onShowWorkerTrace: (() -> Void)?
     @State private var isExpanded = false
     @Environment(\.designTokens) private var tokens
 
@@ -85,11 +86,22 @@ struct ActionCardRow: View {
         let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
 
         DisclosureGroup(isExpanded: $isExpanded) {
-            Text(card.detail)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(card.detail)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+
+                if let onShowWorkerTrace {
+                    Button("Worker Trace") {
+                        onShowWorkerTrace()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                }
+            }
         } label: {
             HStack(alignment: .center, spacing: 8) {
                 Circle()
@@ -152,7 +164,9 @@ struct ActionCardRow: View {
 }
 
 struct InlineActionNoticeRow: View {
+    let model: AppModel
     let card: ActionCard
+    var onShowWorkerTrace: (() -> Void)?
 
     @State private var isDetailsSheetPresented = false
 
@@ -177,6 +191,18 @@ struct InlineActionNoticeRow: View {
             .buttonStyle(.plain)
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
+
+            if let onShowWorkerTrace {
+                Text("•")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button("Worker Trace") {
+                    onShowWorkerTrace()
+                }
+                .buttonStyle(.plain)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -186,7 +212,8 @@ struct InlineActionNoticeRow: View {
         .sheet(isPresented: $isDetailsSheetPresented) {
             TurnActionDetailsSheet(
                 title: card.title,
-                actions: [card]
+                actions: [card],
+                model: model
             )
         }
     }
@@ -240,6 +267,7 @@ private struct TranscriptMilestoneChips: View {
 struct LiveTurnActivityRow: View {
     let activity: LiveTurnActivityPresentation
     let detailLevel: TranscriptDetailLevel
+    let model: AppModel
 
     @State private var isDetailsSheetPresented = false
     @Environment(\.designTokens) private var tokens
@@ -292,7 +320,8 @@ struct LiveTurnActivityRow: View {
         .sheet(isPresented: $isDetailsSheetPresented) {
             TurnActionDetailsSheet(
                 title: "Live activity details",
-                actions: activity.actions
+                actions: activity.actions,
+                model: model
             )
         }
     }
@@ -301,6 +330,7 @@ struct LiveTurnActivityRow: View {
 struct TurnSummaryRow: View {
     let summary: TurnSummaryPresentation
     let detailLevel: TranscriptDetailLevel
+    let model: AppModel
 
     @State private var isDetailsSheetPresented = false
 
@@ -332,7 +362,8 @@ struct TurnSummaryRow: View {
         .sheet(isPresented: $isDetailsSheetPresented) {
             TurnActionDetailsSheet(
                 title: summary.isFailure ? "Turn details (issues detected)" : "Turn details",
-                actions: summary.actions
+                actions: summary.actions,
+                model: model
             )
         }
     }
@@ -372,9 +403,11 @@ struct TurnSummaryRow: View {
 private struct TurnActionDetailsSheet: View {
     let title: String
     let actions: [ActionCard]
+    let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.designTokens) private var tokens
+    @State private var selectedWorkerTrace: AppModel.WorkerTraceEntry?
 
     var body: some View {
         NavigationStack {
@@ -387,7 +420,12 @@ private struct TurnActionDetailsSheet: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: tokens.spacing.small) {
                             ForEach(actions) { action in
-                                ActionCardRow(card: action)
+                                ActionCardRow(
+                                    card: action,
+                                    onShowWorkerTrace: model.workerTraceEntry(for: action) == nil ? nil : {
+                                        selectedWorkerTrace = model.workerTraceEntry(for: action)
+                                    }
+                                )
                             }
                         }
                         .padding(tokens.spacing.medium)
@@ -395,6 +433,57 @@ private struct TurnActionDetailsSheet: View {
                 }
             }
             .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .sheet(item: $selectedWorkerTrace) { entry in
+            WorkerTraceDetailsSheet(model: model, entry: entry)
+        }
+    }
+}
+
+struct WorkerTraceDetailsSheet: View {
+    @ObservedObject var model: AppModel
+    let entry: AppModel.WorkerTraceEntry
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Text(entry.title)
+                            .font(.callout.weight(.semibold))
+                        Spacer(minLength: 8)
+                        Text(entry.method)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let turnID = entry.turnID {
+                        Text("Turn ID: \(turnID)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    MarkdownMessageView(
+                        text: model.workerTraceMarkdown(for: entry),
+                        allowsExternalContent: false
+                    )
+                    .font(.system(size: tokens.typography.bodySize))
+                    .textSelection(.enabled)
+                }
+                .padding(tokens.spacing.medium)
+            }
+            .navigationTitle("Worker Trace")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

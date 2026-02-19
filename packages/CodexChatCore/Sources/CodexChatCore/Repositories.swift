@@ -11,6 +11,7 @@ public protocol ProjectRepository: Sendable {
     func getProject(id: UUID) async throws -> ProjectRecord?
     func getProject(path: String) async throws -> ProjectRecord?
     func createProject(named name: String, path: String, trustState: ProjectTrustState, isGeneralProject: Bool) async throws -> ProjectRecord
+    func deleteProject(id: UUID) async throws
     func updateProjectName(id: UUID, name: String) async throws -> ProjectRecord
     func updateProjectPath(id: UUID, path: String) async throws -> ProjectRecord
     func updateProjectTrustState(id: UUID, trustState: ProjectTrustState) async throws -> ProjectRecord

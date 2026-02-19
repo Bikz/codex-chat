@@ -41,6 +41,7 @@ extension AppModel {
             try await ensureGeneralProject()
             try await restoreLastOpenedContext()
             try await restoreTranscriptDetailLevelPreference()
+            await restoreWorkerTraceCacheIfNeeded()
             await restoreModsBarVisibility()
             try await validateAndRepairProjectsOnLaunch()
             try await refreshThreads()

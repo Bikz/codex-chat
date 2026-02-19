@@ -130,6 +130,7 @@ final class AppModel: ObservableObject {
         let turnID: String?
         let method: String
         let title: String
+        let detail: String
         let trace: RuntimeAction.WorkerTrace
         let capturedAt: Date
 
@@ -138,6 +139,7 @@ final class AppModel: ObservableObject {
             turnID: String?,
             method: String,
             title: String,
+            detail: String,
             trace: RuntimeAction.WorkerTrace,
             capturedAt: Date = Date()
         ) {
@@ -146,6 +148,7 @@ final class AppModel: ObservableObject {
             self.turnID = turnID
             self.method = method
             self.title = title
+            self.detail = detail
             self.trace = trace
             self.capturedAt = capturedAt
         }
@@ -366,6 +369,14 @@ final class AppModel: ObservableObject {
     @Published var workerTraceByThreadID: [UUID: [WorkerTraceEntry]] = [:]
     @Published var activeWorkerTraceEntry: WorkerTraceEntry?
     @Published var areAdvancedExecutableModsUnlocked = false
+    @Published var isPlanRunnerSheetVisible = false
+    @Published var planRunnerSourcePath = ""
+    @Published var planRunnerDraftText = ""
+    @Published var planRunnerPreferredBatchSize = 4
+    @Published var planRunnerStatusMessage: String?
+    @Published var isPlanRunnerExecuting = false
+    @Published var activePlanRun: PlanRunRecord?
+    @Published var planRunnerTaskStates: [PlanRunTaskRecord] = []
 
     @Published var effectiveThemeOverride: ModThemeOverride = .init()
     @Published var effectiveDarkThemeOverride: ModThemeOverride = .init()
@@ -419,6 +430,8 @@ final class AppModel: ObservableObject {
     var followUpDrainTask: Task<Void, Never>?
     var modsRefreshTask: Task<Void, Never>?
     var modsDebounceTask: Task<Void, Never>?
+    var planRunnerTask: Task<Void, Never>?
+    var workerTracePersistenceTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
     var voiceAutoStopTask: Task<Void, Never>?
@@ -432,6 +445,7 @@ final class AppModel: ObservableObject {
     var extensionAutomationScheduler = ExtensionAutomationScheduler()
     var runtimeRepairSuggestedThreadIDs: Set<UUID> = []
     var runtimeRepairPendingRuntimeThreadIDs: Set<String> = []
+    var workerTraceByActionFingerprint: [String: WorkerTraceEntry] = [:]
 
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
@@ -524,6 +538,8 @@ final class AppModel: ObservableObject {
         followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
+        planRunnerTask?.cancel()
+        workerTracePersistenceTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         globalModsWatcher?.stop()
@@ -561,6 +577,8 @@ final class AppModel: ObservableObject {
         followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
+        planRunnerTask?.cancel()
+        workerTracePersistenceTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         globalModsWatcher?.stop()

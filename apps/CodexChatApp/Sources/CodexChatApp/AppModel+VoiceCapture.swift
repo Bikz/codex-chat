@@ -4,6 +4,8 @@ extension AppModel {
     var composerStarterPrompts: [String] {
         [
             "What's on my calendar today?",
+            "Clean up my desktop files.",
+            "Send message to Alex: Running 10 minutes late.",
             "Set up OpenClaw on a VM using Google CLI.",
             "Review this repo for risky code paths.",
         ]

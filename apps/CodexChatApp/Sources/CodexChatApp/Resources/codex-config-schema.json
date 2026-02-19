@@ -256,6 +256,9 @@
             "memory_tool": {
               "type": "boolean"
             },
+            "native_computer_actions": {
+              "type": "boolean"
+            },
             "multi_agent": {
               "type": "boolean"
             },
@@ -1394,6 +1397,9 @@
           "type": "boolean"
         },
         "memory_tool": {
+          "type": "boolean"
+        },
+        "native_computer_actions": {
           "type": "boolean"
         },
         "multi_agent": {
