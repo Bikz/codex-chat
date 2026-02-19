@@ -276,6 +276,22 @@ public final class MetadataDatabase: @unchecked Sendable {
             """)
         }
 
+        migrator.registerMigration("v15_scope_extension_installs_by_project") { db in
+            try db.alter(table: "extension_installs") { table in
+                table.add(column: "projectID", .text)
+            }
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_extension_installs_mod_scope")
+            try db.execute(sql: """
+            CREATE UNIQUE INDEX idx_extension_installs_scope_project_mod
+            ON extension_installs(scope, IFNULL(projectID, ''), modID)
+            """)
+            try db.create(
+                index: "idx_extension_installs_scope_project_enabled",
+                on: "extension_installs",
+                columns: ["scope", "projectID", "enabled", "updatedAt"]
+            )
+        }
+
         return migrator
     }
 }

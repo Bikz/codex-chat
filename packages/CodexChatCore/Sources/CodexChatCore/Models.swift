@@ -331,6 +331,12 @@ public struct AppPreferenceRecord: Hashable, Sendable, Codable {
     }
 }
 
+public enum TranscriptDetailLevel: String, CaseIterable, Sendable, Codable {
+    case chat
+    case balanced
+    case detailed
+}
+
 public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case lastOpenedProjectID = "last_opened_project_id"
     case lastOpenedThreadID = "last_opened_thread_id"
@@ -343,7 +349,9 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case generalProjectSafetyMigrationV1 = "general_project_safety_migration_v1"
     case runtimeConfigMigrationV1 = "runtime_config_migration_v1"
     case extensionsBackgroundAutomationPermission = "extensions.background_automation_permission"
-    case extensionsInspectorVisibilityByThread = "extensions.inspector_visibility_by_thread"
+    case extensionsModsBarVisibilityByThread = "extensions.mods_bar_visibility_by_thread"
+    case extensionsLegacyModsBarVisibility = "extensions.inspector_visibility_by_thread"
+    case transcriptDetailLevel = "transcript_detail_level"
 }
 
 public enum ExtensionInstallScope: String, CaseIterable, Hashable, Sendable, Codable {
@@ -355,6 +363,7 @@ public struct ExtensionInstallRecord: Identifiable, Hashable, Sendable, Codable 
     public let id: String
     public let modID: String
     public let scope: ExtensionInstallScope
+    public let projectID: UUID?
     public var sourceURL: String?
     public var installedPath: String
     public var enabled: Bool
@@ -365,6 +374,7 @@ public struct ExtensionInstallRecord: Identifiable, Hashable, Sendable, Codable 
         id: String,
         modID: String,
         scope: ExtensionInstallScope,
+        projectID: UUID? = nil,
         sourceURL: String? = nil,
         installedPath: String,
         enabled: Bool,
@@ -374,6 +384,7 @@ public struct ExtensionInstallRecord: Identifiable, Hashable, Sendable, Codable 
         self.id = id
         self.modID = modID
         self.scope = scope
+        self.projectID = projectID
         self.sourceURL = sourceURL
         self.installedPath = installedPath
         self.enabled = enabled

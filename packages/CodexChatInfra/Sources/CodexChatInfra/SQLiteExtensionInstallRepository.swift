@@ -8,6 +8,7 @@ private struct ExtensionInstallEntity: Codable, FetchableRecord, PersistableReco
     var id: String
     var modID: String
     var scope: String
+    var projectID: String?
     var sourceURL: String?
     var installedPath: String
     var enabled: Bool
@@ -18,6 +19,7 @@ private struct ExtensionInstallEntity: Codable, FetchableRecord, PersistableReco
         id = record.id
         modID = record.modID
         scope = record.scope.rawValue
+        projectID = record.projectID?.uuidString
         sourceURL = record.sourceURL
         installedPath = record.installedPath
         enabled = record.enabled
@@ -30,6 +32,7 @@ private struct ExtensionInstallEntity: Codable, FetchableRecord, PersistableReco
             id: id,
             modID: modID,
             scope: ExtensionInstallScope(rawValue: scope) ?? .global,
+            projectID: projectID.flatMap(UUID.init(uuidString:)),
             sourceURL: sourceURL,
             installedPath: installedPath,
             enabled: enabled,

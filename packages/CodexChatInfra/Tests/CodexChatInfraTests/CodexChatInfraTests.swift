@@ -33,6 +33,11 @@ final class CodexChatInfraTests: XCTestCase {
         }
         XCTAssertTrue(threadColumns.contains("isPinned"))
         XCTAssertTrue(threadColumns.contains("archivedAt"))
+
+        let extensionInstallColumns = try database.dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('extension_installs')")
+        }
+        XCTAssertTrue(extensionInstallColumns.contains("projectID"))
     }
 
     func testProjectThreadAndPreferencePersistence() async throws {
@@ -324,6 +329,51 @@ final class CodexChatInfraTests: XCTestCase {
         let afterDelete = try await repositories.followUpQueueRepository.list(threadID: thread.id)
         XCTAssertEqual(afterDelete.map(\.text), ["first"])
         XCTAssertEqual(afterDelete.first?.sortIndex, 0)
+    }
+
+    func testExtensionInstallRecordsAreScopedByProjectID() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let firstProject = try await repositories.projectRepository.createProject(
+            named: "First",
+            path: "/tmp/ext-first",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let secondProject = try await repositories.projectRepository.createProject(
+            named: "Second",
+            path: "/tmp/ext-second",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let firstRecord = ExtensionInstallRecord(
+            id: "project:\(firstProject.id.uuidString.lowercased()):com.example.same-mod",
+            modID: "com.example.same-mod",
+            scope: .project,
+            projectID: firstProject.id,
+            sourceURL: "https://github.com/example/same-mod",
+            installedPath: "/tmp/ext-first/mods/same-mod",
+            enabled: true
+        )
+        let secondRecord = ExtensionInstallRecord(
+            id: "project:\(secondProject.id.uuidString.lowercased()):com.example.same-mod",
+            modID: "com.example.same-mod",
+            scope: .project,
+            projectID: secondProject.id,
+            sourceURL: "https://github.com/example/same-mod",
+            installedPath: "/tmp/ext-second/mods/same-mod",
+            enabled: true
+        )
+
+        _ = try await repositories.extensionInstallRepository.upsert(firstRecord)
+        _ = try await repositories.extensionInstallRepository.upsert(secondRecord)
+
+        let installs = try await repositories.extensionInstallRepository.list()
+        XCTAssertEqual(installs.count(where: { $0.modID == "com.example.same-mod" }), 2)
+        XCTAssertTrue(installs.contains { $0.projectID == firstProject.id })
+        XCTAssertTrue(installs.contains { $0.projectID == secondProject.id })
     }
 
     func testRewriteSkillPathsMigratesEnabledEntriesToNewRoot() async throws {
