@@ -1819,6 +1819,47 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshThreadsCanSkipSelectedThreadFollowUpQueueRefresh() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-refresh-threads-followup-skip-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Follow-up Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let thread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Follow-up thread"
+        )
+        try await repositories.followUpQueueRepository.enqueue(
+            FollowUpQueueItemRecord(
+                threadID: thread.id,
+                source: .userQueued,
+                dispatchMode: .auto,
+                text: "queued follow-up",
+                sortIndex: 0
+            )
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        model.selectedProjectID = project.id
+        model.selectedThreadID = thread.id
+        model.followUpQueueByThreadID = [:]
+
+        try await model.refreshThreads(refreshSelectedThreadFollowUpQueue: false)
+
+        XCTAssertNil(model.followUpQueueByThreadID[thread.id])
+    }
+
+    @MainActor
     func testThreadTitleBackfillRunsOnceAndSetsMigrationPreference() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-thread-title-backfill-\(UUID().uuidString)", isDirectory: true)

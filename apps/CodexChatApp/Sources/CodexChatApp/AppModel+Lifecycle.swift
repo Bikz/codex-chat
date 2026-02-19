@@ -101,12 +101,14 @@ extension AppModel {
         try await validateAndRepairProjectsOnLaunch()
         try ensureCurrentStartupGeneration(generation)
 
-        try await refreshThreads()
+        try await refreshThreads(refreshSelectedThreadFollowUpQueue: false)
         try ensureCurrentStartupGeneration(generation)
 
         if let selectedThreadID {
-            await rehydrateThreadTranscript(threadID: selectedThreadID)
-            try ensureCurrentStartupGeneration(generation)
+            scheduleStartupSelectedThreadHydration(
+                threadID: selectedThreadID,
+                generation: generation
+            )
         }
 
         refreshConversationState()
@@ -200,6 +202,20 @@ extension AppModel {
         startupBackgroundTask?.cancel()
         startupLoadGeneration = startupLoadGeneration &+ 1
         return startupLoadGeneration
+    }
+
+    private func scheduleStartupSelectedThreadHydration(threadID: UUID, generation: UInt64) {
+        Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            guard isCurrentStartupGeneration(generation) else { return }
+
+            await rehydrateThreadTranscript(threadID: threadID)
+            guard !Task.isCancelled else { return }
+            guard isCurrentStartupGeneration(generation) else { return }
+            guard selectedThreadID == threadID else { return }
+
+            refreshConversationStateIfSelectedThreadChanged(threadID)
+        }
     }
 
     private func isCurrentStartupGeneration(_ generation: UInt64) -> Bool {

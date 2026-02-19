@@ -871,7 +871,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func refreshThreads() async throws {
+    func refreshThreads(refreshSelectedThreadFollowUpQueue: Bool = true) async throws {
         guard let threadRepository else {
             threadsState = .failed("Thread repository is unavailable.")
             return
@@ -889,7 +889,9 @@ final class AppModel: ObservableObject {
         if let selectedThreadID,
            loadedThreads.contains(where: { $0.id == selectedThreadID })
         {
-            try await refreshFollowUpQueue(threadID: selectedThreadID)
+            if refreshSelectedThreadFollowUpQueue {
+                try await refreshFollowUpQueue(threadID: selectedThreadID)
+            }
             return
         }
 
@@ -898,7 +900,9 @@ final class AppModel: ObservableObject {
         }
 
         selectedThreadID = loadedThreads.first?.id
-        if let selectedThreadID {
+        if refreshSelectedThreadFollowUpQueue,
+           let selectedThreadID
+        {
             try await refreshFollowUpQueue(threadID: selectedThreadID)
         }
     }

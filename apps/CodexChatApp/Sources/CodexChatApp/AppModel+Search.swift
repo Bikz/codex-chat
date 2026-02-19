@@ -69,7 +69,7 @@ extension AppModel {
             do {
                 try await persistSelection()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                try await refreshThreads()
+                try await refreshThreads(refreshSelectedThreadFollowUpQueue: false)
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 scheduleSelectedThreadHydration(
                     threadID: result.threadID,
