@@ -896,7 +896,7 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
-    func testModelPresetsExcludeLegacyGPT51AndIncludeGPT4o() {
+    func testModelPresetsIncludeRuntimeCatalogAndAppendGPT4o() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.runtimeModelCatalog = [
             RuntimeModelInfo(
@@ -911,7 +911,7 @@ final class CodexChatAppTests: XCTestCase {
             ),
         ]
 
-        XCTAssertEqual(model.modelPresets, ["gpt-5.3-codex", "gpt-4o"])
+        XCTAssertEqual(model.modelPresets, ["gpt-5.1-codex-mini", "gpt-5.3-codex", "gpt-4o"])
     }
 
     @MainActor

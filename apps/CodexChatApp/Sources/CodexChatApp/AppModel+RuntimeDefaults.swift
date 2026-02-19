@@ -346,10 +346,6 @@ extension AppModel {
             }
 
             let lowered = modelID.lowercased()
-            guard !lowered.hasPrefix("gpt-5.1") else {
-                continue
-            }
-
             guard seen.insert(lowered).inserted else {
                 continue
             }
@@ -556,7 +552,15 @@ extension AppModel {
     func runtimeTurnOptions() -> RuntimeTurnOptions {
         let effectiveModel = configuredModelOverride()
         let selectedModelID = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effort = canChooseReasoning(forModelID: selectedModelID) ? defaultReasoning.rawValue : nil
+        let effort: String?
+        if let configuredReasoning = configuredReasoningOverride(),
+           let mappedReasoning = reasoningLevelIfKnown(configuredReasoning)
+        {
+            let clampedReasoning = clampedReasoningLevel(mappedReasoning, forModelID: selectedModelID)
+            effort = canChooseReasoning(forModelID: selectedModelID) ? clampedReasoning.rawValue : nil
+        } else {
+            effort = nil
+        }
 
         return RuntimeTurnOptions(
             model: effectiveModel,
