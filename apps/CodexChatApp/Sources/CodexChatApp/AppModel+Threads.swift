@@ -28,6 +28,7 @@ extension AppModel {
             if draftChatProjectID != projectID {
                 draftChatProjectID = nil
             }
+            refreshConversationState()
             appendLog(.debug, "Selected project: \(projectID?.uuidString ?? "none")")
 
             do {
@@ -140,6 +141,7 @@ extension AppModel {
             draftChatProjectID = nil
             detailDestination = .thread
         }
+        refreshConversationState()
         appendLog(.debug, "Selected thread: \(threadID?.uuidString ?? "none")")
 
         Task {
@@ -258,6 +260,7 @@ extension AppModel {
         selectedThreadID = nil
         draftChatProjectID = projectID
         detailDestination = .thread
+        refreshConversationState()
         appendLog(.info, "Started draft chat for project \(projectID.uuidString)")
 
         Task {

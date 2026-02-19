@@ -1348,6 +1348,53 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testCreateGlobalNewChatClearsExistingConversationImmediately() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-global-chat-conversation-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Work Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let existingThread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Existing thread"
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        try await model.ensureGeneralProject()
+        try await model.refreshProjects()
+        model.selectedProjectID = project.id
+        model.selectedThreadID = existingThread.id
+        model.transcriptStore[existingThread.id] = [
+            .message(ChatMessage(threadId: existingThread.id, role: .assistant, text: "Existing conversation")),
+        ]
+        model.refreshConversationState()
+
+        let generalID = try XCTUnwrap(model.generalProject?.id)
+        model.createGlobalNewChat()
+
+        XCTAssertEqual(model.selectedProjectID, generalID)
+        XCTAssertNil(model.selectedThreadID)
+        XCTAssertEqual(model.draftChatProjectID, generalID)
+
+        guard case let .loaded(entries) = model.conversationState else {
+            XCTFail("Expected a loaded draft conversation state immediately after starting a new chat.")
+            return
+        }
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    @MainActor
     func testLoadInitialDataEntersOnboardingWhenRuntimeIsUnavailable() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-onboarding-startup-\(UUID().uuidString)", isDirectory: true)
