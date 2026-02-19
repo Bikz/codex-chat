@@ -331,7 +331,7 @@ public struct AppPreferenceRecord: Hashable, Sendable, Codable {
     }
 }
 
-public enum TranscriptDetailLevel: String, CaseIterable, Sendable, Codable {
+public enum TranscriptDetailLevel: String, CaseIterable, Hashable, Sendable, Codable {
     case chat
     case balanced
     case detailed

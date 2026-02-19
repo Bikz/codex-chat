@@ -408,6 +408,7 @@ extension AppModel {
                 Self.transcriptEntries(from: turns, threadID: threadID)
             }.value
             transcriptStore[threadID] = entries
+            bumpTranscriptRevision(for: threadID)
         } catch {
             appendLog(
                 .warning,

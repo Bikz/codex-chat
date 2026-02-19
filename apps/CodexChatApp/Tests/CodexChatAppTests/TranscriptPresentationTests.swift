@@ -272,6 +272,83 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
+    @MainActor
+    func testPresentationCacheHitReturnsIdenticalRowsForUnchangedKey() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.selectedThreadID = threadID
+        model.appendEntry(.message(userMessage(threadID: threadID, text: "Hello")), to: threadID)
+
+        guard case let .loaded(entries) = model.conversationState else {
+            XCTFail("Expected loaded conversation state")
+            return
+        }
+
+        let first = model.presentationRowsForSelectedConversation(entries: entries)
+        let second = model.presentationRowsForSelectedConversation(entries: entries)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(model.transcriptPresentationCache.count, 1)
+    }
+
+    @MainActor
+    func testTranscriptRevisionBumpInvalidatesPresentationCache() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.selectedThreadID = threadID
+        model.appendEntry(.message(userMessage(threadID: threadID, text: "Hello")), to: threadID)
+
+        guard case let .loaded(initialEntries) = model.conversationState else {
+            XCTFail("Expected loaded conversation state")
+            return
+        }
+        _ = model.presentationRowsForSelectedConversation(entries: initialEntries)
+        let initialRevision = model.transcriptRevisionsByThreadID[threadID]
+        XCTAssertEqual(model.transcriptPresentationCache.count, 1)
+
+        model.appendEntry(
+            .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
+            to: threadID
+        )
+
+        guard case let .loaded(updatedEntries) = model.conversationState else {
+            XCTFail("Expected loaded conversation state")
+            return
+        }
+        let updatedRows = model.presentationRowsForSelectedConversation(entries: updatedEntries)
+
+        XCTAssertEqual(model.transcriptPresentationCache.count, 1)
+        XCTAssertEqual(model.transcriptRevisionsByThreadID[threadID], (initialRevision ?? 0) + 1)
+        XCTAssertGreaterThan(updatedRows.count, 1)
+    }
+
+    @MainActor
+    func testDetailLevelSwitchUsesDifferentCacheKey() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.selectedThreadID = threadID
+        model.transcriptStore[threadID] = [
+            .message(userMessage(threadID: threadID, text: "Ship release")),
+            .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
+        ]
+        model.bumpTranscriptRevision(for: threadID)
+        model.refreshConversationState()
+
+        guard case let .loaded(entries) = model.conversationState else {
+            XCTFail("Expected loaded conversation state")
+            return
+        }
+
+        model.transcriptDetailLevel = .chat
+        let chatRows = model.presentationRowsForSelectedConversation(entries: entries)
+
+        model.transcriptDetailLevel = .detailed
+        let detailedRows = model.presentationRowsForSelectedConversation(entries: entries)
+
+        XCTAssertNotEqual(chatRows, detailedRows)
+        XCTAssertEqual(model.transcriptPresentationCache.count, 2)
+    }
+
     private func userMessage(threadID: UUID, text: String) -> ChatMessage {
         ChatMessage(threadId: threadID, role: .user, text: text)
     }

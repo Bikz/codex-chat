@@ -609,11 +609,7 @@ struct ChatsCanvasView: View {
                 }
             case let .loaded(entries):
                 conversationWithModsBar {
-                    let presentationRows = TranscriptPresentationBuilder.rows(
-                        entries: entries,
-                        detailLevel: model.transcriptDetailLevel,
-                        activeTurnContext: model.activeTurnContextForSelectedThread
-                    )
+                    let presentationRows = model.presentationRowsForSelectedConversation(entries: entries)
 
                     ScrollViewReader { proxy in
                         List(presentationRows) { row in

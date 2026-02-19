@@ -414,6 +414,9 @@ final class AppModel: ObservableObject {
     let extensionEventBus = ExtensionEventBus()
 
     var transcriptStore: [UUID: [TranscriptEntry]] = [:]
+    var transcriptRevisionsByThreadID: [UUID: UInt64] = [:]
+    var transcriptPresentationCache: [TranscriptPresentationCacheKey: TranscriptPresentationCacheEntry] = [:]
+    var transcriptPresentationCacheLRU: [TranscriptPresentationCacheKey] = []
     var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
     var runtimeThreadIDByLocalThreadID: [UUID: String] = [:]
     var localThreadIDByRuntimeThreadID: [String: UUID] = [:]
@@ -807,6 +810,7 @@ final class AppModel: ObservableObject {
 
     func appendEntry(_ entry: TranscriptEntry, to threadID: UUID) {
         transcriptStore[threadID, default: []].append(entry)
+        bumpTranscriptRevision(for: threadID)
         refreshConversationStateIfSelectedThreadChanged(threadID)
     }
 
@@ -826,6 +830,7 @@ final class AppModel: ObservableObject {
             existingMessage.text += delta
             entries[index] = .message(existingMessage)
             transcriptStore[threadID] = entries
+            bumpTranscriptRevision(for: threadID)
             refreshConversationStateIfSelectedThreadChanged(threadID)
             return
         }
@@ -836,6 +841,7 @@ final class AppModel: ObservableObject {
 
         transcriptStore[threadID] = entries
         assistantMessageIDsByItemID[threadID] = itemMap
+        bumpTranscriptRevision(for: threadID)
         refreshConversationStateIfSelectedThreadChanged(threadID)
     }
 
