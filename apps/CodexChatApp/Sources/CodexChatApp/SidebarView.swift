@@ -16,20 +16,6 @@ struct SidebarView: View {
     @State private var isSeeMoreHovered = false
 
     private let projectsPreviewCount = 3
-    private let iconColumnWidth: CGFloat = 18
-    private let rowHorizontalPadding: CGFloat = 8
-    private let rowVerticalPadding: CGFloat = 3
-    private let rowMinimumHeight: CGFloat = 28
-    private let controlIconWidth: CGFloat = 18
-    private let controlSlotSpacing: CGFloat = 6
-
-    private var projectTrailingWidth: CGFloat {
-        (controlIconWidth * 2) + controlSlotSpacing
-    }
-
-    private var threadTrailingWidth: CGFloat {
-        (controlIconWidth * 2) + controlSlotSpacing
-    }
 
     private var sidebarBodyFont: Font {
         .system(size: 14, weight: .regular)
@@ -44,11 +30,11 @@ struct SidebarView: View {
     }
 
     private var sidebarBodyIconFont: Font {
-        .system(size: 13, weight: .regular)
+        .system(size: 14, weight: .regular)
     }
 
     private var sidebarMetaIconFont: Font {
-        .system(size: 11, weight: .semibold)
+        .system(size: SidebarLayoutSpec.controlIconFontSize, weight: .semibold)
     }
 
     private var sidebarBackgroundColor: Color {
@@ -68,24 +54,30 @@ struct SidebarView: View {
                 SidebarActionRow(
                     icon: "square.and.pencil",
                     title: "New chat",
-                    iconColumnWidth: iconColumnWidth,
-                    horizontalPadding: rowHorizontalPadding,
-                    verticalPadding: rowVerticalPadding,
-                    minimumHeight: rowMinimumHeight,
+                    iconColumnWidth: SidebarLayoutSpec.iconColumnWidth,
+                    iconTextGap: SidebarLayoutSpec.iconTextGap,
+                    horizontalPadding: SidebarLayoutSpec.rowHorizontalPadding,
+                    verticalPadding: SidebarLayoutSpec.rowVerticalPadding,
+                    minimumHeight: SidebarLayoutSpec.rowMinHeight,
                     bodyFont: sidebarBodyFont,
                     iconFont: sidebarBodyIconFont,
+                    cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius,
+                    horizontalInset: SidebarLayoutSpec.selectedRowInset,
                     action: model.createGlobalNewChat
                 )
 
                 SidebarActionRow(
                     icon: "wand.and.stars",
                     title: "Skills & Mods",
-                    iconColumnWidth: iconColumnWidth,
-                    horizontalPadding: rowHorizontalPadding,
-                    verticalPadding: rowVerticalPadding,
-                    minimumHeight: rowMinimumHeight,
+                    iconColumnWidth: SidebarLayoutSpec.iconColumnWidth,
+                    iconTextGap: SidebarLayoutSpec.iconTextGap,
+                    horizontalPadding: SidebarLayoutSpec.rowHorizontalPadding,
+                    verticalPadding: SidebarLayoutSpec.rowVerticalPadding,
+                    minimumHeight: SidebarLayoutSpec.rowMinHeight,
                     bodyFont: sidebarBodyFont,
                     iconFont: sidebarBodyIconFont,
+                    cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius,
+                    horizontalInset: SidebarLayoutSpec.selectedRowInset,
                     isActive: model.detailDestination == .skillsAndMods,
                     action: model.openSkillsAndMods
                 )
@@ -95,43 +87,56 @@ struct SidebarView: View {
             Section {
                 projectRows
             } header: {
-                VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: tokens.spacing.xSmall)
-                    SidebarSectionHeader(
-                        title: "Projects",
-                        font: sidebarSectionFont,
-                        actionSystemImage: "plus",
-                        actionAccessibilityLabel: "New project",
-                        trailingAlignmentWidth: threadTrailingWidth,
-                        trailingPadding: rowHorizontalPadding,
-                        action: model.presentNewProjectSheet
-                    )
-                }
+                SidebarSectionHeader(
+                    title: "Projects",
+                    font: sidebarSectionFont,
+                    actionSystemImage: "plus",
+                    actionAccessibilityLabel: "New project",
+                    trailingAlignmentWidth: SidebarLayoutSpec.threadTrailingWidth,
+                    horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
+                    trailingPadding: 0,
+                    leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
+                    topPadding: SidebarLayoutSpec.sectionHeaderTopPadding,
+                    bottomPadding: SidebarLayoutSpec.sectionHeaderBottomPadding,
+                    actionSlotSize: SidebarLayoutSpec.controlButtonSize,
+                    actionSymbolSize: SidebarLayoutSpec.controlIconFontSize,
+                    titleTracking: 0.3,
+                    action: model.presentNewProjectSheet
+                )
             }
             .listRowSeparator(.hidden)
 
             Section {
                 generalThreadRows
             } header: {
-                VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: tokens.spacing.xSmall)
-                    SidebarSectionHeader(
-                        title: "General",
-                        font: sidebarSectionFont,
-                        actionSystemImage: "square.and.pencil",
-                        actionAccessibilityLabel: "New chat",
-                        trailingAlignmentWidth: threadTrailingWidth,
-                        trailingPadding: rowHorizontalPadding,
-                        action: model.createGlobalNewChat
-                    )
-                }
+                SidebarSectionHeader(
+                    title: "General",
+                    font: sidebarSectionFont,
+                    actionSystemImage: "square.and.pencil",
+                    actionAccessibilityLabel: "New chat",
+                    trailingAlignmentWidth: SidebarLayoutSpec.threadTrailingWidth,
+                    horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
+                    trailingPadding: 0,
+                    leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
+                    topPadding: SidebarLayoutSpec.sectionHeaderTopPadding,
+                    bottomPadding: SidebarLayoutSpec.sectionHeaderBottomPadding,
+                    actionSlotSize: SidebarLayoutSpec.controlButtonSize,
+                    actionSymbolSize: SidebarLayoutSpec.controlIconFontSize,
+                    titleTracking: 0.3,
+                    action: model.createGlobalNewChat
+                )
             }
             .listRowSeparator(.hidden)
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(sidebarBackgroundColor)
-        .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
+        .listRowInsets(EdgeInsets(
+            top: 0,
+            leading: SidebarLayoutSpec.listHorizontalInset,
+            bottom: 0,
+            trailing: SidebarLayoutSpec.listHorizontalInset
+        ))
         .safeAreaInset(edge: .bottom) {
             accountRow
         }
@@ -140,11 +145,11 @@ struct SidebarView: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: SidebarLayoutSpec.iconTextGap) {
             Image(systemName: "magnifyingglass")
                 .font(sidebarBodyIconFont)
                 .foregroundStyle(.secondary)
-                .frame(width: iconColumnWidth, alignment: .leading)
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
 
             TextField(
                 "Search",
@@ -179,19 +184,21 @@ struct SidebarView: View {
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, rowHorizontalPadding)
-        .padding(.vertical, rowVerticalPadding + 1)
+        .padding(.horizontal, SidebarLayoutSpec.rowHorizontalPadding)
+        .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
+        .frame(minHeight: SidebarLayoutSpec.searchMinHeight)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius, style: .continuous)
                 .fill(searchFieldFillColor)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius, style: .continuous)
                 .strokeBorder(
                     searchFieldBorderColor,
                     lineWidth: 1
                 )
         )
+        .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
         .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: isSearchFocused)
     }
 
@@ -218,23 +225,25 @@ struct SidebarView: View {
                     model.showAllProjects.toggle()
                 }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: SidebarLayoutSpec.iconTextGap) {
                     Image(systemName: model.showAllProjects ? "chevron.up" : "ellipsis")
                         .font(sidebarMetaIconFont)
                         .foregroundStyle(.secondary)
-                        .frame(width: iconColumnWidth, alignment: .leading)
+                        .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                     Text(model.showAllProjects ? "Show less" : "See more")
                         .font(sidebarMetaFont)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
-                .padding(.horizontal, rowHorizontalPadding)
+                .padding(.horizontal, SidebarLayoutSpec.rowHorizontalPadding)
                 .padding(.vertical, 6)
-                .frame(minHeight: rowMinimumHeight)
+                .frame(minHeight: SidebarLayoutSpec.rowMinHeight)
             }
             .buttonStyle(SidebarRowButtonStyle(
+                cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius,
                 isHovered: isSeeMoreHovered
             ))
+            .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
             .onHover { hovering in
                 guard isSeeMoreHovered != hovering else {
                     return
@@ -262,38 +271,38 @@ struct SidebarView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: SidebarLayoutSpec.iconTextGap) {
                     Image(systemName: projectLeadingIconName(isExpanded: isExpanded, isHovered: isHovered))
                         .font(sidebarBodyIconFont)
                         .foregroundStyle(.secondary)
-                        .frame(width: iconColumnWidth, alignment: .leading)
+                        .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
 
                     Text(project.name)
                         .font(sidebarBodyFont)
                         .lineLimit(1)
                         .foregroundStyle(.primary)
 
-                    Spacer(minLength: 6)
+                    Spacer(minLength: SidebarLayoutSpec.controlSlotSpacing)
 
                     Color.clear
-                        .frame(width: projectTrailingWidth)
+                        .frame(width: SidebarLayoutSpec.projectTrailingWidth)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, rowHorizontalPadding)
-                .padding(.vertical, rowVerticalPadding)
-                .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
+                .padding(.horizontal, SidebarLayoutSpec.rowHorizontalPadding)
+                .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
+                .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
             }
             .buttonStyle(SidebarRowButtonStyle(
                 isActive: isSelected,
-                cornerRadius: 5,
+                cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius,
                 isHovered: isHovered || isFlashed
             ))
-            .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius, style: .continuous))
             .accessibilityLabel(project.name)
             .accessibilityHint("Selects this project and toggles its thread list.")
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
-            HStack(spacing: controlSlotSpacing) {
+            HStack(spacing: SidebarLayoutSpec.controlSlotSpacing) {
                 Button {
                     if model.selectedProjectID != project.id {
                         model.selectProject(project.id)
@@ -303,7 +312,7 @@ struct SidebarView: View {
                     Image(systemName: "square.and.pencil")
                         .font(sidebarMetaIconFont)
                         .foregroundStyle(.secondary)
-                        .frame(width: controlIconWidth, height: controlIconWidth)
+                        .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -321,7 +330,7 @@ struct SidebarView: View {
                     Image(systemName: "ellipsis")
                         .font(sidebarMetaIconFont)
                         .foregroundStyle(.secondary)
-                        .frame(width: controlIconWidth, height: controlIconWidth)
+                        .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -330,10 +339,11 @@ struct SidebarView: View {
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
             }
-            .frame(width: projectTrailingWidth, alignment: .trailing)
-            .padding(.trailing, rowHorizontalPadding)
+            .frame(width: SidebarLayoutSpec.projectTrailingWidth, alignment: .trailing)
+            .padding(.trailing, SidebarLayoutSpec.rowHorizontalPadding)
         }
-        .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
+        .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
+        .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
         .onHover { hovering in
             let nextHoveredID = hovering ? project.id : nil
             guard hoveredProjectID != nextHoveredID else {
@@ -363,8 +373,12 @@ struct SidebarView: View {
             Button {
                 model.selectThread(thread.id)
             } label: {
-                HStack(spacing: 8) {
-                    if !isGeneralThread {
+                HStack(spacing: SidebarLayoutSpec.iconTextGap) {
+                    if isGeneralThread {
+                        Color.clear
+                            .frame(width: SidebarLayoutSpec.iconColumnWidth, height: 8, alignment: .leading)
+                            .accessibilityHidden(true)
+                    } else {
                         threadStatusMarker(for: thread.id)
                     }
 
@@ -379,23 +393,22 @@ struct SidebarView: View {
                         .lineLimit(1)
                         .foregroundStyle(.primary)
 
-                    Spacer(minLength: 6)
+                    Spacer(minLength: SidebarLayoutSpec.controlSlotSpacing)
 
                     Color.clear
-                        .frame(width: threadTrailingWidth)
+                        .frame(width: SidebarLayoutSpec.threadTrailingWidth)
                         .accessibilityHidden(true)
                 }
-                .padding(.leading, isGeneralThread ? 0 : rowHorizontalPadding)
-                .padding(.trailing, rowHorizontalPadding)
-                .padding(.vertical, rowVerticalPadding)
-                .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
+                .padding(.horizontal, SidebarLayoutSpec.rowHorizontalPadding)
+                .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
+                .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
             }
             .buttonStyle(SidebarRowButtonStyle(
                 isActive: isSelected,
-                cornerRadius: 5,
+                cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius,
                 isHovered: isHovered
             ))
-            .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius, style: .continuous))
             .accessibilityLabel(thread.title)
             .accessibilityHint(threadStatusHint(threadID: thread.id))
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -403,11 +416,13 @@ struct SidebarView: View {
             ZStack(alignment: .trailing) {
                 Text(compactRelativeAge(from: thread.updatedAt))
                     .font(sidebarMetaFont)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .frame(width: SidebarLayoutSpec.timestampColumnWidth, alignment: .trailing)
                     .opacity(isHovered ? 0 : 1)
                     .allowsHitTesting(false)
 
-                HStack(spacing: controlSlotSpacing) {
+                HStack(spacing: SidebarLayoutSpec.controlSlotSpacing) {
                     Button {
                         model.togglePin(threadID: thread.id)
                     } label: {
@@ -418,7 +433,7 @@ struct SidebarView: View {
                                     ? Color(hex: tokens.palette.accentHex).opacity(0.9)
                                     : .secondary
                             )
-                            .frame(width: controlIconWidth, height: controlIconWidth)
+                            .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                     }
                     .buttonStyle(.plain)
                     .help(thread.isPinned ? "Remove star" : "Star chat")
@@ -430,7 +445,7 @@ struct SidebarView: View {
                         Image(systemName: "archivebox")
                             .font(sidebarMetaIconFont)
                             .foregroundStyle(.secondary)
-                            .frame(width: controlIconWidth, height: controlIconWidth)
+                            .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                     }
                     .buttonStyle(.plain)
                     .help("Archive chat")
@@ -439,10 +454,11 @@ struct SidebarView: View {
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
             }
-            .frame(width: threadTrailingWidth, alignment: .trailing)
-            .padding(.trailing, rowHorizontalPadding)
+            .frame(width: SidebarLayoutSpec.threadTrailingWidth, alignment: .trailing)
+            .padding(.trailing, SidebarLayoutSpec.rowHorizontalPadding)
         }
-        .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
+        .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
+        .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
         .onHover { hovering in
             let nextHoveredID = hovering ? thread.id : nil
             guard hoveredThreadID != nextHoveredID else {
@@ -458,17 +474,17 @@ struct SidebarView: View {
             ProgressView()
                 .controlSize(.small)
                 .scaleEffect(0.72)
-                .frame(width: iconColumnWidth, alignment: .leading)
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 .accessibilityLabel("Working")
         } else if model.isThreadUnread(threadID) {
             Circle()
                 .fill(Color(hex: tokens.palette.accentHex).opacity(0.9))
                 .frame(width: 8, height: 8)
-                .frame(width: iconColumnWidth, alignment: .leading)
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 .accessibilityLabel("Unread updates")
         } else {
             Color.clear
-                .frame(width: iconColumnWidth, height: 8, alignment: .leading)
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, height: 8, alignment: .leading)
                 .accessibilityHidden(true)
         }
     }
@@ -541,7 +557,8 @@ struct SidebarView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(SidebarRowButtonStyle())
+                .buttonStyle(SidebarRowButtonStyle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius))
+                .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
             }
         }
     }
@@ -565,10 +582,12 @@ struct SidebarView: View {
 
                     Image(systemName: "gearshape")
                         .foregroundStyle(.secondary)
-                        .font(sidebarBodyFont)
+                        .font(sidebarMetaIconFont)
+                        .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .frame(minHeight: SidebarLayoutSpec.footerHeight - (SidebarLayoutSpec.footerVerticalInset * 2))
+                .padding(.horizontal, SidebarLayoutSpec.footerHorizontalInset)
+                .padding(.vertical, SidebarLayoutSpec.footerVerticalInset)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Account and settings")
@@ -608,38 +627,46 @@ private struct SidebarActionRow: View {
     let icon: String
     let title: String
     let iconColumnWidth: CGFloat
+    let iconTextGap: CGFloat
     let horizontalPadding: CGFloat
     let verticalPadding: CGFloat
     let minimumHeight: CGFloat
     let bodyFont: Font
     let iconFont: Font
+    let cornerRadius: CGFloat
+    let horizontalInset: CGFloat
     let isActive: Bool
     let action: () -> Void
 
     @State private var isHovered = false
-    @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
 
     init(
         icon: String,
         title: String,
         iconColumnWidth: CGFloat,
+        iconTextGap: CGFloat,
         horizontalPadding: CGFloat,
         verticalPadding: CGFloat,
         minimumHeight: CGFloat,
         bodyFont: Font,
         iconFont: Font,
+        cornerRadius: CGFloat,
+        horizontalInset: CGFloat,
         isActive: Bool = false,
         action: @escaping () -> Void
     ) {
         self.icon = icon
         self.title = title
         self.iconColumnWidth = iconColumnWidth
+        self.iconTextGap = iconTextGap
         self.horizontalPadding = horizontalPadding
         self.verticalPadding = verticalPadding
         self.minimumHeight = minimumHeight
         self.bodyFont = bodyFont
         self.iconFont = iconFont
+        self.cornerRadius = cornerRadius
+        self.horizontalInset = horizontalInset
         self.isActive = isActive
         self.action = action
     }
@@ -653,7 +680,7 @@ private struct SidebarActionRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: iconTextGap) {
                 Image(systemName: icon)
                     .font(iconFont)
                     .symbolRenderingMode(.hierarchical)
@@ -672,8 +699,10 @@ private struct SidebarActionRow: View {
         }
         .buttonStyle(SidebarRowButtonStyle(
             isActive: isActive,
+            cornerRadius: cornerRadius,
             isHovered: isHovered
         ))
+        .padding(.horizontal, horizontalInset)
         .onHover { hovering in
             guard isHovered != hovering else {
                 return

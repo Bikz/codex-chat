@@ -91,7 +91,14 @@ struct SidebarSectionHeader: View {
     let actionSystemImage: String?
     let actionAccessibilityLabel: String?
     let trailingAlignmentWidth: CGFloat?
+    let horizontalPadding: CGFloat
     let trailingPadding: CGFloat
+    let leadingInset: CGFloat
+    let topPadding: CGFloat
+    let bottomPadding: CGFloat
+    let actionSlotSize: CGFloat
+    let actionSymbolSize: CGFloat
+    let titleTracking: CGFloat
     let action: (() -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
@@ -104,7 +111,14 @@ struct SidebarSectionHeader: View {
         actionSystemImage: String? = nil,
         actionAccessibilityLabel: String? = nil,
         trailingAlignmentWidth: CGFloat? = nil,
+        horizontalPadding: CGFloat = 0,
         trailingPadding: CGFloat = 0,
+        leadingInset: CGFloat = 0,
+        topPadding: CGFloat = 8,
+        bottomPadding: CGFloat = 4,
+        actionSlotSize: CGFloat = 24,
+        actionSymbolSize: CGFloat = 13.5,
+        titleTracking: CGFloat = 0,
         action: (() -> Void)? = nil
     ) {
         self.title = title
@@ -112,7 +126,14 @@ struct SidebarSectionHeader: View {
         self.actionSystemImage = actionSystemImage
         self.actionAccessibilityLabel = actionAccessibilityLabel
         self.trailingAlignmentWidth = trailingAlignmentWidth
+        self.horizontalPadding = horizontalPadding
         self.trailingPadding = trailingPadding
+        self.leadingInset = leadingInset
+        self.topPadding = topPadding
+        self.bottomPadding = bottomPadding
+        self.actionSlotSize = actionSlotSize
+        self.actionSymbolSize = actionSymbolSize
+        self.titleTracking = titleTracking
         self.action = action
     }
 
@@ -132,29 +153,31 @@ struct SidebarSectionHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: SidebarLayoutSpec.iconTextGap) {
             Text(title.uppercased())
                 .font(font)
+                .kerning(titleTracking)
                 .foregroundStyle(Color.primary.opacity(0.44))
+                .padding(.leading, leadingInset)
 
-            Spacer(minLength: 6)
+            Spacer(minLength: SidebarLayoutSpec.controlSlotSpacing)
 
             if let action, let actionSystemImage {
                 Button(action: action) {
                     Image(systemName: actionSystemImage)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(.system(size: actionSymbolSize, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(actionIconColor)
-                        .frame(width: 24, height: 24)
+                        .frame(width: actionSlotSize, height: actionSlotSize)
                         .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: actionSlotSize * 0.25, style: .continuous)
                                 .fill(actionBackgroundColor)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: actionSlotSize * 0.25, style: .continuous)
                                 .strokeBorder(actionBorderColor)
                         )
-                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: actionSlotSize * 0.25, style: .continuous))
                         .animation(.easeInOut(duration: tokens.motion.hoverDuration), value: isActionHovered)
                 }
                 .buttonStyle(.plain)
@@ -167,7 +190,8 @@ struct SidebarSectionHeader: View {
                 .padding(.trailing, trailingPadding)
             }
         }
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(.top, topPadding)
+        .padding(.bottom, bottomPadding)
+        .padding(.horizontal, horizontalPadding)
     }
 }
