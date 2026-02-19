@@ -104,6 +104,9 @@ extension AppModel {
         try await refreshThreads(refreshSelectedThreadFollowUpQueue: false)
         try ensureCurrentStartupGeneration(generation)
 
+        ensureGeneralDraftChatSelectionIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
         if let selectedThreadID {
             scheduleStartupSelectedThreadHydration(
                 threadID: selectedThreadID,

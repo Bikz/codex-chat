@@ -470,6 +470,21 @@ extension AppModel {
         appendLog(.info, "Created default thread for project \(selectedProjectID.uuidString)")
     }
 
+    func ensureGeneralDraftChatSelectionIfNeeded() {
+        guard selectedThreadID == nil else {
+            return
+        }
+        guard !hasActiveDraftChatForSelectedProject else {
+            return
+        }
+        guard let generalProjectID = generalProject?.id else {
+            return
+        }
+
+        beginDraftChat(in: generalProjectID)
+        appendLog(.debug, "Activated General draft chat because no active thread was selected.")
+    }
+
     func ensureGeneralProject() async throws {
         guard let projectRepository else { return }
 
