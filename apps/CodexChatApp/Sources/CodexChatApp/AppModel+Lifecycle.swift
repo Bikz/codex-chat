@@ -63,6 +63,7 @@ extension AppModel {
             skillsState = .failed(message)
             runtimeStatus = .error
             runtimeIssue = .recoverable(message)
+            enterOnboarding(reason: .startup)
             appendLog(.error, "Failed to load initial data: \(message)")
             return
         }
