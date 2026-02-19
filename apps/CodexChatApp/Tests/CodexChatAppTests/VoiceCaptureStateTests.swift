@@ -87,6 +87,27 @@ final class VoiceCaptureStateTests: XCTestCase {
         XCTAssertEqual(voiceService.cancelCaptureCallCount, 1)
     }
 
+    func testVoiceCaptureElapsedTextClearsWhenRecordingStops() async throws {
+        let voiceService = MockVoiceCaptureService()
+        voiceService.authorizationStatus = .authorized
+        voiceService.stopResult = .success("done")
+
+        let model = makeReadyModel(voiceService: voiceService)
+        model.toggleVoiceCapture()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            model.isVoiceCaptureRecording && model.voiceCaptureElapsedText != nil
+        }
+
+        model.toggleVoiceCapture()
+
+        try await eventually(timeoutSeconds: 3.0) {
+            model.voiceCaptureState == .idle
+        }
+
+        XCTAssertNil(model.voiceCaptureElapsedText)
+    }
+
     private func makeReadyModel(voiceService: MockVoiceCaptureService) -> AppModel {
         let model = AppModel(
             repositories: nil,
