@@ -50,12 +50,16 @@ extension AppModel {
                 try await persistSelection()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshThreads()
-                if let selectedThreadID {
-                    try await refreshFollowUpQueue(threadID: selectedThreadID)
-                    await rehydrateThreadTranscript(threadID: selectedThreadID)
+                let hydratedThreadID = selectedThreadID
+                if let hydratedThreadID {
+                    scheduleSelectedThreadHydration(
+                        threadID: hydratedThreadID,
+                        transitionGeneration: transitionGeneration,
+                        reason: "selectProject"
+                    )
                 }
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                refreshConversationStateIfSelectedThreadChanged(selectedThreadID)
+                refreshConversationStateIfSelectedThreadChanged(hydratedThreadID)
                 scheduleProjectSecondarySurfaceRefresh(
                     transitionGeneration: transitionGeneration,
                     targetProjectID: projectID,
@@ -200,8 +204,11 @@ extension AppModel {
                 }
 
                 if let threadID {
-                    try await refreshFollowUpQueue(threadID: threadID)
-                    await rehydrateThreadTranscript(threadID: threadID)
+                    scheduleSelectedThreadHydration(
+                        threadID: threadID,
+                        transitionGeneration: transitionGeneration,
+                        reason: "selectThread"
+                    )
                 }
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationStateIfSelectedThreadChanged(threadID)

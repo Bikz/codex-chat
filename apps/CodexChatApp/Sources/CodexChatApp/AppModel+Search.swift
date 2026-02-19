@@ -71,8 +71,11 @@ extension AppModel {
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshThreads()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                try await refreshFollowUpQueue(threadID: result.threadID)
-                await rehydrateThreadTranscript(threadID: result.threadID)
+                scheduleSelectedThreadHydration(
+                    threadID: result.threadID,
+                    transitionGeneration: transitionGeneration,
+                    reason: "selectSearchResult"
+                )
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationStateIfSelectedThreadChanged(result.threadID)
                 scheduleProjectSecondarySurfaceRefresh(
