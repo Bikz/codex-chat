@@ -1043,6 +1043,53 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertFalse(model.isThreadUnread(activeThreadID))
     }
 
+    @MainActor
+    func testTurnCompletionFlushesBufferedAssistantDeltaImmediately() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        let turnID = UUID()
+
+        model.selectedThreadID = threadID
+        model.activeTurnContext = AppModel.ActiveTurnContext(
+            localTurnID: turnID,
+            localThreadID: threadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "thr_buffered",
+            runtimeTurnID: "turn_buffered",
+            memoryWriteMode: .off,
+            userText: "Start",
+            assistantText: "",
+            actions: [],
+            startedAt: Date()
+        )
+        model.isTurnInProgress = true
+
+        model.handleRuntimeEvent(.assistantMessageDelta(itemID: "msg_1", delta: "Buffered"))
+
+        let beforeFlush = model.transcriptStore[threadID, default: []]
+        XCTAssertFalse(beforeFlush.contains {
+            guard case let .message(message) = $0 else { return false }
+            return message.role == .assistant && message.text.contains("Buffered")
+        })
+
+        model.handleRuntimeEvent(
+            .turnCompleted(
+                RuntimeTurnCompletion(
+                    turnID: "turn_buffered",
+                    status: "completed",
+                    errorMessage: nil
+                )
+            )
+        )
+
+        let afterFlush = model.transcriptStore[threadID, default: []]
+        XCTAssertTrue(afterFlush.contains {
+            guard case let .message(message) = $0 else { return false }
+            return message.role == .assistant && message.text.contains("Buffered")
+        })
+    }
+
     func testMemoryAutoSummaryFormattingRespectsMode() {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let threadID = UUID()

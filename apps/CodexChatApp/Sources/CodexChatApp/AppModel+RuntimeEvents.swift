@@ -64,10 +64,7 @@ extension AppModel {
                 return
             }
 
-            appendAssistantDelta(delta, itemID: itemID, to: context.localThreadID)
-            var updatedContext = context
-            updatedContext.assistantText += delta
-            activeTurnContext = updatedContext
+            enqueueAssistantDeltaForUI(delta, itemID: itemID, threadID: context.localThreadID)
             emitExtensionEvent(
                 .assistantDelta,
                 projectID: context.projectID,
@@ -94,6 +91,7 @@ extension AppModel {
             handleRuntimeAction(action)
 
         case let .turnCompleted(completion):
+            conversationUpdateScheduler.flushImmediately()
             isTurnInProgress = false
             if let context = activeTurnContext {
                 let detail = if let errorMessage = completion.errorMessage {
@@ -209,7 +207,12 @@ extension AppModel {
             )
         }
 
+        if action.method == "turn/start/error" || action.method == "turn/error" {
+            conversationUpdateScheduler.flushImmediately()
+        }
+
         if action.method == "runtime/terminated" {
+            conversationUpdateScheduler.flushImmediately()
             handleRuntimeTermination(detail: action.detail)
         }
 
@@ -263,6 +266,30 @@ extension AppModel {
 
         if classification == .lifecycleNoise {
             appendLog(.debug, "Lifecycle runtime action received: \(action.method)")
+        }
+    }
+
+    private func enqueueAssistantDeltaForUI(_ delta: String, itemID: String, threadID: UUID) {
+        conversationUpdateScheduler.enqueue(
+            delta: delta,
+            threadID: threadID,
+            itemID: itemID
+        )
+    }
+
+    func applyCoalescedAssistantDeltaBatch(_ batch: [ConversationUpdateScheduler.BatchItem]) {
+        guard !batch.isEmpty else {
+            return
+        }
+
+        for item in batch {
+            appendAssistantDelta(item.delta, itemID: item.itemID, to: item.threadID)
+            if var context = activeTurnContext,
+               context.localThreadID == item.threadID
+            {
+                context.assistantText += item.delta
+                activeTurnContext = context
+            }
         }
     }
 

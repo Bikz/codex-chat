@@ -412,6 +412,9 @@ final class AppModel: ObservableObject {
     let extensionWorkerRunner = ExtensionWorkerRunner()
     let extensionStateStore = ExtensionStateStore()
     let extensionEventBus = ExtensionEventBus()
+    lazy var conversationUpdateScheduler = ConversationUpdateScheduler { [weak self] batch in
+        self?.applyCoalescedAssistantDeltaBatch(batch)
+    }
 
     var transcriptStore: [UUID: [TranscriptEntry]] = [:]
     var transcriptRevisionsByThreadID: [UUID: UInt64] = [:]
@@ -547,6 +550,7 @@ final class AppModel: ObservableObject {
         secondarySurfaceRefreshTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
+        conversationUpdateScheduler.invalidate()
         globalModsWatcher?.stop()
         globalModsWatcher = nil
         projectModsWatcher?.stop()

@@ -532,6 +532,8 @@ extension AppModel {
     }
 
     private func clearActiveTurnState() {
+        conversationUpdateScheduler.flushImmediately()
+
         if let context = activeTurnContext {
             assistantMessageIDsByItemID[context.localThreadID] = [:]
             localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != context.localThreadID }
