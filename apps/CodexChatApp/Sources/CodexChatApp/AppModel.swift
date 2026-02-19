@@ -398,9 +398,11 @@ final class AppModel: ObservableObject {
             }
         }
 
-        let scheduler = extensionAutomationScheduler
-        Task {
-            await scheduler.stopAll()
+        if !activeExtensionAutomations.isEmpty {
+            let scheduler = extensionAutomationScheduler
+            Task {
+                await scheduler.stopAll()
+            }
         }
     }
 
@@ -430,9 +432,11 @@ final class AppModel: ObservableObject {
             }
         }
 
-        let scheduler = extensionAutomationScheduler
-        Task {
-            await scheduler.stopAll()
+        if !activeExtensionAutomations.isEmpty {
+            let scheduler = extensionAutomationScheduler
+            Task {
+                await scheduler.stopAll()
+            }
         }
     }
 
