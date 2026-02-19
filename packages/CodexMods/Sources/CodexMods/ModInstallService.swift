@@ -58,6 +58,7 @@ public enum ModInstallServiceError: LocalizedError, Sendable {
     case sourceNotFound(String)
     case sourceNotDirectory(String)
     case unsupportedRemoteSource(String)
+    case unsupportedGitHubBlobURL(String)
     case cloneFailed(String)
     case packageRootNotFound
     case existingInstallNotFound(String)
@@ -75,6 +76,9 @@ public enum ModInstallServiceError: LocalizedError, Sendable {
             "Mod source must be a directory: \(source)"
         case let .unsupportedRemoteSource(source):
             "Unsupported remote source URL: \(source). Only GitHub repositories are supported for remote install."
+        case let .unsupportedGitHubBlobURL(source):
+            "Unsupported GitHub blob URL: \(source). Use the repository URL or a tree URL "
+                + "(`https://github.com/<owner>/<repo>/tree/<branch>/<mod-path>`)."
         case let .cloneFailed(detail):
             "Failed to clone mod source: \(detail)"
         case .packageRootNotFound:
@@ -104,6 +108,8 @@ public final class ModInstallService: @unchecked Sendable {
         let cloneURL: String
         let branch: String?
         let packageSubpath: String?
+        let treeReferenceComponents: [String]?
+        let isBlobURL: Bool
     }
 
     private struct PreparedPackage {
@@ -276,11 +282,18 @@ public final class ModInstallService: @unchecked Sendable {
         guard let descriptor = parseGitHubSource(source) else {
             throw ModInstallServiceError.unsupportedRemoteSource(source)
         }
+        if descriptor.isBlobURL {
+            throw ModInstallServiceError.unsupportedGitHubBlobURL(source)
+        }
+
+        let treeResolution = resolveTreeReference(for: descriptor)
+        let branch = treeResolution.branch ?? descriptor.branch
+        let packageSubpath = treeResolution.packageSubpath ?? descriptor.packageSubpath
 
         let tempRoot = fileManager.temporaryDirectory
             .appendingPathComponent("codexchat-mod-install-\(UUID().uuidString)", isDirectory: true)
 
-        if let branch = descriptor.branch {
+        if let branch {
             do {
                 _ = try processRunner(
                     ["git", "clone", "--depth", "1", "--branch", branch, descriptor.cloneURL, tempRoot.path],
@@ -301,7 +314,7 @@ public final class ModInstallService: @unchecked Sendable {
             }
         }
 
-        return StagedSource(rootURL: tempRoot, cleanupURL: tempRoot, packageSubpath: descriptor.packageSubpath)
+        return StagedSource(rootURL: tempRoot, cleanupURL: tempRoot, packageSubpath: packageSubpath)
     }
 
     private func resolvePackageRoot(from rootURL: URL, preferredSubpath: String?) throws -> URL {
@@ -352,7 +365,13 @@ public final class ModInstallService: @unchecked Sendable {
 
     private func parseGitHubSource(_ source: String) -> GitHubSourceDescriptor? {
         if source.hasPrefix("git@github.com:") {
-            return GitHubSourceDescriptor(cloneURL: source, branch: nil, packageSubpath: nil)
+            return GitHubSourceDescriptor(
+                cloneURL: source,
+                branch: nil,
+                packageSubpath: nil,
+                treeReferenceComponents: nil,
+                isBlobURL: false
+            )
         }
 
         guard let url = URL(string: source),
@@ -382,24 +401,120 @@ public final class ModInstallService: @unchecked Sendable {
         let cloneURL = "https://github.com/\(owner)/\(repository).git"
 
         guard rawComponents.count >= 4 else {
-            return GitHubSourceDescriptor(cloneURL: cloneURL, branch: nil, packageSubpath: nil)
+            return GitHubSourceDescriptor(
+                cloneURL: cloneURL,
+                branch: nil,
+                packageSubpath: nil,
+                treeReferenceComponents: nil,
+                isBlobURL: false
+            )
         }
 
         let marker = rawComponents[2].lowercased()
         guard marker == "tree" || marker == "blob" else {
-            return GitHubSourceDescriptor(cloneURL: cloneURL, branch: nil, packageSubpath: nil)
+            return GitHubSourceDescriptor(
+                cloneURL: cloneURL,
+                branch: nil,
+                packageSubpath: nil,
+                treeReferenceComponents: nil,
+                isBlobURL: false
+            )
         }
 
-        let branch = rawComponents[3].removingPercentEncoding ?? rawComponents[3]
-        let subpathComponents = rawComponents.dropFirst(4).map { $0.removingPercentEncoding ?? $0 }
-        let subpath = subpathComponents.joined(separator: "/")
-        let normalizedSubpath = normalizedPreferredSubpath(subpath)
+        let treeComponents = rawComponents.dropFirst(3).map { $0.removingPercentEncoding ?? $0 }
 
         return GitHubSourceDescriptor(
             cloneURL: cloneURL,
-            branch: branch.isEmpty ? nil : branch,
-            packageSubpath: normalizedSubpath
+            branch: nil,
+            packageSubpath: nil,
+            treeReferenceComponents: marker == "tree" ? treeComponents : nil,
+            isBlobURL: marker == "blob"
         )
+    }
+
+    private func resolveTreeReference(for descriptor: GitHubSourceDescriptor) -> (branch: String?, packageSubpath: String?) {
+        guard let components = descriptor.treeReferenceComponents else {
+            return (descriptor.branch, descriptor.packageSubpath)
+        }
+
+        let normalized = components
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !normalized.isEmpty else {
+            return (descriptor.branch, descriptor.packageSubpath)
+        }
+
+        if let resolved = tryResolveTreeReferenceFromRemote(cloneURL: descriptor.cloneURL, components: normalized) {
+            return resolved
+        }
+
+        let fallbackBranch = normalized.first
+        let fallbackSubpath = normalizedPreferredSubpath(normalized.dropFirst().joined(separator: "/"))
+        return (fallbackBranch, fallbackSubpath)
+    }
+
+    private func tryResolveTreeReferenceFromRemote(
+        cloneURL: String,
+        components: [String]
+    ) -> (branch: String, packageSubpath: String?)? {
+        let output: String
+        do {
+            output = try processRunner(["git", "ls-remote", "--heads", "--tags", cloneURL], nil)
+        } catch {
+            return nil
+        }
+
+        let refs = parseRefNames(from: output)
+        guard !refs.isEmpty else {
+            return nil
+        }
+
+        let sortedRefs = refs.sorted {
+            let lhsCount = $0.split(separator: "/").count
+            let rhsCount = $1.split(separator: "/").count
+            if lhsCount != rhsCount {
+                return lhsCount > rhsCount
+            }
+            return $0.count > $1.count
+        }
+
+        for ref in sortedRefs {
+            let refComponents = ref.split(separator: "/").map(String.init)
+            guard refComponents.count <= components.count else { continue }
+            if zip(refComponents, components).allSatisfy(==) {
+                let subpath = components.dropFirst(refComponents.count).joined(separator: "/")
+                return (ref, normalizedPreferredSubpath(subpath))
+            }
+        }
+
+        return nil
+    }
+
+    private func parseRefNames(from lsRemoteOutput: String) -> Set<String> {
+        var refs = Set<String>()
+        for rawLine in lsRemoteOutput.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+
+            let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard fields.count >= 2 else { continue }
+            var ref = fields[1]
+            if ref.hasPrefix("refs/heads/") {
+                ref = String(ref.dropFirst("refs/heads/".count))
+                if !ref.isEmpty {
+                    refs.insert(ref)
+                }
+            } else if ref.hasPrefix("refs/tags/") {
+                ref = String(ref.dropFirst("refs/tags/".count))
+                if ref.hasSuffix("^{}") {
+                    ref = String(ref.dropLast(3))
+                }
+                if !ref.isEmpty {
+                    refs.insert(ref)
+                }
+            }
+        }
+        return refs
     }
 
     private func stripGitSuffix(_ repository: String) -> String {

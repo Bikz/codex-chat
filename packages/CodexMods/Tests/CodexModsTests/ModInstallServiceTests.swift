@@ -235,6 +235,12 @@ final class ModInstallServiceTests: XCTestCase {
         )
 
         let processRunner: ModInstallService.ProcessRunner = { argv, _ in
+            if argv == ["git", "ls-remote", "--heads", "--tags", "https://github.com/acme/mod-pack.git"] {
+                return """
+                1111111111111111111111111111111111111111\trefs/heads/main
+                """
+            }
+
             guard argv.count >= 2,
                   argv[0] == "git",
                   argv[1] == "clone",
@@ -257,6 +263,84 @@ final class ModInstallServiceTests: XCTestCase {
 
         XCTAssertEqual(result.definition.manifest.id, "acme.personal-notes")
         XCTAssertTrue(FileManager.default.fileExists(atPath: result.installedDirectoryPath))
+    }
+
+    func testInstallServiceInstallsFromGitHubTreeSubdirectoryURLWithSlashBranch() throws {
+        let repoFixtureRoot = try makeTempDirectory(prefix: "codexmods-github-tree-slash-src")
+        let destinationRoot = try makeTempDirectory(prefix: "codexmods-github-tree-slash-dst")
+        defer {
+            try? FileManager.default.removeItem(at: repoFixtureRoot)
+            try? FileManager.default.removeItem(at: destinationRoot)
+        }
+
+        let packageRoot = repoFixtureRoot
+            .appendingPathComponent("mods/personal-notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
+
+        let definition = try writeUIMod(
+            to: packageRoot,
+            id: "acme.personal-notes",
+            name: "Personal Notes",
+            version: "1.0.0",
+            permissions: .init(projectRead: true, projectWrite: true)
+        )
+        let checksum = try checksumForUIMod(at: packageRoot)
+        try writePackageManifest(
+            to: packageRoot,
+            ModPackageManifest(
+                id: definition.manifest.id,
+                name: definition.manifest.name,
+                version: definition.manifest.version,
+                permissions: [.projectRead, .projectWrite],
+                integrity: .init(uiModSha256: checksum)
+            )
+        )
+
+        let processRunner: ModInstallService.ProcessRunner = { argv, _ in
+            if argv == ["git", "ls-remote", "--heads", "--tags", "https://github.com/acme/mod-pack.git"] {
+                return """
+                1111111111111111111111111111111111111111\trefs/heads/main
+                2222222222222222222222222222222222222222\trefs/heads/feature/release
+                """
+            }
+
+            guard argv.count >= 2,
+                  argv[0] == "git",
+                  argv[1] == "clone",
+                  argv.contains("--branch"),
+                  argv.contains("feature/release"),
+                  argv.contains("https://github.com/acme/mod-pack.git"),
+                  let destinationPath = argv.last
+            else {
+                throw ModInstallServiceError.commandFailed(command: argv.joined(separator: " "), output: "Unexpected command")
+            }
+            let destinationURL = URL(fileURLWithPath: destinationPath, isDirectory: true)
+            try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+            try Self.copyDirectoryContents(from: repoFixtureRoot, to: destinationURL)
+            return ""
+        }
+
+        let service = ModInstallService(processRunner: processRunner)
+        let sourceURL = "https://github.com/acme/mod-pack/tree/feature/release/mods/personal-notes"
+        let result = try service.install(source: sourceURL, destinationRootURL: destinationRoot)
+
+        XCTAssertEqual(result.definition.manifest.id, "acme.personal-notes")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.installedDirectoryPath))
+    }
+
+    func testInstallServiceRejectsGitHubBlobURLWithGuidance() throws {
+        let service = ModInstallService()
+        let sourceURL = "https://github.com/acme/mod-pack/blob/main/mods/personal-notes/ui.mod.json"
+
+        XCTAssertThrowsError(try service.preview(source: sourceURL)) { error in
+            guard let installError = error as? ModInstallServiceError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            guard case .unsupportedGitHubBlobURL = installError else {
+                return XCTFail("Expected unsupportedGitHubBlobURL, got \(installError)")
+            }
+            XCTAssertTrue(installError.localizedDescription.contains("/tree/"))
+        }
     }
 
     func testInstallServiceRejectsAmbiguousPackageRoot() throws {
