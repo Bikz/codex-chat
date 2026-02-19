@@ -693,8 +693,7 @@ struct ChatsCanvasView: View {
                             case let .liveActivity(activity):
                                 LiveTurnActivityRow(
                                     activity: activity,
-                                    detailLevel: model.transcriptDetailLevel,
-                                    model: model
+                                    detailLevel: model.transcriptDetailLevel
                                 )
                                 .padding(.vertical, tokens.spacing.xSmall)
                                 .listRowSeparator(.hidden)

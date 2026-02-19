@@ -201,11 +201,14 @@ enum TranscriptPresentationBuilder {
                 rows.append(.message(userMessage))
             }
 
-            for assistant in bucket.assistantMessages {
-                rows.append(.message(assistant))
+            let isActiveBucket = bucket.id == activeBucketID
+            if !isActiveBucket {
+                for assistant in bucket.assistantMessages {
+                    rows.append(.message(assistant))
+                }
             }
 
-            if bucket.id == activeBucketID {
+            if isActiveBucket {
                 continue
             }
 

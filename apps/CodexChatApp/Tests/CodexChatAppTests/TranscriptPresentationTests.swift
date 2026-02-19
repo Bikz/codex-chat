@@ -234,6 +234,48 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(liveRows.count, 1)
     }
 
+    @MainActor
+    func testActiveTurnHidesInProgressAssistantMessageUntilCompletion() {
+        let threadID = UUID()
+        let turnID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "Build game")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "I can build it.")),
+        ]
+
+        let activeContext = AppModel.ActiveTurnContext(
+            localTurnID: turnID,
+            localThreadID: threadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "runtime-thread",
+            runtimeTurnID: "runtime-turn",
+            memoryWriteMode: .off,
+            userText: "Build game",
+            assistantText: "I can build it.",
+            actions: [
+                action(threadID: threadID, method: "item/started", title: "Started reasoning"),
+            ],
+            startedAt: Date()
+        )
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: activeContext
+        )
+
+        let assistantMessages = rows.filter {
+            guard case let .message(message) = $0 else { return false }
+            return message.role == .assistant
+        }
+        XCTAssertTrue(assistantMessages.isEmpty)
+        XCTAssertTrue(rows.contains {
+            if case .liveActivity = $0 { return true }
+            return false
+        })
+    }
+
     func testCompletedTurnShowsSummaryWithoutLiveActivity() {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [
