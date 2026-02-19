@@ -83,7 +83,7 @@ extension AppModel {
 
         Task { [weak self] in
             guard let self else { return }
-            await self.runCodexHomeRepairFlow()
+            await runCodexHomeRepairFlow()
         }
     }
 
