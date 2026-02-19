@@ -123,7 +123,7 @@ struct ChatsCanvasView: View {
     }
 
     private var composerSurface: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if !model.composerAttachments.isEmpty {
                 composerContextStrip {
                     ForEach(model.composerAttachments) { attachment in
@@ -138,13 +138,13 @@ struct ChatsCanvasView: View {
                 }
             }
 
-            HStack(alignment: .center, spacing: tokens.spacing.small) {
+            HStack(alignment: .center, spacing: 10) {
                 TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: tokens.typography.bodySize + 0.5, weight: .medium))
+                    .font(.system(size: tokens.typography.bodySize + 1, weight: .regular))
                     .lineLimit(1 ... 6)
-                    .padding(.vertical, 8)
-                    .frame(minHeight: 30)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 34)
                     .focused($isComposerFocused)
                     .onTapGesture {
                         isComposerFocused = true
@@ -192,11 +192,11 @@ struct ChatsCanvasView: View {
                                 .controlSize(.mini)
                         } else {
                             Image(systemName: "waveform")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 14, weight: .semibold))
                         }
                     }
                     .foregroundStyle(voiceButtonForegroundColor)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 32, height: 32)
                     .background(
                         Circle()
                             .fill(voiceButtonBackgroundColor)
@@ -214,10 +214,14 @@ struct ChatsCanvasView: View {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 34, height: 34)
                         .background(
                             Circle()
-                                .fill(model.canSubmitComposerInput ? Color(hex: tokens.palette.accentHex) : Color(hex: tokens.palette.accentHex).opacity(0.35))
+                                .fill(
+                                    model.canSubmitComposerInput
+                                        ? Color(hex: tokens.palette.accentHex).opacity(0.9)
+                                        : Color(hex: tokens.palette.accentHex).opacity(0.28)
+                                )
                         )
                 }
                 .buttonStyle(.plain)
@@ -258,34 +262,32 @@ struct ChatsCanvasView: View {
                 .accessibilityElement(children: .combine)
             }
 
-            Divider()
-                .opacity(tokens.surfaces.hairlineOpacity)
-
             ComposerControlBar(model: model)
         }
         .onExitCommand {
             guard model.isVoiceCaptureInProgress else { return }
             model.cancelVoiceCapture()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
-            Color.primary.opacity(tokens.surfaces.baseOpacity),
-            in: RoundedRectangle(cornerRadius: tokens.radius.large)
+            Color.primary.opacity(tokens.surfaces.baseOpacity * 0.95),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: tokens.radius.large)
-                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity * 0.95))
 
             if isComposerDropTargeted {
-                RoundedRectangle(cornerRadius: tokens.radius.large)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .strokeBorder(Color(hex: tokens.palette.accentHex), lineWidth: 1.5)
                     .background(
-                        RoundedRectangle(cornerRadius: tokens.radius.large)
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .fill(Color(hex: tokens.palette.accentHex).opacity(0.08))
                     )
             }
         }
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.16 : 0.06), radius: 10, y: 2)
         .onDrop(
             of: [UTType.fileURL.identifier],
             isTargeted: $isComposerDropTargeted,
@@ -302,7 +304,7 @@ struct ChatsCanvasView: View {
         if case .transcribing = model.voiceCaptureState {
             return Color(hex: tokens.palette.accentHex)
         }
-        return .secondary
+        return composerLeadingButtonIconColor
     }
 
     private var voiceButtonBackgroundColor: Color {
@@ -312,7 +314,7 @@ struct ChatsCanvasView: View {
         if case .transcribing = model.voiceCaptureState {
             return Color(hex: tokens.palette.accentHex).opacity(0.12)
         }
-        return Color.primary.opacity(tokens.surfaces.baseOpacity)
+        return .clear
     }
 
     private var voiceButtonAccessibilityLabel: String {
@@ -335,7 +337,7 @@ struct ChatsCanvasView: View {
         if model.runtimeStatus == .starting {
             return "Connecting to Codex runtime…"
         }
-        return "Ask CodexChat to do something…"
+        return "Ask anything"
     }
 
     private func composerLeadingButton(
@@ -347,18 +349,11 @@ struct ChatsCanvasView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(composerLeadingButtonIconColor)
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 30, height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.55))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
-                )
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -817,11 +812,10 @@ private struct ComposerControlBar: View {
                     }
                 } label: {
                     controlChip(
-                        title: nil,
                         value: model.defaultModelDisplayName,
                         systemImage: "cpu",
-                        tint: Color(hex: tokens.palette.accentHex),
-                        minWidth: 180
+                        tint: Color.primary.opacity(0.78),
+                        minWidth: 148
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -840,11 +834,10 @@ private struct ComposerControlBar: View {
                         }
                     } label: {
                         controlChip(
-                            title: nil,
                             value: model.defaultReasoning.title,
                             systemImage: "brain.head.profile",
-                            tint: Color(hex: tokens.palette.accentHex).opacity(0.78),
-                            minWidth: 140
+                            tint: Color.primary.opacity(0.72),
+                            minWidth: 118
                         )
                     }
                     .menuStyle(.borderlessButton)
@@ -868,11 +861,10 @@ private struct ComposerControlBar: View {
                         }
                     } label: {
                         controlChip(
-                            title: "Web",
                             value: webSearchLabel(model.defaultWebSearch),
                             systemImage: "globe",
                             tint: webSearchTint(model.defaultWebSearch),
-                            minWidth: 110
+                            minWidth: 94
                         )
                     }
                     .menuStyle(.borderlessButton)
@@ -894,11 +886,10 @@ private struct ComposerControlBar: View {
                     }
                 } label: {
                     controlChip(
-                        title: "Memory",
                         value: model.composerMemoryDisplayLabel,
                         systemImage: "brain",
-                        tint: Color(hex: tokens.palette.accentHex).opacity(0.68),
-                        minWidth: 130
+                        tint: Color.primary.opacity(0.7),
+                        minWidth: 108
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -923,53 +914,41 @@ private struct ComposerControlBar: View {
     }
 
     private func controlChip(
-        title: String?,
         value: String,
         systemImage: String,
         tint: Color,
         minWidth: CGFloat
     ) -> some View {
-        let isValueOnly = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-
-        return HStack(spacing: 8) {
+        HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 13, weight: .semibold))
                 .frame(width: 14, height: 14)
                 .foregroundStyle(tint)
 
-            VStack(alignment: .leading, spacing: isValueOnly ? 0 : 1) {
-                if let title, !title.isEmpty {
-                    Text(title)
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                }
+            Text(value)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.92))
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-                Text(value)
-                    .font(isValueOnly ? .subheadline.weight(.semibold) : .caption.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+            Spacer(minLength: 2)
 
-            Spacer(minLength: 6)
-
-            Image(systemName: "chevron.up.chevron.down")
+            Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
         .frame(minWidth: minWidth, alignment: .leading)
         .background(
-            Color.primary.opacity(tokens.surfaces.baseOpacity),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            Color.primary.opacity(tokens.surfaces.baseOpacity * 1.15),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
         )
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     private func webSearchLabel(_ mode: ProjectWebSearchMode) -> String {
