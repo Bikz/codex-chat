@@ -15,7 +15,7 @@
       "id": "summary-thread-start",
       "event": "thread.started",
       "handler": {
-        "command": ["python3", "scripts/summary.py"],
+        "command": ["sh", "scripts/summary.sh"],
         "cwd": "."
       },
       "permissions": {},
@@ -26,7 +26,7 @@
       "id": "summary-turn-completed",
       "event": "turn.completed",
       "handler": {
-        "command": ["python3", "scripts/summary.py"],
+        "command": ["sh", "scripts/summary.sh"],
         "cwd": "."
       },
       "permissions": {},
@@ -37,7 +37,7 @@
       "id": "summary-turn-failed",
       "event": "turn.failed",
       "handler": {
-        "command": ["python3", "scripts/summary.py"],
+        "command": ["sh", "scripts/summary.sh"],
         "cwd": "."
       },
       "permissions": {},
@@ -48,7 +48,7 @@
       "id": "summary-action",
       "event": "modsBar.action",
       "handler": {
-        "command": ["python3", "scripts/summary.py"],
+        "command": ["sh", "scripts/summary.sh"],
         "cwd": "."
       },
       "permissions": {},

@@ -15,7 +15,7 @@
       "id": "notes-thread-start",
       "event": "thread.started",
       "handler": {
-        "command": ["python3", "scripts/notes.py"],
+        "command": ["sh", "scripts/notes.sh"],
         "cwd": "."
       },
       "permissions": {},
@@ -26,7 +26,7 @@
       "id": "notes-turn-refresh",
       "event": "turn.completed",
       "handler": {
-        "command": ["python3", "scripts/notes.py"],
+        "command": ["sh", "scripts/notes.sh"],
         "cwd": "."
       },
       "permissions": {},
@@ -37,7 +37,7 @@
       "id": "notes-action",
       "event": "modsBar.action",
       "handler": {
-        "command": ["python3", "scripts/notes.py"],
+        "command": ["sh", "scripts/notes.sh"],
         "cwd": "."
       },
       "permissions": {},
