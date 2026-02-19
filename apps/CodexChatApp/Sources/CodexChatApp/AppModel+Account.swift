@@ -4,7 +4,7 @@ import Foundation
 
 extension AppModel {
     func cancelPendingChatGPTLoginForTeardown() {
-        stopChatGPTLoginPolling(cancelRuntimeLogin: true)
+        prepareForTeardown()
     }
 
     func signInWithChatGPT() {
@@ -89,6 +89,7 @@ extension AppModel {
 
                 try await runtime.startAPIKeyLogin(apiKey: apiKey)
                 try await refreshAccountState()
+                await refreshRuntimeModelCatalog()
                 accountStatusMessage = "Signed in with API key."
                 appendLog(.info, "Signed in with API key")
                 completeOnboardingIfReady()
@@ -121,6 +122,7 @@ extension AppModel {
                 try keychainStore.deleteSecret(account: APIKeychainStore.runtimeAPIKeyAccount)
                 if runtime != nil {
                     try await refreshAccountState()
+                    await refreshRuntimeModelCatalog()
                 } else {
                     accountState = .signedOut
                 }
@@ -194,6 +196,7 @@ extension AppModel {
 
                     if isChatGPTSignedIn(state) {
                         pendingChatGPTLoginID = nil
+                        await refreshRuntimeModelCatalog()
                         accountStatusMessage = "Signed in with ChatGPT."
                         appendLog(.info, "ChatGPT login confirmed by account polling")
                         completeOnboardingIfReady()

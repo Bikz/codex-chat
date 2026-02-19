@@ -118,18 +118,27 @@ final class AppModel: ObservableObject {
     }
 
     enum ReasoningLevel: String, CaseIterable, Codable, Sendable {
+        case none
+        case minimal
         case low
         case medium
         case high
+        case xhigh
 
         var title: String {
             switch self {
+            case .none:
+                "None"
+            case .minimal:
+                "Minimal"
             case .low:
                 "Low"
             case .medium:
                 "Medium"
             case .high:
                 "High"
+            case .xhigh:
+                "X-High"
             }
         }
     }
@@ -173,7 +182,7 @@ final class AppModel: ObservableObject {
     @Published var searchQuery = ""
     @Published var selectedSkillIDForComposer: String?
     @Published var skillEnablementTargetSelectionBySkillID: [String: SkillEnablementTarget] = [:]
-    @Published var defaultModel = "gpt-5-codex"
+    @Published var defaultModel = ""
     @Published var defaultReasoning: ReasoningLevel = .medium
     @Published var defaultWebSearch: ProjectWebSearchMode = .cached
     @Published var defaultSafetySettings = ProjectSafetySettings(
@@ -226,6 +235,7 @@ final class AppModel: ObservableObject {
     @Published var unreadThreadIDs: Set<UUID> = []
     @Published var followUpStatusMessage: String?
     @Published var runtimeCapabilities: RuntimeCapabilities = .none
+    @Published var runtimeModelCatalog: [RuntimeModelInfo] = []
     @Published var isNodeSkillInstallerAvailable = false
     @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
     @Published var activeUntrustedShellWarning: UntrustedShellWarningContext?
@@ -295,6 +305,7 @@ final class AppModel: ObservableObject {
     var watchedProjectModsRootPath: String?
     var untrustedShellAcknowledgedProjectIDs: Set<UUID> = []
     var didLoadUntrustedShellAcknowledgements = false
+    var didPrepareForTeardown = false
 
     init(
         repositories: MetadataRepositories?,
@@ -356,12 +367,50 @@ final class AppModel: ObservableObject {
         }
     }
 
-    deinit {
-        if let runtime, let loginID = pendingChatGPTLoginID {
-            Task.detached {
-                try? await runtime.cancelChatGPTLogin(loginID: loginID)
+    func prepareForTeardown() {
+        guard !didPrepareForTeardown else {
+            return
+        }
+        didPrepareForTeardown = true
+
+        let runtimeForLoginCancellation = runtime
+        let pendingLoginID = pendingChatGPTLoginID
+        pendingChatGPTLoginID = nil
+
+        runtimeEventTask?.cancel()
+        runtimeAutoRecoveryTask?.cancel()
+        onboardingCompletionTask?.cancel()
+        chatGPTLoginPollingTask?.cancel()
+        chatGPTLoginPollingTask = nil
+        searchTask?.cancel()
+        followUpDrainTask?.cancel()
+        modsRefreshTask?.cancel()
+        modsDebounceTask?.cancel()
+        voiceAutoStopTask?.cancel()
+        globalModsWatcher?.stop()
+        globalModsWatcher = nil
+        projectModsWatcher?.stop()
+        projectModsWatcher = nil
+
+        if let runtimeForLoginCancellation, let pendingLoginID {
+            Task {
+                try? await runtimeForLoginCancellation.cancelChatGPTLogin(loginID: pendingLoginID)
             }
         }
+
+        let scheduler = extensionAutomationScheduler
+        Task {
+            await scheduler.stopAll()
+        }
+    }
+
+    deinit {
+        guard !didPrepareForTeardown else {
+            return
+        }
+
+        let runtimeForLoginCancellation = runtime
+        let pendingLoginID = pendingChatGPTLoginID
 
         runtimeEventTask?.cancel()
         runtimeAutoRecoveryTask?.cancel()
@@ -374,8 +423,15 @@ final class AppModel: ObservableObject {
         voiceAutoStopTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
+
+        if let runtimeForLoginCancellation, let pendingLoginID {
+            Task {
+                try? await runtimeForLoginCancellation.cancelChatGPTLogin(loginID: pendingLoginID)
+            }
+        }
+
         let scheduler = extensionAutomationScheduler
-        Task.detached {
+        Task {
             await scheduler.stopAll()
         }
     }
