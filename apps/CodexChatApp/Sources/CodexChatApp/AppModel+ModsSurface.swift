@@ -4,6 +4,15 @@ import CodexMods
 import Foundation
 
 extension AppModel {
+    private struct ModsRefreshSnapshot: Sendable {
+        let globalRoot: String
+        let projectRoot: String?
+        let globalMods: [DiscoveredUIMod]
+        let projectMods: [DiscoveredUIMod]
+        let selectedGlobal: String?
+        let selectedProject: String?
+    }
+
     func refreshModsSurface() {
         modsState = .loading
         modsRefreshTask?.cancel()
@@ -11,49 +20,68 @@ extension AppModel {
             extensionCatalogState = .loading
         }
 
+        let selectedProjectPath = selectedProject?.path
+        let selectedProjectModPath = selectedProject?.uiModPath
+        let modDiscoveryService = modDiscoveryService
+        let preferenceRepository = preferenceRepository
+
         modsRefreshTask = Task { [weak self] in
             guard let self else { return }
 
             do {
-                let globalRoot = try Self.globalModsRootPath()
-                let projectRoot = selectedProject.map { Self.projectModsRootPath(projectPath: $0.path) }
+                let snapshot = try await Task.detached(priority: .userInitiated) {
+                    let globalRoot = try Self.globalModsRootPath()
+                    let projectRoot = selectedProjectPath.map { Self.projectModsRootPath(projectPath: $0) }
 
-                let globalMods = try modDiscoveryService.discoverMods(in: globalRoot, scope: .global)
-                let projectMods: [DiscoveredUIMod] = if let projectRoot {
-                    try modDiscoveryService.discoverMods(in: projectRoot, scope: .project)
-                } else {
-                    []
+                    let globalMods = try modDiscoveryService.discoverMods(in: globalRoot, scope: .global)
+                    let projectMods: [DiscoveredUIMod] = if let projectRoot {
+                        try modDiscoveryService.discoverMods(in: projectRoot, scope: .project)
+                    } else {
+                        []
+                    }
+
+                    let persistedGlobal = try await preferenceRepository?.getPreference(key: .globalUIModPath)
+                    let selectedGlobal = Self.normalizedOptionalPath(persistedGlobal)
+                    let selectedProject = Self.normalizedOptionalPath(selectedProjectModPath)
+                    return ModsRefreshSnapshot(
+                        globalRoot: globalRoot,
+                        projectRoot: projectRoot,
+                        globalMods: globalMods,
+                        projectMods: projectMods,
+                        selectedGlobal: selectedGlobal,
+                        selectedProject: selectedProject
+                    )
+                }.value
+
+                guard !Task.isCancelled else {
+                    return
                 }
 
-                let persistedGlobal = try await preferenceRepository?.getPreference(key: .globalUIModPath)
-                let selectedGlobal = Self.normalizedOptionalPath(persistedGlobal)
-                let selectedProject = Self.normalizedOptionalPath(selectedProject?.uiModPath)
-
                 let resolved = Self.resolvedThemeOverrides(
-                    globalMods: globalMods,
-                    projectMods: projectMods,
-                    selectedGlobalPath: selectedGlobal,
-                    selectedProjectPath: selectedProject
+                    globalMods: snapshot.globalMods,
+                    projectMods: snapshot.projectMods,
+                    selectedGlobalPath: snapshot.selectedGlobal,
+                    selectedProjectPath: snapshot.selectedProject
                 )
                 effectiveThemeOverride = resolved.light
                 effectiveDarkThemeOverride = resolved.dark
                 modsState = .loaded(
                     ModsSurfaceModel(
-                        globalMods: globalMods,
-                        projectMods: projectMods,
-                        selectedGlobalModPath: selectedGlobal,
-                        selectedProjectModPath: selectedProject
+                        globalMods: snapshot.globalMods,
+                        projectMods: snapshot.projectMods,
+                        selectedGlobalModPath: snapshot.selectedGlobal,
+                        selectedProjectModPath: snapshot.selectedProject
                     )
                 )
                 syncActiveExtensions(
-                    globalMods: globalMods,
-                    projectMods: projectMods,
-                    selectedGlobalPath: selectedGlobal,
-                    selectedProjectPath: selectedProject
+                    globalMods: snapshot.globalMods,
+                    projectMods: snapshot.projectMods,
+                    selectedGlobalPath: snapshot.selectedGlobal,
+                    selectedProjectPath: snapshot.selectedProject
                 )
                 await refreshModCatalog()
 
-                startModWatchersIfNeeded(globalRootPath: globalRoot, projectRootPath: projectRoot)
+                startModWatchersIfNeeded(globalRootPath: snapshot.globalRoot, projectRootPath: snapshot.projectRoot)
             } catch {
                 modsState = .failed(error.localizedDescription)
                 modStatusMessage = "Failed to load mods: \(error.localizedDescription)"
@@ -362,21 +390,21 @@ extension AppModel {
         }
     }
 
-    static func globalModsRootPath(fileManager: FileManager = .default) throws -> String {
+    nonisolated static func globalModsRootPath(fileManager: FileManager = .default) throws -> String {
         let storagePaths = CodexChatStoragePaths.current(fileManager: fileManager)
         let root = storagePaths.globalModsURL
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         return root.path
     }
 
-    static func projectModsRootPath(projectPath: String) -> String {
+    nonisolated static func projectModsRootPath(projectPath: String) -> String {
         URL(fileURLWithPath: projectPath, isDirectory: true)
             .appendingPathComponent("mods", isDirectory: true)
             .standardizedFileURL
             .path
     }
 
-    static func normalizedOptionalPath(_ path: String?) -> String? {
+    nonisolated static func normalizedOptionalPath(_ path: String?) -> String? {
         let trimmed = (path ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return trimmed
