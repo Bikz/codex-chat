@@ -1,3 +1,4 @@
+import CodexChatCore
 @testable import CodexChatShared
 import CodexKit
 import XCTest
@@ -13,6 +14,107 @@ final class ComposerStarterPromptTests: XCTestCase {
 
         model.composerText = "   "
         XCTAssertTrue(model.shouldShowComposerStarterPrompts)
+    }
+
+    func testStarterPromptsHideWhenComposerHasAttachments() {
+        let model = makeReadyModel()
+        model.composerAttachments = [
+            AppModel.ComposerAttachment(
+                path: "/tmp/screenshot.png",
+                name: "screenshot.png",
+                kind: .localImage
+            ),
+        ]
+
+        XCTAssertFalse(model.shouldShowComposerStarterPrompts)
+    }
+
+    func testCanSubmitComposerInputRequiresDraftContent() {
+        let model = makeReadyModel()
+        XCTAssertFalse(model.canSubmitComposerInput)
+
+        model.composerText = "Draft message"
+        XCTAssertTrue(model.canSubmitComposerInput)
+
+        model.composerText = "   "
+        model.composerAttachments = [
+            AppModel.ComposerAttachment(
+                path: "/tmp/notes.md",
+                name: "notes.md",
+                kind: .mentionFile
+            ),
+        ]
+        XCTAssertTrue(model.canSubmitComposerInput)
+    }
+
+    func testRuntimeInputItemsMapFromComposerAttachments() {
+        let model = makeReadyModel()
+        let attachments = [
+            AppModel.ComposerAttachment(
+                path: "/tmp/example.png",
+                name: "example.png",
+                kind: .localImage
+            ),
+            AppModel.ComposerAttachment(
+                path: "/tmp/README.md",
+                name: "README.md",
+                kind: .mentionFile
+            ),
+        ]
+
+        let inputItems = model.runtimeInputItemsForComposerAttachments(attachments)
+        XCTAssertEqual(inputItems.count, 2)
+
+        if case let .localImage(path) = inputItems[0] {
+            XCTAssertEqual(path, "/tmp/example.png")
+        } else {
+            XCTFail("Expected first input item to be localImage")
+        }
+
+        if case let .mention(name, path) = inputItems[1] {
+            XCTAssertEqual(name, "README.md")
+            XCTAssertEqual(path, "/tmp/README.md")
+        } else {
+            XCTFail("Expected second input item to be mention")
+        }
+    }
+
+    func testComposerMemoryModeOverrideResolvesAgainstProjectDefaults() {
+        let model = makeReadyModel()
+        let project = ProjectRecord(
+            name: "Workspace",
+            path: "/tmp/workspace",
+            trustState: .trusted,
+            memoryWriteMode: .summariesOnly
+        )
+
+        model.composerMemoryMode = .projectDefault
+        XCTAssertEqual(model.effectiveComposerMemoryWriteMode(for: project), .summariesOnly)
+
+        model.composerMemoryMode = .off
+        XCTAssertEqual(model.effectiveComposerMemoryWriteMode(for: project), .off)
+
+        model.composerMemoryMode = .summariesAndKeyFacts
+        XCTAssertEqual(model.effectiveComposerMemoryWriteMode(for: project), .summariesAndKeyFacts)
+    }
+
+    func testSubmitComposerWithAttachmentsWhileBusyKeepsDraftAndShowsMessage() {
+        let model = makeReadyModel()
+        model.isTurnInProgress = true
+        model.composerAttachments = [
+            AppModel.ComposerAttachment(
+                path: "/tmp/context.png",
+                name: "context.png",
+                kind: .localImage
+            ),
+        ]
+        model.composerText = "Use this image"
+
+        model.submitComposerWithQueuePolicy()
+
+        XCTAssertEqual(model.composerText, "Use this image")
+        XCTAssertEqual(model.composerAttachments.count, 1)
+        XCTAssertTrue(model.followUpStatusMessage?.contains("can't be queued") ?? false)
     }
 
     func testInsertStarterPromptPopulatesComposerAndHidesStarterPrompts() {

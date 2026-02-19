@@ -261,14 +261,11 @@ extension AppModel {
     }
 
     private func appendMemorySummaryIfEnabled(context: ActiveTurnContext, assistantText: String) async {
-        guard let projectRepository else { return }
+        guard context.memoryWriteMode != .off else {
+            return
+        }
 
         do {
-            let project = try await projectRepository.getProject(id: context.projectID) ?? selectedProject
-            guard let project, project.memoryWriteMode != .off else {
-                return
-            }
-
             let store = ProjectMemoryStore(projectPath: context.projectPath)
             try await store.ensureStructure()
             let markdown = MemoryAutoSummary.markdown(
@@ -277,7 +274,7 @@ extension AppModel {
                 userText: context.userText,
                 assistantText: assistantText,
                 actions: context.actions,
-                mode: project.memoryWriteMode
+                mode: context.memoryWriteMode
             )
 
             try await store.appendToSummaryLog(markdown: markdown)

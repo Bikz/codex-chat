@@ -143,6 +143,50 @@ final class AppModel: ObservableObject {
         }
     }
 
+    enum ComposerMemoryMode: String, CaseIterable, Codable, Sendable {
+        case projectDefault = "project-default"
+        case off
+        case summariesOnly = "summaries-only"
+        case summariesAndKeyFacts = "summaries-and-key-facts"
+
+        var title: String {
+            switch self {
+            case .projectDefault:
+                "Project default"
+            case .off:
+                "Off"
+            case .summariesOnly:
+                "Summary"
+            case .summariesAndKeyFacts:
+                "Key facts"
+            }
+        }
+    }
+
+    enum ComposerAttachmentKind: String, Codable, Hashable, Sendable {
+        case localImage
+        case mentionFile
+    }
+
+    struct ComposerAttachment: Identifiable, Hashable, Sendable {
+        let id: UUID
+        let path: String
+        let name: String
+        let kind: ComposerAttachmentKind
+
+        init(
+            id: UUID = UUID(),
+            path: String,
+            name: String,
+            kind: ComposerAttachmentKind
+        ) {
+            self.id = id
+            self.path = path
+            self.name = name
+            self.kind = kind
+        }
+    }
+
     struct ActiveTurnContext {
         var localTurnID: UUID
         var localThreadID: UUID
@@ -150,6 +194,7 @@ final class AppModel: ObservableObject {
         var projectPath: String
         var runtimeThreadID: String
         var runtimeTurnID: String?
+        var memoryWriteMode: ProjectMemoryWriteMode
         var userText: String
         var assistantText: String
         var actions: [ActionCard]
@@ -179,6 +224,8 @@ final class AppModel: ObservableObject {
     @Published var expandedProjectIDs: Set<UUID> = []
     @Published var showAllProjects: Bool = false
     @Published var composerText = ""
+    @Published var composerMemoryMode: ComposerMemoryMode = .projectDefault
+    @Published var composerAttachments: [ComposerAttachment] = []
     @Published var searchQuery = ""
     @Published var selectedSkillIDForComposer: String?
     @Published var skillEnablementTargetSelectionBySkillID: [String: SkillEnablementTarget] = [:]
@@ -506,6 +553,15 @@ final class AppModel: ObservableObject {
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && isSignedInForRuntime
+    }
+
+    var hasComposerDraftContent: Bool {
+        !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !composerAttachments.isEmpty
+    }
+
+    var canSubmitComposerInput: Bool {
+        canSubmitComposer && hasComposerDraftContent
     }
 
     var hasActiveDraftChatForSelectedProject: Bool {

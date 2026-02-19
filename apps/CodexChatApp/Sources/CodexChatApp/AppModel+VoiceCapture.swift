@@ -11,6 +11,7 @@ extension AppModel {
 
     var shouldShowComposerStarterPrompts: Bool {
         composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && composerAttachments.isEmpty
             && canSubmitComposer
             && !isVoiceCaptureInProgress
     }

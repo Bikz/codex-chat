@@ -136,4 +136,70 @@ extension CodexRuntime {
             supportsFollowUpSuggestions: supportsFollowUpSuggestions
         )
     }
+
+    static func decodeModelList(from result: JSONValue) throws -> RuntimeModelList {
+        guard let data = result.value(at: ["data"])?.arrayValue else {
+            throw CodexRuntimeError.invalidResponse("model/list missing result.data[]")
+        }
+
+        let models = try data.map { value in
+            guard let object = value.objectValue else {
+                throw CodexRuntimeError.invalidResponse("model/list item is not an object")
+            }
+
+            let rawID = object["id"]?.stringValue ?? object["model"]?.stringValue ?? ""
+            let id = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty else {
+                throw CodexRuntimeError.invalidResponse("model/list item missing id/model")
+            }
+
+            let rawModel = object["model"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let model = (rawModel?.isEmpty == false) ? rawModel! : id
+
+            let rawDisplayName = object["displayName"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayName = (rawDisplayName?.isEmpty == false) ? rawDisplayName! : model
+
+            let rawDescription = object["description"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let description = (rawDescription?.isEmpty == false) ? rawDescription : nil
+
+            let rawDefaultEffort = object["defaultReasoningEffort"]?.stringValue?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let defaultReasoningEffort = (rawDefaultEffort?.isEmpty == false) ? rawDefaultEffort : nil
+
+            let rawUpgrade = object["upgrade"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let upgrade = (rawUpgrade?.isEmpty == false) ? rawUpgrade : nil
+
+            let supportedReasoningValues = object["supportedReasoningEfforts"]?.arrayValue ?? []
+            let supportedReasoningEfforts: [RuntimeReasoningEffortOption] = supportedReasoningValues.compactMap { entry in
+                let rawReasoningEffort = entry.value(at: ["reasoningEffort"])?.stringValue ?? ""
+                let reasoningEffort = rawReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !reasoningEffort.isEmpty else {
+                    return nil
+                }
+
+                let rawEntryDescription = (entry.value(at: ["description"])?.stringValue ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let entryDescription = rawEntryDescription.isEmpty ? nil : rawEntryDescription
+                return RuntimeReasoningEffortOption(
+                    reasoningEffort: reasoningEffort,
+                    description: entryDescription
+                )
+            }
+
+            return RuntimeModelInfo(
+                id: id,
+                model: model,
+                displayName: displayName,
+                description: description,
+                supportedReasoningEfforts: supportedReasoningEfforts,
+                defaultReasoningEffort: defaultReasoningEffort,
+                isDefault: object["isDefault"]?.boolValue ?? false,
+                upgrade: upgrade
+            )
+        }
+
+        let rawNextCursor = result.value(at: ["nextCursor"])?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextCursor = (rawNextCursor?.isEmpty == false) ? rawNextCursor : nil
+        return RuntimeModelList(models: models, nextCursor: nextCursor)
+    }
 }

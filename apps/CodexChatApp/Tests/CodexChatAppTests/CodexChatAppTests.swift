@@ -191,6 +191,7 @@ final class CodexChatAppTests: XCTestCase {
             projectID: projectID,
             projectPath: "/tmp",
             runtimeThreadID: "thr_1",
+            memoryWriteMode: .off,
             userText: "hello",
             assistantText: "",
             actions: [],
@@ -404,7 +405,7 @@ final class CodexChatAppTests: XCTestCase {
             bootError: nil,
             storagePaths: storagePaths
         )
-        model.updateCodexConfigValue(path: [.key("model")], value: .string("gpt-5-codex"))
+        model.updateCodexConfigValue(path: [.key("model")], value: .string("custom-model"))
 
         await model.saveCodexConfigAndRestartRuntime()
 
@@ -428,9 +429,60 @@ final class CodexChatAppTests: XCTestCase {
         model.updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: nil)
         model.updateCodexConfigValue(path: [.key("web_search")], value: nil)
 
-        XCTAssertEqual(model.defaultModel, "gpt-5-codex")
+        XCTAssertEqual(model.defaultModel, "")
         XCTAssertEqual(model.defaultReasoning, .medium)
         XCTAssertEqual(model.defaultWebSearch, .cached)
+    }
+
+    @MainActor
+    func testConfigDerivedDefaultsUseRuntimeModelCatalogWhenModelUnset() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.runtimeModelCatalog = [
+            RuntimeModelInfo(
+                id: "gpt-5.3-codex",
+                model: "gpt-5.3-codex",
+                displayName: "GPT-5.3 Codex",
+                supportedReasoningEfforts: [
+                    RuntimeReasoningEffortOption(reasoningEffort: "low"),
+                    RuntimeReasoningEffortOption(reasoningEffort: "medium"),
+                    RuntimeReasoningEffortOption(reasoningEffort: "high"),
+                    RuntimeReasoningEffortOption(reasoningEffort: "xhigh"),
+                ],
+                defaultReasoningEffort: "xhigh",
+                isDefault: true
+            ),
+        ]
+
+        model.replaceCodexConfigDocument(.empty())
+
+        XCTAssertEqual(model.defaultModel, "gpt-5.3-codex")
+        XCTAssertTrue(model.isUsingRuntimeDefaultModel)
+        XCTAssertEqual(model.defaultReasoning, .xhigh)
+        XCTAssertNil(model.runtimeTurnOptions().model)
+    }
+
+    @MainActor
+    func testReasoningLevelsClampToSelectedModelCapabilities() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.runtimeModelCatalog = [
+            RuntimeModelInfo(
+                id: "gpt-5.1-codex-mini",
+                model: "gpt-5.1-codex-mini",
+                displayName: "GPT-5.1 Codex Mini",
+                supportedReasoningEfforts: [
+                    RuntimeReasoningEffortOption(reasoningEffort: "medium"),
+                    RuntimeReasoningEffortOption(reasoningEffort: "high"),
+                ],
+                defaultReasoningEffort: "medium",
+                isDefault: false
+            ),
+        ]
+
+        model.updateCodexConfigValue(path: [.key("model")], value: .string("gpt-5.1-codex-mini"))
+        model.updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: .string("low"))
+
+        XCTAssertEqual(model.reasoningPresets, [.medium, .high])
+        XCTAssertEqual(model.defaultReasoning, .medium)
     }
 
     @MainActor
@@ -458,7 +510,7 @@ final class CodexChatAppTests: XCTestCase {
             XCTFail("Expected startup to continue with invalid config.toml, but projects failed: \(message)")
         }
 
-        XCTAssertEqual(model.defaultModel, "gpt-5-codex")
+        XCTAssertEqual(model.defaultModel, "")
         XCTAssertEqual(model.defaultReasoning, .medium)
         XCTAssertEqual(model.defaultWebSearch, .cached)
         XCTAssertTrue(model.codexConfigStatusMessage?.contains("Failed to load config.toml. Using built-in defaults") ?? false)
@@ -479,7 +531,7 @@ final class CodexChatAppTests: XCTestCase {
 
         XCTAssertTrue(
             model.shouldRetryWithoutTurnOptions(
-                CodexRuntimeError.rpcError(code: -32602, message: "Unknown model: gpt-5-codex")
+                CodexRuntimeError.rpcError(code: -32602, message: "Unknown model: custom-model")
             )
         )
         XCTAssertTrue(
@@ -514,6 +566,7 @@ final class CodexChatAppTests: XCTestCase {
             projectPath: "/tmp",
             runtimeThreadID: "thr_active",
             runtimeTurnID: "turn_active",
+            memoryWriteMode: .off,
             userText: "Start work",
             assistantText: "",
             actions: [],

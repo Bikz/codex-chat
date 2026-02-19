@@ -124,6 +124,19 @@ struct ChatsCanvasView: View {
                 .help("Insert memory snippet")
                 .disabled(model.selectedProjectID == nil)
 
+                Button {
+                    model.pickComposerAttachments()
+                } label: {
+                    Image(systemName: "paperclip")
+                        .foregroundStyle(.secondary)
+                        .symbolRenderingMode(.hierarchical)
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Attach files or images")
+                .help("Attach files or images")
+                .disabled(model.selectedProjectID == nil)
+
                 TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: tokens.typography.bodySize + 0.5, weight: .medium))
@@ -183,14 +196,54 @@ struct ChatsCanvasView: View {
                         .frame(width: 30, height: 30)
                         .background(
                             Circle()
-                                .fill(model.canSubmitComposer ? Color(hex: tokens.palette.accentHex) : Color(hex: tokens.palette.accentHex).opacity(0.35))
+                                .fill(model.canSubmitComposerInput ? Color(hex: tokens.palette.accentHex) : Color(hex: tokens.palette.accentHex).opacity(0.35))
                         )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Send message")
                 .help("Send")
                 .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(!model.canSubmitComposer)
+                .disabled(!model.canSubmitComposerInput)
+            }
+
+            if !model.composerAttachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.composerAttachments) { attachment in
+                            HStack(spacing: 6) {
+                                Image(systemName: attachment.kind == .localImage ? "photo" : "doc")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                Text(attachment.name)
+                                    .font(.caption.weight(.medium))
+                                    .lineLimit(1)
+
+                                Button {
+                                    model.removeComposerAttachment(attachment.id)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Remove \(attachment.name)")
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                            )
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                            )
+                            .help(attachment.path)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
             }
 
             if model.shouldShowComposerStarterPrompts {
@@ -456,8 +509,18 @@ private struct ComposerControlBar: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Menu {
+                    if model.runtimeDefaultModelID != nil {
+                        Button("Runtime default") {
+                            model.setDefaultModel("")
+                        }
+
+                        if !model.modelPresets.isEmpty {
+                            Divider()
+                        }
+                    }
+
                     ForEach(model.modelPresets, id: \.self) { preset in
-                        Button(preset) {
+                        Button(model.modelMenuLabel(for: preset)) {
                             model.setDefaultModel(preset)
                         }
                     }
@@ -471,7 +534,7 @@ private struct ComposerControlBar: View {
                 } label: {
                     controlChip(
                         title: "Model",
-                        value: model.defaultModel,
+                        value: model.defaultModelDisplayName,
                         systemImage: "cpu",
                         tint: Color(hex: tokens.palette.accentHex),
                         minWidth: 180
@@ -482,7 +545,7 @@ private struct ComposerControlBar: View {
                 .help("Select model")
 
                 Menu {
-                    ForEach(AppModel.ReasoningLevel.allCases, id: \.self) { level in
+                    ForEach(model.reasoningPresets, id: \.self) { level in
                         Button(level.title) {
                             model.setDefaultReasoning(level)
                         }
@@ -519,11 +582,36 @@ private struct ComposerControlBar: View {
                 .accessibilityLabel("Web search mode")
                 .help("Select web search mode")
 
+                Menu {
+                    ForEach(AppModel.ComposerMemoryMode.allCases, id: \.self) { mode in
+                        Button(mode.title) {
+                            model.setComposerMemoryMode(mode)
+                        }
+                    }
+                } label: {
+                    controlChip(
+                        title: "Memory",
+                        value: model.composerMemoryDisplayLabel,
+                        systemImage: "brain",
+                        tint: Color(hex: tokens.palette.accentHex).opacity(0.68),
+                        minWidth: 130
+                    )
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel("Memory mode")
+                .help("Select memory behavior for this turn")
+
                 Spacer()
             }
 
             if model.isDefaultWebSearchClampedForSelectedProject() {
                 Text("Web mode is clamped by project safety policy for this thread.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let memoryStatusLine = model.composerMemoryStatusLine {
+                Text(memoryStatusLine)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -589,14 +677,7 @@ private struct ComposerControlBar: View {
     }
 
     private func webSearchLabel(_ mode: ProjectWebSearchMode) -> String {
-        switch mode {
-        case .cached:
-            "Cached"
-        case .live:
-            "Live"
-        case .disabled:
-            "Disabled"
-        }
+        mode.title
     }
 
     private func webSearchTint(_ mode: ProjectWebSearchMode) -> Color {

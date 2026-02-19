@@ -22,6 +22,57 @@ public struct RuntimeCapabilities: Hashable, Sendable {
     )
 }
 
+public struct RuntimeReasoningEffortOption: Hashable, Sendable, Codable {
+    public let reasoningEffort: String
+    public let description: String?
+
+    public init(reasoningEffort: String, description: String? = nil) {
+        self.reasoningEffort = reasoningEffort
+        self.description = description
+    }
+}
+
+public struct RuntimeModelInfo: Hashable, Sendable, Codable, Identifiable {
+    public let id: String
+    public let model: String
+    public let displayName: String
+    public let description: String?
+    public let supportedReasoningEfforts: [RuntimeReasoningEffortOption]
+    public let defaultReasoningEffort: String?
+    public let isDefault: Bool
+    public let upgrade: String?
+
+    public init(
+        id: String,
+        model: String,
+        displayName: String,
+        description: String? = nil,
+        supportedReasoningEfforts: [RuntimeReasoningEffortOption] = [],
+        defaultReasoningEffort: String? = nil,
+        isDefault: Bool = false,
+        upgrade: String? = nil
+    ) {
+        self.id = id
+        self.model = model
+        self.displayName = displayName
+        self.description = description
+        self.supportedReasoningEfforts = supportedReasoningEfforts
+        self.defaultReasoningEffort = defaultReasoningEffort
+        self.isDefault = isDefault
+        self.upgrade = upgrade
+    }
+}
+
+public struct RuntimeModelList: Hashable, Sendable, Codable {
+    public let models: [RuntimeModelInfo]
+    public let nextCursor: String?
+
+    public init(models: [RuntimeModelInfo], nextCursor: String? = nil) {
+        self.models = models
+        self.nextCursor = nextCursor
+    }
+}
+
 public enum LogLevel: String, Codable, Sendable {
     case debug
     case info
@@ -206,6 +257,14 @@ public struct RuntimeSkillInput: Hashable, Sendable, Codable {
         self.name = name
         self.path = path
     }
+}
+
+public enum RuntimeInputItem: Hashable, Sendable, Codable {
+    case text(String)
+    case image(url: String)
+    case localImage(path: String)
+    case skill(RuntimeSkillInput)
+    case mention(name: String, path: String)
 }
 
 public struct RuntimeTurnOptions: Hashable, Sendable, Codable {

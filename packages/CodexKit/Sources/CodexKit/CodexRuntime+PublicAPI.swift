@@ -77,12 +77,14 @@ public extension CodexRuntime {
         text: String,
         safetyConfiguration: RuntimeSafetyConfiguration? = nil,
         skillInputs: [RuntimeSkillInput] = [],
+        inputItems: [RuntimeInputItem] = [],
         turnOptions: RuntimeTurnOptions? = nil
     ) async throws -> String {
         try await start()
 
         var includeWebSearch = true
         var includeSkillInputs = !skillInputs.isEmpty
+        var includeInputItems = !inputItems.isEmpty
         var useLegacyReasoningEffortField = false
         let result: JSONValue
         while true {
@@ -91,6 +93,7 @@ public extension CodexRuntime {
                 text: text,
                 safetyConfiguration: safetyConfiguration,
                 skillInputs: includeSkillInputs ? skillInputs : [],
+                inputItems: includeInputItems ? inputItems : [],
                 turnOptions: turnOptions,
                 includeWebSearch: includeWebSearch,
                 useLegacyReasoningEffortField: useLegacyReasoningEffortField
@@ -109,6 +112,10 @@ public extension CodexRuntime {
                 }
                 if includeSkillInputs, Self.shouldRetryWithoutSkillInput(error: error) {
                     includeSkillInputs = false
+                    continue
+                }
+                if includeInputItems, Self.shouldRetryWithoutInputItems(error: error) {
+                    includeInputItems = false
                     continue
                 }
                 throw error
@@ -228,5 +235,43 @@ public extension CodexRuntime {
     func logoutAccount() async throws {
         try await start()
         _ = try await sendRequest(method: "account/logout", params: .object([:]))
+    }
+
+    func listModels(cursor: String? = nil) async throws -> RuntimeModelList {
+        try await start()
+
+        let trimmedCursor = cursor?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var params: [String: JSONValue] = [:]
+        if let trimmedCursor, !trimmedCursor.isEmpty {
+            params["cursor"] = .string(trimmedCursor)
+        }
+
+        let result = try await sendRequest(method: "model/list", params: .object(params))
+        return try Self.decodeModelList(from: result)
+    }
+
+    func listAllModels() async throws -> [RuntimeModelInfo] {
+        var allModels: [RuntimeModelInfo] = []
+        var cursor: String?
+        var seenCursors: Set<String> = []
+
+        while true {
+            let page = try await listModels(cursor: cursor)
+            allModels.append(contentsOf: page.models)
+
+            guard let nextCursor = page.nextCursor?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !nextCursor.isEmpty,
+                  seenCursors.insert(nextCursor).inserted
+            else {
+                break
+            }
+
+            cursor = nextCursor
+        }
+
+        var seenModelIDs: Set<String> = []
+        return allModels.filter { model in
+            seenModelIDs.insert(model.id).inserted
+        }
     }
 }

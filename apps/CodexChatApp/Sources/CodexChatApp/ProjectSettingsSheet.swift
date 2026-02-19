@@ -169,16 +169,16 @@ struct ProjectSettingsSheet: View {
                 }
 
                 Picker("Sandbox mode", selection: $sandboxMode) {
-                    Text("Read-only").tag(ProjectSandboxMode.readOnly)
-                    Text("Workspace-write").tag(ProjectSandboxMode.workspaceWrite)
-                    Text("Danger full access").tag(ProjectSandboxMode.dangerFullAccess)
+                    ForEach(ProjectSandboxMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.menu)
 
                 Picker("Approval policy", selection: $approvalPolicy) {
-                    Text("Untrusted").tag(ProjectApprovalPolicy.untrusted)
-                    Text("On request").tag(ProjectApprovalPolicy.onRequest)
-                    Text("Never").tag(ProjectApprovalPolicy.never)
+                    ForEach(ProjectApprovalPolicy.allCases, id: \.self) { policy in
+                        Text(policy.title).tag(policy)
+                    }
                 }
                 .pickerStyle(.menu)
 
@@ -190,9 +190,9 @@ struct ProjectSettingsSheet: View {
                     .accessibilityHint("Only available when sandbox mode is workspace-write.")
 
                 Picker("Web search mode", selection: $webSearchMode) {
-                    Text("Cached").tag(ProjectWebSearchMode.cached)
-                    Text("Live").tag(ProjectWebSearchMode.live)
-                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                    ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.menu)
 

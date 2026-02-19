@@ -14,19 +14,105 @@ extension AppModel {
     }
 
     var modelPresets: [String] {
-        ["gpt-5-codex", "gpt-5", "o4-mini"]
+        let runtimeModelIDs = runtimeModelCatalog.map(\.id)
+        if !runtimeModelIDs.isEmpty {
+            return runtimeModelIDs
+        }
+
+        if let configuredModel = configuredModelOverride() {
+            return [configuredModel]
+        }
+
+        let fallbackModel = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !fallbackModel.isEmpty {
+            return [fallbackModel]
+        }
+
+        return []
+    }
+
+    var runtimeDefaultModelID: String? {
+        if let defaultModel = runtimeModelCatalog.first(where: \.isDefault) {
+            return defaultModel.id
+        }
+        return runtimeModelCatalog.first?.id
+    }
+
+    var isUsingRuntimeDefaultModel: Bool {
+        configuredModelOverride() == nil
+    }
+
+    var defaultModelDisplayName: String {
+        let effectiveModel = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !effectiveModel.isEmpty else {
+            return "Runtime default"
+        }
+        return modelDisplayName(for: effectiveModel)
+    }
+
+    var reasoningPresets: [ReasoningLevel] {
+        let selectedModelID = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let supportedBySelectedModel = supportedReasoningLevels(forModelID: selectedModelID)
+        if !supportedBySelectedModel.isEmpty {
+            return supportedBySelectedModel
+        }
+
+        let schemaReasoning = reasoningLevelsFromSchema()
+        if !schemaReasoning.isEmpty {
+            return schemaReasoning
+        }
+
+        return ReasoningLevel.allCases.sorted { reasoningRank($0) < reasoningRank($1) }
+    }
+
+    func modelDisplayName(for modelID: String) -> String {
+        let trimmedID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedID.isEmpty else {
+            return "Runtime default"
+        }
+
+        if let model = runtimeModelInfo(for: trimmedID) {
+            let displayName = model.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return displayName.isEmpty ? trimmedID : displayName
+        }
+
+        return trimmedID
+    }
+
+    func modelMenuLabel(for modelID: String) -> String {
+        let trimmedID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedID.isEmpty else {
+            return "Runtime default"
+        }
+
+        let displayName = modelDisplayName(for: trimmedID)
+        if displayName.caseInsensitiveCompare(trimmedID) == .orderedSame {
+            return trimmedID
+        }
+
+        return "\(displayName) (\(trimmedID))"
     }
 
     func setDefaultModel(_ model: String) {
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return
-        }
-        guard trimmed != defaultModel else {
+        let configuredModel = configuredModelOverride()
+
+        if trimmed.isEmpty {
+            guard configuredModel != nil else {
+                return
+            }
+
+            updateCodexConfigValue(path: [.key("model")], value: nil)
+            Task {
+                await saveCodexConfig(restartRuntime: false)
+            }
             return
         }
 
-        defaultModel = trimmed
+        guard trimmed != configuredModel else {
+            return
+        }
+
         updateCodexConfigValue(path: [.key("model")], value: .string(trimmed))
 
         Task {
@@ -57,6 +143,132 @@ extension AppModel {
 
         Task {
             await saveCodexConfig(restartRuntime: false)
+        }
+    }
+
+    func mapReasoningLevel(_ value: String) -> ReasoningLevel {
+        reasoningLevelIfKnown(value) ?? .medium
+    }
+
+    func reasoningLevelIfKnown(_ value: String) -> ReasoningLevel? {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "none":
+            return ReasoningLevel.none
+        case "minimal":
+            return ReasoningLevel.minimal
+        case "low":
+            return ReasoningLevel.low
+        case "medium":
+            return ReasoningLevel.medium
+        case "high":
+            return ReasoningLevel.high
+        case "xhigh", "x-high", "extra-high", "extra_high":
+            return ReasoningLevel.xhigh
+        default:
+            return nil
+        }
+    }
+
+    func defaultReasoningForModel(_ modelID: String?) -> ReasoningLevel? {
+        guard let model = runtimeModelInfo(for: modelID) else {
+            return nil
+        }
+
+        if let defaultReasoningEffort = model.defaultReasoningEffort,
+           let mapped = reasoningLevelIfKnown(defaultReasoningEffort)
+        {
+            return mapped
+        }
+
+        let supported = supportedReasoningLevels(forModelID: model.id)
+        return supported.first
+    }
+
+    func supportedReasoningLevels(forModelID modelID: String?) -> [ReasoningLevel] {
+        guard let model = runtimeModelInfo(for: modelID) else {
+            return []
+        }
+
+        var seen: Set<ReasoningLevel> = []
+        return model.supportedReasoningEfforts.compactMap { option in
+            guard let level = reasoningLevelIfKnown(option.reasoningEffort),
+                  seen.insert(level).inserted
+            else {
+                return nil
+            }
+            return level
+        }
+    }
+
+    func clampedReasoningLevel(_ level: ReasoningLevel, forModelID modelID: String?) -> ReasoningLevel {
+        let supported = supportedReasoningLevels(forModelID: modelID)
+        guard !supported.isEmpty else {
+            return level
+        }
+
+        if supported.contains(level) {
+            return level
+        }
+
+        return defaultReasoningForModel(modelID) ?? supported.first ?? level
+    }
+
+    func configuredModelOverride() -> String? {
+        let rawModel = codexConfigDocument.value(at: [.key("model")])?.stringValue
+        let trimmedModel = rawModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedModel, !trimmedModel.isEmpty else {
+            return nil
+        }
+        return trimmedModel
+    }
+
+    func configuredReasoningOverride() -> String? {
+        let rawReasoning = codexConfigDocument.value(at: [.key("model_reasoning_effort")])?.stringValue
+        let trimmedReasoning = rawReasoning?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedReasoning, !trimmedReasoning.isEmpty else {
+            return nil
+        }
+        return trimmedReasoning
+    }
+
+    private func runtimeModelInfo(for modelID: String?) -> RuntimeModelInfo? {
+        let trimmedModelID = modelID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmedModelID.isEmpty else {
+            return nil
+        }
+
+        return runtimeModelCatalog.first { model in
+            model.id == trimmedModelID || model.model == trimmedModelID
+        }
+    }
+
+    private func reasoningLevelsFromSchema() -> [ReasoningLevel] {
+        let schemaEnumValues = codexConfigSchema
+            .node(at: [.key("model_reasoning_effort")])?
+            .enumValues ?? []
+
+        var seen: Set<ReasoningLevel> = []
+        return schemaEnumValues
+            .compactMap(reasoningLevelIfKnown)
+            .filter { seen.insert($0).inserted }
+            .sorted { reasoningRank($0) < reasoningRank($1) }
+    }
+
+    private func reasoningRank(_ level: ReasoningLevel) -> Int {
+        switch level {
+        case .none:
+            0
+        case .minimal:
+            1
+        case .low:
+            2
+        case .medium:
+            3
+        case .high:
+            4
+        case .xhigh:
+            5
         }
     }
 
@@ -150,8 +362,7 @@ extension AppModel {
     }
 
     func runtimeTurnOptions() -> RuntimeTurnOptions {
-        let model = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveModel = model.isEmpty ? nil : model
+        let effectiveModel = configuredModelOverride()
 
         return RuntimeTurnOptions(
             model: effectiveModel,

@@ -31,18 +31,23 @@ extension AppModel {
         threadID: UUID,
         projectID: UUID,
         projectPath: String,
-        sourceQueueItemID: UUID?
+        sourceQueueItemID: UUID?,
+        composerAttachments: [ComposerAttachment] = []
     ) async throws {
         guard let runtime else {
             throw CodexRuntimeError.processNotRunning
         }
 
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else {
+        guard !trimmedText.isEmpty || !composerAttachments.isEmpty else {
             return
         }
 
-        appendEntry(.message(ChatMessage(threadId: threadID, role: .user, text: trimmedText)), to: threadID)
+        let displayText = displayTextForComposerSubmission(text: trimmedText, attachments: composerAttachments)
+        let runtimeText = runtimeTextForComposerSubmission(text: trimmedText, attachments: composerAttachments)
+        let inputItems = runtimeInputItemsForComposerAttachments(composerAttachments)
+
+        appendEntry(.message(ChatMessage(threadId: threadID, role: .user, text: displayText)), to: threadID)
         followUpStatusMessage = nil
         isTurnInProgress = true
         autoDrainPreferredThreadID = threadID
@@ -51,6 +56,7 @@ extension AppModel {
             throw CodexChatCoreError.missingRecord(projectID.uuidString)
         }
 
+        let effectiveMemoryWriteMode = effectiveComposerMemoryWriteMode(for: project)
         let safetyConfiguration = runtimeSafetyConfiguration(
             for: project,
             preferredWebSearch: defaultWebSearch
@@ -74,7 +80,8 @@ extension AppModel {
                 projectID: projectID,
                 projectPath: projectPath,
                 runtimeThreadID: runtimeThreadID,
-                userText: trimmedText,
+                memoryWriteMode: effectiveMemoryWriteMode,
+                userText: displayText,
                 assistantText: "",
                 actions: [],
                 startedAt: startedAt
@@ -88,7 +95,7 @@ extension AppModel {
                         turnID: localTurnID,
                         timestamp: startedAt,
                         status: .pending,
-                        userText: trimmedText,
+                        userText: displayText,
                         assistantText: "",
                         actions: []
                     )
@@ -115,9 +122,10 @@ extension AppModel {
                 turnID = try await startTurnWithRuntimeFallback(
                     runtime: runtime,
                     threadID: runtimeThreadID,
-                    text: trimmedText,
+                    text: runtimeText,
                     safetyConfiguration: safetyConfiguration,
                     skillInputs: selectedSkillInput.map { [$0] } ?? [],
+                    inputItems: inputItems,
                     turnOptions: turnOptions
                 )
             } catch {
@@ -143,9 +151,10 @@ extension AppModel {
                 turnID = try await startTurnWithRuntimeFallback(
                     runtime: runtime,
                     threadID: runtimeThreadID,
-                    text: trimmedText,
+                    text: runtimeText,
                     safetyConfiguration: safetyConfiguration,
                     skillInputs: selectedSkillInput.map { [$0] } ?? [],
+                    inputItems: inputItems,
                     turnOptions: turnOptions
                 )
             }
@@ -288,6 +297,7 @@ extension AppModel {
         resetRuntimeThreadCaches()
         try await refreshAccountState(refreshToken: true)
         try await restorePersistedAPIKeyIfNeeded()
+        await refreshRuntimeModelCatalog()
         refreshConversationState()
         requestAutoDrain(reason: "runtime connected")
     }
@@ -432,6 +442,7 @@ extension AppModel {
         text: String,
         safetyConfiguration: RuntimeSafetyConfiguration,
         skillInputs: [RuntimeSkillInput],
+        inputItems: [RuntimeInputItem],
         turnOptions: RuntimeTurnOptions
     ) async throws -> String {
         do {
@@ -440,6 +451,7 @@ extension AppModel {
                 text: text,
                 safetyConfiguration: safetyConfiguration,
                 skillInputs: skillInputs,
+                inputItems: inputItems,
                 turnOptions: turnOptions
             )
         } catch {
@@ -454,6 +466,7 @@ extension AppModel {
                 text: text,
                 safetyConfiguration: safetyConfiguration,
                 skillInputs: skillInputs,
+                inputItems: inputItems,
                 turnOptions: nil
             )
         }
@@ -594,6 +607,24 @@ extension AppModel {
         try await runtime.startAPIKeyLogin(apiKey: apiKey)
         try await refreshAccountState(refreshToken: true)
         accountStatusMessage = "Restored API key session from Keychain."
+    }
+
+    func refreshRuntimeModelCatalog() async {
+        guard let runtime else {
+            return
+        }
+
+        do {
+            let models = try await runtime.listAllModels()
+            runtimeModelCatalog = models
+            applyDerivedRuntimeDefaultsFromConfig()
+            appendLog(.info, "Loaded \(models.count) models from runtime")
+        } catch {
+            appendLog(.warning, "Failed to load runtime model catalog: \(error.localizedDescription)")
+            if runtimeModelCatalog.isEmpty {
+                applyDerivedRuntimeDefaultsFromConfig()
+            }
+        }
     }
 
     private func reconcileStaleApprovalState(reason: String) {

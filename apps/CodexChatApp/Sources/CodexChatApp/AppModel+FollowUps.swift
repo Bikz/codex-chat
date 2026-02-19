@@ -5,16 +5,29 @@ import Foundation
 extension AppModel {
     func submitComposerWithQueuePolicy() {
         let trimmedText = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else {
+        let attachments = composerAttachments
+        guard !trimmedText.isEmpty || !attachments.isEmpty else {
             return
         }
 
         let startedFromDraft = hasActiveDraftChatForSelectedProject
         let initialPolicy = composerDispatchPolicy
+        if attachments.isEmpty == false, case .queueOnly = initialPolicy {
+            followUpStatusMessage = "Attachments can't be queued while a turn is running. Wait for idle, then send."
+            return
+        }
+
+        if case let .disabled(reason) = initialPolicy {
+            followUpStatusMessage = reason
+            return
+        }
+
         composerText = ""
+        clearComposerAttachments()
         if case .readyNow = initialPolicy {
             isTurnInProgress = true
         }
+
         Task {
             do {
                 let threadID = try await materializeDraftThreadIfNeeded()
@@ -29,7 +42,8 @@ extension AppModel {
                             threadID: threadID,
                             projectID: project.id,
                             projectPath: project.path,
-                            sourceQueueItemID: nil
+                            sourceQueueItemID: nil,
+                            composerAttachments: attachments
                         )
                     } catch {
                         if activeTurnContext == nil {
@@ -39,6 +53,15 @@ extension AppModel {
                     }
 
                 case .queueOnly:
+                    if case .readyNow = initialPolicy {
+                        isTurnInProgress = false
+                    }
+                    guard attachments.isEmpty else {
+                        composerText = trimmedText
+                        composerAttachments = attachments
+                        followUpStatusMessage = "Attachments can't be queued while a turn is running. Wait for idle, then send."
+                        return
+                    }
                     try await enqueueFollowUp(
                         threadID: threadID,
                         text: trimmedText,
@@ -49,6 +72,9 @@ extension AppModel {
                     requestAutoDrain(reason: "composer queued")
 
                 case let .disabled(reason):
+                    if case .readyNow = initialPolicy {
+                        isTurnInProgress = false
+                    }
                     followUpStatusMessage = reason
                 }
             } catch {

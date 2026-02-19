@@ -132,6 +132,7 @@ extension AppModel {
             appendLog(.info, "Account mode updated: \(authMode.rawValue)")
             Task {
                 try? await refreshAccountState()
+                await refreshRuntimeModelCatalog()
                 requestAutoDrain(reason: "account updated")
             }
 
@@ -148,6 +149,7 @@ extension AppModel {
             }
             Task {
                 try? await refreshAccountState()
+                await refreshRuntimeModelCatalog()
             }
         }
     }

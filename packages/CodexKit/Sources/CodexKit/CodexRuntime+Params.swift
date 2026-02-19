@@ -35,18 +35,19 @@ extension CodexRuntime {
         text: String,
         safetyConfiguration: RuntimeSafetyConfiguration?,
         skillInputs: [RuntimeSkillInput],
+        inputItems: [RuntimeInputItem] = [],
         turnOptions: RuntimeTurnOptions?,
         includeWebSearch: Bool,
         useLegacyReasoningEffortField: Bool = false
     ) -> JSONValue {
-        var inputItems: [JSONValue] = [
+        var payloadInputItems: [JSONValue] = [
             .object([
                 "type": .string("text"),
                 "text": .string(text),
             ]),
         ]
         if !skillInputs.isEmpty {
-            inputItems.append(
+            payloadInputItems.append(
                 contentsOf: skillInputs.map { input in
                     .object([
                         "type": .string("skill"),
@@ -56,10 +57,15 @@ extension CodexRuntime {
                 }
             )
         }
+        if !inputItems.isEmpty {
+            payloadInputItems.append(
+                contentsOf: inputItems.map(encodeRuntimeInputItem)
+            )
+        }
 
         var params: [String: JSONValue] = [
             "threadId": .string(threadID),
-            "input": .array(inputItems),
+            "input": .array(payloadInputItems),
         ]
 
         if let safetyConfiguration {
@@ -95,6 +101,38 @@ extension CodexRuntime {
         }
 
         return .object(params)
+    }
+
+    static func encodeRuntimeInputItem(_ item: RuntimeInputItem) -> JSONValue {
+        switch item {
+        case let .text(text):
+            .object([
+                "type": .string("text"),
+                "text": .string(text),
+            ])
+        case let .image(url):
+            .object([
+                "type": .string("image"),
+                "url": .string(url),
+            ])
+        case let .localImage(path):
+            .object([
+                "type": .string("localImage"),
+                "path": .string(path),
+            ])
+        case let .skill(input):
+            .object([
+                "type": .string("skill"),
+                "name": .string(input.name),
+                "path": .string(input.path),
+            ])
+        case let .mention(name, path):
+            .object([
+                "type": .string("mention"),
+                "name": .string(name),
+                "path": .string(path),
+            ])
+        }
     }
 
     static func makeSandboxPolicy(
@@ -169,6 +207,21 @@ extension CodexRuntime {
             || lowered.contains("invalid")
             || lowered.contains("unsupported")
         return lowered.contains("skill")
+            && indicatesSchemaIssue
+    }
+
+    static func shouldRetryWithoutInputItems(error: CodexRuntimeError) -> Bool {
+        guard case let .rpcError(_, message) = error else {
+            return false
+        }
+        let lowered = message.lowercased()
+        let indicatesSchemaIssue = lowered.contains("unknown")
+            || lowered.contains("invalid")
+            || lowered.contains("unsupported")
+        let mentionsAttachmentOrMention = lowered.contains("localimage")
+            || lowered.contains("mention")
+            || (lowered.contains("image") && lowered.contains("url"))
+        return mentionsAttachmentOrMention
             && indicatesSchemaIssue
     }
 

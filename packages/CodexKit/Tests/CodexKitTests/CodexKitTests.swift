@@ -16,6 +16,56 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(decodedNamed.name, "Bikram Brar")
     }
 
+    func testDecodeModelListParsesDisplayNamesAndReasoningEfforts() throws {
+        let payload: JSONValue = .object([
+            "data": .array([
+                .object([
+                    "id": .string("gpt-5.3-codex"),
+                    "model": .string("gpt-5.3-codex"),
+                    "displayName": .string("GPT-5.3 Codex"),
+                    "description": .string("Frontier coding model"),
+                    "supportedReasoningEfforts": .array([
+                        .object([
+                            "reasoningEffort": .string("low"),
+                            "description": .string("Fast responses"),
+                        ]),
+                        .object([
+                            "reasoningEffort": .string("xhigh"),
+                            "description": .string("Deep reasoning"),
+                        ]),
+                    ]),
+                    "defaultReasoningEffort": .string("medium"),
+                    "isDefault": .bool(true),
+                    "upgrade": .null,
+                ]),
+            ]),
+            "nextCursor": .string("cursor_2"),
+        ])
+
+        let decoded = try CodexRuntime.decodeModelList(from: payload)
+        XCTAssertEqual(decoded.models.count, 1)
+        XCTAssertEqual(decoded.nextCursor, "cursor_2")
+
+        let first = try XCTUnwrap(decoded.models.first)
+        XCTAssertEqual(first.id, "gpt-5.3-codex")
+        XCTAssertEqual(first.displayName, "GPT-5.3 Codex")
+        XCTAssertEqual(first.defaultReasoningEffort, "medium")
+        XCTAssertTrue(first.isDefault)
+        XCTAssertEqual(first.supportedReasoningEfforts.map(\.reasoningEffort), ["low", "xhigh"])
+    }
+
+    func testDecodeModelListRejectsMissingDataArray() {
+        let payload: JSONValue = .object([:])
+
+        XCTAssertThrowsError(try CodexRuntime.decodeModelList(from: payload)) { error in
+            guard case let CodexRuntimeError.invalidResponse(message) = error else {
+                XCTFail("Expected invalidResponse, got \(error)")
+                return
+            }
+            XCTAssertTrue(message.contains("model/list"))
+        }
+    }
+
     func testMergedEnvironmentPrefersOverrides() {
         let base = ["PATH": "/usr/bin", "HOME": "/Users/base"]
         let overrides = ["HOME": "/Users/override", "CODEX_HOME": "/tmp/codex-home"]
@@ -318,6 +368,35 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(params.value(at: ["model"])?.stringValue, "gpt-5-codex")
         XCTAssertEqual(params.value(at: ["effort"])?.stringValue, "high")
         XCTAssertEqual(params.value(at: ["experimental", "parallelToolCalls"])?.boolValue, true)
+    }
+
+    func testMakeTurnStartParamsIncludesAdditionalInputItems() {
+        let params = CodexRuntime.makeTurnStartParams(
+            threadID: "thr_1",
+            text: "hello",
+            safetyConfiguration: nil,
+            skillInputs: [],
+            inputItems: [
+                .localImage(path: "/tmp/example.png"),
+                .mention(name: "README.md", path: "/tmp/README.md"),
+                .image(url: "https://example.com/example.png"),
+            ],
+            turnOptions: nil,
+            includeWebSearch: true
+        )
+
+        let inputArray = params.value(at: ["input"])?.arrayValue ?? []
+        XCTAssertEqual(inputArray.count, 4)
+
+        XCTAssertEqual(inputArray[1].value(at: ["type"])?.stringValue, "localImage")
+        XCTAssertEqual(inputArray[1].value(at: ["path"])?.stringValue, "/tmp/example.png")
+
+        XCTAssertEqual(inputArray[2].value(at: ["type"])?.stringValue, "mention")
+        XCTAssertEqual(inputArray[2].value(at: ["name"])?.stringValue, "README.md")
+        XCTAssertEqual(inputArray[2].value(at: ["path"])?.stringValue, "/tmp/README.md")
+
+        XCTAssertEqual(inputArray[3].value(at: ["type"])?.stringValue, "image")
+        XCTAssertEqual(inputArray[3].value(at: ["url"])?.stringValue, "https://example.com/example.png")
     }
 
     func testMakeTurnStartParamsUsesLegacyReasoningEffortWhenRequested() {

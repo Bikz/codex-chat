@@ -87,22 +87,21 @@ extension AppModel {
         await saveCodexConfig(restartRuntime: false)
     }
 
-    private func applyDerivedRuntimeDefaultsFromConfig() {
-        // Always start from built-in defaults so removing keys from config.toml
-        // deterministically falls back instead of keeping stale in-memory values.
-        defaultModel = "gpt-5-codex"
-        defaultReasoning = .medium
+    func applyDerivedRuntimeDefaultsFromConfig() {
+        // Removing keys from config.toml should restore runtime-provided defaults.
+        defaultModel = runtimeDefaultModelID ?? ""
+        defaultReasoning = defaultReasoningForModel(defaultModel) ?? .medium
         defaultWebSearch = .cached
 
-        if let model = codexConfigDocument.value(at: [.key("model")])?.stringValue,
-           !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            defaultModel = model
+        if let modelOverride = configuredModelOverride() {
+            defaultModel = modelOverride
         }
 
-        if let reasoning = codexConfigDocument.value(at: [.key("model_reasoning_effort")])?.stringValue {
-            defaultReasoning = mapReasoningLevel(reasoning)
+        if let reasoningOverride = configuredReasoningOverride() {
+            defaultReasoning = mapReasoningLevel(reasoningOverride)
         }
+
+        defaultReasoning = clampedReasoningLevel(defaultReasoning, forModelID: defaultModel)
 
         if let webSearch = codexConfigDocument.value(at: [.key("web_search")])?.stringValue,
            let mode = ProjectWebSearchMode(rawValue: webSearch)
@@ -210,17 +209,6 @@ extension AppModel {
         }
 
         try await preferenceRepository.setPreference(key: .runtimeConfigMigrationV1, value: "1")
-    }
-
-    private func mapReasoningLevel(_ value: String) -> ReasoningLevel {
-        switch value.lowercased() {
-        case "high", "xhigh":
-            .high
-        case "low", "minimal", "none":
-            .low
-        default:
-            .medium
-        }
     }
 
     private func mapProjectSandboxMode(_ value: String) -> ProjectSandboxMode? {

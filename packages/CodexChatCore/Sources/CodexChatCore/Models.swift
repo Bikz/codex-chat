@@ -11,16 +11,55 @@ public enum ProjectSandboxMode: String, CaseIterable, Hashable, Sendable, Codabl
     case dangerFullAccess = "danger-full-access"
 }
 
+public extension ProjectSandboxMode {
+    var title: String {
+        switch self {
+        case .readOnly:
+            "Read-only"
+        case .workspaceWrite:
+            "Workspace-write"
+        case .dangerFullAccess:
+            "Danger full access"
+        }
+    }
+}
+
 public enum ProjectApprovalPolicy: String, CaseIterable, Hashable, Sendable, Codable {
     case untrusted
     case onRequest = "on-request"
     case never
 }
 
+public extension ProjectApprovalPolicy {
+    var title: String {
+        switch self {
+        case .untrusted:
+            "Untrusted"
+        case .onRequest:
+            "On request"
+        case .never:
+            "Never"
+        }
+    }
+}
+
 public enum ProjectWebSearchMode: String, CaseIterable, Hashable, Sendable, Codable {
     case cached
     case live
     case disabled
+}
+
+public extension ProjectWebSearchMode {
+    var title: String {
+        switch self {
+        case .cached:
+            "Cached"
+        case .live:
+            "Live"
+        case .disabled:
+            "Disabled"
+        }
+    }
 }
 
 public enum ProjectMemoryWriteMode: String, CaseIterable, Hashable, Sendable, Codable {

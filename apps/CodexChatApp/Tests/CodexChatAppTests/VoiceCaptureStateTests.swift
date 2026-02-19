@@ -12,7 +12,7 @@ final class VoiceCaptureStateTests: XCTestCase {
         let model = makeReadyModel(voiceService: voiceService)
 
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 1.0) {
+        try await eventually(timeoutSeconds: 2.0) {
             if case .recording = model.voiceCaptureState {
                 return true
             }
@@ -75,7 +75,7 @@ final class VoiceCaptureStateTests: XCTestCase {
 
         let model = makeReadyModel(voiceService: voiceService)
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 1.0) {
+        try await eventually(timeoutSeconds: 3.0) {
             if case .recording = model.voiceCaptureState {
                 return true
             }

@@ -334,9 +334,9 @@ struct SettingsView: View {
                         set: { model.setDefaultWebSearch($0) }
                     )
                 ) {
-                    Text("Cached").tag(ProjectWebSearchMode.cached)
-                    Text("Live").tag(ProjectWebSearchMode.live)
-                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                    ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.segmented)
 
@@ -419,16 +419,16 @@ struct SettingsView: View {
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("Sandbox mode", selection: $generalSandboxMode) {
-                    Text("Read-only").tag(ProjectSandboxMode.readOnly)
-                    Text("Workspace-write").tag(ProjectSandboxMode.workspaceWrite)
-                    Text("Danger full access").tag(ProjectSandboxMode.dangerFullAccess)
+                    ForEach(ProjectSandboxMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.menu)
 
                 Picker("Approval policy", selection: $generalApprovalPolicy) {
-                    Text("Untrusted").tag(ProjectApprovalPolicy.untrusted)
-                    Text("On request").tag(ProjectApprovalPolicy.onRequest)
-                    Text("Never").tag(ProjectApprovalPolicy.never)
+                    ForEach(ProjectApprovalPolicy.allCases, id: \.self) { policy in
+                        Text(policy.title).tag(policy)
+                    }
                 }
                 .pickerStyle(.menu)
 
@@ -443,9 +443,9 @@ struct SettingsView: View {
                     .accessibilityHint("Only available when sandbox mode is workspace-write.")
 
                 Picker("Web search mode", selection: $generalWebSearchMode) {
-                    Text("Cached").tag(ProjectWebSearchMode.cached)
-                    Text("Live").tag(ProjectWebSearchMode.live)
-                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                    ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.menu)
 
@@ -531,16 +531,16 @@ struct SettingsView: View {
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("Sandbox mode", selection: $safetySandboxMode) {
-                    Text("Read-only").tag(ProjectSandboxMode.readOnly)
-                    Text("Workspace-write").tag(ProjectSandboxMode.workspaceWrite)
-                    Text("Danger full access").tag(ProjectSandboxMode.dangerFullAccess)
+                    ForEach(ProjectSandboxMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.menu)
 
                 Picker("Approval policy", selection: $safetyApprovalPolicy) {
-                    Text("Untrusted").tag(ProjectApprovalPolicy.untrusted)
-                    Text("On request").tag(ProjectApprovalPolicy.onRequest)
-                    Text("Never").tag(ProjectApprovalPolicy.never)
+                    ForEach(ProjectApprovalPolicy.allCases, id: \.self) { policy in
+                        Text(policy.title).tag(policy)
+                    }
                 }
                 .pickerStyle(.menu)
 
@@ -555,9 +555,9 @@ struct SettingsView: View {
                     .accessibilityHint("Only available when sandbox mode is workspace-write.")
 
                 Picker("Web search mode", selection: $safetyWebSearchMode) {
-                    Text("Cached").tag(ProjectWebSearchMode.cached)
-                    Text("Live").tag(ProjectWebSearchMode.live)
-                    Text("Disabled").tag(ProjectWebSearchMode.disabled)
+                    ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.menu)
 
