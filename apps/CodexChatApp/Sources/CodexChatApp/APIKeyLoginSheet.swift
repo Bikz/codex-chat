@@ -3,6 +3,7 @@ import SwiftUI
 struct APIKeyLoginSheet: View {
     @ObservedObject var model: AppModel
     @FocusState private var isFocused: Bool
+    private let apiKeysURL = URL(string: "https://platform.openai.com/api-keys")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -12,6 +13,13 @@ struct APIKeyLoginSheet: View {
             Text("Your key will be sent to Codex app-server for login and stored in macOS Keychain.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+
+            if let apiKeysURL {
+                Link(destination: apiKeysURL) {
+                    Label("Open API key dashboard", systemImage: "link")
+                }
+                .font(.callout)
+            }
 
             SecureField("sk-...", text: $model.pendingAPIKey)
                 .textFieldStyle(.roundedBorder)

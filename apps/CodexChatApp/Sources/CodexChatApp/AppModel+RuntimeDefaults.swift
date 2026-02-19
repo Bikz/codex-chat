@@ -108,6 +108,10 @@ extension AppModel {
             return "Runtime default"
         }
 
+        if isAPIKeyOnlyModel(trimmedID) {
+            return "\(trimmedID) (api key only)"
+        }
+
         let displayName = modelDisplayName(for: trimmedID)
         if displayName.caseInsensitiveCompare(trimmedID) == .orderedSame {
             return trimmedID
@@ -133,6 +137,12 @@ extension AppModel {
         }
 
         guard trimmed != configuredModel else {
+            return
+        }
+
+        if isAPIKeyOnlyModel(trimmed), isSignedInWithChatGPTAuth() {
+            accountStatusMessage = "\(trimmed) requires API key login. Enter an OpenAI API key to continue."
+            presentAPIKeyPrompt()
             return
         }
 
@@ -302,6 +312,27 @@ extension AppModel {
         return runtimeModelCatalog.first { model in
             model.id == trimmedModelID || model.model == trimmedModelID
         }
+    }
+
+    private func isAPIKeyOnlyModel(_ modelID: String) -> Bool {
+        modelID
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare("gpt-4o") == .orderedSame
+    }
+
+    private func isSignedInWithChatGPTAuth() -> Bool {
+        switch accountState.authMode {
+        case .chatGPT, .chatGPTAuthTokens:
+            return accountState.account != nil
+        default:
+            break
+        }
+
+        guard let account = accountState.account else {
+            return false
+        }
+
+        return account.type.caseInsensitiveCompare("chatgpt") == .orderedSame
     }
 
     private func normalizeModelPresetIDs(_ modelIDs: [String]) -> [String] {
