@@ -64,6 +64,12 @@ struct ContentView: View {
                 onContinue: model.confirmUntrustedShellWarning
             )
         }
+        .sheet(item: Binding(get: {
+            model.pendingComputerActionPreview
+        }, set: { _ in })) { preview in
+            ComputerActionPreviewSheet(model: model, preview: preview)
+                .interactiveDismissDisabled(model.isComputerActionExecutionInProgress)
+        }
         .onAppear {
             model.onAppear()
             syncSplitViewVisibility(isOnboardingActive: model.isOnboardingActive)

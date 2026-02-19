@@ -29,6 +29,9 @@ struct SettingsView: View {
     @State private var generalDangerConfirmationError: String?
     @State private var isRuntimeConfigExpanded = false
     @State private var lastSyncedGeneralProject: ProjectRecord?
+    @State private var isAdvancedModsUnlockConfirmationVisible = false
+    @State private var advancedModsUnlockInput = ""
+    @State private var advancedModsUnlockError: String?
 
     var body: some View {
         NavigationSplitView {
@@ -128,6 +131,32 @@ struct SettingsView: View {
                     generalDangerConfirmationError = nil
                     pendingGeneralSafetySettings = nil
                     isGeneralDangerConfirmationVisible = false
+                }
+            )
+        }
+        .sheet(isPresented: $isAdvancedModsUnlockConfirmationVisible) {
+            DangerConfirmationSheet(
+                phrase: model.dangerConfirmationPhrase,
+                subtitle: "Type the confirmation phrase to unlock advanced executable mods.",
+                input: $advancedModsUnlockInput,
+                errorText: advancedModsUnlockError,
+                onCancel: {
+                    advancedModsUnlockInput = ""
+                    advancedModsUnlockError = nil
+                    isAdvancedModsUnlockConfirmationVisible = false
+                },
+                onConfirm: {
+                    guard DangerConfirmationSheet.isPhraseMatch(
+                        input: advancedModsUnlockInput,
+                        phrase: model.dangerConfirmationPhrase
+                    ) else {
+                        advancedModsUnlockError = "Phrase did not match."
+                        return
+                    }
+                    model.setAdvancedExecutableModsUnlocked(true)
+                    advancedModsUnlockInput = ""
+                    advancedModsUnlockError = nil
+                    isAdvancedModsUnlockConfirmationVisible = false
                 }
             )
         }
@@ -615,6 +644,34 @@ struct SettingsView: View {
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Use the Runtime section's Codex Config editor to change experimental flags.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    SettingsStatusBadge(
+                        model.areAdvancedExecutableModsUnlocked ? "Advanced executable mods: Unlocked" : "Advanced executable mods: Locked",
+                        tone: model.areAdvancedExecutableModsUnlocked ? .accent : .neutral
+                    )
+                    Spacer(minLength: 0)
+                }
+
+                if model.areAdvancedExecutableModsUnlocked {
+                    Button("Lock advanced executable mods") {
+                        model.setAdvancedExecutableModsUnlocked(false)
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button("Unlock advanced executable mods…") {
+                        advancedModsUnlockInput = ""
+                        advancedModsUnlockError = nil
+                        isAdvancedModsUnlockConfirmationVisible = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                Text("Non-vetted mods with hooks or automations are blocked by default for new installs. Vetted first-party packs remain available.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

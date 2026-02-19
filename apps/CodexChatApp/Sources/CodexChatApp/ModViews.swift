@@ -334,7 +334,7 @@ struct ModsCanvas: View {
 
             HStack(spacing: 6) {
                 ForEach(SkillsModsPresentation.modCapabilities(mod), id: \.rawValue) { capability in
-                    modCapabilityBadge(capability.rawValue)
+                    modCapabilityBadge(capability)
                 }
                 Spacer(minLength: 0)
             }
@@ -384,13 +384,16 @@ struct ModsCanvas: View {
         }
     }
 
-    private func modCapabilityBadge(_ text: String) -> some View {
-        Text(text)
+    private func modCapabilityBadge(_ capability: SkillsModsPresentation.ModCapability) -> some View {
+        let isPrivileged = capability == .privileged
+
+        return Text(capability.rawValue)
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(Color.primary.opacity(0.06), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
+            .foregroundStyle(isPrivileged ? .orange : .secondary)
+            .background((isPrivileged ? Color.orange : Color.primary).opacity(0.10), in: Capsule())
+            .overlay(Capsule().strokeBorder((isPrivileged ? Color.orange : Color.primary).opacity(0.16)))
     }
 
     private func modStatusPill(_ text: String) -> some View {

@@ -10,6 +10,15 @@ extension AppModel {
             return
         }
 
+        if maybeHandleAdaptiveIntentFromComposer(
+            text: trimmedText,
+            attachments: attachments
+        ) {
+            composerText = ""
+            clearComposerAttachments()
+            return
+        }
+
         let startedFromDraft = hasActiveDraftChatForSelectedProject
         let initialPolicy = composerDispatchPolicy
         if attachments.isEmpty == false, case .queueOnly = initialPolicy {

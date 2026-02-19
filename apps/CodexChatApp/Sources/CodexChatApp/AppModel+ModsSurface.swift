@@ -101,6 +101,13 @@ extension AppModel {
             return
         }
 
+        if let mod,
+           let blockedReason = executableModBlockedReason(for: mod)
+        {
+            modStatusMessage = blockedReason
+            return
+        }
+
         let value = mod?.directoryPath ?? ""
         Task {
             do {
@@ -124,6 +131,13 @@ extension AppModel {
               let selectedProjectID
         else {
             modStatusMessage = "Select a project first."
+            return
+        }
+
+        if let mod,
+           let blockedReason = executableModBlockedReason(for: mod)
+        {
+            modStatusMessage = blockedReason
             return
         }
 
@@ -261,6 +275,7 @@ extension AppModel {
                 }
 
                 if let extensionInstallRepository {
+                    let allowExecutable = canRunExecutableModFeatures(for: installedMod)
                     _ = try await extensionInstallRepository.upsert(
                         ExtensionInstallRecord(
                             id: extensionInstallRecordID(
@@ -273,16 +288,26 @@ extension AppModel {
                             projectID: installProjectID,
                             sourceURL: trimmedSource,
                             installedPath: installResult.installedDirectoryPath,
-                            enabled: true
+                            enabled: allowExecutable
                         )
                     )
                 }
 
-                switch scope {
-                case .global:
-                    setGlobalMod(installedMod)
-                case .project:
-                    setProjectMod(installedMod)
+                if let blockedReason = executableModBlockedReason(for: installedMod) {
+                    switch scope {
+                    case .global:
+                        setGlobalMod(nil)
+                    case .project:
+                        setProjectMod(nil)
+                    }
+                    modStatusMessage = "Installed \(installResult.definition.manifest.name), but it is disabled. \(blockedReason)"
+                } else {
+                    switch scope {
+                    case .global:
+                        setGlobalMod(installedMod)
+                    case .project:
+                        setProjectMod(installedMod)
+                    }
                 }
 
                 var permissionHint = ""
@@ -295,7 +320,9 @@ extension AppModel {
                 }
                 let warningHint = installResult.warnings.isEmpty ? "" : " \(installResult.warnings.joined(separator: " "))"
 
-                modStatusMessage = "Installed and enabled mod: \(installResult.definition.manifest.name).\(permissionHint)\(warningHint)"
+                if executableModBlockedReason(for: installedMod) == nil {
+                    modStatusMessage = "Installed and enabled mod: \(installResult.definition.manifest.name).\(permissionHint)\(warningHint)"
+                }
                 appendLog(.info, "Installed mod \(installResult.definition.manifest.id) from \(trimmedSource)")
             } catch {
                 modStatusMessage = "Mod install failed: \(error.localizedDescription)"

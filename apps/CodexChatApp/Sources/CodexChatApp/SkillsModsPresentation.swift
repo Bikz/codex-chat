@@ -14,6 +14,7 @@ enum SkillsModsPresentation {
         case hooks = "Hooks"
         case automations = "Automations"
         case modsBar = "Mods bar"
+        case privileged = "Privileged"
     }
 
     enum ModExtensionStatus: String {
@@ -24,7 +25,8 @@ enum SkillsModsPresentation {
     static let extensionExperimentalBadge = "Extension API (schemaVersion: 1)"
     static let installModDescription = """
     Install from a GitHub URL or a local folder containing `ui.mod.json`. Review package metadata and permissions before install. \
-    Privileged hook or automation actions are permission-gated and prompted on first use.
+    Privileged hook or automation actions are permission-gated and prompted on first use. \
+    Non-vetted executable mods require the advanced unlock in Settings.
     """
     static let modsBarToolbarHelp = """
     Mods bar content comes from the active mod. Hidden by default, and opens automatically when new modsBar output arrives.
@@ -158,6 +160,10 @@ enum SkillsModsPresentation {
             capabilities.append(.modsBar)
         }
 
+        if hasPrivilegedBehavior(mod) {
+            capabilities.append(.privileged)
+        }
+
         return capabilities
     }
 
@@ -167,6 +173,10 @@ enum SkillsModsPresentation {
 
     static func modsBarHelpText(hasActiveModsBarSource: Bool) -> String {
         hasActiveModsBarSource ? modsBarToolbarHelp : modsBarToolbarEmptyHelp
+    }
+
+    static func hasPrivilegedBehavior(_ mod: DiscoveredUIMod) -> Bool {
+        !mod.definition.hooks.isEmpty || !mod.definition.automations.isEmpty
     }
 
     private static func hasExtensionFeatures(_ definition: UIModDefinition) -> Bool {

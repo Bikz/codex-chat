@@ -1,6 +1,7 @@
 import AppKit
 import CodexChatCore
 import CodexChatInfra
+import CodexComputerActions
 import CodexExtensions
 import CodexKit
 import CodexMemory
@@ -88,6 +89,66 @@ final class AppModel: ObservableObject {
         let modID: String
         let modDirectoryPath: String
         let definition: ModAutomationDefinition
+    }
+
+    struct PendingComputerActionPreview: Identifiable, Hashable {
+        let id: String
+        let threadID: UUID
+        let projectID: UUID
+        let request: ComputerActionRequest
+        let artifact: ComputerActionPreviewArtifact
+        let providerActionID: String
+        let providerDisplayName: String
+        let safetyLevel: ComputerActionSafetyLevel
+        let requiresConfirmation: Bool
+
+        init(
+            threadID: UUID,
+            projectID: UUID,
+            request: ComputerActionRequest,
+            artifact: ComputerActionPreviewArtifact,
+            providerActionID: String,
+            providerDisplayName: String,
+            safetyLevel: ComputerActionSafetyLevel,
+            requiresConfirmation: Bool
+        ) {
+            id = artifact.id
+            self.threadID = threadID
+            self.projectID = projectID
+            self.request = request
+            self.artifact = artifact
+            self.providerActionID = providerActionID
+            self.providerDisplayName = providerDisplayName
+            self.safetyLevel = safetyLevel
+            self.requiresConfirmation = requiresConfirmation
+        }
+    }
+
+    struct WorkerTraceEntry: Identifiable, Hashable {
+        let id: String
+        let threadID: UUID
+        let turnID: String?
+        let method: String
+        let title: String
+        let trace: RuntimeAction.WorkerTrace
+        let capturedAt: Date
+
+        init(
+            threadID: UUID,
+            turnID: String?,
+            method: String,
+            title: String,
+            trace: RuntimeAction.WorkerTrace,
+            capturedAt: Date = Date()
+        ) {
+            id = "\(threadID.uuidString):\(turnID ?? "unknown"): \(method):\(capturedAt.timeIntervalSince1970)"
+            self.threadID = threadID
+            self.turnID = turnID
+            self.method = method
+            self.title = title
+            self.trace = trace
+            self.capturedAt = capturedAt
+        }
     }
 
     enum SurfaceState<Value> {
@@ -299,6 +360,12 @@ final class AppModel: ObservableObject {
     @Published var activeModsBarSlot: ModUISlots.ModsBar?
     @Published var activeModsBarModID: String?
     @Published var activeModsBarModDirectoryPath: String?
+    @Published var pendingComputerActionPreview: PendingComputerActionPreview?
+    @Published var isComputerActionExecutionInProgress = false
+    @Published var computerActionStatusMessage: String?
+    @Published var workerTraceByThreadID: [UUID: [WorkerTraceEntry]] = [:]
+    @Published var activeWorkerTraceEntry: WorkerTraceEntry?
+    @Published var areAdvancedExecutableModsUnlocked = false
 
     @Published var effectiveThemeOverride: ModThemeOverride = .init()
     @Published var effectiveDarkThemeOverride: ModThemeOverride = .init()
@@ -315,7 +382,12 @@ final class AppModel: ObservableObject {
     let extensionPermissionRepository: (any ExtensionPermissionRepository)?
     let extensionHookStateRepository: (any ExtensionHookStateRepository)?
     let extensionAutomationStateRepository: (any ExtensionAutomationStateRepository)?
+    let computerActionPermissionRepository: (any ComputerActionPermissionRepository)?
+    let computerActionRunRepository: (any ComputerActionRunRepository)?
+    let planRunRepository: (any PlanRunRepository)?
+    let planRunTaskRepository: (any PlanRunTaskRepository)?
     let runtime: CodexRuntime?
+    let computerActionRegistry: ComputerActionRegistry
     let skillCatalogService: SkillCatalogService
     let skillCatalogProvider: any SkillCatalogProvider
     let modDiscoveryService: UIModDiscoveryService
@@ -391,7 +463,12 @@ final class AppModel: ObservableObject {
         extensionPermissionRepository = repositories?.extensionPermissionRepository
         extensionHookStateRepository = repositories?.extensionHookStateRepository
         extensionAutomationStateRepository = repositories?.extensionAutomationStateRepository
+        computerActionPermissionRepository = repositories?.computerActionPermissionRepository
+        computerActionRunRepository = repositories?.computerActionRunRepository
+        planRunRepository = repositories?.planRunRepository
+        planRunTaskRepository = repositories?.planRunTaskRepository
         self.runtime = runtime
+        computerActionRegistry = ComputerActionRegistry()
         self.skillCatalogService = skillCatalogService
         self.skillCatalogProvider = skillCatalogProvider
         self.modDiscoveryService = modDiscoveryService

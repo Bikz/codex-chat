@@ -88,7 +88,7 @@ final class SkillsModsPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(SkillsModsPresentation.modStatus(mod), .extensionEnabled)
-        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .hooks])
+        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .hooks, .privileged])
     }
 
     func testModCapabilitiesIncludeAutomationsAndModsBar() {
@@ -114,7 +114,10 @@ final class SkillsModsPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(SkillsModsPresentation.modStatus(mod), .extensionEnabled)
-        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .automations, .modsBar])
+        XCTAssertEqual(
+            SkillsModsPresentation.modCapabilities(mod),
+            [.theme, .automations, .modsBar, .privileged]
+        )
     }
 
     func testModCapabilitiesDoNotIncludeDisabledModsBarSlot() {

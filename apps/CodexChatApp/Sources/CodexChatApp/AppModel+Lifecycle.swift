@@ -47,6 +47,7 @@ extension AppModel {
             try await refreshGeneralThreads()
             try await refreshArchivedThreads()
             try await refreshFollowUpQueuesForVisibleThreads()
+            await restoreAdvancedExecutableModsUnlockIfNeeded()
             try await refreshSkills()
             await refreshSkillsCatalog()
             if let selectedThreadID {

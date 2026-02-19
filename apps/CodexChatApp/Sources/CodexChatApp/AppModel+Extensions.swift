@@ -159,6 +159,40 @@ extension AppModel {
         case .promptThenEmitEvent:
             guard let input = promptForModsBarActionInput(action) else { return }
             emitModsBarActionEvent(action, input: input)
+
+        case .nativeAction:
+            guard let selectedThreadID,
+                  let context = extensionProjectContext(forThreadID: selectedThreadID)
+            else {
+                extensionStatusMessage = "Select a thread before running native actions."
+                return
+            }
+
+            let nativeActionID = action.nativeActionID
+                ?? action.payload["nativeActionID"]
+                ?? action.payload["actionID"]
+
+            guard let nativeActionID,
+                  !nativeActionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                extensionStatusMessage = "Native action is missing an action ID."
+                return
+            }
+
+            Task {
+                do {
+                    try await runNativeComputerAction(
+                        actionID: nativeActionID,
+                        arguments: action.payload,
+                        threadID: selectedThreadID,
+                        projectID: context.projectID
+                    )
+                    extensionStatusMessage = "Ran native action: \(nativeActionID)."
+                } catch {
+                    extensionStatusMessage = "Native action failed: \(error.localizedDescription)"
+                    appendLog(.error, "Native action failed: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
