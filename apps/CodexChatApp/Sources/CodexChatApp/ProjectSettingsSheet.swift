@@ -363,59 +363,58 @@ struct ProjectSettingsSheet: View {
 
     @ViewBuilder
     private var archivedChatsSection: some View {
-        guard let selectedProjectID = model.selectedProject?.id else {
+        if let selectedProjectID = model.selectedProject?.id {
+            switch model.archivedThreadsState {
+            case .idle, .loading:
+                LoadingStateView(title: "Loading archived chats…")
+                    .frame(maxHeight: 120)
+            case let .failed(message):
+                ErrorStateView(title: "Archived chats unavailable", message: message, actionLabel: "Retry") {
+                    Task {
+                        try? await model.refreshArchivedThreads()
+                    }
+                }
+                .frame(maxHeight: 160)
+            case let .loaded(allArchivedThreads):
+                let threads = allArchivedThreads.filter { $0.projectId == selectedProjectID }
+                if threads.isEmpty {
+                    Text("No archived chats for this project.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(threads) { thread in
+                                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(thread.title)
+                                            .font(.subheadline.weight(.medium))
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer()
+
+                                    Text(compactRelativeAge(from: thread.archivedAt ?? thread.updatedAt))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+
+                                    Button("Unarchive") {
+                                        model.unarchiveThread(threadID: thread.id)
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                                .padding(8)
+                                .tokenCard(style: .panel, radius: tokens.radius.small, strokeOpacity: 0.08)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 220)
+                }
+            }
+        } else {
             Text("Select a project to view archived chats.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            return
-        }
-
-        switch model.archivedThreadsState {
-        case .idle, .loading:
-            LoadingStateView(title: "Loading archived chats…")
-                .frame(maxHeight: 120)
-        case let .failed(message):
-            ErrorStateView(title: "Archived chats unavailable", message: message, actionLabel: "Retry") {
-                Task {
-                    try? await model.refreshArchivedThreads()
-                }
-            }
-            .frame(maxHeight: 160)
-        case let .loaded(allArchivedThreads):
-            let threads = allArchivedThreads.filter { $0.projectId == selectedProjectID }
-            if threads.isEmpty {
-                Text("No archived chats for this project.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(threads) { thread in
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(thread.title)
-                                        .font(.subheadline.weight(.medium))
-                                        .lineLimit(1)
-                                }
-
-                                Spacer()
-
-                                Text(compactRelativeAge(from: thread.archivedAt ?? thread.updatedAt))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-
-                                Button("Unarchive") {
-                                    model.unarchiveThread(threadID: thread.id)
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                            .padding(8)
-                            .tokenCard(style: .panel, radius: tokens.radius.small, strokeOpacity: 0.08)
-                        }
-                    }
-                }
-                .frame(maxHeight: 220)
-            }
         }
     }
 
