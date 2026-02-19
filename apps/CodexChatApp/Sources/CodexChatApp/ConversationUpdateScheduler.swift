@@ -16,7 +16,7 @@ final class ConversationUpdateScheduler {
     private enum Constants {
         static let baseIntervalNanoseconds: UInt64 = 33_000_000
         static let burstIntervalNanoseconds: UInt64 = 50_000_000
-        static let burstByteThreshold = 4_096
+        static let burstByteThreshold = 4096
         static let burstItemThreshold = 8
     }
 
@@ -78,7 +78,7 @@ final class ConversationUpdateScheduler {
             guard let self, !Task.isCancelled else {
                 return
             }
-            self.flushPendingDeltas()
+            flushPendingDeltas()
         }
     }
 

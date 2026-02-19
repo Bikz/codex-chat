@@ -30,7 +30,7 @@ final class ConversationUpdateSchedulerTests: XCTestCase {
     func testAdaptiveIntervalWidensUnderBurstAndRecovers() async {
         let scheduler = ConversationUpdateScheduler { _ in }
         let threadID = UUID()
-        let burst = String(repeating: "x", count: 4_200)
+        let burst = String(repeating: "x", count: 4200)
 
         scheduler.enqueue(delta: burst, threadID: threadID, itemID: "item-a")
         XCTAssertEqual(scheduler.currentFlushIntervalMilliseconds, 50)
