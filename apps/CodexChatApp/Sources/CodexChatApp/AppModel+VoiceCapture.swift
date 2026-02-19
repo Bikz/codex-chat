@@ -10,10 +10,18 @@ extension AppModel {
     }
 
     var shouldShowComposerStarterPrompts: Bool {
-        composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasNoConversationEntries: Bool = {
+            guard case let .loaded(entries) = conversationState else {
+                return false
+            }
+            return entries.isEmpty
+        }()
+
+        return composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && composerAttachments.isEmpty
             && canSubmitComposer
             && !isVoiceCaptureInProgress
+            && hasNoConversationEntries
     }
 
     var isVoiceCaptureInProgress: Bool {

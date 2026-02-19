@@ -29,6 +29,19 @@ final class ComposerStarterPromptTests: XCTestCase {
         XCTAssertFalse(model.shouldShowComposerStarterPrompts)
     }
 
+    func testStarterPromptsHideWhenConversationHasEntries() {
+        let model = makeReadyModel()
+        let threadID = model.selectedThreadID ?? UUID()
+        let existingMessage = ChatMessage(
+            threadId: threadID,
+            role: .user,
+            text: "Existing conversation context"
+        )
+        model.conversationState = .loaded([.message(existingMessage)])
+
+        XCTAssertFalse(model.shouldShowComposerStarterPrompts)
+    }
+
     func testCanSubmitComposerInputRequiresDraftContent() {
         let model = makeReadyModel()
         XCTAssertFalse(model.canSubmitComposerInput)
@@ -117,6 +130,35 @@ final class ComposerStarterPromptTests: XCTestCase {
         XCTAssertTrue(model.followUpStatusMessage?.contains("can't be queued") ?? false)
     }
 
+    func testAddComposerAttachmentsDoesNotShowAttachedCountStatusMessage() throws {
+        let model = makeReadyModel()
+        model.followUpStatusMessage = "Keep this status"
+
+        let tempFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("txt")
+        try "Attachment test".write(to: tempFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        model.addComposerAttachments([tempFile])
+
+        XCTAssertEqual(model.composerAttachments.count, 1)
+        XCTAssertEqual(model.followUpStatusMessage, "Keep this status")
+    }
+
+    func testAddComposerAttachmentsTreatsDroppedFolderAsMentionFile() throws {
+        let model = makeReadyModel()
+        let folderURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("composer-folder-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+
+        model.addComposerAttachments([folderURL])
+
+        XCTAssertEqual(model.composerAttachments.count, 1)
+        XCTAssertEqual(model.composerAttachments.first?.kind, .mentionFile)
+    }
+
     func testInsertStarterPromptPopulatesComposerAndHidesStarterPrompts() {
         let model = makeReadyModel()
         let prompt = "What's on my calendar today?"
@@ -177,6 +219,7 @@ final class ComposerStarterPromptTests: XCTestCase {
         )
         model.selectedProjectID = UUID()
         model.selectedThreadID = UUID()
+        model.conversationState = .loaded([])
         model.runtimeStatus = .connected
         model.accountState = RuntimeAccountState(account: nil, authMode: .unknown, requiresOpenAIAuth: false)
         return model

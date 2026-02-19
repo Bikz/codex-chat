@@ -1,6 +1,7 @@
 import CodexChatCore
 import CodexChatUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ChatsCanvasView: View {
     @ObservedObject var model: AppModel
@@ -8,6 +9,7 @@ struct ChatsCanvasView: View {
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isComposerFocused: Bool
+    @State private var isComposerDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,30 +112,21 @@ struct ChatsCanvasView: View {
 
     private var composerSurface: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ComposerControlBar(model: model)
-
-            Divider()
-                .opacity(tokens.surfaces.hairlineOpacity)
+            if !model.composerAttachments.isEmpty {
+                composerContextStrip {
+                    ForEach(model.composerAttachments) { attachment in
+                        composerAttachmentChip(attachment)
+                    }
+                }
+            } else if model.shouldShowComposerStarterPrompts {
+                composerContextStrip {
+                    ForEach(model.composerStarterPrompts, id: \.self) { prompt in
+                        composerStarterPromptChip(prompt)
+                    }
+                }
+            }
 
             HStack(alignment: .center, spacing: tokens.spacing.small) {
-                composerLeadingButton(
-                    systemImage: "brain",
-                    accessibilityLabel: "Insert memory snippet",
-                    helpText: "Insert memory snippet",
-                    isDisabled: model.selectedProjectID == nil
-                ) {
-                    isInsertMemorySheetVisible = true
-                }
-
-                composerLeadingButton(
-                    systemImage: "paperclip",
-                    accessibilityLabel: "Attach files or images",
-                    helpText: "Attach files or images",
-                    isDisabled: model.selectedProjectID == nil
-                ) {
-                    model.pickComposerAttachments()
-                }
-
                 TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: tokens.typography.bodySize + 0.5, weight: .medium))
@@ -155,6 +148,24 @@ struct ChatsCanvasView: View {
                         model.submitComposerWithQueuePolicy()
                     }
                     .accessibilityLabel("Message input")
+
+                composerLeadingButton(
+                    systemImage: "brain",
+                    accessibilityLabel: "Insert memory snippet",
+                    helpText: "Insert memory snippet",
+                    isDisabled: model.selectedProjectID == nil
+                ) {
+                    isInsertMemorySheetVisible = true
+                }
+
+                composerLeadingButton(
+                    systemImage: "paperclip",
+                    accessibilityLabel: "Attach files or images",
+                    helpText: "Attach files or images",
+                    isDisabled: model.selectedProjectID == nil
+                ) {
+                    model.pickComposerAttachments()
+                }
 
                 Button {
                     model.toggleVoiceCapture()
@@ -204,73 +215,6 @@ struct ChatsCanvasView: View {
                 .disabled(!model.canSubmitComposerInput)
             }
 
-            if !model.composerAttachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(model.composerAttachments) { attachment in
-                            HStack(spacing: 6) {
-                                Image(systemName: attachment.kind == .localImage ? "photo" : "doc")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-
-                                Text(attachment.name)
-                                    .font(.caption.weight(.medium))
-                                    .lineLimit(1)
-
-                                Button {
-                                    model.removeComposerAttachment(attachment.id)
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Remove \(attachment.name)")
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
-                            )
-                            .overlay(
-                                Capsule(style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
-                            )
-                            .help(attachment.path)
-                        }
-                    }
-                    .padding(.top, 2)
-                }
-            }
-
-            if model.shouldShowComposerStarterPrompts {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(model.composerStarterPrompts, id: \.self) { prompt in
-                            Button(prompt) {
-                                model.insertStarterPrompt(prompt)
-                                isComposerFocused = true
-                            }
-                            .buttonStyle(.plain)
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
-                            )
-                            .overlay(
-                                Capsule(style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
-                            )
-                        }
-                    }
-                    .padding(.top, 2)
-                }
-            }
-
             if let voiceStatus = model.voiceCaptureStatusMessage {
                 HStack(spacing: 6) {
                     switch model.voiceCaptureState {
@@ -305,6 +249,11 @@ struct ChatsCanvasView: View {
                 }
                 .accessibilityElement(children: .combine)
             }
+
+            Divider()
+                .opacity(tokens.surfaces.hairlineOpacity)
+
+            ComposerControlBar(model: model)
         }
         .onExitCommand {
             guard model.isVoiceCaptureInProgress else { return }
@@ -316,9 +265,23 @@ struct ChatsCanvasView: View {
             Color.primary.opacity(tokens.surfaces.baseOpacity),
             in: RoundedRectangle(cornerRadius: tokens.radius.large)
         )
-        .overlay(
+        .overlay {
             RoundedRectangle(cornerRadius: tokens.radius.large)
                 .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+
+            if isComposerDropTargeted {
+                RoundedRectangle(cornerRadius: tokens.radius.large)
+                    .strokeBorder(Color(hex: tokens.palette.accentHex), lineWidth: 1.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: tokens.radius.large)
+                            .fill(Color(hex: tokens.palette.accentHex).opacity(0.08))
+                    )
+            }
+        }
+        .onDrop(
+            of: [UTType.fileURL.identifier],
+            isTargeted: $isComposerDropTargeted,
+            perform: handleComposerFileDrop(providers:)
         )
         .padding(.horizontal, tokens.spacing.medium)
         .padding(.vertical, tokens.spacing.small)
@@ -394,6 +357,140 @@ struct ChatsCanvasView: View {
         .help(helpText)
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.45 : 1)
+    }
+
+    private func composerContextStrip<Content: View>(
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                HStack(spacing: 8) {
+                    content()
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 2)
+        }
+    }
+
+    private func composerAttachmentChip(_ attachment: AppModel.ComposerAttachment) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: attachment.kind == .localImage ? "photo" : "doc")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(attachment.name)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+
+            Button {
+                model.removeComposerAttachment(attachment.id)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(attachment.name)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+        )
+        .help(attachment.path)
+    }
+
+    private func composerStarterPromptChip(_ prompt: String) -> some View {
+        Button(prompt) {
+            model.insertStarterPrompt(prompt)
+            isComposerFocused = true
+        }
+        .buttonStyle(.plain)
+        .font(.caption.weight(.medium))
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+        )
+    }
+
+    private func handleComposerFileDrop(providers: [NSItemProvider]) -> Bool {
+        guard !providers.isEmpty else {
+            return false
+        }
+
+        Task {
+            let urls = await droppedFileURLs(from: providers)
+            guard !urls.isEmpty else {
+                return
+            }
+
+            await MainActor.run {
+                guard model.selectedProjectID != nil else {
+                    model.followUpStatusMessage = "Select a project before attaching files."
+                    return
+                }
+                model.addComposerAttachments(urls)
+            }
+        }
+
+        return true
+    }
+
+    private func droppedFileURLs(from providers: [NSItemProvider]) async -> [URL] {
+        var urls: [URL] = []
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
+                  let url = await droppedFileURL(from: provider)
+            else {
+                continue
+            }
+            urls.append(url.standardizedFileURL)
+        }
+        return urls
+    }
+
+    private func droppedFileURL(from provider: NSItemProvider) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                if let url = item as? URL {
+                    continuation.resume(returning: url)
+                    return
+                }
+
+                if let data = item as? Data,
+                   let url = URL(dataRepresentation: data, relativeTo: nil)
+                {
+                    continuation.resume(returning: url)
+                    return
+                }
+
+                if let text = item as? String {
+                    if let url = URL(string: text), url.isFileURL {
+                        continuation.resume(returning: url)
+                    } else {
+                        continuation.resume(returning: URL(fileURLWithPath: text))
+                    }
+                    return
+                }
+
+                continuation.resume(returning: nil)
+            }
+        }
     }
 
     private var composerLeadingButtonIconColor: Color {

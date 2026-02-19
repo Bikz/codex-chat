@@ -31,7 +31,6 @@ extension AppModel {
         }
 
         var existingPaths = Set(composerAttachments.map(\.path))
-        var addedCount = 0
 
         for url in urls {
             let standardized = url.standardizedFileURL
@@ -48,11 +47,6 @@ extension AppModel {
                 kind: composerAttachmentKind(for: standardized)
             )
             composerAttachments.append(attachment)
-            addedCount += 1
-        }
-
-        if addedCount > 0 {
-            followUpStatusMessage = "Attached \(addedCount) item\(addedCount == 1 ? "" : "s")."
         }
     }
 
