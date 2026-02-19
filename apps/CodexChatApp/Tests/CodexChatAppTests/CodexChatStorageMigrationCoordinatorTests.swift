@@ -2,7 +2,7 @@
 import Foundation
 import XCTest
 
-final class CodexChatStorageMigrationCoordinatorTests: XCTestCase {
+final class CodexStorageMigrationCoordinatorTests: XCTestCase {
     private let runtimeDirectoryNames = [
         "sessions",
         "archived_sessions",
