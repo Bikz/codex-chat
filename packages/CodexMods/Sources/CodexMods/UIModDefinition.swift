@@ -42,10 +42,10 @@ public struct UIModManifest: Hashable, Sendable, Codable {
 public struct UIModDefinition: Hashable, Sendable, Codable {
     public struct Future: Hashable, Sendable, Codable {
         public struct OptionalPane: Hashable, Sendable, Codable {
-            public var inspectorSurfaceHint: String?
+            public var modsBarSurfaceHint: String?
 
-            public init(inspectorSurfaceHint: String? = nil) {
-                self.inspectorSurfaceHint = inspectorSurfaceHint
+            public init(modsBarSurfaceHint: String? = nil) {
+                self.modsBarSurfaceHint = modsBarSurfaceHint
             }
         }
 
@@ -131,6 +131,7 @@ public enum UIModDiscoveryError: LocalizedError, Sendable {
     case missingManifest(String)
     case invalidManifestID(String)
     case invalidSchemaVersion(Int)
+    case unsupportedLegacyKey(String)
     case unreadableDefinition(String)
     case invalidChecksum(expected: String, actual: String)
 
@@ -141,7 +142,9 @@ public enum UIModDiscoveryError: LocalizedError, Sendable {
         case let .invalidManifestID(id):
             "Mod manifest id is invalid: \(id)"
         case let .invalidSchemaVersion(version):
-            "Unsupported mod schema version: \(version)"
+            "Unsupported ui.mod.json schemaVersion \(version). CodexChat now only supports schemaVersion 1. Migrate to schemaVersion 1 and uiSlots.modsBar."
+        case let .unsupportedLegacyKey(key):
+            "Unsupported legacy ui.mod.json key `\(key)`. Rename it to `uiSlots.modsBar` and keep schemaVersion 1."
         case let .unreadableDefinition(message):
             "Failed to load mod definition: \(message)"
         case let .invalidChecksum(expected, actual):

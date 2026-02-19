@@ -32,6 +32,10 @@ public final class UIModDiscoveryService: @unchecked Sendable {
             let definitionData = try Data(contentsOf: definitionURL)
             let checksum = Self.sha256Hex(of: definitionData)
 
+            if Self.containsLegacyRightInspectorKey(in: definitionData) {
+                throw UIModDiscoveryError.unsupportedLegacyKey("uiSlots.rightInspector")
+            }
+
             let definition: UIModDefinition
             do {
                 let decoder = JSONDecoder()
@@ -40,7 +44,7 @@ public final class UIModDiscoveryService: @unchecked Sendable {
                 throw UIModDiscoveryError.unreadableDefinition(error.localizedDescription)
             }
 
-            guard definition.schemaVersion == 1 || definition.schemaVersion == 2 else {
+            guard definition.schemaVersion == 1 else {
                 throw UIModDiscoveryError.invalidSchemaVersion(definition.schemaVersion)
             }
             guard !definition.manifest.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -96,7 +100,7 @@ public final class UIModDiscoveryService: @unchecked Sendable {
             version: "0.1.0",
             author: nil,
             license: "MIT",
-            description: "Example theme override for CodexChat.",
+            description: "Sample extension mod for CodexChat modsBar workflows.",
             homepage: nil,
             repository: nil,
             checksum: nil
@@ -117,7 +121,7 @@ public final class UIModDiscoveryService: @unchecked Sendable {
         )
 
         let definition = UIModDefinition(
-            schemaVersion: 2,
+            schemaVersion: 1,
             manifest: manifest,
             theme: theme,
             darkTheme: darkTheme,
@@ -125,7 +129,7 @@ public final class UIModDiscoveryService: @unchecked Sendable {
                 ModHookDefinition(
                     id: "turn-summary",
                     event: .turnCompleted,
-                    handler: ModExtensionHandler(command: ["node", "scripts/hook.js"], cwd: "."),
+                    handler: ModExtensionHandler(command: ["sh", "scripts/hook.sh"], cwd: "."),
                     permissions: .init(projectRead: true),
                     timeoutMs: 8000,
                     debounceMs: 0
@@ -135,13 +139,13 @@ public final class UIModDiscoveryService: @unchecked Sendable {
                 ModAutomationDefinition(
                     id: "daily-notes",
                     schedule: "0 9 * * *",
-                    handler: ModExtensionHandler(command: ["python3", "scripts/automation.py"], cwd: "."),
+                    handler: ModExtensionHandler(command: ["sh", "scripts/automation.sh"], cwd: "."),
                     permissions: .init(projectRead: true, projectWrite: true, runWhenAppClosed: true),
                     timeoutMs: 60000
                 ),
             ],
             uiSlots: .init(
-                rightInspector: .init(
+                modsBar: .init(
                     enabled: true,
                     title: "Summary",
                     source: .init(type: "handlerOutput", hookID: "turn-summary")
@@ -152,11 +156,89 @@ public final class UIModDiscoveryService: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(definition)
         try data.write(to: definitionURL, options: [.atomic])
+        let definitionChecksum = Self.sha256Hex(of: data)
+
+        let packageManifest = ModPackageManifest(
+            schemaVersion: 1,
+            id: manifest.id,
+            name: manifest.name,
+            version: manifest.version,
+            description: manifest.description,
+            author: manifest.author,
+            license: manifest.license,
+            homepage: manifest.homepage,
+            repository: manifest.repository,
+            entrypoints: ModEntrypoints(uiMod: "ui.mod.json"),
+            permissions: ModPackageManifestLoader
+                .requestedPermissions(for: definition)
+                .sorted { $0.rawValue < $1.rawValue },
+            compatibility: ModCompatibility(
+                platforms: ["macos"],
+                minCodexChatVersion: "0.1.0",
+                maxCodexChatVersion: nil
+            ),
+            integrity: ModIntegrity(uiModSha256: "sha256:\(definitionChecksum)")
+        )
+        let manifestURL = modDirectory.appendingPathComponent("codex.mod.json", isDirectory: false)
+        let packageData = try encoder.encode(packageManifest)
+        try packageData.write(to: manifestURL, options: [.atomic])
+
+        let scriptsDirectory = modDirectory.appendingPathComponent("scripts", isDirectory: true)
+        try fileManager.createDirectory(at: scriptsDirectory, withIntermediateDirectories: true)
+        try writeScript(
+            """
+            #!/bin/sh
+            read -r _INPUT
+            echo '{"ok":true,"modsBar":{"title":"Thread Summary","markdown":"- Turn completed. Update this script with your own summary logic."}}'
+            """,
+            to: scriptsDirectory.appendingPathComponent("hook.sh", isDirectory: false)
+        )
+        try writeScript(
+            """
+            #!/bin/sh
+            read -r _INPUT
+            echo '{"ok":true,"log":"daily-notes automation tick"}'
+            """,
+            to: scriptsDirectory.appendingPathComponent("automation.sh", isDirectory: false)
+        )
+
+        let readmeURL = modDirectory.appendingPathComponent("README.md", isDirectory: false)
+        let readme = """
+        # \(manifest.name)
+
+        This sample demonstrates:
+        - `codex.mod.json` package manifest (install/distribution metadata)
+        - `ui.mod.json` extension runtime configuration
+        - `scripts/hook.sh` for `turn.completed` modsBar updates
+        - `scripts/automation.sh` for scheduled automation jobs
+
+        Start here:
+        1. Edit `scripts/hook.sh` to produce a one-line summary for each turn.
+        2. Adjust permissions/schedules in `ui.mod.json`.
+        3. Reinstall from this folder or from your git repository URL in CodexChat.
+        """
+        try Data(readme.utf8).write(to: readmeURL, options: [.atomic])
         return definitionURL
     }
 
     private static func sha256Hex(of data: Data) -> String {
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func containsLegacyRightInspectorKey(in definitionData: Data) -> Bool {
+        guard
+            let root = try? JSONSerialization.jsonObject(with: definitionData) as? [String: Any],
+            let uiSlots = root["uiSlots"] as? [String: Any]
+        else {
+            return false
+        }
+
+        return uiSlots["rightInspector"] != nil
+    }
+
+    private func writeScript(_ script: String, to url: URL) throws {
+        try Data(script.utf8).write(to: url, options: [.atomic])
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 }

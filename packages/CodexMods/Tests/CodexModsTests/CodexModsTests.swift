@@ -118,13 +118,13 @@ final class CodexModsTests: XCTestCase {
         XCTAssertEqual(resolved.bubbles?.assistantBackgroundHex, "#1C1C1E")
     }
 
-    func testSchemaV2MalformedExtensionFieldsStillDecodeTheme() throws {
+    func testSchemaV1MalformedExtensionFieldsStillDecodeTheme() throws {
         let json = """
         {
-          "schemaVersion": 2,
+          "schemaVersion": 1,
           "manifest": {
-            "id": "v2-mod",
-            "name": "V2 Mod",
+            "id": "v1-mod",
+            "name": "V1 Mod",
             "version": "1.0.0"
           },
           "theme": {
@@ -141,8 +141,8 @@ final class CodexModsTests: XCTestCase {
         """
 
         let decoded = try JSONDecoder().decode(UIModDefinition.self, from: Data(json.utf8))
-        XCTAssertEqual(decoded.schemaVersion, 2)
-        XCTAssertEqual(decoded.manifest.id, "v2-mod")
+        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertEqual(decoded.manifest.id, "v1-mod")
         XCTAssertEqual(decoded.theme.palette?.accentHex, "#10A37F")
         XCTAssertTrue(decoded.hooks.isEmpty)
         XCTAssertTrue(decoded.automations.isEmpty)

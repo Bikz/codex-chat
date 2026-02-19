@@ -6,6 +6,7 @@ public enum ModHookEventName: String, CaseIterable, Hashable, Sendable, Codable 
     case assistantDelta = "assistant.delta"
     case actionCard = "action.card"
     case approvalRequested = "approval.requested"
+    case modsBarAction = "modsBar.action"
     case turnCompleted = "turn.completed"
     case turnFailed = "turn.failed"
     case transcriptPersisted = "transcript.persisted"
@@ -91,7 +92,7 @@ public struct ModAutomationDefinition: Hashable, Sendable, Codable, Identifiable
 }
 
 public struct ModUISlots: Hashable, Sendable, Codable {
-    public struct RightInspectorSource: Hashable, Sendable, Codable {
+    public struct ModsBarSource: Hashable, Sendable, Codable {
         public var type: String
         public var hookID: String?
 
@@ -106,21 +107,21 @@ public struct ModUISlots: Hashable, Sendable, Codable {
         }
     }
 
-    public struct RightInspector: Hashable, Sendable, Codable {
+    public struct ModsBar: Hashable, Sendable, Codable {
         public var enabled: Bool
         public var title: String?
-        public var source: RightInspectorSource?
+        public var source: ModsBarSource?
 
-        public init(enabled: Bool, title: String? = nil, source: RightInspectorSource? = nil) {
+        public init(enabled: Bool, title: String? = nil, source: ModsBarSource? = nil) {
             self.enabled = enabled
             self.title = title
             self.source = source
         }
     }
 
-    public var rightInspector: RightInspector?
+    public var modsBar: ModsBar?
 
-    public init(rightInspector: RightInspector? = nil) {
-        self.rightInspector = rightInspector
+    public init(modsBar: ModsBar? = nil) {
+        self.modsBar = modsBar
     }
 }
