@@ -205,7 +205,8 @@ struct SidebarView: View {
             projectRow(project)
 
             if model.expandedProjectIDs.contains(project.id), model.selectedProjectID == project.id {
-                ForEach(model.threads) { thread in
+                let projectThreads = model.threads.filter { $0.projectId == project.id }
+                ForEach(projectThreads) { thread in
                     threadRow(thread, isGeneralThread: false)
                 }
             }

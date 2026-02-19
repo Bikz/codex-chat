@@ -300,6 +300,7 @@ struct ProjectSettingsSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case let .loaded(threads):
+            let projectNamesByID = Dictionary(uniqueKeysWithValues: model.projects.map { ($0.id, $0.name) })
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(threads) { thread in
@@ -308,7 +309,7 @@ struct ProjectSettingsSheet: View {
                                 Text(thread.title)
                                     .font(.subheadline.weight(.medium))
                                     .lineLimit(1)
-                                Text(projectName(for: thread.projectId))
+                                Text(projectName(for: thread.projectId, projectNamesByID: projectNamesByID))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -333,8 +334,8 @@ struct ProjectSettingsSheet: View {
         }
     }
 
-    private func projectName(for projectID: UUID) -> String {
-        model.projects.first(where: { $0.id == projectID })?.name ?? "Unknown project"
+    private func projectName(for projectID: UUID, projectNamesByID: [UUID: String]) -> String {
+        projectNamesByID[projectID] ?? "Unknown project"
     }
 
     private func compactRelativeAge(from date: Date) -> String {
