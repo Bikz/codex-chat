@@ -6,13 +6,17 @@ struct CodexConfigSchemaFormView: View {
 
     @State private var newTopLevelKey = ""
 
+    private var sortedSchemaPropertyKeys: [String] {
+        schema.properties.keys.sorted()
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        LazyVStack(alignment: .leading, spacing: 10) {
             if schema.properties.isEmpty {
                 Text("Schema metadata is unavailable. Use the raw editor.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(schema.properties.keys.sorted(), id: \.self) { key in
+                ForEach(sortedSchemaPropertyKeys, id: \.self) { key in
                     if let propertySchema = schema.properties[key] {
                         CodexConfigFieldRow(
                             rootValue: $rootValue,

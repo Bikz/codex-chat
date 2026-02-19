@@ -40,8 +40,8 @@ struct DangerConfirmationSheet: View {
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
-                            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                                .fill(Color(hex: tokens.palette.panelHex).opacity(0.74))
+                            tokens.materials.panelMaterial.material,
+                            in: RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
@@ -57,7 +57,7 @@ struct DangerConfirmationSheet: View {
                     if let errorText {
                         Text(errorText)
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Color(hex: tokens.palette.accentHex))
                     }
                 }
             }
@@ -70,8 +70,8 @@ struct DangerConfirmationSheet: View {
                 Button("Confirm") {
                     onConfirm()
                 }
-                .buttonStyle(.borderedProminent)
             }
+            .buttonStyle(.bordered)
         }
         .padding(20)
         .frame(minWidth: 500)

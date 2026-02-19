@@ -124,7 +124,7 @@ struct CodexConfigSettingsSection: View {
                     ForEach(model.codexConfigValidationIssues) { issue in
                         Text("[\(issue.severity.rawValue.uppercased())] \(issue.pathLabel): \(issue.message)")
                             .font(.caption)
-                            .foregroundStyle(issue.severity == .error ? .red : .secondary)
+                            .foregroundStyle(issue.severity == .error ? Color(hex: tokens.palette.accentHex) : .secondary)
                     }
                 }
 
@@ -135,8 +135,12 @@ struct CodexConfigSettingsSection: View {
                 }
             }
         }
-        .onAppear {
+        .task {
             guard !hasHydratedDraft else {
+                return
+            }
+            await Task.yield()
+            guard !Task.isCancelled else {
                 return
             }
             hydrateDraftFromModel()

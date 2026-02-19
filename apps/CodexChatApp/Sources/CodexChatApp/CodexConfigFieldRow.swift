@@ -1,3 +1,4 @@
+import CodexChatUI
 import SwiftUI
 
 struct CodexConfigFieldRow: View {
@@ -14,6 +15,11 @@ struct CodexConfigFieldRow: View {
     @State private var isExpanded = true
     @State private var revealSensitive = false
     @State private var pendingMapKey = ""
+    @Environment(\.designTokens) private var tokens
+
+    private var sortedChildSchemaKeys: [String] {
+        schema.properties.keys.sorted()
+    }
 
     init(
         rootValue: Binding<CodexConfigValue>,
@@ -104,9 +110,10 @@ struct CodexConfigFieldRow: View {
             if schema.required {
                 Text("Required")
                     .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color(hex: tokens.palette.accentHex))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.red.opacity(0.15), in: Capsule())
+                    .background(Color(hex: tokens.palette.accentHex).opacity(0.14), in: Capsule())
             }
 
             Spacer(minLength: 0)
@@ -144,7 +151,7 @@ struct CodexConfigFieldRow: View {
                 }
                 .buttonStyle(.bordered)
             } else {
-                ForEach(schema.properties.keys.sorted(), id: \.self) { childKey in
+                ForEach(sortedChildSchemaKeys, id: \.self) { childKey in
                     if let childSchema = schema.properties[childKey] {
                         CodexConfigFieldRow(
                             rootValue: $rootValue,
@@ -156,7 +163,7 @@ struct CodexConfigFieldRow: View {
                 }
 
                 if let object = value?.objectValue {
-                    let extraKeys = object.keys.sorted().filter { schema.properties[$0] == nil }
+                    let extraKeys = extraObjectKeys(in: object)
                     if !extraKeys.isEmpty {
                         Divider()
                         Text("Custom Keys")
@@ -262,6 +269,10 @@ struct CodexConfigFieldRow: View {
 
     private var value: CodexConfigValue? {
         rootValue.value(at: path)
+    }
+
+    private func extraObjectKeys(in object: [String: CodexConfigValue]) -> [String] {
+        object.keys.filter { schema.properties[$0] == nil }.sorted()
     }
 
     private var stringBinding: Binding<String> {
