@@ -266,6 +266,42 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertFalse(unarchived.isPinned)
     }
 
+    func testPinningThreadPreservesUpdatedAtAndRecencyOrderAfterUnpin() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let project = try await repositories.projectRepository.createProject(
+            named: "Pin Preserve",
+            path: "/tmp/pin-preserve",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let older = try await repositories.threadRepository.createThread(projectID: project.id, title: "Older")
+        let newer = try await repositories.threadRepository.createThread(projectID: project.id, title: "Newer")
+        guard let persistedOlder = try await repositories.threadRepository.getThread(id: older.id) else {
+            XCTFail("Expected persisted older thread")
+            return
+        }
+
+        let initial = try await repositories.threadRepository.listThreads(projectID: project.id)
+        XCTAssertEqual(initial.map(\.id), [newer.id, older.id])
+
+        let pinned = try await repositories.threadRepository.setThreadPinned(id: older.id, isPinned: true)
+        XCTAssertTrue(pinned.isPinned)
+        XCTAssertEqual(pinned.updatedAt, persistedOlder.updatedAt)
+
+        let afterPin = try await repositories.threadRepository.listThreads(projectID: project.id)
+        XCTAssertEqual(afterPin.map(\.id), [older.id, newer.id])
+
+        let unpinned = try await repositories.threadRepository.setThreadPinned(id: older.id, isPinned: false)
+        XCTAssertFalse(unpinned.isPinned)
+        XCTAssertEqual(unpinned.updatedAt, persistedOlder.updatedAt)
+
+        let afterUnpin = try await repositories.threadRepository.listThreads(projectID: project.id)
+        XCTAssertEqual(afterUnpin.map(\.id), [newer.id, older.id])
+    }
+
     func testFollowUpQueuePersistenceAndOrdering() async throws {
         let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
         let repositories = MetadataRepositories(database: database)

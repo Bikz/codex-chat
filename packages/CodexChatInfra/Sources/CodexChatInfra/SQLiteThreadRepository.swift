@@ -136,7 +136,6 @@ public final class SQLiteThreadRepository: ThreadRepository, @unchecked Sendable
                 throw CodexChatCoreError.missingRecord(id.uuidString)
             }
             entity.isPinned = entity.archivedAt == nil ? isPinned : false
-            entity.updatedAt = Date()
             try entity.update(db)
             return entity.record
         }
