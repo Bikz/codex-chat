@@ -323,9 +323,7 @@ struct TurnSummaryRow: View {
                     .layoutPriority(1)
 
                 Button(isExpanded ? "Hide" : "Show") {
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        isExpanded.toggle()
-                    }
+                    isExpanded.toggle()
                 }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.semibold))
@@ -408,8 +406,10 @@ private struct InlineActionDetailsList: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
 
-                    Text(action.detail)
+                    Text(compactDetail(action.detail))
                         .font(.system(.caption2, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .textSelection(.enabled)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -421,6 +421,16 @@ private struct InlineActionDetailsList: View {
         .sheet(item: $selectedWorkerTrace) { entry in
             WorkerTraceDetailsSheet(model: model, entry: entry)
         }
+    }
+
+    private func compactDetail(_ value: String) -> String {
+        let flattened = value
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if flattened.count <= 220 {
+            return flattened
+        }
+        return String(flattened.prefix(220)) + "…"
     }
 }
 
