@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "codexchat.messages-assistant",
+  "name": "Messages Assistant",
+  "version": "1.0.0",
+  "description": "Draft-and-send iMessage flow powered by native actions.",
+  "author": "CodexChat",
+  "license": "MIT",
+  "repository": "https://github.com/bikz/codexchat",
+  "entrypoints": {
+    "uiMod": "ui.mod.json"
+  },
+  "permissions": [],
+  "compatibility": {
+    "platforms": ["macos"],
+    "minCodexChatVersion": "0.1.0"
+  }
+}

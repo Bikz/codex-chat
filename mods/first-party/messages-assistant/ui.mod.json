@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "id": "codexchat.messages-assistant",
+    "name": "Messages Assistant",
+    "version": "1.0.0",
+    "description": "Draft-and-send iMessage flow powered by native actions.",
+    "author": "CodexChat",
+    "license": "MIT",
+    "repository": "https://github.com/bikz/codexchat"
+  },
+  "theme": {},
+  "hooks": [
+    {
+      "id": "messages-assistant-refresh",
+      "event": "thread.started",
+      "handler": {
+        "command": ["sh", "scripts/messages_assistant.sh"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "messages-assistant-turn-refresh",
+      "event": "turn.completed",
+      "handler": {
+        "command": ["sh", "scripts/messages_assistant.sh"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "messages-assistant-action",
+      "event": "modsBar.action",
+      "handler": {
+        "command": ["sh", "scripts/messages_assistant.sh"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    }
+  ],
+  "automations": [],
+  "uiSlots": {
+    "modsBar": {
+      "enabled": true,
+      "title": "Messages Assistant",
+      "source": {
+        "type": "handlerOutput"
+      }
+    }
+  }
+}

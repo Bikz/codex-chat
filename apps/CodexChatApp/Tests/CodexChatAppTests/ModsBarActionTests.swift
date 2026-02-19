@@ -115,6 +115,43 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(written.contains("\"targetHookID\":\"target-hook\""))
     }
 
+    func testPerformModsBarActionNativeActionReportsUnsupportedAction() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-native-action")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let threadID = UUID()
+        let projectPath = try makeTempDirectory(prefix: "modsbar-native-project").path
+
+        model.projectsState = .loaded([
+            ProjectRecord(
+                id: projectID,
+                name: "Project",
+                path: projectPath,
+                trustState: .trusted
+            ),
+        ])
+        model.selectedProjectID = projectID
+        model.threadsState = .loaded([
+            ThreadRecord(id: threadID, projectId: projectID, title: "Thread"),
+        ])
+        model.selectedThreadID = threadID
+
+        model.performModsBarAction(
+            .init(
+                id: "native",
+                label: "Native",
+                kind: .nativeAction,
+                payload: ["actionID": "unknown.action"]
+            )
+        )
+
+        try await eventually(timeoutSeconds: 10) {
+            model.extensionStatusMessage?.contains("Native action failed:") == true
+        }
+
+        XCTAssertTrue(model.extensionStatusMessage?.contains("Unknown computer action: unknown.action") == true)
+    }
+
     private func makeTempDirectory(prefix: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)

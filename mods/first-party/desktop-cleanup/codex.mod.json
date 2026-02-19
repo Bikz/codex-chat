@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "codexchat.desktop-cleanup",
+  "name": "Desktop Cleanup",
+  "version": "1.0.0",
+  "description": "Preview-first desktop cleanup using native local actions.",
+  "author": "CodexChat",
+  "license": "MIT",
+  "repository": "https://github.com/bikz/codexchat",
+  "entrypoints": {
+    "uiMod": "ui.mod.json"
+  },
+  "permissions": [],
+  "compatibility": {
+    "platforms": ["macos"],
+    "minCodexChatVersion": "0.1.0"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "id": "codexchat.desktop-cleanup",
+    "name": "Desktop Cleanup",
+    "version": "1.0.0",
+    "description": "Preview-first desktop cleanup using native local actions.",
+    "author": "CodexChat",
+    "license": "MIT",
+    "repository": "https://github.com/bikz/codexchat"
+  },
+  "theme": {},
+  "hooks": [
+    {
+      "id": "desktop-cleanup-refresh",
+      "event": "thread.started",
+      "handler": {
+        "command": ["sh", "scripts/desktop_cleanup.sh"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "desktop-cleanup-turn-refresh",
+      "event": "turn.completed",
+      "handler": {
+        "command": ["sh", "scripts/desktop_cleanup.sh"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    }
+  ],
+  "automations": [],
+  "uiSlots": {
+    "modsBar": {
+      "enabled": true,
+      "title": "Desktop Cleanup",
+      "source": {
+        "type": "handlerOutput"
+      }
+    }
+  }
+}
