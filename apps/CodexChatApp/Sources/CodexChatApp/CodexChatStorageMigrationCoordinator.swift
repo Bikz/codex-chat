@@ -124,7 +124,7 @@ enum CodexChatStorageMigrationCoordinator {
         try paths.ensureRootStructure(fileManager: fileManager)
 
         if !force, fileManager.fileExists(atPath: paths.codexHomeNormalizationMarkerURL.path) {
-            let previousReport = try readLastCodexHomeNormalizationReport(paths: paths, fileManager: fileManager)
+            let previousReport = try? readLastCodexHomeNormalizationReport(paths: paths, fileManager: fileManager)
             return CodexHomeNormalizationResult(
                 executed: false,
                 forced: false,

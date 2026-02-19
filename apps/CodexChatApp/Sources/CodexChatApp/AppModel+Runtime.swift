@@ -550,6 +550,7 @@ extension AppModel {
         runtimeThreadIDByLocalThreadID.removeAll()
         localThreadIDByRuntimeThreadID.removeAll()
         localThreadIDByCommandItemID.removeAll()
+        clearPendingRuntimeRepairSuggestions()
     }
 
     func handleRuntimeTermination(detail: String) {

@@ -234,6 +234,37 @@ final class CodexStorageMigrationCoordinatorTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: paths.codexHomeURL.appendingPathComponent("skills/ok/SKILL.md").path))
     }
 
+    func testNormalizeManagedCodexHomeDoesNotThrowWhenLastReportIsCorrupted() throws {
+        let fileManager = FileManager.default
+        let root = tempDirectory(prefix: "codexchat-storage-corrupt-report")
+        defer { try? fileManager.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure(fileManager: fileManager)
+
+        try "version=1\n".write(
+            to: paths.codexHomeNormalizationMarkerURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try "{not-json".write(
+            to: paths.codexHomeLastRepairReportURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let result = try CodexChatStorageMigrationCoordinator.normalizeManagedCodexHome(
+            paths: paths,
+            force: false,
+            reason: "startup",
+            fileManager: fileManager
+        )
+
+        XCTAssertFalse(result.executed)
+        XCTAssertEqual(result.reason, "already-normalized")
+        XCTAssertNil(result.quarantineURL)
+    }
+
     private func tempDirectory(prefix: String) -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
