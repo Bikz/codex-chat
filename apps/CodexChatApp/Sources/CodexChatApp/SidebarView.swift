@@ -32,7 +32,7 @@ struct SidebarView: View {
     }
 
     private var sidebarBodyIconFont: Font {
-        .system(size: 14, weight: .regular)
+        .system(size: 14, weight: .medium)
     }
 
     private var sidebarMetaIconFont: Font {
@@ -41,6 +41,20 @@ struct SidebarView: View {
 
     private var sidebarBackgroundColor: Color {
         Color(hex: tokens.palette.sidebarHex)
+    }
+
+    private var sidebarBodyIconColor: Color {
+        if colorScheme == .dark {
+            return Color.primary.opacity(0.84)
+        }
+        return Color.primary.opacity(0.74)
+    }
+
+    private var sidebarControlIconColor: Color {
+        if colorScheme == .dark {
+            return Color.primary.opacity(0.90)
+        }
+        return Color.primary.opacity(0.76)
     }
 
     var body: some View {
@@ -150,7 +164,7 @@ struct SidebarView: View {
         HStack(spacing: SidebarLayoutSpec.iconTextGap) {
             Image(systemName: "magnifyingglass")
                 .font(sidebarBodyIconFont)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(sidebarBodyIconColor)
                 .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
 
             TextField(
@@ -230,7 +244,7 @@ struct SidebarView: View {
                 HStack(spacing: SidebarLayoutSpec.iconTextGap) {
                     Image(systemName: model.showAllProjects ? "chevron.up" : "ellipsis")
                         .font(sidebarMetaIconFont)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(sidebarControlIconColor)
                         .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                     Text(model.showAllProjects ? "Show less" : "See more")
                         .font(sidebarMetaFont)
@@ -276,7 +290,7 @@ struct SidebarView: View {
                 HStack(spacing: SidebarLayoutSpec.iconTextGap) {
                     Image(systemName: projectLeadingIconName(isExpanded: isExpanded, isHovered: isHovered))
                         .font(sidebarBodyIconFont)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(sidebarBodyIconColor)
                         .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
 
                     Text(project.name)
@@ -313,7 +327,7 @@ struct SidebarView: View {
                 } label: {
                     Image(systemName: "square.and.pencil")
                         .font(sidebarMetaIconFont)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(sidebarControlIconColor)
                         .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                         .contentShape(Rectangle())
                 }
@@ -331,7 +345,7 @@ struct SidebarView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(sidebarMetaIconFont)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(sidebarControlIconColor)
                         .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                         .contentShape(Rectangle())
                 }
@@ -446,7 +460,7 @@ struct SidebarView: View {
                             .foregroundStyle(
                                 thread.isPinned
                                     ? pinnedStarColor
-                                    : .secondary
+                                    : sidebarControlIconColor
                             )
                             .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                     }
@@ -461,7 +475,7 @@ struct SidebarView: View {
                     } label: {
                         Image(systemName: "archivebox")
                             .font(sidebarMetaIconFont)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(sidebarControlIconColor)
                             .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                     }
                     .buttonStyle(.plain)
@@ -611,7 +625,7 @@ struct SidebarView: View {
                     Spacer()
 
                     Image(systemName: "gearshape")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(sidebarControlIconColor)
                         .font(sidebarMetaIconFont)
                         .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                 }
@@ -723,9 +737,9 @@ private struct SidebarActionRow: View {
 
     private var actionIconColor: Color {
         if colorScheme == .dark {
-            return Color.primary.opacity(0.85)
+            return Color.primary.opacity(0.90)
         }
-        return Color.primary.opacity(0.68)
+        return Color.primary.opacity(0.76)
     }
 
     var body: some View {

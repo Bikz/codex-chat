@@ -142,9 +142,9 @@ struct SidebarSectionHeader: View {
 
     private var actionIconColor: Color {
         if colorScheme == .dark {
-            return Color.primary.opacity(0.85)
+            return Color.primary.opacity(0.90)
         }
-        return Color.primary.opacity(0.68)
+        return Color.primary.opacity(0.76)
     }
 
     private var actionBackgroundColor: Color {
