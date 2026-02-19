@@ -131,7 +131,6 @@ struct SidebarView: View {
             .listRowSeparator(.hidden)
         }
         .listStyle(.sidebar)
-        .listRowSpacing(SidebarLayoutSpec.listRowSpacing)
         .scrollContentBackground(.hidden)
         .background(sidebarBackgroundColor)
         .listRowInsets(EdgeInsets(

@@ -24,7 +24,10 @@ struct SidebarRowButtonStyle: ButtonStyle {
 
         configuration.label
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(backgroundFill(isPressed: configuration.isPressed, isHovered: isHovered))
+            .background(
+                backgroundFill(isPressed: configuration.isPressed, isHovered: isHovered)
+                    .padding(.vertical, -(SidebarLayoutSpec.listRowSpacing / 2))
+            )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.988 : 1.0)
