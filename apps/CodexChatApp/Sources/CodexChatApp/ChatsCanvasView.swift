@@ -237,14 +237,10 @@ struct ChatsCanvasView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    if case .recording = model.voiceCaptureState {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            if let elapsed = model.voiceRecordingElapsed(now: context.date) {
-                                Text(elapsed)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                    if case .recording = model.voiceCaptureState, let elapsed = model.voiceCaptureElapsedText {
+                        Text(elapsed)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .accessibilityElement(children: .combine)

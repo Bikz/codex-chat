@@ -264,6 +264,7 @@ final class AppModel: ObservableObject {
     @Published var storageStatusMessage: String?
     @Published var runtimeDefaultsStatusMessage: String?
     @Published var voiceCaptureState: VoiceCaptureState = .idle
+    @Published var voiceCaptureElapsedText: String?
     @Published var storageRootPath: String
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
@@ -341,7 +342,10 @@ final class AppModel: ObservableObject {
     var autoDrainPreferredThreadID: UUID?
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
     var voiceAutoStopTask: Task<Void, Never>?
+    var voiceElapsedTickerTask: Task<Void, Never>?
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
+    let voiceElapsedClock = ContinuousClock()
+    var voiceCaptureRecordingStart: ContinuousClock.Instant?
     var activeExtensionHooks: [ResolvedExtensionHook] = []
     var activeExtensionAutomations: [ResolvedExtensionAutomation] = []
     var extensionHookDebounceTimestamps: [String: Date] = [:]
@@ -434,6 +438,7 @@ final class AppModel: ObservableObject {
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
         voiceAutoStopTask?.cancel()
+        voiceElapsedTickerTask?.cancel()
         globalModsWatcher?.stop()
         globalModsWatcher = nil
         projectModsWatcher?.stop()
@@ -470,6 +475,7 @@ final class AppModel: ObservableObject {
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
         voiceAutoStopTask?.cancel()
+        voiceElapsedTickerTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
 
