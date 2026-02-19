@@ -12,3 +12,13 @@ Global reusable prompts in the CodexChat Mods bar.
 
 - `Title :: Prompt body`
 - Or just `Prompt body` (title auto-derived)
+
+## Install
+
+- Local path: this folder
+- GitHub URL: repository URL (optionally with `/tree/<branch>/mods/first-party/prompt-book`)
+- GitHub `blob` URLs are unsupported. Use a repository root URL or `tree` URL.
+
+## Runtime
+
+- Uses default macOS tooling only: `sh`, `plutil`, `osascript`.

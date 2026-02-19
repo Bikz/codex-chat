@@ -105,6 +105,14 @@ Output:
 {"ok":true,"modsBar":{"title":"Thread Summary","scope":"thread","markdown":"- Turn completed","actions":[{"id":"clear","label":"Clear","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"summary-action"}}]},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}]}
 ```
 
+## Default macOS runtime baseline
+
+For mods that should work on stock macOS installs, prefer:
+
+- `sh`
+- `plutil`
+- `osascript` (only when JSON escaping/serialization is needed)
+
 ## Permissions And Safety
 
 Permission keys:
@@ -133,6 +141,7 @@ Rules:
 2. In CodexChat, open `Install Mod`.
 3. Review package metadata + permissions.
 4. Install to global or project scope.
+5. Use repository URLs or GitHub `tree` URLs. GitHub `blob` URLs are not installable.
 
 Repository policy for this cycle:
 

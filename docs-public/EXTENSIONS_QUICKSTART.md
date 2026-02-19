@@ -32,6 +32,14 @@ Then keep `ui.mod.json` hook bound to `turn.completed` and `uiSlots.modsBar`.
 
 Keep `ui.mod.json` on `schemaVersion: 1` and do not use legacy `uiSlots.rightInspector`.
 
+### Runtime baseline for no-dependency mods
+
+For widest user compatibility on macOS, prefer built-in tools:
+
+- `sh`
+- `plutil`
+- `osascript` (only when you need robust JSON escaping/serialization)
+
 ## 3) Validate your package metadata
 
 In `codex.mod.json`:
@@ -39,7 +47,7 @@ In `codex.mod.json`:
 - keep `id/name/version` aligned with `ui.mod.json.manifest`
 - ensure `permissions` includes all permissions used by hooks/automations
 - set `entrypoints.uiMod` to `ui.mod.json` (or another safe relative path)
-- optionally set `integrity.uiModSha256`
+- optionally set `integrity.uiModSha256` (samples do not scaffold integrity by default)
 - `codex.mod.json` is required for install (no legacy fallback)
 
 ## 4) Install from local path or GitHub URL
@@ -51,6 +59,7 @@ In CodexChat:
    - local folder path
    - GitHub URL (for example `https://github.com/org/mod-repo.git`)
    - GitHub tree subdirectory URL (for example `https://github.com/org/repo/tree/main/mods/first-party/thread-summary`)
+   - note: GitHub `blob` URLs are rejected. Convert them to `tree` URLs.
 3. Choose scope: Project or Global.
 4. Click `Review Package`, confirm metadata + permissions, then install.
 

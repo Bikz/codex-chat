@@ -12,3 +12,8 @@ Per-thread notes inside the CodexChat Mods bar.
 
 - Local path: this folder
 - GitHub URL: repository URL (optionally with `/tree/<branch>/mods/first-party/personal-notes`)
+- GitHub `blob` URLs are unsupported. Use a repository root URL or `tree` URL.
+
+## Runtime
+
+- Uses default macOS tooling only: `sh`, `plutil`, `osascript`.

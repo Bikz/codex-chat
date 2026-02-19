@@ -58,6 +58,11 @@ Each distributable extension package should include:
 7. If `integrity.uiModSha256` is present, checksum must match `ui.mod.json`.
 8. If `compatibility.platforms` is present, it must include `macos`, `darwin`, or `*`.
 
+Notes:
+
+- `integrity.uiModSha256` is optional.
+- Generated sample packages intentionally leave `integrity` unset by default to avoid accidental checksum drift during iteration.
+
 ## Capability Model
 
 Capabilities are still runtime-driven by `ui.mod.json`:
@@ -141,6 +146,7 @@ Must not include:
 1. Source intake:
 - local folder path
 - GitHub repo URL (including GitHub `tree` subdirectory URL)
+- GitHub `blob` URLs are rejected with migration guidance to use `tree` URLs
 
 2. Fetch/stage:
 - Clone/download into temporary staging directory.
