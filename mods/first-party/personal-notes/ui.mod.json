@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "id": "codexchat.personal-notes",
+    "name": "Personal Notes",
+    "version": "1.0.0",
+    "description": "Per-thread personal notes in the Mods bar.",
+    "author": "CodexChat",
+    "license": "MIT",
+    "repository": "https://github.com/bikz/codexchat"
+  },
+  "theme": {},
+  "hooks": [
+    {
+      "id": "notes-thread-start",
+      "event": "thread.started",
+      "handler": {
+        "command": ["python3", "scripts/notes.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "notes-turn-refresh",
+      "event": "turn.completed",
+      "handler": {
+        "command": ["python3", "scripts/notes.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "notes-action",
+      "event": "modsBar.action",
+      "handler": {
+        "command": ["python3", "scripts/notes.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    }
+  ],
+  "automations": [],
+  "uiSlots": {
+    "modsBar": {
+      "enabled": true,
+      "title": "Personal Notes",
+      "source": {
+        "type": "handlerOutput"
+      }
+    }
+  }
+}

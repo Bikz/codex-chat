@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "id": "codexchat.prompt-book",
+    "name": "Prompt Book",
+    "version": "1.0.0",
+    "description": "Global reusable prompts with one-click insert and send.",
+    "author": "CodexChat",
+    "license": "MIT",
+    "repository": "https://github.com/bikz/codexchat"
+  },
+  "theme": {},
+  "hooks": [
+    {
+      "id": "prompt-book-thread-start",
+      "event": "thread.started",
+      "handler": {
+        "command": ["python3", "scripts/prompt_book.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 7000,
+      "debounceMs": 0
+    },
+    {
+      "id": "prompt-book-turn-refresh",
+      "event": "turn.completed",
+      "handler": {
+        "command": ["python3", "scripts/prompt_book.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 7000,
+      "debounceMs": 0
+    },
+    {
+      "id": "prompt-book-action",
+      "event": "modsBar.action",
+      "handler": {
+        "command": ["python3", "scripts/prompt_book.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 7000,
+      "debounceMs": 0
+    }
+  ],
+  "automations": [],
+  "uiSlots": {
+    "modsBar": {
+      "enabled": true,
+      "title": "Prompt Book",
+      "source": {
+        "type": "handlerOutput"
+      }
+    }
+  }
+}

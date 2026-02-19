@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "codexchat.thread-summary",
+  "name": "Thread Summary",
+  "version": "1.0.0",
+  "description": "One-line per-turn timeline in the Mods bar.",
+  "author": "CodexChat",
+  "license": "MIT",
+  "repository": "https://github.com/bikz/codexchat",
+  "entrypoints": {
+    "uiMod": "ui.mod.json"
+  },
+  "permissions": [],
+  "compatibility": {
+    "platforms": ["macos"],
+    "minCodexChatVersion": "0.1.0"
+  }
+}

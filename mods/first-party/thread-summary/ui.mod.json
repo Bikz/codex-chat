@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "id": "codexchat.thread-summary",
+    "name": "Thread Summary",
+    "version": "1.0.0",
+    "description": "One-line per-turn timeline in the Mods bar.",
+    "author": "CodexChat",
+    "license": "MIT",
+    "repository": "https://github.com/bikz/codexchat"
+  },
+  "theme": {},
+  "hooks": [
+    {
+      "id": "summary-thread-start",
+      "event": "thread.started",
+      "handler": {
+        "command": ["python3", "scripts/summary.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "summary-turn-completed",
+      "event": "turn.completed",
+      "handler": {
+        "command": ["python3", "scripts/summary.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "summary-turn-failed",
+      "event": "turn.failed",
+      "handler": {
+        "command": ["python3", "scripts/summary.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "summary-action",
+      "event": "modsBar.action",
+      "handler": {
+        "command": ["python3", "scripts/summary.py"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    }
+  ],
+  "automations": [],
+  "uiSlots": {
+    "modsBar": {
+      "enabled": true,
+      "title": "Thread Summary",
+      "source": {
+        "type": "handlerOutput"
+      }
+    }
+  }
+}
