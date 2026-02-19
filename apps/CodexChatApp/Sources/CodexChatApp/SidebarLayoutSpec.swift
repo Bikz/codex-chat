@@ -18,7 +18,7 @@ enum SidebarLayoutSpec {
 
     static let sectionHeaderTopPadding: CGFloat = 20
     static let sectionHeaderBottomPadding: CGFloat = 6
-    static let sectionHeaderLeadingInset: CGFloat = 28
+    static let sectionHeaderLeadingInset: CGFloat = 0
 
     static let selectedRowInset: CGFloat = 2
     static let selectedRowCornerRadius: CGFloat = 10

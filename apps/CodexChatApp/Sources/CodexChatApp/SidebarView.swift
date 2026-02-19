@@ -94,7 +94,7 @@ struct SidebarView: View {
                     font: sidebarSectionFont,
                     actionSystemImage: "plus",
                     actionAccessibilityLabel: "New project",
-                    trailingAlignmentWidth: SidebarLayoutSpec.threadTrailingWidth,
+                    trailingAlignmentWidth: SidebarLayoutSpec.projectTrailingWidth,
                     horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
                     trailingPadding: 0,
                     leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
@@ -370,6 +370,7 @@ struct SidebarView: View {
     private func threadRow(_ thread: ThreadRecord, isGeneralThread: Bool) -> some View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
+        let rowSpacing = isGeneralThread ? 0 : SidebarLayoutSpec.iconTextGap
 
         return ZStack(alignment: .trailing) {
             Button {
@@ -378,12 +379,8 @@ struct SidebarView: View {
                 }
                 model.selectThread(thread.id)
             } label: {
-                HStack(spacing: SidebarLayoutSpec.iconTextGap) {
-                    if isGeneralThread {
-                        Color.clear
-                            .frame(width: SidebarLayoutSpec.iconColumnWidth, height: 8, alignment: .leading)
-                            .accessibilityHidden(true)
-                    } else {
+                HStack(spacing: rowSpacing) {
+                    if !isGeneralThread {
                         threadStatusMarker(for: thread.id)
                     }
 

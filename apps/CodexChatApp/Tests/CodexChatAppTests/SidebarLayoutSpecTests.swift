@@ -7,12 +7,8 @@ final class SidebarLayoutSpecTests: XCTestCase {
         XCTAssertEqual(SidebarLayoutSpec.threadTrailingWidth, 54)
     }
 
-    func testSectionHeaderLeadingInsetMatchesIconRailMath() {
-        XCTAssertEqual(
-            SidebarLayoutSpec.sectionHeaderLeadingInset,
-            SidebarLayoutSpec.iconColumnWidth + SidebarLayoutSpec.iconTextGap
-        )
-        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderLeadingInset, 28)
+    func testSectionHeaderLeadingInsetAlignsToIconRailStart() {
+        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderLeadingInset, 0)
     }
 
     func testFooterAndListHorizontalRailsMatch() {
