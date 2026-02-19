@@ -236,9 +236,10 @@ struct SidebarView: View {
                 isHovered: isSeeMoreHovered
             ))
             .onHover { hovering in
-                withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
-                    isSeeMoreHovered = hovering
+                guard isSeeMoreHovered != hovering else {
+                    return
                 }
+                isSeeMoreHovered = hovering
             }
         }
     }
@@ -664,9 +665,10 @@ private struct SidebarActionRow: View {
             isHovered: isHovered
         ))
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
-                isHovered = hovering
+            guard isHovered != hovering else {
+                return
             }
+            isHovered = hovering
         }
     }
 }
