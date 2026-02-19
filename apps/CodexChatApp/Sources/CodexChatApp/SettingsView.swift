@@ -28,6 +28,7 @@ struct SettingsView: View {
     @State private var generalDangerConfirmationInput = ""
     @State private var generalDangerConfirmationError: String?
     @State private var isRuntimeConfigExpanded = false
+    @State private var lastSyncedGeneralProject: ProjectRecord?
 
     var body: some View {
         NavigationSplitView {
@@ -53,19 +54,19 @@ struct SettingsView: View {
         .tint(Color(hex: tokens.palette.accentHex))
         .frame(minWidth: 940, minHeight: 620)
         .onAppear {
-            runtimeModelDraft = model.defaultModel
+            runtimeModelDraft = model.isUsingRuntimeDefaultModel ? "" : model.defaultModel
             syncSafetyDefaultsFromModel()
-            syncGeneralProjectFromModel()
+            syncGeneralProjectFromModel(force: true)
         }
         .onChange(of: model.defaultSafetySettings) { _, _ in
             syncSafetyDefaultsFromModel()
         }
         .onChange(of: model.defaultModel) { _, newValue in
-            runtimeModelDraft = newValue
+            runtimeModelDraft = model.isUsingRuntimeDefaultModel ? "" : newValue
         }
         .onChange(of: selectedSection) { _, newValue in
             if newValue == .generalProject {
-                syncGeneralProjectFromModel()
+                syncGeneralProjectFromModel(force: true)
             } else if newValue != .runtime {
                 isRuntimeConfigExpanded = false
             }
@@ -260,38 +261,71 @@ struct SettingsView: View {
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    TextField("Model ID", text: $runtimeModelDraft)
+                    TextField("Runtime default (auto)", text: $runtimeModelDraft)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("Default model ID")
 
                     Menu("Preset") {
+                        if model.runtimeDefaultModelID != nil {
+                            Button("Runtime default") {
+                                runtimeModelDraft = ""
+                                model.setDefaultModel("")
+                            }
+
+                            if !model.modelPresets.isEmpty {
+                                Divider()
+                            }
+                        }
+
                         ForEach(model.modelPresets, id: \.self) { preset in
-                            Button(preset) {
+                            Button(model.modelMenuLabel(for: preset)) {
                                 runtimeModelDraft = preset
                                 model.setDefaultModel(preset)
                             }
                         }
                     }
 
-                    Button("Save") {
+                    Button("Apply") {
                         model.setDefaultModel(runtimeModelDraft)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(runtimeModelDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
-                Picker(
-                    "Reasoning",
-                    selection: Binding(
-                        get: { model.defaultReasoning },
-                        set: { model.setDefaultReasoning($0) }
-                    )
-                ) {
-                    ForEach(AppModel.ReasoningLevel.allCases, id: \.self) { level in
-                        Text(level.title).tag(level)
+                Text(
+                    model.isUsingRuntimeDefaultModel
+                        ? "Using runtime default model (\(model.defaultModelDisplayName))."
+                        : "Pinned model: \(model.defaultModelDisplayName)."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                if model.reasoningPresets.count <= 3 {
+                    Picker(
+                        "Reasoning",
+                        selection: Binding(
+                            get: { model.defaultReasoning },
+                            set: { model.setDefaultReasoning($0) }
+                        )
+                    ) {
+                        ForEach(model.reasoningPresets, id: \.self) { level in
+                            Text(level.title).tag(level)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                } else {
+                    Picker(
+                        "Reasoning",
+                        selection: Binding(
+                            get: { model.defaultReasoning },
+                            set: { model.setDefaultReasoning($0) }
+                        )
+                    ) {
+                        ForEach(model.reasoningPresets, id: \.self) { level in
+                            Text(level.title).tag(level)
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.segmented)
 
                 Picker(
                     "Web search",
@@ -633,8 +667,14 @@ struct SettingsView: View {
         safetyWebSearchMode = model.defaultSafetySettings.webSearch
     }
 
-    private func syncGeneralProjectFromModel() {
-        guard let project = model.generalProject else { return }
+    private func syncGeneralProjectFromModel(force: Bool = false) {
+        guard let project = model.generalProject else {
+            lastSyncedGeneralProject = nil
+            return
+        }
+        guard force || lastSyncedGeneralProject != project else {
+            return
+        }
         isSyncingGeneralProject = true
         generalSandboxMode = project.sandboxMode
         generalApprovalPolicy = project.approvalPolicy
@@ -642,6 +682,7 @@ struct SettingsView: View {
         generalWebSearchMode = project.webSearch
         generalMemoryWriteMode = project.memoryWriteMode
         generalMemoryEmbeddingsEnabled = project.memoryEmbeddingsEnabled
+        lastSyncedGeneralProject = project
         isSyncingGeneralProject = false
     }
 }
