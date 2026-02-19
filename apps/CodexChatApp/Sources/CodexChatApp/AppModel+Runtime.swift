@@ -150,9 +150,19 @@ extension AppModel {
                 )
             }
 
+            if var context = activeTurnContext,
+               context.localThreadID == threadID
+            {
+                context.runtimeTurnID = turnID
+                activeTurnContext = context
+            }
+
             if let sourceQueueItemID {
                 do {
-                    try await followUpQueueRepository?.delete(id: sourceQueueItemID)
+                    guard let followUpQueueRepository else {
+                        throw CodexRuntimeError.invalidResponse("Follow-up queue repository is unavailable.")
+                    }
+                    try await followUpQueueRepository.delete(id: sourceQueueItemID)
                     try await refreshFollowUpQueue(threadID: threadID)
                 } catch {
                     appendLog(.warning, "Turn started but failed to remove queued follow-up \(sourceQueueItemID): \(error.localizedDescription)")
@@ -465,11 +475,16 @@ extension AppModel {
         }
 
         let lowered = detail.lowercased()
-        let indicatesUnsupported = lowered.contains("unknown") || lowered.contains("invalid")
+        let indicatesUnsupported = lowered.contains("unknown")
+            || lowered.contains("invalid")
+            || lowered.contains("unsupported value")
+            || lowered.contains("unsupported")
         let referencesTurnOptions = lowered.contains("model")
             || lowered.contains("reasoning")
             || lowered.contains("reasoningeffort")
             || lowered.contains("reasoning_effort")
+            || lowered.contains("reasoning.effort")
+            || lowered.contains("effort")
         return indicatesUnsupported && referencesTurnOptions
     }
 
@@ -550,7 +565,7 @@ extension AppModel {
             case let .handshakeFailed(detail):
                 runtimeIssue = .recoverable(detail)
             default:
-                runtimeIssue = .recoverable(runtimeError.localizedDescription)
+                runtimeIssue = .recoverable(protocolCompatibilityGuidance(for: runtimeError) ?? runtimeError.localizedDescription)
             }
             appendLog(.error, runtimeError.localizedDescription)
             return
@@ -636,5 +651,30 @@ extension AppModel {
         }
 
         return activeTurnContext?.localThreadID
+    }
+
+    private func protocolCompatibilityGuidance(for error: CodexRuntimeError) -> String? {
+        guard case let .rpcError(code, message) = error else {
+            return nil
+        }
+
+        let lowered = message.lowercased()
+        let schemaMismatchCode = code == -32600 || code == -32601 || code == -32602
+        let schemaMismatchMessage = lowered.contains("unknown variant")
+            || lowered.contains("unknown field")
+            || lowered.contains("missing field")
+            || lowered.contains("invalid request")
+            || lowered.contains("unsupported value")
+            || lowered.contains("expectedturnid")
+            || lowered.contains("approvalpolicy")
+            || lowered.contains("reasoning.effort")
+            || lowered.contains("reasoningeffort")
+            || lowered.contains("effort")
+
+        guard schemaMismatchCode, schemaMismatchMessage else {
+            return nil
+        }
+
+        return "Runtime protocol mismatch detected. Update Codex CLI and restart the runtime."
     }
 }

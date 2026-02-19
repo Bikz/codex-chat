@@ -264,6 +264,12 @@ extension AppModel {
             return
         }
 
+        guard let followUpQueueRepository else {
+            followUpStatusMessage = "Follow-up queue is unavailable."
+            appendLog(.error, "Follow-up queue repository is unavailable while steering follow-up")
+            return
+        }
+
         if isTurnInProgress {
             guard runtimeCapabilities.supportsTurnSteer,
                   let runtime,
@@ -274,13 +280,21 @@ extension AppModel {
                 return
             }
 
+            guard let runtimeTurnID = activeTurnContext.runtimeTurnID,
+                  !runtimeTurnID.isEmpty
+            else {
+                appendLog(.warning, "Active turn is missing a runtime turn ID. Falling back to queued dispatch.")
+                await fallbackSteerToQueuedAuto(item)
+                return
+            }
+
             do {
                 try await runtime.steerTurn(
                     threadID: activeTurnContext.runtimeThreadID,
                     text: item.text,
-                    turnID: nil
+                    expectedTurnID: runtimeTurnID
                 )
-                try await followUpQueueRepository?.delete(id: itemID)
+                try await followUpQueueRepository.delete(id: itemID)
                 try await refreshFollowUpQueue(threadID: item.threadID)
                 followUpStatusMessage = "Steered follow-up into the active turn."
             } catch let error as CodexRuntimeError where isUnsupportedSteerError(error) {
@@ -289,7 +303,7 @@ extension AppModel {
                 await fallbackSteerToQueuedAuto(item)
             } catch {
                 do {
-                    try await followUpQueueRepository?.markFailed(id: itemID, error: error.localizedDescription)
+                    try await followUpQueueRepository.markFailed(id: itemID, error: error.localizedDescription)
                     try await refreshFollowUpQueue(threadID: item.threadID)
                 } catch {
                     appendLog(.warning, "Failed to mark follow-up failure after steer error: \(error.localizedDescription)")
@@ -310,7 +324,7 @@ extension AppModel {
             )
         } catch {
             do {
-                try await followUpQueueRepository?.markFailed(id: item.id, error: error.localizedDescription)
+                try await followUpQueueRepository.markFailed(id: item.id, error: error.localizedDescription)
                 try await refreshFollowUpQueue(threadID: item.threadID)
             } catch {
                 appendLog(.warning, "Failed to persist follow-up failure: \(error.localizedDescription)")
@@ -339,9 +353,13 @@ extension AppModel {
             return
         }
 
+        guard let followUpQueueRepository else {
+            return
+        }
+
         var activeCandidate: FollowUpQueueItemRecord?
         do {
-            guard let candidate = try await followUpQueueRepository?.listNextAutoCandidate(
+            guard let candidate = try await followUpQueueRepository.listNextAutoCandidate(
                 preferredThreadID: autoDrainPreferredThreadID
             ) else {
                 return
@@ -361,7 +379,7 @@ extension AppModel {
         } catch {
             do {
                 if let candidate = activeCandidate {
-                    try await followUpQueueRepository?.markFailed(id: candidate.id, error: error.localizedDescription)
+                    try await followUpQueueRepository.markFailed(id: candidate.id, error: error.localizedDescription)
                     try await refreshFollowUpQueue(threadID: candidate.threadID)
                 }
             } catch {
@@ -489,7 +507,15 @@ extension AppModel {
             return false
         }
         let lowered = message.lowercased()
+        let invalidRequestSchemaMismatch = code == -32600
+            && (
+                lowered.contains("invalid request")
+                    || lowered.contains("missing field")
+                    || lowered.contains("unknown field")
+                    || lowered.contains("invalid type")
+            )
         return code == -32601
+            || invalidRequestSchemaMismatch
             || lowered.contains("method not found")
             || lowered.contains("unsupported")
     }

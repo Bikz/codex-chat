@@ -367,7 +367,7 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         func cleanup() {
             let stopGroup = DispatchGroup()
             stopGroup.enter()
-            Task.detached {
+            Task {
                 await runtime.stop()
                 stopGroup.leave()
             }
