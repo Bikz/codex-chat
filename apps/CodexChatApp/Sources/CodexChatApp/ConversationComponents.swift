@@ -167,55 +167,35 @@ struct InlineActionNoticeRow: View {
     let model: AppModel
     let card: ActionCard
     var onShowWorkerTrace: (() -> Void)?
-
-    @State private var isDetailsSheetPresented = false
+    @State private var isExpanded = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(methodTint(card.method))
-                .frame(width: 6, height: 6)
-                .accessibilityHidden(true)
-
-            Text(card.title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer(minLength: 8)
-
-            Button("Details") {
-                isDetailsSheetPresented = true
-            }
-            .buttonStyle(.plain)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-
-            if let onShowWorkerTrace {
-                Text("•")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Button("Worker Trace") {
-                    onShowWorkerTrace()
-                }
-                .buttonStyle(.plain)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            isDetailsSheetPresented = true
-        }
-        .accessibilityLabel("\(card.title). Action details available.")
-        .sheet(isPresented: $isDetailsSheetPresented) {
-            TurnActionDetailsSheet(
-                title: card.title,
+        DisclosureGroup(isExpanded: $isExpanded) {
+            InlineActionDetailsList(
                 actions: [card],
-                model: model
+                model: model,
+                onShowWorkerTrace: onShowWorkerTrace
             )
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(methodTint(card.method))
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+
+                Text(card.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 8)
+                Text(isExpanded ? "Hide" : "Show")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
+        .accessibilityLabel("\(card.title). \(isExpanded ? "Hide details" : "Show details").")
     }
 
     private func methodTint(_ method: String) -> Color {
@@ -269,7 +249,7 @@ struct LiveTurnActivityRow: View {
     let detailLevel: TranscriptDetailLevel
     let model: AppModel
 
-    @State private var isDetailsSheetPresented = false
+    @State private var isExpanded = false
     @Environment(\.designTokens) private var tokens
 
     var body: some View {
@@ -306,24 +286,18 @@ struct LiveTurnActivityRow: View {
             }
 
             if !activity.actions.isEmpty {
-                Button("View details") {
-                    isDetailsSheetPresented = true
+                DisclosureGroup(isExpanded: $isExpanded) {
+                    InlineActionDetailsList(actions: activity.actions, model: model)
+                } label: {
+                    Text(isExpanded ? "Hide details" : "Show details")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
             }
         }
         .padding(10)
         .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
         .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
-        .sheet(isPresented: $isDetailsSheetPresented) {
-            TurnActionDetailsSheet(
-                title: "Live activity details",
-                actions: activity.actions,
-                model: model
-            )
-        }
     }
 }
 
@@ -332,39 +306,35 @@ struct TurnSummaryRow: View {
     let detailLevel: TranscriptDetailLevel
     let model: AppModel
 
-    @State private var isDetailsSheetPresented = false
+    @State private var isExpanded = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(summary.isFailure ? .red : .secondary.opacity(0.8))
-                .frame(width: 6, height: 6)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(summary.isFailure ? .red : .secondary.opacity(0.8))
+                    .frame(width: 6, height: 6)
 
-            Text(summaryLine)
-                .font(.caption)
+                Text(summaryLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+
+                Button(isExpanded ? "Hide" : "Show") {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        isExpanded.toggle()
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer(minLength: 8)
-
-            Button("View details") {
-                isDetailsSheetPresented = true
             }
-            .buttonStyle(.plain)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            isDetailsSheetPresented = true
-        }
-        .sheet(isPresented: $isDetailsSheetPresented) {
-            TurnActionDetailsSheet(
-                title: summary.isFailure ? "Turn details (issues detected)" : "Turn details",
-                actions: summary.actions,
-                model: model
-            )
+
+            if isExpanded {
+                InlineActionDetailsList(actions: summary.actions, model: model)
+            }
         }
     }
 
@@ -400,48 +370,54 @@ struct TurnSummaryRow: View {
     }
 }
 
-private struct TurnActionDetailsSheet: View {
-    let title: String
+private struct InlineActionDetailsList: View {
     let actions: [ActionCard]
     let model: AppModel
+    var onShowWorkerTrace: (() -> Void)?
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.designTokens) private var tokens
     @State private var selectedWorkerTrace: AppModel.WorkerTraceEntry?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if actions.isEmpty {
-                    Text("No action details available.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: tokens.spacing.small) {
-                            ForEach(actions) { action in
-                                ActionCardRow(
-                                    card: action,
-                                    onShowWorkerTrace: model.workerTraceEntry(for: action) == nil ? nil : {
-                                        selectedWorkerTrace = model.workerTraceEntry(for: action)
-                                    }
-                                )
+        VStack(alignment: .leading, spacing: tokens.spacing.small) {
+            ForEach(actions) { action in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(action.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        if let onShowWorkerTrace {
+                            Button("Worker Trace") {
+                                onShowWorkerTrace()
                             }
+                            .buttonStyle(.plain)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        } else if model.workerTraceEntry(for: action) != nil {
+                            Button("Worker Trace") {
+                                selectedWorkerTrace = model.workerTraceEntry(for: action)
+                            }
+                            .buttonStyle(.plain)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
                         }
-                        .padding(tokens.spacing.medium)
                     }
+
+                    Text(action.method)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+
+                    Text(action.detail)
+                        .font(.system(.caption2, design: .monospaced))
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            }
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
+                .padding(.top, 4)
             }
         }
-        .presentationDetents([.medium, .large])
+        .padding(.top, 4)
         .sheet(item: $selectedWorkerTrace) { entry in
             WorkerTraceDetailsSheet(model: model, entry: entry)
         }
