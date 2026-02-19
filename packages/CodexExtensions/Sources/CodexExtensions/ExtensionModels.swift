@@ -131,6 +131,7 @@ public enum ExtensionEventName: String, Hashable, Sendable, Codable, CaseIterabl
     case assistantDelta = "assistant.delta"
     case actionCard = "action.card"
     case approvalRequested = "approval.requested"
+    case modsBarAction = "modsBar.action"
     case turnCompleted = "turn.completed"
     case turnFailed = "turn.failed"
     case transcriptPersisted = "transcript.persisted"
@@ -204,30 +205,95 @@ public struct ExtensionArtifactInstruction: Hashable, Sendable, Codable {
     }
 }
 
-public struct ExtensionInspectorOutput: Hashable, Sendable, Codable {
+public struct ExtensionModsBarOutput: Hashable, Sendable, Codable {
+    public enum Scope: String, Hashable, Sendable, Codable {
+        case thread
+        case global
+    }
+
+    public struct ActionPrompt: Hashable, Sendable, Codable {
+        public var title: String
+        public var message: String?
+        public var placeholder: String?
+        public var initialValue: String?
+        public var submitLabel: String?
+
+        public init(
+            title: String,
+            message: String? = nil,
+            placeholder: String? = nil,
+            initialValue: String? = nil,
+            submitLabel: String? = nil
+        ) {
+            self.title = title
+            self.message = message
+            self.placeholder = placeholder
+            self.initialValue = initialValue
+            self.submitLabel = submitLabel
+        }
+    }
+
+    public enum ActionKind: String, Hashable, Sendable, Codable {
+        case emitEvent
+        case promptThenEmitEvent
+        case composerInsert = "composer.insert"
+        case composerInsertAndSend = "composer.insertAndSend"
+    }
+
+    public struct Action: Hashable, Sendable, Codable, Identifiable {
+        public var id: String
+        public var label: String
+        public var kind: ActionKind
+        public var payload: [String: String]
+        public var prompt: ActionPrompt?
+
+        public init(
+            id: String,
+            label: String,
+            kind: ActionKind,
+            payload: [String: String] = [:],
+            prompt: ActionPrompt? = nil
+        ) {
+            self.id = id
+            self.label = label
+            self.kind = kind
+            self.payload = payload
+            self.prompt = prompt
+        }
+    }
+
     public var title: String?
     public var markdown: String
+    public var scope: Scope?
+    public var actions: [Action]?
 
-    public init(title: String? = nil, markdown: String) {
+    public init(
+        title: String? = nil,
+        markdown: String,
+        scope: Scope? = nil,
+        actions: [Action]? = nil
+    ) {
         self.title = title
         self.markdown = markdown
+        self.scope = scope
+        self.actions = actions
     }
 }
 
 public struct ExtensionWorkerOutput: Hashable, Sendable, Codable {
     public var ok: Bool?
-    public var inspector: ExtensionInspectorOutput?
+    public var modsBar: ExtensionModsBarOutput?
     public var artifacts: [ExtensionArtifactInstruction]?
     public var log: String?
 
     public init(
         ok: Bool? = nil,
-        inspector: ExtensionInspectorOutput? = nil,
+        modsBar: ExtensionModsBarOutput? = nil,
         artifacts: [ExtensionArtifactInstruction]? = nil,
         log: String? = nil
     ) {
         self.ok = ok
-        self.inspector = inspector
+        self.modsBar = modsBar
         self.artifacts = artifacts
         self.log = log
     }

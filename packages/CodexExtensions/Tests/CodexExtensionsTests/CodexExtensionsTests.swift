@@ -46,7 +46,7 @@ final class CodexExtensionsTests: XCTestCase {
         let script = """
         #!/bin/zsh
         read line
-        echo '{"ok":true,"inspector":{"title":"Summary","markdown":"One line"}}'
+        echo '{"ok":true,"modsBar":{"title":"Summary","markdown":"One line"}}'
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
@@ -70,8 +70,8 @@ final class CodexExtensionsTests: XCTestCase {
         )
 
         XCTAssertEqual(result.output.ok, true)
-        XCTAssertEqual(result.output.inspector?.title, "Summary")
-        XCTAssertEqual(result.output.inspector?.markdown, "One line")
+        XCTAssertEqual(result.output.modsBar?.title, "Summary")
+        XCTAssertEqual(result.output.modsBar?.markdown, "One line")
     }
 
     func testWorkerRunnerResolvesNonAbsoluteCommandUsingEnv() async throws {
@@ -101,5 +101,88 @@ final class CodexExtensionsTests: XCTestCase {
         )
         XCTAssertEqual(result.output.ok, true)
         XCTAssertEqual(result.output.log, "via-path")
+    }
+
+    func testWorkerRunnerParsesModsBarScopeAndActions() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+        let scriptURL = tempRoot.appendingPathComponent("worker-actions.sh")
+        let script = """
+        #!/bin/zsh
+        read line
+        printf "%s%s%s\\n" \
+          '{"ok":true,"modsBar":{"title":"Prompt Book","markdown":"Saved prompts","scope":"global","actions":[' \
+          '{"id":"send-1","label":"Ship Checklist","kind":"composer.insertAndSend","payload":{"text":"Run ship checklist."}}' \
+          ']}}'
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+        let runner = ExtensionWorkerRunner()
+        let hook = ExtensionHandlerDefinition(command: [scriptURL.path])
+        let envelope = ExtensionEventEnvelope(
+            event: .turnCompleted,
+            timestamp: Date(),
+            project: .init(id: UUID().uuidString, path: tempRoot.path),
+            thread: .init(id: UUID().uuidString),
+            turn: .init(id: UUID().uuidString, status: "completed"),
+            payload: [:]
+        )
+
+        let result = try await runner.run(
+            handler: hook,
+            input: ExtensionWorkerInput(envelope: envelope),
+            workingDirectory: tempRoot,
+            timeoutMs: 5000
+        )
+
+        XCTAssertEqual(result.output.modsBar?.scope, .global)
+        XCTAssertEqual(result.output.modsBar?.actions?.count, 1)
+        XCTAssertEqual(result.output.modsBar?.actions?.first?.kind, .composerInsertAndSend)
+        XCTAssertEqual(result.output.modsBar?.actions?.first?.payload["text"], "Run ship checklist.")
+    }
+
+    func testExtensionStateStorePersistsThreadAndGlobalModsBarOutputs() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let store = ExtensionStateStore()
+        let threadID = UUID()
+
+        let threadOutput = ExtensionModsBarOutput(
+            title: "Thread Summary",
+            markdown: "- completed",
+            scope: .thread,
+            actions: [
+                .init(id: "clear", label: "Clear", kind: .emitEvent, payload: ["operation": "clear"]),
+            ]
+        )
+        _ = try await store.writeModsBarOutput(output: threadOutput, modDirectory: tempRoot, threadID: threadID)
+
+        let globalOutput = ExtensionModsBarOutput(
+            title: "Prompt Book",
+            markdown: "- ship checklist",
+            scope: .global,
+            actions: [
+                .init(id: "send", label: "Send", kind: .composerInsertAndSend, payload: ["text": "ship it"]),
+            ]
+        )
+        _ = try await store.writeModsBarOutput(output: globalOutput, modDirectory: tempRoot, threadID: nil)
+
+        let loadedThread = try await store.readModsBarOutput(
+            modDirectory: tempRoot,
+            scope: .thread,
+            threadID: threadID
+        )
+        let loadedGlobal = try await store.readModsBarOutput(
+            modDirectory: tempRoot,
+            scope: .global,
+            threadID: nil
+        )
+
+        XCTAssertEqual(loadedThread?.markdown, "- completed")
+        XCTAssertEqual(loadedThread?.actions?.first?.id, "clear")
+        XCTAssertEqual(loadedGlobal?.markdown, "- ship checklist")
+        XCTAssertEqual(loadedGlobal?.actions?.first?.kind, .composerInsertAndSend)
     }
 }
