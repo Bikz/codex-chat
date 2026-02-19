@@ -764,11 +764,11 @@ private struct ComposerControlBar: View {
     private func webSearchDescription(_ mode: ProjectWebSearchMode) -> String {
         switch mode {
         case .cached:
-            "Uses cached web context."
+            "Reuse cached web context (faster, lower churn)."
         case .live:
-            "Fetches fresh web results."
+            "Fetch fresh web results for this turn."
         case .disabled:
-            "Disables web search."
+            "Skip web search and use model/project context only."
         }
     }
 
@@ -788,13 +788,13 @@ private struct ComposerControlBar: View {
     private func memoryModeDescription(_ mode: AppModel.ComposerMemoryMode) -> String? {
         switch mode {
         case .projectDefault:
-            "Uses the project default memory setting."
+            "Follow the project's default memory policy."
         case .off:
-            "Skips memory writes for this turn."
+            "Do not write new memory for this turn."
         case .summariesOnly:
-            "Writes summary memory only."
+            "Write a short summary only."
         case .summariesAndKeyFacts:
-            "Writes summaries and key facts."
+            "Write a summary plus durable facts/preferences."
         }
     }
 
@@ -820,6 +820,8 @@ private struct ComposerControlBar: View {
                     Text(subtitle)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
