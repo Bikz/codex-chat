@@ -7,6 +7,7 @@ HOST_PROJECT_PATH="${HOST_PROJECT_PATH:-$ROOT/apps/CodexChatHost/CodexChatHost.x
 HOST_SCHEME="${HOST_SCHEME:-CodexChatHost}"
 APP_PRODUCT_NAME="${APP_PRODUCT_NAME:-CodexChat}"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.codexchat.app}"
+APP_CATEGORY_TYPE="${APP_CATEGORY_TYPE:-public.app-category.developer-tools}"
 VERSION="${VERSION:-${GITHUB_REF_NAME:-dev}}"
 VERSION="${VERSION#refs/tags/}"
 BUILD_NUMBER="${BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
@@ -92,6 +93,7 @@ build_release_app_from_host_archive() {
   set_plist_value "$plist" "CFBundleIdentifier" "$APP_BUNDLE_ID"
   set_plist_value "$plist" "CFBundleShortVersionString" "$VERSION"
   set_plist_value "$plist" "CFBundleVersion" "$BUILD_NUMBER"
+  set_plist_value "$plist" "LSApplicationCategoryType" "$APP_CATEGORY_TYPE"
 }
 
 sign_item() {
