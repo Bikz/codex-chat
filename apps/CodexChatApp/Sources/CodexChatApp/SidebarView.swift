@@ -384,7 +384,7 @@ struct SidebarView: View {
                         threadStatusMarker(for: thread.id)
                     }
 
-                    if thread.isPinned {
+                    if !isGeneralThread, thread.isPinned {
                         Image(systemName: "star.fill")
                             .font(sidebarMetaIconFont)
                             .foregroundStyle(Color(hex: tokens.palette.accentHex).opacity(0.9))
