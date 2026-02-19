@@ -385,12 +385,6 @@ struct SidebarView: View {
                         threadStatusMarker(for: thread.id)
                     }
 
-                    if !isGeneralThread, thread.isPinned {
-                        Image(systemName: "star.fill")
-                            .font(sidebarMetaIconFont)
-                            .foregroundStyle(Color(hex: tokens.palette.accentHex).opacity(0.9))
-                    }
-
                     Text(thread.title)
                         .font(sidebarBodyFont)
                         .lineLimit(1)
@@ -418,16 +412,25 @@ struct SidebarView: View {
 
             ZStack(alignment: .trailing) {
                 Group {
-                    if isAwaitingInput {
-                        Text("Pending")
-                            .font(sidebarMetaFont.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else {
-                        Text(compactRelativeAge(from: thread.updatedAt))
-                            .font(sidebarMetaFont)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: SidebarLayoutSpec.threadControlSlotSpacing) {
+                        if thread.isPinned {
+                            Image(systemName: "star.fill")
+                                .font(sidebarMetaIconFont)
+                                .foregroundStyle(pinnedStarColor)
+                                .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
+                        }
+
+                        if isAwaitingInput {
+                            Text("Pending")
+                                .font(sidebarMetaFont.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text(compactRelativeAge(from: thread.updatedAt))
+                                .font(sidebarMetaFont)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .frame(width: SidebarLayoutSpec.threadMetaColumnWidth, alignment: .trailing)
@@ -442,7 +445,7 @@ struct SidebarView: View {
                             .font(sidebarMetaIconFont)
                             .foregroundStyle(
                                 thread.isPinned
-                                    ? Color(hex: tokens.palette.accentHex).opacity(0.9)
+                                    ? pinnedStarColor
                                     : .secondary
                             )
                             .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
@@ -653,6 +656,13 @@ struct SidebarView: View {
             return Color.white.opacity(0.12)
         }
         return Color.black.opacity(0.07)
+    }
+
+    private var pinnedStarColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(0.68)
+        }
+        return Color.black.opacity(0.48)
     }
 
     private func projectLeadingIconName(isExpanded: Bool, isHovered: Bool) -> String {
