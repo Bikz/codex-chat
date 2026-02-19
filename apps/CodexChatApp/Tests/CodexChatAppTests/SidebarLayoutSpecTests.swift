@@ -16,6 +16,17 @@ final class SidebarLayoutSpecTests: XCTestCase {
         XCTAssertEqual(SidebarLayoutSpec.footerHorizontalInset, SidebarLayoutSpec.listHorizontalInset)
     }
 
+    func testDenseSidebarSpacingConstants() {
+        XCTAssertEqual(SidebarLayoutSpec.selectedRowInset, 1)
+        XCTAssertEqual(SidebarLayoutSpec.listRowSpacing, 2)
+        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderTopPadding, 12)
+        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderBottomPadding, 3)
+    }
+
+    func testHeaderActionTrailingPaddingMatchesRowHorizontalPadding() {
+        XCTAssertEqual(SidebarLayoutSpec.headerActionTrailingPadding, SidebarLayoutSpec.rowHorizontalPadding)
+    }
+
     func testHitTargetsMeetMinimums() {
         XCTAssertGreaterThanOrEqual(SidebarLayoutSpec.rowMinHeight, 32)
         XCTAssertEqual(SidebarLayoutSpec.controlButtonSize, 24)
