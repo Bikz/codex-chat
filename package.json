@@ -1,7 +1,7 @@
 {
   "name": "codexchat-workspace",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.1",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "bootstrap": "bash scripts/bootstrap.sh",

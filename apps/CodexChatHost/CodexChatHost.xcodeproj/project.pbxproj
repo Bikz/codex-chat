@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -41,13 +41,13 @@
 		};
 		A10000040000000000000002 /* CodexChatHost */ = {
 			isa = PBXGroup;
-			path = CodexChatHost;
-			sourceTree = "<group>";
 			children = (
 				A10000020000000000000001 /* CodexChatHostApp.swift */,
 				A10000020000000000000002 /* Assets.xcassets */,
 				A10000020000000000000003 /* Info.plist */,
 			);
+			path = CodexChatHost;
+			sourceTree = "<group>";
 		};
 		A10000040000000000000003 /* Products */ = {
 			isa = PBXGroup;
@@ -142,17 +142,20 @@
 		A10000080000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = AJ78LTXSBJ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CodexChatHost/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CodexChat;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.codexchat.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -163,17 +166,20 @@
 		A10000080000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = AJ78LTXSBJ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CodexChatHost/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CodexChat;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.codexchat.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

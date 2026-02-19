@@ -35,7 +35,7 @@ SwiftPM GUI binaries are not release inputs.
 ## Local Invocation
 
 ```sh
-VERSION=v0.2.0 ./scripts/release/build-notarized-dmg.sh
+VERSION=v0.0.1 ./scripts/release/build-notarized-dmg.sh
 ```
 
 Default app category for release artifacts is `public.app-category.developer-tools` (override with `APP_CATEGORY_TYPE` if needed).
