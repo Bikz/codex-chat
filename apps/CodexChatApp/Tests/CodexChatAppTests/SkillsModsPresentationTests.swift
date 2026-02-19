@@ -76,7 +76,7 @@ final class SkillsModsPresentationTests: XCTestCase {
         let mod = makeMod(
             path: "/tmp/mods/Hooked",
             definition: makeDefinition(
-                schemaVersion: 2,
+                schemaVersion: 1,
                 hooks: [
                     ModHookDefinition(
                         id: "turn-summary",
@@ -91,11 +91,11 @@ final class SkillsModsPresentationTests: XCTestCase {
         XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .hooks])
     }
 
-    func testModCapabilitiesIncludeAutomationsAndInspector() {
+    func testModCapabilitiesIncludeAutomationsAndModsBar() {
         let mod = makeMod(
             path: "/tmp/mods/AutoInspect",
             definition: makeDefinition(
-                schemaVersion: 2,
+                schemaVersion: 1,
                 automations: [
                     ModAutomationDefinition(
                         id: "daily-notes",
@@ -104,7 +104,7 @@ final class SkillsModsPresentationTests: XCTestCase {
                     ),
                 ],
                 uiSlots: ModUISlots(
-                    rightInspector: .init(
+                    modsBar: .init(
                         enabled: true,
                         title: "Summary",
                         source: .init(type: "handlerOutput", hookID: "turn-summary")
@@ -114,16 +114,16 @@ final class SkillsModsPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(SkillsModsPresentation.modStatus(mod), .extensionEnabled)
-        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .automations, .inspector])
+        XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme, .automations, .modsBar])
     }
 
-    func testModCapabilitiesDoNotIncludeDisabledInspectorSlot() {
+    func testModCapabilitiesDoNotIncludeDisabledModsBarSlot() {
         let mod = makeMod(
-            path: "/tmp/mods/DisabledInspector",
+            path: "/tmp/mods/DisabledModsBar",
             definition: makeDefinition(
-                schemaVersion: 2,
+                schemaVersion: 1,
                 uiSlots: ModUISlots(
-                    rightInspector: .init(
+                    modsBar: .init(
                         enabled: false,
                         title: "Disabled"
                     )
@@ -135,19 +135,20 @@ final class SkillsModsPresentationTests: XCTestCase {
         XCTAssertEqual(SkillsModsPresentation.modCapabilities(mod), [.theme])
     }
 
-    func testInspectorHelpTextVariesByActiveInspectorSource() {
+    func testModsBarHelpTextVariesByActiveModsBarSource() {
         XCTAssertEqual(
-            SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: true),
-            "Inspector content comes from the active mod. Hidden by default, and opens automatically when new inspector output arrives."
+            SkillsModsPresentation.modsBarHelpText(hasActiveModsBarSource: true),
+            "Mods bar content comes from the active mod. Hidden by default, and opens automatically when new modsBar output arrives."
         )
         XCTAssertEqual(
-            SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: false),
-            "No active inspector mod. Install one in Skills & Mods > Mods."
+            SkillsModsPresentation.modsBarHelpText(hasActiveModsBarSource: false),
+            "No active modsBar mod. Install one in Skills & Mods > Mods."
         )
     }
 
     func testInstallModDescriptionCallsOutAutoEnableAndPermissions() {
-        XCTAssertTrue(SkillsModsPresentation.installModDescription.localizedCaseInsensitiveContains("enabled immediately"))
+        XCTAssertTrue(SkillsModsPresentation.installModDescription.localizedCaseInsensitiveContains("github"))
+        XCTAssertTrue(SkillsModsPresentation.installModDescription.localizedCaseInsensitiveContains("review"))
         XCTAssertTrue(SkillsModsPresentation.installModDescription.localizedCaseInsensitiveContains("permission-gated"))
     }
 
@@ -155,7 +156,7 @@ final class SkillsModsPresentationTests: XCTestCase {
         let titles = SkillsModsPresentation.modArchetypes.map(\.title)
         XCTAssertEqual(
             titles,
-            ["Theme Packs", "Turn/Thread Hooks", "Scheduled Automations", "Right Inspector Panels"]
+            ["Theme Packs", "Turn/Thread Hooks", "Scheduled Automations", "Right Mods bar Panels"]
         )
     }
 

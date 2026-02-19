@@ -15,10 +15,69 @@ enum CodexChatStorageMigrationError: LocalizedError {
     }
 }
 
+struct CodexHomeNormalizationResult: Sendable {
+    let executed: Bool
+    let forced: Bool
+    let reason: String
+    let movedEntries: [String]
+    let failedEntries: [String]
+    let quarantineURL: URL?
+    let reportURL: URL
+
+    var movedItemCount: Int {
+        movedEntries.count
+    }
+
+    var hasChanges: Bool {
+        movedItemCount > 0
+    }
+}
+
+struct CodexHomeNormalizationReport: Codable, Sendable {
+    let schemaVersion: Int
+    let generatedAt: String
+    let reason: String
+    let forced: Bool
+    let codexHomePath: String
+    let quarantinePath: String?
+    let movedEntries: [String]
+    let failedEntries: [String]
+}
+
 enum CodexChatStorageMigrationCoordinator {
+    private static let codexHomeImportFiles = [
+        "config.toml",
+        "auth.json",
+        "history.jsonl",
+        ".credentials.json",
+        "AGENTS.md",
+        "AGENTS.override.md",
+        "memory.md",
+    ]
+
+    private static let codexHomeRuntimeDirectories = [
+        "sessions",
+        "archived_sessions",
+        "shell_snapshots",
+        "sqlite",
+        "log",
+        "tmp",
+        "vendor_imports",
+        "worktrees",
+    ]
+
+    private static let codexHomeRuntimeFiles = [
+        ".codex-global-state.json",
+        "models_cache.json",
+        ".personality_migration",
+        "version.json",
+    ]
+
     static func performInitialMigrationIfNeeded(
         paths: CodexChatStoragePaths,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        legacyCodexHomeURL: URL? = nil,
+        legacyAgentsHomeURL: URL? = nil
     ) throws {
         try paths.ensureRootStructure(fileManager: fileManager)
 
@@ -38,19 +97,117 @@ enum CodexChatStorageMigrationCoordinator {
         }
 
         let home = fileManager.homeDirectoryForCurrentUser
-        try importHomeDirectoryIfNeeded(
-            source: home.appendingPathComponent(".codex", isDirectory: true),
+        let codexSource = legacyCodexHomeURL ?? home.appendingPathComponent(".codex", isDirectory: true)
+        let agentsSource = legacyAgentsHomeURL ?? home.appendingPathComponent(".agents", isDirectory: true)
+
+        try importLegacyCodexHomeArtifactsIfNeeded(
+            source: codexSource,
             destination: paths.codexHomeURL,
             fileManager: fileManager
         )
-        try importHomeDirectoryIfNeeded(
-            source: home.appendingPathComponent(".agents", isDirectory: true),
+        try importLegacyAgentsHomeArtifactsIfNeeded(
+            source: agentsSource,
             destination: paths.agentsHomeURL,
             fileManager: fileManager
         )
 
         let stamp = "migration=1\ndate=\(ISO8601DateFormatter().string(from: Date()))\n"
         try stamp.write(to: paths.migrationMarkerURL, atomically: true, encoding: .utf8)
+    }
+
+    static func normalizeManagedCodexHome(
+        paths: CodexChatStoragePaths,
+        force: Bool,
+        reason: String,
+        fileManager: FileManager = .default
+    ) throws -> CodexHomeNormalizationResult {
+        try paths.ensureRootStructure(fileManager: fileManager)
+
+        if !force, fileManager.fileExists(atPath: paths.codexHomeNormalizationMarkerURL.path) {
+            let previousReport = try readLastCodexHomeNormalizationReport(paths: paths, fileManager: fileManager)
+            return CodexHomeNormalizationResult(
+                executed: false,
+                forced: false,
+                reason: "already-normalized",
+                movedEntries: [],
+                failedEntries: [],
+                quarantineURL: previousReport.flatMap { report in
+                    guard let path = report.quarantinePath else { return nil }
+                    return URL(fileURLWithPath: path, isDirectory: true)
+                },
+                reportURL: paths.codexHomeLastRepairReportURL
+            )
+        }
+
+        var movedEntries: [String] = []
+        var failedEntries: [String] = []
+        var quarantineURL: URL?
+        let timestamp = quarantineTimestamp()
+
+        for directory in codexHomeRuntimeDirectories {
+            moveCodexHomeEntryIfPresent(
+                entryName: directory,
+                paths: paths,
+                timestamp: timestamp,
+                quarantineURL: &quarantineURL,
+                movedEntries: &movedEntries,
+                failedEntries: &failedEntries,
+                fileManager: fileManager
+            )
+        }
+
+        for file in codexHomeRuntimeFiles {
+            moveCodexHomeEntryIfPresent(
+                entryName: file,
+                paths: paths,
+                timestamp: timestamp,
+                quarantineURL: &quarantineURL,
+                movedEntries: &movedEntries,
+                failedEntries: &failedEntries,
+                fileManager: fileManager
+            )
+        }
+
+        let report = CodexHomeNormalizationReport(
+            schemaVersion: 1,
+            generatedAt: ISO8601DateFormatter().string(from: Date()),
+            reason: reason,
+            forced: force,
+            codexHomePath: paths.codexHomeURL.path,
+            quarantinePath: quarantineURL?.path,
+            movedEntries: movedEntries,
+            failedEntries: failedEntries
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let reportData = try encoder.encode(report)
+        try reportData.write(to: paths.codexHomeLastRepairReportURL, options: .atomic)
+
+        let marker = "version=1\ndate=\(ISO8601DateFormatter().string(from: Date()))\nreason=\(reason)\nforced=\(force)\nmoved=\(movedEntries.count)\n"
+        try marker.write(to: paths.codexHomeNormalizationMarkerURL, atomically: true, encoding: .utf8)
+
+        return CodexHomeNormalizationResult(
+            executed: true,
+            forced: force,
+            reason: reason,
+            movedEntries: movedEntries,
+            failedEntries: failedEntries,
+            quarantineURL: quarantineURL,
+            reportURL: paths.codexHomeLastRepairReportURL
+        )
+    }
+
+    static func readLastCodexHomeNormalizationReport(
+        paths: CodexChatStoragePaths,
+        fileManager: FileManager = .default
+    ) throws -> CodexHomeNormalizationReport? {
+        guard fileManager.fileExists(atPath: paths.codexHomeLastRepairReportURL.path) else {
+            return nil
+        }
+
+        let data = try Data(contentsOf: paths.codexHomeLastRepairReportURL)
+        return try JSONDecoder().decode(CodexHomeNormalizationReport.self, from: data)
     }
 
     static func validateRootSelection(
@@ -209,7 +366,7 @@ enum CodexChatStorageMigrationCoordinator {
         }
     }
 
-    private static func importHomeDirectoryIfNeeded(
+    private static func importLegacyCodexHomeArtifactsIfNeeded(
         source: URL,
         destination: URL,
         fileManager: FileManager
@@ -218,19 +375,147 @@ enum CodexChatStorageMigrationCoordinator {
             return
         }
 
-        if fileManager.fileExists(atPath: destination.path),
-           (try? fileManager.contentsOfDirectory(atPath: destination.path).isEmpty) == false
-        {
+        try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        for fileName in codexHomeImportFiles {
+            let sourceURL = source.appendingPathComponent(fileName, isDirectory: false)
+            let destinationURL = destination.appendingPathComponent(fileName, isDirectory: false)
+            try copyFileIfMissing(source: sourceURL, destination: destinationURL, fileManager: fileManager)
+        }
+
+        let sourceSkills = source.appendingPathComponent("skills", isDirectory: true)
+        let destinationSkills = destination.appendingPathComponent("skills", isDirectory: true)
+        if fileManager.fileExists(atPath: sourceSkills.path) {
+            try copyDirectoryContents(
+                from: sourceSkills,
+                to: destinationSkills,
+                overwriteFiles: false,
+                fileManager: fileManager
+            )
+        }
+    }
+
+    private static func importLegacyAgentsHomeArtifactsIfNeeded(
+        source: URL,
+        destination: URL,
+        fileManager: FileManager
+    ) throws {
+        guard fileManager.fileExists(atPath: source.path) else {
             return
         }
 
+        let sourceSkills = source.appendingPathComponent("skills", isDirectory: true)
+        let destinationSkills = destination.appendingPathComponent("skills", isDirectory: true)
+        if fileManager.fileExists(atPath: sourceSkills.path) {
+            try copyDirectoryContents(
+                from: sourceSkills,
+                to: destinationSkills,
+                overwriteFiles: false,
+                fileManager: fileManager
+            )
+        }
+    }
+
+    private static func copyFileIfMissing(
+        source: URL,
+        destination: URL,
+        fileManager: FileManager
+    ) throws {
+        guard fileManager.fileExists(atPath: source.path) else {
+            return
+        }
+
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return
+        }
+
+        guard !fileManager.fileExists(atPath: destination.path) else {
+            return
+        }
+
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.copyItem(at: source, to: destination)
+    }
+
+    private static func moveCodexHomeEntryIfPresent(
+        entryName: String,
+        paths: CodexChatStoragePaths,
+        timestamp: String,
+        quarantineURL: inout URL?,
+        movedEntries: inout [String],
+        failedEntries: inout [String],
+        fileManager: FileManager
+    ) {
+        let sourceURL = paths.codexHomeURL.appendingPathComponent(entryName, isDirectory: false)
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            return
+        }
+
+        do {
+            let destinationRoot = try ensureQuarantineDirectoryIfNeeded(
+                existingURL: quarantineURL,
+                quarantineRootURL: paths.codexHomeQuarantineRootURL,
+                timestamp: timestamp,
+                fileManager: fileManager
+            )
+            quarantineURL = destinationRoot
+            let destinationURL = uniqueQuarantineDestination(
+                for: entryName,
+                destinationRoot: destinationRoot,
+                fileManager: fileManager
+            )
+            try fileManager.moveItem(at: sourceURL, to: destinationURL)
+            movedEntries.append(entryName)
+        } catch {
+            failedEntries.append("\(entryName): \(error.localizedDescription)")
+        }
+    }
+
+    private static func ensureQuarantineDirectoryIfNeeded(
+        existingURL: URL?,
+        quarantineRootURL: URL,
+        timestamp: String,
+        fileManager: FileManager
+    ) throws -> URL {
+        if let existingURL {
+            return existingURL
+        }
+
+        try fileManager.createDirectory(at: quarantineRootURL, withIntermediateDirectories: true)
+        let destination = quarantineRootURL.appendingPathComponent(timestamp, isDirectory: true)
         try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-        try copyDirectoryContents(
-            from: source,
-            to: destination,
-            overwriteFiles: false,
-            fileManager: fileManager
-        )
+        return destination
+    }
+
+    private static func uniqueQuarantineDestination(
+        for entryName: String,
+        destinationRoot: URL,
+        fileManager: FileManager
+    ) -> URL {
+        var candidate = destinationRoot.appendingPathComponent(entryName, isDirectory: false)
+        if !fileManager.fileExists(atPath: candidate.path) {
+            return candidate
+        }
+
+        var suffix = 2
+        while true {
+            let nextName = "\(entryName)-\(suffix)"
+            candidate = destinationRoot.appendingPathComponent(nextName, isDirectory: false)
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    private static func quarantineTimestamp(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
     }
 
     private static func copySQLiteFilesIfDestinationMissing(
@@ -255,21 +540,28 @@ enum CodexChatStorageMigrationCoordinator {
         overwriteFiles: Bool,
         fileManager: FileManager
     ) throws {
-        guard fileManager.fileExists(atPath: sourceRoot.path) else {
+        let normalizedSourceRoot = sourceRoot.standardizedFileURL
+        guard fileManager.fileExists(atPath: normalizedSourceRoot.path) else {
             return
         }
 
         try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
 
         let enumerator = fileManager.enumerator(
-            at: sourceRoot,
+            at: normalizedSourceRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [],
             errorHandler: nil
         )
 
         while let entry = enumerator?.nextObject() as? URL {
-            let relativePath = entry.path.replacingOccurrences(of: sourceRoot.path + "/", with: "")
+            let normalizedEntryPath = entry.standardizedFileURL.path
+            let prefix = normalizedSourceRoot.path + "/"
+            guard normalizedEntryPath.hasPrefix(prefix) else {
+                continue
+            }
+
+            let relativePath = String(normalizedEntryPath.dropFirst(prefix.count))
             if relativePath.isEmpty {
                 continue
             }

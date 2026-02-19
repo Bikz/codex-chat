@@ -151,6 +151,160 @@ struct ActionCardRow: View {
     }
 }
 
+private struct TranscriptMilestoneChips: View {
+    let counts: TranscriptMilestoneCounts
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if counts.reasoning > 0 {
+                chip(title: "Reasoning", value: counts.reasoning, tint: .secondary)
+            }
+            if counts.commandExecution > 0 {
+                chip(title: "Commands", value: counts.commandExecution, tint: .blue)
+            }
+            if counts.warnings > 0 {
+                chip(title: "Warnings", value: counts.warnings, tint: .orange)
+            }
+            if counts.errors > 0 {
+                chip(title: "Errors", value: counts.errors, tint: .red)
+            }
+        }
+    }
+
+    private func chip(title: String, value: Int, tint: Color) -> some View {
+        Text("\(title) \(value)")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.12), in: Capsule())
+    }
+}
+
+struct LiveTurnActivityRow: View {
+    let activity: LiveTurnActivityPresentation
+    let detailLevel: TranscriptDetailLevel
+
+    @State private var isDetailsExpanded = true
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Live activity")
+                    .font(.callout.weight(.semibold))
+                Spacer(minLength: 8)
+                Text(activity.latestActionTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            if detailLevel == .balanced, activity.milestoneCounts.hasAny {
+                TranscriptMilestoneChips(counts: activity.milestoneCounts)
+            }
+
+            if !activity.assistantPreview.isEmpty {
+                Text(activity.assistantPreview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+            } else if !activity.userPreview.isEmpty {
+                Text(activity.userPreview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if !activity.actions.isEmpty {
+                DisclosureGroup("View details", isExpanded: $isDetailsExpanded) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(activity.actions) { action in
+                            ActionCardRow(card: action)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+                .font(.caption.weight(.semibold))
+            }
+        }
+        .padding(10)
+        .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
+    }
+}
+
+struct TurnSummaryRow: View {
+    let summary: TurnSummaryPresentation
+    let detailLevel: TranscriptDetailLevel
+
+    @State private var isDetailsExpanded = false
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(summary.isFailure ? .red : .secondary)
+                    .frame(width: 8, height: 8)
+                Text(summary.title)
+                    .font(.callout.weight(.semibold))
+                Spacer(minLength: 8)
+
+                Button(isDetailsExpanded ? "Hide details" : "View details") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isDetailsExpanded.toggle()
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
+
+            if detailLevel == .balanced, summary.milestoneCounts.hasAny {
+                TranscriptMilestoneChips(counts: summary.milestoneCounts)
+            }
+
+            if !summary.assistantPreview.isEmpty {
+                Text(summary.assistantPreview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+            } else if !summary.userPreview.isEmpty {
+                Text(summary.userPreview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if summary.hiddenActionCount > 0 {
+                Text("\(summary.hiddenActionCount) internal event(s) compacted in transcript view.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if isDetailsExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(summary.actions) { action in
+                        ActionCardRow(card: action)
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(10)
+        .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
+    }
+}
+
 struct InstallCodexGuidanceView: View {
     var body: some View {
         VStack(spacing: 12) {

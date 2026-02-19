@@ -155,14 +155,37 @@ extension AppModel {
     }
 
     private func handleRuntimeAction(_ action: RuntimeAction) {
-        if action.method == "runtime/stderr" {
-            appendLog(.warning, action.detail)
-        }
+        let classification = TranscriptActionPolicy.classify(
+            method: action.method,
+            title: action.title,
+            detail: action.detail,
+            itemType: action.itemType
+        )
 
         let localThreadID = resolveLocalThreadID(
             runtimeThreadID: action.threadID,
             itemID: action.itemID
         ) ?? activeTurnContext?.localThreadID
+
+        if action.method == "runtime/stderr" {
+            let isRolloutPathWarning = TranscriptActionPolicy.isRolloutPathStateDBWarning(action.detail)
+            let level: LogLevel = if isRolloutPathWarning {
+                .warning
+            } else {
+                TranscriptActionPolicy.isCriticalStderr(action.detail) ? .error : .warning
+            }
+
+            if let localThreadID {
+                appendThreadLog(level: level, text: action.detail, to: localThreadID)
+                if isRolloutPathWarning {
+                    appendRuntimeRepairSuggestionIfNeeded(to: localThreadID)
+                }
+            }
+            appendLog(
+                level,
+                action.detail
+            )
+        }
 
         if action.method == "runtime/terminated" {
             handleRuntimeTermination(detail: action.detail)
@@ -207,6 +230,10 @@ extension AppModel {
         {
             context.actions.append(card)
             activeTurnContext = context
+        }
+
+        if classification == .lifecycleNoise {
+            appendLog(.debug, "Lifecycle runtime action received: \(action.method)")
         }
     }
 
@@ -310,5 +337,25 @@ extension AppModel {
         return normalized.contains("fail")
             || normalized.contains("error")
             || normalized.contains("cancel")
+    }
+
+    private func appendRuntimeRepairSuggestionIfNeeded(to threadID: UUID) {
+        let insertion = runtimeRepairSuggestedThreadIDs.insert(threadID)
+        guard insertion.inserted else {
+            return
+        }
+
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: threadID,
+                    method: "runtime/repair-suggested",
+                    title: "Repair Codex Home",
+                    detail: "Runtime reported missing rollout path metadata. Open Settings > Storage and run Repair Codex Home."
+                )
+            ),
+            to: threadID
+        )
+        markThreadUnreadIfNeeded(threadID)
     }
 }

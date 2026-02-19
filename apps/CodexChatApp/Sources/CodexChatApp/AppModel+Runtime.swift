@@ -295,6 +295,7 @@ extension AppModel {
         )
         clearActiveTurnState()
         resetRuntimeThreadCaches()
+        runtimeRepairSuggestedThreadIDs.removeAll()
         try await refreshAccountState(refreshToken: true)
         try await restorePersistedAPIKeyIfNeeded()
         await refreshRuntimeModelCatalog()

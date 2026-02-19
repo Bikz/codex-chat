@@ -3,6 +3,8 @@ import Foundation
 struct CodexChatStoragePaths: Hashable, Sendable {
     static let rootPreferenceKey = "codexchat.storage.root.path"
     static let migrationMarkerFileName = ".storage-migration-v1"
+    static let codexHomeNormalizationMarkerFileName = ".codex-home-normalization-v1"
+    static let codexHomeLastRepairReportFileName = "codex-home-last-repair-report.json"
 
     let rootURL: URL
 
@@ -54,6 +56,18 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         systemURL.appendingPathComponent(Self.migrationMarkerFileName, isDirectory: false)
     }
 
+    var codexHomeQuarantineRootURL: URL {
+        systemURL.appendingPathComponent("codex-home-quarantine", isDirectory: true)
+    }
+
+    var codexHomeNormalizationMarkerURL: URL {
+        systemURL.appendingPathComponent(Self.codexHomeNormalizationMarkerFileName, isDirectory: false)
+    }
+
+    var codexHomeLastRepairReportURL: URL {
+        systemURL.appendingPathComponent(Self.codexHomeLastRepairReportFileName, isDirectory: false)
+    }
+
     static func current(
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default
@@ -94,6 +108,7 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         try fileManager.createDirectory(at: agentsHomeURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: systemURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: modSnapshotsURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: codexHomeQuarantineRootURL, withIntermediateDirectories: true)
     }
 
     func uniqueProjectDirectoryURL(

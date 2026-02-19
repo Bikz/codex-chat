@@ -147,6 +147,197 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(persistedThreadID, "")
     }
 
+    @MainActor
+    func testRestoreTranscriptDetailLevelDefaultsToChatWhenUnsetOrInvalid() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-transcript-pref-default-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        model.transcriptDetailLevel = .detailed
+        try await model.restoreTranscriptDetailLevelPreference()
+        XCTAssertEqual(model.transcriptDetailLevel, .chat)
+
+        try await repositories.preferenceRepository.setPreference(key: .transcriptDetailLevel, value: "invalid-value")
+        model.transcriptDetailLevel = .balanced
+        try await model.restoreTranscriptDetailLevelPreference()
+        XCTAssertEqual(model.transcriptDetailLevel, .chat)
+    }
+
+    @MainActor
+    func testRestoreAndPersistTranscriptDetailLevelPreference() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-transcript-pref-roundtrip-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        try await repositories.preferenceRepository.setPreference(key: .transcriptDetailLevel, value: "balanced")
+        try await model.restoreTranscriptDetailLevelPreference()
+        XCTAssertEqual(model.transcriptDetailLevel, .balanced)
+
+        model.transcriptDetailLevel = .detailed
+        try await model.persistTranscriptDetailLevelPreference()
+        let persisted = try await repositories.preferenceRepository.getPreference(key: .transcriptDetailLevel)
+        XCTAssertEqual(persisted, "detailed")
+    }
+
+    @MainActor
+    func testRuntimeStderrNonCriticalLogsToThreadAndStaysCompactInChatMode() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.activeTurnContext = makeActiveTurnContext(threadID: threadID, userText: "List calendar events")
+        model.transcriptStore[threadID] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "List calendar events")),
+        ]
+
+        model.handleRuntimeEvent(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stderr",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: nil,
+                    turnID: nil,
+                    title: "Runtime stderr",
+                    detail: "warning temporary network jitter"
+                )
+            )
+        )
+
+        let threadLogs = model.threadLogsByThreadID[threadID, default: []]
+        XCTAssertEqual(threadLogs.last?.level, .warning)
+        XCTAssertTrue(threadLogs.last?.text.contains("temporary network jitter") ?? false)
+
+        let entries = model.transcriptStore[threadID, default: []]
+        let rows = TranscriptPresentationBuilder.rows(entries: entries, detailLevel: .chat, activeTurnContext: nil)
+        let actionMethods = rows.compactMap { row -> String? in
+            guard case let .action(card) = row else { return nil }
+            return card.method
+        }
+        XCTAssertFalse(actionMethods.contains("runtime/stderr"))
+    }
+
+    @MainActor
+    func testRuntimeStderrRolloutPathLogsWarningAndInjectsRepairSuggestionCard() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.activeTurnContext = makeActiveTurnContext(threadID: threadID, userText: "List calendar events")
+        model.transcriptStore[threadID] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "List calendar events")),
+        ]
+
+        model.handleRuntimeEvent(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stderr",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: nil,
+                    turnID: nil,
+                    title: "Runtime stderr",
+                    detail: "ERROR state db missing rollout path for thread abc"
+                )
+            )
+        )
+
+        let threadLogs = model.threadLogsByThreadID[threadID, default: []]
+        XCTAssertEqual(threadLogs.last?.level, .warning)
+
+        let entries = model.transcriptStore[threadID, default: []]
+        let rows = TranscriptPresentationBuilder.rows(entries: entries, detailLevel: .chat, activeTurnContext: nil)
+        let actionMethods = rows.compactMap { row -> String? in
+            guard case let .action(card) = row else { return nil }
+            return card.method
+        }
+        XCTAssertFalse(actionMethods.contains("runtime/stderr"))
+        XCTAssertTrue(actionMethods.contains("runtime/repair-suggested"))
+    }
+
+    @MainActor
+    func testRuntimeStderrRolloutPathInjectsSingleRepairSuggestionCardPerThread() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.activeTurnContext = makeActiveTurnContext(threadID: threadID, userText: "List calendar events")
+        model.transcriptStore[threadID] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "List calendar events")),
+        ]
+
+        for _ in 0 ..< 4 {
+            model.handleRuntimeEvent(
+                .action(
+                    RuntimeAction(
+                        method: "runtime/stderr",
+                        itemID: nil,
+                        itemType: nil,
+                        threadID: nil,
+                        turnID: nil,
+                        title: "Runtime stderr",
+                        detail: "ERROR state db missing rollout path for thread abc"
+                    )
+                )
+            )
+        }
+
+        let entries = model.transcriptStore[threadID, default: []]
+        let repairSuggestions = entries.filter { entry in
+            guard case let .actionCard(card) = entry else { return false }
+            return card.method == "runtime/repair-suggested"
+        }
+        XCTAssertEqual(repairSuggestions.count, 1)
+    }
+
+    @MainActor
+    func testRuntimeStderrBurstCoalescesAndThreadLogsAreSanitized() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.activeTurnContext = makeActiveTurnContext(threadID: threadID, userText: "Check logs")
+        model.transcriptStore[threadID] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "Check logs")),
+        ]
+        let secret = "sk-abcdefghijklmnopqrstuvwxyz1234"
+        let detail = "warning Authorization: Bearer \(secret) temporary network jitter"
+
+        for _ in 0 ..< 4 {
+            model.handleRuntimeEvent(
+                .action(
+                    RuntimeAction(
+                        method: "runtime/stderr",
+                        itemID: nil,
+                        itemType: nil,
+                        threadID: nil,
+                        turnID: nil,
+                        title: "Runtime stderr",
+                        detail: detail
+                    )
+                )
+            )
+        }
+
+        let threadLogs = model.threadLogsByThreadID[threadID, default: []]
+        XCTAssertEqual(threadLogs.count, 4)
+        XCTAssertFalse(threadLogs.contains(where: { $0.text.contains(secret) }))
+        XCTAssertTrue(threadLogs.allSatisfy { $0.text.contains("[REDACTED]") })
+
+        let entries = model.transcriptStore[threadID, default: []]
+        let rows = TranscriptPresentationBuilder.rows(entries: entries, detailLevel: .chat, activeTurnContext: nil)
+        let actionMethods = rows.compactMap { row -> String? in
+            guard case let .action(card) = row else { return nil }
+            return card.method
+        }
+        XCTAssertTrue(actionMethods.contains("runtime/stderr/coalesced"))
+        XCTAssertFalse(actionMethods.contains("runtime/stderr"))
+    }
+
     func testApprovalStateMachineQueuesAndResolvesInOrder() {
         var state = ApprovalStateMachine()
         let first = makeApprovalRequest(id: 1)
@@ -1629,6 +1820,21 @@ final class CodexChatAppTests: XCTestCase {
             command: ["echo", "hello"],
             changes: [],
             detail: "{}"
+        )
+    }
+
+    private func makeActiveTurnContext(threadID: UUID, userText: String) -> AppModel.ActiveTurnContext {
+        AppModel.ActiveTurnContext(
+            localTurnID: UUID(),
+            localThreadID: threadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "runtime-thread",
+            memoryWriteMode: .off,
+            userText: userText,
+            assistantText: "",
+            actions: [],
+            startedAt: Date()
         )
     }
 

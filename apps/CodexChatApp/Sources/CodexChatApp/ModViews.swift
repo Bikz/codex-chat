@@ -107,7 +107,6 @@ struct ModsCanvas: View {
                     modGuideSection
                     globalSection(surface: surface)
                     projectSection(surface: surface)
-                    catalogSection
 
                     if let status = model.modStatusMessage {
                         Text(status)
@@ -146,7 +145,7 @@ struct ModsCanvas: View {
                 if surface.globalMods.isEmpty {
                     compactEmpty(
                         title: "No global mods found",
-                        message: "Add a mod directory containing `ui.mod.json` under the global mods folder.",
+                        message: "Add a mod directory containing `codex.mod.json` + `ui.mod.json` under the global mods folder.",
                         systemImage: "folder"
                     )
                 } else {
@@ -154,6 +153,7 @@ struct ModsCanvas: View {
                         ForEach(surface.globalMods) { mod in
                             modOptionCard(
                                 mod: mod,
+                                scope: .global,
                                 isSelected: surface.selectedGlobalModPath == mod.directoryPath,
                                 onSelect: { model.setGlobalMod(mod) }
                             )
@@ -194,7 +194,7 @@ struct ModsCanvas: View {
                 )
                 guideStep(
                     number: 2,
-                    text: "Edit `ui.mod.json`: theme tokens (`schemaVersion: 1/2`) and optional hooks/automations/inspector (`schemaVersion: 2`)."
+                    text: "Edit `ui.mod.json`: keep `schemaVersion: 1`, configure hooks/automations, and use `uiSlots.modsBar` for Mods bar output."
                 )
                 guideStep(
                     number: 3,
@@ -202,7 +202,7 @@ struct ModsCanvas: View {
                 )
                 guideStep(
                     number: 4,
-                    text: "Others can clone that folder into Global Mods or into `<project>/mods`, then select it here."
+                    text: "Install from local path or GitHub URL in `Install Mod` and review permissions before enabling."
                 )
             }
         }
@@ -252,7 +252,7 @@ struct ModsCanvas: View {
                 } else if surface.projectMods.isEmpty {
                     compactEmpty(
                         title: "No project mods found",
-                        message: "Add a mod directory containing `ui.mod.json` under `mods/` in the selected project.",
+                        message: "Add a mod directory containing `codex.mod.json` + `ui.mod.json` under `mods/` in the selected project.",
                         systemImage: "doc.badge.plus"
                     )
                 } else {
@@ -260,6 +260,7 @@ struct ModsCanvas: View {
                         ForEach(surface.projectMods) { mod in
                             modOptionCard(
                                 mod: mod,
+                                scope: .project,
                                 isSelected: surface.selectedProjectModPath == mod.directoryPath,
                                 onSelect: { model.setProjectMod(mod) }
                             )
@@ -270,73 +271,117 @@ struct ModsCanvas: View {
         }
     }
 
-    private func modOptionCard(mod: DiscoveredUIMod, isSelected: Bool, onSelect: @escaping () -> Void) -> some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 6) {
-                    Text(mod.definition.manifest.name)
-                        .font(.headline)
-                        .lineLimit(1)
+    private func modOptionCard(
+        mod: DiscoveredUIMod,
+        scope: ExtensionInstallScope,
+        isSelected: Bool,
+        onSelect: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Text(mod.definition.manifest.name)
+                    .font(.headline)
+                    .lineLimit(1)
 
-                    Spacer(minLength: 4)
+                Spacer(minLength: 4)
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color(hex: tokens.palette.accentHex))
+                }
+
+                Menu {
+                    Button("Enable") {
+                        onSelect()
+                    }
 
                     if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(Color(hex: tokens.palette.accentHex))
+                        Button("Disable") {
+                            clearModSelection(scope: scope)
+                        }
                     }
-                }
 
-                Text("v\(mod.definition.manifest.version)")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    Divider()
 
-                if let author = mod.definition.manifest.author, !author.isEmpty {
-                    Text(author)
-                        .font(.caption2)
+                    Button("Update/Reinstall") {
+                        model.updateInstalledMod(mod, scope: scope)
+                    }
+                    .disabled(model.isModOperationInProgress)
+
+                    Button("Uninstall", role: .destructive) {
+                        model.uninstallInstalledMod(mod, scope: scope)
+                    }
+                    .disabled(model.isModOperationInProgress)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
+                .menuStyle(.borderlessButton)
+            }
 
-                HStack(spacing: 6) {
-                    ForEach(SkillsModsPresentation.modCapabilities(mod), id: \.rawValue) { capability in
-                        modCapabilityBadge(capability.rawValue)
-                    }
-                    Spacer(minLength: 0)
-                }
+            Text("v\(mod.definition.manifest.version)")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
-                    modStatusPill(SkillsModsPresentation.modStatus(mod).rawValue)
-                    Spacer(minLength: 0)
-                }
-
-                Text(SkillsModsPresentation.modDirectoryName(mod))
-                    .font(.caption2.monospaced())
+            if let author = mod.definition.manifest.author, !author.isEmpty {
+                Text(author)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        isSelected
-                            ? Color(hex: tokens.palette.accentHex).opacity(0.14)
-                            : SkillsModsTheme.cardBackground(tokens: tokens)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        isSelected
-                            ? Color(hex: tokens.palette.accentHex).opacity(0.36)
-                            : SkillsModsTheme.subtleBorder(tokens: tokens)
-                    )
-            )
+
+            HStack(spacing: 6) {
+                ForEach(SkillsModsPresentation.modCapabilities(mod), id: \.rawValue) { capability in
+                    modCapabilityBadge(capability.rawValue)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                modStatusPill(SkillsModsPresentation.modStatus(mod).rawValue)
+                Spacer(minLength: 0)
+            }
+
+            Text(SkillsModsPresentation.modDirectoryName(mod))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    isSelected
+                        ? Color(hex: tokens.palette.accentHex).opacity(0.14)
+                        : SkillsModsTheme.cardBackground(tokens: tokens)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(
+                    isSelected
+                        ? Color(hex: tokens.palette.accentHex).opacity(0.36)
+                        : SkillsModsTheme.subtleBorder(tokens: tokens)
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onTapGesture {
+            onSelect()
+        }
+    }
+
+    private func clearModSelection(scope: ExtensionInstallScope) {
+        switch scope {
+        case .global:
+            model.setGlobalMod(nil)
+        case .project:
+            model.setProjectMod(nil)
+        }
     }
 
     private func modCapabilityBadge(_ text: String) -> some View {
@@ -399,83 +444,8 @@ struct ModsCanvas: View {
         }
     }
 
-    @ViewBuilder
     private var catalogSection: some View {
-        switch model.extensionCatalogState {
-        case .idle:
-            EmptyView()
-        case .loading:
-            SkillsModsCard {
-                LoadingStateView(title: "Loading catalog…")
-            }
-        case let .failed(message):
-            SkillsModsCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Catalog unavailable")
-                        .font(.headline)
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        case let .loaded(listings):
-            if listings.isEmpty {
-                EmptyView()
-            } else {
-                SkillsModsCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Curated Catalog")
-                            .font(.title3.weight(.semibold))
-
-                        ForEach(listings) { listing in
-                            HStack(alignment: .top, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(listing.name)
-                                        .font(.headline)
-                                    Text("v\(listing.version)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    if let summary = listing.summary, !summary.isEmpty {
-                                        Text(summary)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
-                                    }
-
-                                    if let trustMetadata = listing.trustMetadata, !trustMetadata.isEmpty {
-                                        Text(trustMetadata)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-
-                                Spacer(minLength: 0)
-
-                                Menu {
-                                    Button("Install to Project") {
-                                        model.installCatalogMod(listing, scope: .project)
-                                    }
-                                    .disabled(model.selectedProject == nil)
-
-                                    Button("Install Globally") {
-                                        model.installCatalogMod(listing, scope: .global)
-                                    }
-                                } label: {
-                                    Label("Install", systemImage: "square.and.arrow.down")
-                                }
-                                .menuStyle(.borderlessButton)
-                            }
-                            .padding(.vertical, 4)
-
-                            if listing.id != listings.last?.id {
-                                Divider()
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        EmptyView()
     }
 }
 
@@ -486,15 +456,27 @@ struct InstallModSheet: View {
     @State private var source = ""
     @State private var scope: ExtensionInstallScope = .project
     @State private var trustConfirmed = false
+    @State private var reviewState: AppModel.SurfaceState<ModInstallPreview> = .idle
 
     private var isTrustedSource: Bool {
         model.isTrustedModSource(source)
+    }
+
+    private var hasReviewedPackage: Bool {
+        guard case let .loaded(preview) = reviewState else { return false }
+        return preview.source == source.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canReview: Bool {
+        !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (scope == .global || model.selectedProject != nil)
     }
 
     private var canSubmit: Bool {
         !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && (isTrustedSource || trustConfirmed)
             && (scope == .global || model.selectedProject != nil)
+            && hasReviewedPackage
     }
 
     var body: some View {
@@ -530,6 +512,8 @@ struct InstallModSheet: View {
                     .foregroundStyle(.orange)
             }
 
+            reviewSection
+
             if let status = model.modStatusMessage {
                 Text(status)
                     .font(.caption)
@@ -543,6 +527,12 @@ struct InstallModSheet: View {
                     isPresented = false
                 }
 
+                Button("Review Package") {
+                    reviewModSource()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!canReview || model.isModOperationInProgress)
+
                 Button("Install") {
                     model.installMod(source: source, scope: scope)
                 }
@@ -554,6 +544,109 @@ struct InstallModSheet: View {
         .frame(minWidth: 580)
         .onChange(of: source) { _, _ in
             trustConfirmed = false
+            reviewState = .idle
+        }
+        .onChange(of: scope) { _, _ in
+            reviewState = .idle
+        }
+    }
+
+    @ViewBuilder
+    private var reviewSection: some View {
+        switch reviewState {
+        case .idle:
+            Text("Review package metadata and permissions before install.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Reviewing package…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case let .failed(message):
+            ErrorStateView(
+                title: "Review failed",
+                message: message,
+                actionLabel: "Retry"
+            ) {
+                reviewModSource()
+            }
+        case let .loaded(preview):
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Package review")
+                    .font(.headline)
+
+                Text("\(preview.packageManifest.name) v\(preview.packageManifest.version)")
+                    .font(.subheadline.weight(.medium))
+
+                Text(preview.packageManifest.id)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+
+                if let compatibility = preview.packageManifest.compatibility,
+                   !compatibility.platforms.isEmpty
+                {
+                    Text("Compatibility: \(compatibility.platforms.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Compatibility: unspecified")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if preview.requestedPermissions.isEmpty {
+                    Text("Permissions: none")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    let permissionList = preview.requestedPermissions
+                        .map(\.rawValue)
+                        .sorted()
+                        .joined(separator: ", ")
+                    Text("Permissions: \(permissionList)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !preview.warnings.isEmpty {
+                    ForEach(Array(preview.warnings.enumerated()), id: \.offset) { _, warning in
+                        Text(warning)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func reviewModSource() {
+        let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSource.isEmpty else {
+            reviewState = .failed("Enter a mod source URL or local path first.")
+            return
+        }
+
+        reviewState = .loading
+        Task {
+            do {
+                let preview = try await Task.detached(priority: .userInitiated) {
+                    try ModInstallService().preview(source: trimmedSource)
+                }.value
+                await MainActor.run {
+                    reviewState = .loaded(preview)
+                }
+            } catch {
+                await MainActor.run {
+                    reviewState = .failed(error.localizedDescription)
+                }
+            }
         }
     }
 }

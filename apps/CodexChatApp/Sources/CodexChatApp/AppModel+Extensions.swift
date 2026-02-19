@@ -82,8 +82,17 @@ extension AppModel {
 
         if let projectModsBar = projectMod?.definition.uiSlots?.modsBar {
             activeModsBarSlot = projectModsBar
+            activeModsBarModID = projectMod?.definition.manifest.id
+            activeModsBarModDirectoryPath = projectMod?.directoryPath
+        } else if let globalModsBar = globalMod?.definition.uiSlots?.modsBar {
+            activeModsBarSlot = globalModsBar
+            activeModsBarModID = globalMod?.definition.manifest.id
+            activeModsBarModDirectoryPath = globalMod?.directoryPath
         } else {
-            activeModsBarSlot = globalMod?.definition.uiSlots?.modsBar
+            activeModsBarSlot = nil
+            activeModsBarModID = nil
+            activeModsBarModDirectoryPath = nil
+            extensionGlobalModsBarState = nil
         }
 
         Task {
@@ -122,6 +131,37 @@ extension AppModel {
         await loadModsBarCacheForSelectedThread()
     }
 
+    func performModsBarAction(_ action: ExtensionModsBarOutput.Action) {
+        switch action.kind {
+        case .composerInsert:
+            guard let text = action.payload["text"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty
+            else {
+                extensionStatusMessage = "Mods bar action is missing composer text."
+                return
+            }
+            let existing = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+            composerText = existing.isEmpty ? text : "\(existing)\n\n\(text)"
+
+        case .composerInsertAndSend:
+            guard let text = action.payload["text"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty
+            else {
+                extensionStatusMessage = "Mods bar action is missing composer text."
+                return
+            }
+            composerText = text
+            sendMessage()
+
+        case .emitEvent:
+            emitModsBarActionEvent(action, input: nil)
+
+        case .promptThenEmitEvent:
+            guard let input = promptForModsBarActionInput(action) else { return }
+            emitModsBarActionEvent(action, input: input)
+        }
+    }
+
     func emitExtensionEvent(
         _ event: ExtensionEventName,
         projectID: UUID,
@@ -144,6 +184,54 @@ extension AppModel {
             await extensionEventBus.publish(envelope)
             await runHooks(for: envelope)
         }
+    }
+
+    private func emitModsBarActionEvent(_ action: ExtensionModsBarOutput.Action, input: String?) {
+        guard let selectedThreadID,
+              let context = extensionProjectContext(forThreadID: selectedThreadID)
+        else {
+            extensionStatusMessage = "Select a thread before using Mods bar actions."
+            return
+        }
+
+        var payload = action.payload
+        payload["actionId"] = action.id
+        payload["actionKind"] = action.kind.rawValue
+        if payload["targetModID"] == nil,
+           let activeModsBarModID
+        {
+            payload["targetModID"] = activeModsBarModID
+        }
+        if let input {
+            payload["input"] = input
+        }
+
+        emitExtensionEvent(
+            .modsBarAction,
+            projectID: context.projectID,
+            projectPath: context.projectPath,
+            threadID: selectedThreadID,
+            payload: payload
+        )
+    }
+
+    private func promptForModsBarActionInput(_ action: ExtensionModsBarOutput.Action) -> String? {
+        let prompt = action.prompt
+        let alert = NSAlert()
+        alert.messageText = prompt?.title ?? action.label
+        alert.informativeText = prompt?.message ?? "Enter a value."
+
+        let field = NSTextField(string: prompt?.initialValue ?? "")
+        field.placeholderString = prompt?.placeholder
+        field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+        alert.accessoryView = field
+
+        alert.addButton(withTitle: prompt?.submitLabel ?? "Submit")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+        return field.stringValue
     }
 
     func extensionProjectContext(forThreadID threadID: UUID) -> (projectID: UUID, projectPath: String)? {
@@ -176,6 +264,19 @@ extension AppModel {
         guard !hooks.isEmpty else { return }
 
         for resolved in hooks {
+            if envelope.event == .modsBarAction {
+                if let targetModID = envelope.payload["targetModID"],
+                   resolved.modID != targetModID
+                {
+                    continue
+                }
+                if let targetHookID = envelope.payload["targetHookID"],
+                   resolved.definition.id != targetHookID
+                {
+                    continue
+                }
+            }
+
             let debounceMs = max(0, resolved.definition.debounceMs)
             if debounceMs > 0 {
                 let key = "\(resolved.modID):\(resolved.definition.id)"
@@ -384,26 +485,47 @@ extension AppModel {
         }
 
         if let modsBar = output.modsBar,
-           let threadID = UUID(uuidString: envelope.thread.id),
            shouldApplyModsBarOutput(sourceHookID: sourceHookID)
         {
+            let threadID = UUID(uuidString: envelope.thread.id)
             let resolvedTitle = activeModsBarSlot?.title ?? modsBar.title
-            extensionModsBarByThreadID[threadID] = ExtensionModsBarState(
+            let resolvedScope = modsBar.scope ?? .thread
+            let resolvedActions = modsBar.actions ?? []
+            let nextState = ExtensionModsBarState(
                 title: resolvedTitle,
                 markdown: modsBar.markdown,
+                scope: resolvedScope,
+                actions: resolvedActions,
                 updatedAt: Date()
             )
+
+            switch resolvedScope {
+            case .thread:
+                if let threadID {
+                    extensionModsBarByThreadID[threadID] = nextState
+                }
+            case .global:
+                extensionGlobalModsBarState = nextState
+            }
+
             do {
-                _ = try await extensionStateStore.writeModsBar(
-                    markdown: modsBar.markdown,
+                _ = try await extensionStateStore.writeModsBarOutput(
+                    output: ExtensionModsBarOutput(
+                        title: resolvedTitle,
+                        markdown: modsBar.markdown,
+                        scope: resolvedScope,
+                        actions: resolvedActions
+                    ),
                     modDirectory: URL(fileURLWithPath: modDirectoryPath, isDirectory: true),
-                    threadID: threadID
+                    threadID: resolvedScope == .thread ? threadID : nil
                 )
             } catch {
                 appendLog(.warning, "Failed to persist extension modsBar output: \(error.localizedDescription)")
             }
 
-            if extensionModsBarVisibilityByThreadID[threadID] != true {
+            if let threadID,
+               extensionModsBarVisibilityByThreadID[threadID] != true
+            {
                 extensionModsBarVisibilityByThreadID[threadID] = true
                 try? await persistModsBarVisibilityPreference()
             }
@@ -516,25 +638,52 @@ extension AppModel {
         }
 
         let hookID = activeModsBarSlot.source?.hookID
-        let modDirectoryPath: String? = if let hookID {
-            activeExtensionHooks.first(where: { $0.definition.id == hookID })?.modDirectoryPath
-        } else {
-            activeExtensionHooks.first?.modDirectoryPath
-        }
+        let modDirectoryPath: String? = activeModsBarModDirectoryPath ?? {
+            if let hookID {
+                return activeExtensionHooks.first(where: { $0.definition.id == hookID })?.modDirectoryPath
+            }
+            return activeExtensionHooks.first?.modDirectoryPath
+        }()
 
         guard let modDirectoryPath else { return }
 
         do {
-            let cached = try await extensionStateStore.readModsBar(
+            let cachedThreadOutput = try await extensionStateStore.readModsBarOutput(
                 modDirectory: URL(fileURLWithPath: modDirectoryPath, isDirectory: true),
+                scope: .thread,
                 threadID: selectedThreadID
             )
-            if let cached, !cached.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let cachedThreadOutput,
+               !cachedThreadOutput.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 extensionModsBarByThreadID[selectedThreadID] = ExtensionModsBarState(
-                    title: activeModsBarSlot.title,
-                    markdown: cached,
+                    title: activeModsBarSlot.title ?? cachedThreadOutput.title,
+                    markdown: cachedThreadOutput.markdown,
+                    scope: cachedThreadOutput.scope ?? .thread,
+                    actions: cachedThreadOutput.actions ?? [],
                     updatedAt: Date()
                 )
+            } else {
+                extensionModsBarByThreadID.removeValue(forKey: selectedThreadID)
+            }
+
+            let cachedGlobalOutput = try await extensionStateStore.readModsBarOutput(
+                modDirectory: URL(fileURLWithPath: modDirectoryPath, isDirectory: true),
+                scope: .global,
+                threadID: nil
+            )
+            if let cachedGlobalOutput,
+               !cachedGlobalOutput.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                extensionGlobalModsBarState = ExtensionModsBarState(
+                    title: activeModsBarSlot.title ?? cachedGlobalOutput.title,
+                    markdown: cachedGlobalOutput.markdown,
+                    scope: .global,
+                    actions: cachedGlobalOutput.actions ?? [],
+                    updatedAt: Date()
+                )
+            } else {
+                extensionGlobalModsBarState = nil
             }
         } catch {
             appendLog(.warning, "Failed to load extension modsBar cache: \(error.localizedDescription)")

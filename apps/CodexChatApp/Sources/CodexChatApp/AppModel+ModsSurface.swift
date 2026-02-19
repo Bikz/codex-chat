@@ -16,9 +16,7 @@ extension AppModel {
     func refreshModsSurface() {
         modsState = .loading
         modsRefreshTask?.cancel()
-        if case .idle = extensionCatalogState {
-            extensionCatalogState = .loading
-        }
+        extensionCatalogState = .idle
 
         let selectedProjectPath = selectedProject?.path
         let selectedProjectModPath = selectedProject?.uiModPath
@@ -79,13 +77,12 @@ extension AppModel {
                     selectedGlobalPath: snapshot.selectedGlobal,
                     selectedProjectPath: snapshot.selectedProject
                 )
-                await refreshModCatalog()
 
                 startModWatchersIfNeeded(globalRootPath: snapshot.globalRoot, projectRootPath: snapshot.projectRoot)
             } catch {
                 modsState = .failed(error.localizedDescription)
                 modStatusMessage = "Failed to load mods: \(error.localizedDescription)"
-                activeRightInspectorSlot = nil
+                activeModsBarSlot = nil
                 activeExtensionHooks = []
                 activeExtensionAutomations = []
                 Task { await stopExtensionAutomations() }
@@ -95,15 +92,7 @@ extension AppModel {
     }
 
     func refreshModCatalog() async {
-        do {
-            let listings = try await modCatalogProvider.listAvailableMods()
-            extensionCatalogState = .loaded(listings)
-        } catch {
-            if case .loaded = extensionCatalogState {
-                return
-            }
-            extensionCatalogState = .failed(error.localizedDescription)
-        }
+        extensionCatalogState = .idle
     }
 
     func setGlobalMod(_ mod: DiscoveredUIMod?) {
@@ -118,6 +107,7 @@ extension AppModel {
                 try await preferenceRepository.setPreference(key: .globalUIModPath, value: value)
                 try await updateExtensionInstallEnablement(
                     scope: .global,
+                    projectID: nil,
                     enabledModID: mod?.definition.manifest.id
                 )
                 modStatusMessage = mod == nil ? "Global mod disabled." : "Enabled global mod: \(mod?.definition.manifest.name ?? "")."
@@ -142,6 +132,7 @@ extension AppModel {
                 _ = try await projectRepository.updateProjectUIModPath(id: selectedProjectID, uiModPath: mod?.directoryPath)
                 try await updateExtensionInstallEnablement(
                     scope: .project,
+                    projectID: selectedProjectID,
                     enabledModID: mod?.definition.manifest.id
                 )
                 try await refreshProjects()
@@ -215,11 +206,13 @@ extension AppModel {
         if FileManager.default.fileExists(atPath: trimmed) {
             return true
         }
+        if trimmed.hasPrefix("git@github.com:") {
+            return true
+        }
         guard let url = URL(string: trimmed), let host = url.host?.lowercased() else {
             return false
         }
-        let trustedHosts = ["github.com", "gitlab.com", "bitbucket.org"]
-        return trustedHosts.contains(host)
+        return host == "github.com"
     }
 
     func installMod(
@@ -239,35 +232,27 @@ extension AppModel {
             defer { isModOperationInProgress = false }
 
             do {
+                let installProjectID: UUID? = switch scope {
+                case .global:
+                    nil
+                case .project:
+                    selectedProjectID
+                }
                 let rootPath = try installRootPath(for: scope)
                 let rootURL = URL(fileURLWithPath: rootPath, isDirectory: true)
                 try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
-
-                let staged = try stageModSource(trimmedSource)
-                defer {
-                    if let cleanupURL = staged.cleanupURL {
-                        try? FileManager.default.removeItem(at: cleanupURL)
-                    }
-                }
-
-                let modDirectory = try resolveModDirectory(from: staged.modRootURL)
-                let definitionURL = modDirectory.appendingPathComponent("ui.mod.json", isDirectory: false)
-                let definitionData = try Data(contentsOf: definitionURL)
-                let definition = try JSONDecoder().decode(UIModDefinition.self, from: definitionData)
-
-                let destinationName = sanitizedModDirectoryName(from: definition.manifest.id)
-                let destinationURL = uniqueModDestinationURL(
-                    in: rootURL,
-                    preferredName: destinationName
+                let installService = ModInstallService()
+                let installResult = try installService.install(
+                    source: trimmedSource,
+                    destinationRootURL: rootURL
                 )
-                try FileManager.default.copyItem(at: modDirectory, to: destinationURL)
 
                 let discovered = try modDiscoveryService.discoverMods(
                     in: rootPath,
                     scope: mapInstallScope(scope)
                 )
 
-                guard let installedMod = discovered.first(where: { $0.directoryPath == destinationURL.path }) else {
+                guard let installedMod = discovered.first(where: { $0.directoryPath == installResult.installedDirectoryPath }) else {
                     throw NSError(
                         domain: "CodexChat.ModInstall",
                         code: 1,
@@ -278,11 +263,16 @@ extension AppModel {
                 if let extensionInstallRepository {
                     _ = try await extensionInstallRepository.upsert(
                         ExtensionInstallRecord(
-                            id: "\(scope.rawValue):\(definition.manifest.id)",
-                            modID: definition.manifest.id,
+                            id: extensionInstallRecordID(
+                                scope: scope,
+                                projectID: installProjectID,
+                                modID: installResult.definition.manifest.id
+                            ),
+                            modID: installResult.definition.manifest.id,
                             scope: scope,
+                            projectID: installProjectID,
                             sourceURL: trimmedSource,
-                            installedPath: destinationURL.path,
+                            installedPath: installResult.installedDirectoryPath,
                             enabled: true
                         )
                     )
@@ -295,8 +285,18 @@ extension AppModel {
                     setProjectMod(installedMod)
                 }
 
-                modStatusMessage = "Installed and enabled mod: \(definition.manifest.name)."
-                appendLog(.info, "Installed mod \(definition.manifest.id) from \(trimmedSource)")
+                var permissionHint = ""
+                if !installResult.requestedPermissions.isEmpty {
+                    let keys = installResult.requestedPermissions
+                        .map(\.rawValue)
+                        .sorted()
+                        .joined(separator: ", ")
+                    permissionHint = " First run requires permissions: \(keys)."
+                }
+                let warningHint = installResult.warnings.isEmpty ? "" : " \(installResult.warnings.joined(separator: " "))"
+
+                modStatusMessage = "Installed and enabled mod: \(installResult.definition.manifest.name).\(permissionHint)\(warningHint)"
+                appendLog(.info, "Installed mod \(installResult.definition.manifest.id) from \(trimmedSource)")
             } catch {
                 modStatusMessage = "Mod install failed: \(error.localizedDescription)"
                 appendLog(.error, "Mod install failed: \(error.localizedDescription)")
@@ -311,6 +311,116 @@ extension AppModel {
             return
         }
         installMod(source: source, scope: scope)
+    }
+
+    func updateInstalledMod(_ mod: DiscoveredUIMod, scope: ExtensionInstallScope) {
+        guard let extensionInstallRepository else {
+            modStatusMessage = "Extension install repository unavailable."
+            return
+        }
+
+        isModOperationInProgress = true
+        modStatusMessage = nil
+
+        Task {
+            defer { isModOperationInProgress = false }
+
+            do {
+                let installProjectID = installProjectID(for: scope)
+                let installs = try await extensionInstallRepository.list()
+                guard let record = installs.first(where: {
+                    $0.scope == scope
+                        && $0.modID == mod.definition.manifest.id
+                        && $0.projectID == installProjectID
+                }) else {
+                    throw NSError(
+                        domain: "CodexChat.ModInstall",
+                        code: 3,
+                        userInfo: [NSLocalizedDescriptionKey: "No install metadata found for \(mod.definition.manifest.name)."]
+                    )
+                }
+                guard let source = record.sourceURL?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty else {
+                    throw NSError(
+                        domain: "CodexChat.ModInstall",
+                        code: 4,
+                        userInfo: [NSLocalizedDescriptionKey: "Cannot update \(mod.definition.manifest.name): original source URL is missing."]
+                    )
+                }
+
+                let installService = ModInstallService()
+                let result = try installService.update(
+                    source: source,
+                    existingInstallURL: URL(fileURLWithPath: record.installedPath, isDirectory: true)
+                )
+
+                var updatedRecord = record
+                updatedRecord.installedPath = result.installedDirectoryPath
+                updatedRecord.enabled = true
+                _ = try await extensionInstallRepository.upsert(updatedRecord)
+
+                modStatusMessage = "Updated mod: \(result.definition.manifest.name)."
+                refreshModsSurface()
+            } catch {
+                modStatusMessage = "Mod update failed: \(error.localizedDescription)"
+                appendLog(.error, "Mod update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func uninstallInstalledMod(_ mod: DiscoveredUIMod, scope: ExtensionInstallScope) {
+        guard let extensionInstallRepository else {
+            modStatusMessage = "Extension install repository unavailable."
+            return
+        }
+
+        isModOperationInProgress = true
+        modStatusMessage = nil
+
+        Task {
+            defer { isModOperationInProgress = false }
+
+            do {
+                let installProjectID = installProjectID(for: scope)
+                let installs = try await extensionInstallRepository.list()
+                let matching = installs.filter {
+                    $0.scope == scope
+                        && $0.modID == mod.definition.manifest.id
+                        && $0.projectID == installProjectID
+                }
+
+                for record in matching {
+                    if FileManager.default.fileExists(atPath: record.installedPath) {
+                        try? FileManager.default.removeItem(atPath: record.installedPath)
+                    }
+                    try await extensionInstallRepository.delete(id: record.id)
+                }
+
+                let currentSelection: (global: String?, project: String?) = {
+                    guard case let .loaded(surface) = modsState else { return (nil, nil) }
+                    return (surface.selectedGlobalModPath, surface.selectedProjectModPath)
+                }()
+
+                switch scope {
+                case .global:
+                    if currentSelection.global == mod.directoryPath {
+                        try await preferenceRepository?.setPreference(key: .globalUIModPath, value: "")
+                    }
+                case .project:
+                    if currentSelection.project == mod.directoryPath,
+                       let selectedProjectID,
+                       let projectRepository
+                    {
+                        _ = try await projectRepository.updateProjectUIModPath(id: selectedProjectID, uiModPath: nil)
+                    }
+                }
+
+                modStatusMessage = "Uninstalled mod: \(mod.definition.manifest.name)."
+                refreshModsSurface()
+            } catch {
+                modStatusMessage = "Mod uninstall failed: \(error.localizedDescription)"
+                appendLog(.error, "Mod uninstall failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     nonisolated static func resolvedThemeOverrides(
@@ -435,125 +545,43 @@ extension AppModel {
         }
     }
 
-    private struct StagedModSource {
-        let modRootURL: URL
-        let cleanupURL: URL?
-    }
-
-    private func stageModSource(_ source: String) throws -> StagedModSource {
-        let fileManager = FileManager.default
-
-        if fileManager.fileExists(atPath: source) {
-            return StagedModSource(
-                modRootURL: URL(fileURLWithPath: source, isDirectory: true).standardizedFileURL,
-                cleanupURL: nil
-            )
+    private func installProjectID(for scope: ExtensionInstallScope) -> UUID? {
+        switch scope {
+        case .global:
+            nil
+        case .project:
+            selectedProjectID
         }
-
-        if let fileURL = URL(string: source), fileURL.isFileURL {
-            return StagedModSource(
-                modRootURL: fileURL.standardizedFileURL,
-                cleanupURL: nil
-            )
-        }
-
-        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("codexchat-mod-install-\(UUID().uuidString)", isDirectory: true)
-
-        let process = Process()
-        let stderrPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git", "clone", "--depth", "1", source, tempRoot.path]
-        process.standardError = stderrPipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderr = String(data: stderrData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let detail: String = if let stderr, !stderr.isEmpty {
-                stderr
-            } else {
-                "git clone failed."
-            }
-            throw NSError(
-                domain: "CodexChat.ModInstall",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: detail]
-            )
-        }
-
-        return StagedModSource(modRootURL: tempRoot, cleanupURL: tempRoot)
-    }
-
-    private func resolveModDirectory(from rootURL: URL) throws -> URL {
-        let fileManager = FileManager.default
-
-        let directDefinition = rootURL.appendingPathComponent("ui.mod.json", isDirectory: false)
-        if fileManager.fileExists(atPath: directDefinition.path) {
-            return rootURL
-        }
-
-        let children = try fileManager.contentsOfDirectory(
-            at: rootURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-
-        let candidates = children.filter { child in
-            ((try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false)
-                && fileManager.fileExists(atPath: child.appendingPathComponent("ui.mod.json", isDirectory: false).path)
-        }
-
-        if candidates.count == 1, let first = candidates.first {
-            return first
-        }
-
-        throw NSError(
-            domain: "CodexChat.ModInstall",
-            code: 4,
-            userInfo: [
-                NSLocalizedDescriptionKey: "Source must contain exactly one mod folder with `ui.mod.json`.",
-            ]
-        )
-    }
-
-    private func sanitizedModDirectoryName(from manifestID: String) -> String {
-        let trimmed = manifestID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = trimmed.isEmpty ? "mod" : trimmed
-        let safe = fallback.replacingOccurrences(
-            of: "[^A-Za-z0-9._-]",
-            with: "-",
-            options: .regularExpression
-        )
-        return safe.isEmpty ? "mod" : safe
-    }
-
-    private func uniqueModDestinationURL(in rootURL: URL, preferredName: String) -> URL {
-        let fileManager = FileManager.default
-        var candidate = rootURL.appendingPathComponent(preferredName, isDirectory: true)
-        var index = 2
-
-        while fileManager.fileExists(atPath: candidate.path) {
-            candidate = rootURL.appendingPathComponent("\(preferredName)-\(index)", isDirectory: true)
-            index += 1
-        }
-
-        return candidate
     }
 
     private func updateExtensionInstallEnablement(
         scope: ExtensionInstallScope,
+        projectID: UUID?,
         enabledModID: String?
     ) async throws {
         guard let extensionInstallRepository else { return }
         let installs = try await extensionInstallRepository.list()
         for record in installs where record.scope == scope {
+            if scope == .project, record.projectID != projectID {
+                continue
+            }
             var next = record
             next.enabled = (record.modID == enabledModID)
             _ = try await extensionInstallRepository.upsert(next)
+        }
+    }
+
+    private func extensionInstallRecordID(
+        scope: ExtensionInstallScope,
+        projectID: UUID?,
+        modID: String
+    ) -> String {
+        switch scope {
+        case .global:
+            return "global:\(modID)"
+        case .project:
+            let projectKey = projectID?.uuidString.lowercased() ?? "unknown-project"
+            return "project:\(projectKey):\(modID)"
         }
     }
 }

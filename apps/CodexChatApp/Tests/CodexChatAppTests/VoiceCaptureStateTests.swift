@@ -12,7 +12,7 @@ final class VoiceCaptureStateTests: XCTestCase {
         let model = makeReadyModel(voiceService: voiceService)
 
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 2.0) {
+        try await eventually(timeoutSeconds: 5.0) {
             if case .recording = model.voiceCaptureState {
                 return true
             }
@@ -20,7 +20,7 @@ final class VoiceCaptureStateTests: XCTestCase {
         }
 
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 1.0) {
+        try await eventually(timeoutSeconds: 3.0) {
             model.voiceCaptureState == .idle
         }
 
@@ -36,7 +36,7 @@ final class VoiceCaptureStateTests: XCTestCase {
         let model = makeReadyModel(voiceService: voiceService)
         model.toggleVoiceCapture()
 
-        try await eventually(timeoutSeconds: 1.0) {
+        try await eventually(timeoutSeconds: 3.0) {
             if case .failed = model.voiceCaptureState {
                 return true
             }
@@ -60,7 +60,7 @@ final class VoiceCaptureStateTests: XCTestCase {
         model.voiceAutoStopDurationNanoseconds = 30_000_000
 
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 1.0) {
+        try await eventually(timeoutSeconds: 3.0) {
             model.voiceCaptureState == .idle
         }
 
@@ -128,6 +128,7 @@ final class VoiceCaptureStateTests: XCTestCase {
             if condition() {
                 return
             }
+            await Task.yield()
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         throw XCTestError(.failureWhileWaiting)

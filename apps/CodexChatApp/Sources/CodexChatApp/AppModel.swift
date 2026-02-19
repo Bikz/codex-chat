@@ -70,9 +70,11 @@ final class AppModel: ObservableObject {
         let canRevert: Bool
     }
 
-    struct ExtensionInspectorState: Hashable {
+    struct ExtensionModsBarState: Hashable {
         let title: String?
         let markdown: String
+        let scope: ExtensionModsBarOutput.Scope
+        let actions: [ExtensionModsBarOutput.Action]
         let updatedAt: Date
     }
 
@@ -232,6 +234,7 @@ final class AppModel: ObservableObject {
     @Published var defaultModel = ""
     @Published var defaultReasoning: ReasoningLevel = .medium
     @Published var defaultWebSearch: ProjectWebSearchMode = .cached
+    @Published var transcriptDetailLevel: TranscriptDetailLevel = .chat
     @Published var defaultSafetySettings = ProjectSafetySettings(
         sandboxMode: .readOnly,
         approvalPolicy: .untrusted,
@@ -266,6 +269,8 @@ final class AppModel: ObservableObject {
     @Published var voiceCaptureState: VoiceCaptureState = .idle
     @Published var voiceCaptureElapsedText: String?
     @Published var storageRootPath: String
+    @Published var isStorageRepairInProgress = false
+    @Published var lastCodexHomeQuarantinePath: String?
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
     @Published var isSkillOperationInProgress = false
@@ -287,10 +292,13 @@ final class AppModel: ObservableObject {
     @Published var isNodeSkillInstallerAvailable = false
     @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
     @Published var activeUntrustedShellWarning: UntrustedShellWarningContext?
-    @Published var extensionInspectorByThreadID: [UUID: ExtensionInspectorState] = [:]
-    @Published var extensionInspectorVisibilityByThreadID: [UUID: Bool] = [:]
+    @Published var extensionModsBarByThreadID: [UUID: ExtensionModsBarState] = [:]
+    @Published var extensionGlobalModsBarState: ExtensionModsBarState?
+    @Published var extensionModsBarVisibilityByThreadID: [UUID: Bool] = [:]
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
-    @Published var activeRightInspectorSlot: ModUISlots.RightInspector?
+    @Published var activeModsBarSlot: ModUISlots.ModsBar?
+    @Published var activeModsBarModID: String?
+    @Published var activeModsBarModDirectoryPath: String?
 
     @Published var effectiveThemeOverride: ModThemeOverride = .init()
     @Published var effectiveDarkThemeOverride: ModThemeOverride = .init()
@@ -350,6 +358,7 @@ final class AppModel: ObservableObject {
     var activeExtensionAutomations: [ResolvedExtensionAutomation] = []
     var extensionHookDebounceTimestamps: [String: Date] = [:]
     var extensionAutomationScheduler = ExtensionAutomationScheduler()
+    var runtimeRepairSuggestedThreadIDs: Set<UUID> = []
 
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
@@ -650,22 +659,22 @@ final class AppModel: ObservableObject {
         return followUpQueueByThreadID[selectedThreadID, default: []]
     }
 
-    var selectedExtensionInspectorState: ExtensionInspectorState? {
-        guard let selectedThreadID else { return nil }
-        return extensionInspectorByThreadID[selectedThreadID]
+    var selectedExtensionModsBarState: ExtensionModsBarState? {
+        guard let selectedThreadID else { return extensionGlobalModsBarState }
+        return extensionModsBarByThreadID[selectedThreadID] ?? extensionGlobalModsBarState
     }
 
-    var isInspectorVisibleForSelectedThread: Bool {
+    var isModsBarVisibleForSelectedThread: Bool {
         guard let selectedThreadID else { return false }
-        return extensionInspectorVisibilityByThreadID[selectedThreadID, default: false]
+        return extensionModsBarVisibilityByThreadID[selectedThreadID, default: false]
     }
 
-    var canToggleInspectorForSelectedThread: Bool {
+    var canToggleModsBarForSelectedThread: Bool {
         selectedThreadID != nil
     }
 
-    var isInspectorAvailableForSelectedThread: Bool {
-        selectedThreadID != nil && (activeRightInspectorSlot?.enabled ?? false)
+    var isModsBarAvailableForSelectedThread: Bool {
+        selectedThreadID != nil && (activeModsBarSlot?.enabled ?? false)
     }
 
     var canReviewChanges: Bool {

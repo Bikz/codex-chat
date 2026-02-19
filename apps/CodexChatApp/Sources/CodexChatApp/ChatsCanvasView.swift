@@ -355,8 +355,8 @@ struct ChatsCanvasView: View {
         .opacity(isDisabled ? 0.45 : 1)
     }
 
-    private func composerContextStrip<Content: View>(
-        @ViewBuilder _ content: () -> Content
+    private func composerContextStrip(
+        @ViewBuilder _ content: () -> some View
     ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
@@ -534,9 +534,15 @@ struct ChatsCanvasView: View {
                 }
             case let .loaded(entries):
                 conversationWithModsBar {
+                    let presentationRows = TranscriptPresentationBuilder.rows(
+                        entries: entries,
+                        detailLevel: model.transcriptDetailLevel,
+                        activeTurnContext: model.activeTurnContext
+                    )
+
                     ScrollViewReader { proxy in
-                        List(entries) { entry in
-                            switch entry {
+                        List(presentationRows) { row in
+                            switch row {
                             case let .message(message):
                                 MessageRow(
                                     message: message,
@@ -554,7 +560,7 @@ struct ChatsCanvasView: View {
                                         trailing: tokens.spacing.medium
                                     )
                                 )
-                            case let .actionCard(card):
+                            case let .action(card):
                                 ActionCardRow(card: card)
                                     .padding(.vertical, tokens.spacing.xSmall)
                                     .listRowSeparator(.hidden)
@@ -567,15 +573,47 @@ struct ChatsCanvasView: View {
                                             trailing: tokens.spacing.medium
                                         )
                                     )
+                            case let .liveActivity(activity):
+                                LiveTurnActivityRow(
+                                    activity: activity,
+                                    detailLevel: model.transcriptDetailLevel
+                                )
+                                .padding(.vertical, tokens.spacing.xSmall)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: 0,
+                                        leading: tokens.spacing.medium,
+                                        bottom: 0,
+                                        trailing: tokens.spacing.medium
+                                    )
+                                )
+                            case let .turnSummary(summary):
+                                TurnSummaryRow(
+                                    summary: summary,
+                                    detailLevel: model.transcriptDetailLevel
+                                )
+                                .padding(.vertical, tokens.spacing.xSmall)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: 0,
+                                        leading: tokens.spacing.medium,
+                                        bottom: 0,
+                                        trailing: tokens.spacing.medium
+                                    )
+                                )
                             }
                         }
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
                         .onAppear {
-                            scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: false)
+                            scrollTranscriptToBottom(rows: presentationRows, proxy: proxy, animated: false)
                         }
-                        .onChange(of: entries.last?.id) { _, _ in
-                            scrollTranscriptToBottom(entries: entries, proxy: proxy, animated: true)
+                        .onChange(of: presentationRows.last?.id) { _, _ in
+                            scrollTranscriptToBottom(rows: presentationRows, proxy: proxy, animated: true)
                         }
                     }
                 }
@@ -605,11 +643,11 @@ struct ChatsCanvasView: View {
     }
 
     private func scrollTranscriptToBottom(
-        entries: [TranscriptEntry],
+        rows: [TranscriptPresentationRow],
         proxy: ScrollViewProxy,
         animated: Bool
     ) {
-        guard let lastID = entries.last?.id else { return }
+        guard let lastID = rows.last?.id else { return }
         DispatchQueue.main.async {
             if animated {
                 withAnimation(.easeOut(duration: tokens.motion.transitionDuration)) {
@@ -694,7 +732,7 @@ private struct ComposerControlBar: View {
                     }
                 } label: {
                     controlChip(
-                        title: "Model",
+                        title: nil,
                         value: model.defaultModelDisplayName,
                         systemImage: "cpu",
                         tint: Color(hex: tokens.palette.accentHex),
@@ -703,6 +741,7 @@ private struct ComposerControlBar: View {
                 }
                 .menuStyle(.borderlessButton)
                 .accessibilityLabel("Model")
+                .accessibilityValue(model.defaultModelDisplayName)
                 .help("Select model")
 
                 if model.canChooseReasoningForSelectedModel {
@@ -716,7 +755,7 @@ private struct ComposerControlBar: View {
                         }
                     } label: {
                         controlChip(
-                            title: "Reasoning",
+                            title: nil,
                             value: model.defaultReasoning.title,
                             systemImage: "brain.head.profile",
                             tint: Color(hex: tokens.palette.accentHex).opacity(0.78),
@@ -725,6 +764,7 @@ private struct ComposerControlBar: View {
                     }
                     .menuStyle(.borderlessButton)
                     .accessibilityLabel("Reasoning")
+                    .accessibilityValue(model.defaultReasoning.title)
                     .help("Select reasoning effort")
                 }
 
@@ -798,26 +838,30 @@ private struct ComposerControlBar: View {
     }
 
     private func controlChip(
-        title: String,
+        title: String?,
         value: String,
         systemImage: String,
         tint: Color,
         minWidth: CGFloat
     ) -> some View {
-        HStack(spacing: 8) {
+        let isValueOnly = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+
+        return HStack(spacing: 8) {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .bold))
                 .frame(width: 14, height: 14)
                 .foregroundStyle(tint)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+            VStack(alignment: .leading, spacing: isValueOnly ? 0 : 1) {
+                if let title, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
 
                 Text(value)
-                    .font(.caption.weight(.bold))
+                    .font(isValueOnly ? .subheadline.weight(.semibold) : .caption.weight(.bold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -857,11 +901,11 @@ private struct ComposerControlBar: View {
     private func webSearchDescription(_ mode: ProjectWebSearchMode) -> String {
         switch mode {
         case .cached:
-            "Reuse cached web context (faster, lower churn)."
+            "Uses cached web context."
         case .live:
-            "Fetch fresh web results for this turn."
+            "Fetches fresh web results."
         case .disabled:
-            "Skip web search and use model/project context only."
+            "Disables web search."
         }
     }
 
@@ -881,13 +925,13 @@ private struct ComposerControlBar: View {
     private func memoryModeDescription(_ mode: AppModel.ComposerMemoryMode) -> String? {
         switch mode {
         case .projectDefault:
-            "Follow the project's default memory policy."
+            "Uses the project default memory setting."
         case .off:
-            "Do not write new memory for this turn."
+            "Skips memory writes for this turn."
         case .summariesOnly:
-            "Write a short summary only."
+            "Writes summary memory only."
         case .summariesAndKeyFacts:
-            "Write a summary plus durable facts/preferences."
+            "Writes summaries and key facts."
         }
     }
 
@@ -913,8 +957,6 @@ private struct ComposerControlBar: View {
                     Text(subtitle)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

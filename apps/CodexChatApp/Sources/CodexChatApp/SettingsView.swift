@@ -344,6 +344,25 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker(
+                        "Conversation stream",
+                        selection: Binding(
+                            get: { model.transcriptDetailLevel },
+                            set: { model.setTranscriptDetailLevel($0) }
+                        )
+                    ) {
+                        ForEach(TranscriptDetailLevel.allCases, id: \.self) { level in
+                            Text(model.transcriptDetailLevelTitle(level)).tag(level)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(model.transcriptDetailLevelDescription(model.transcriptDetailLevel))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Text("Composer controls inherit these defaults. Project safety policy still clamps effective web-search behavior at turn time.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -648,10 +667,30 @@ struct SettingsView: View {
                     } label: {
                         Label("Reveal in Finder", systemImage: "folder")
                     }
+
+                    Button {
+                        model.repairCodexHome()
+                    } label: {
+                        Label("Repair Codex Home", systemImage: "wrench.and.screwdriver")
+                    }
+                    .disabled(model.isTurnInProgress || model.isStorageRepairInProgress)
                 }
                 .buttonStyle(.bordered)
 
+                if model.lastCodexHomeQuarantinePath != nil {
+                    Button {
+                        model.revealLastCodexHomeQuarantine()
+                    } label: {
+                        Label("Reveal Last Quarantine", systemImage: "archivebox")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 Text("Changing the storage root moves CodexChat-managed data and requires an app restart.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("Codex Home repair quarantines stale runtime session/index cache and keeps config, auth, history, skills, and instructions intact.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
