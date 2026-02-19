@@ -1,75 +1,87 @@
 # UI Mods
 
-CodexChat supports UI mods that can:
+CodexChat mods can:
 
-- override design tokens (palette, typography, spacing, radius, materials, bubbles)
-- register extension hooks
-- register scheduled automations
-- expose an optional right-side inspector slot
+- override theme tokens
+- run turn/thread hook handlers
+- run scheduled automation handlers
+- render optional `Mods bar` content through `uiSlots.modsBar`
+
+## Product Constraints
+
+- Two-pane IA is non-negotiable.
+- `Mods bar` is optional and collapsed by default.
+- No persistent third pane.
 
 ## Mod Roots
 
-- Global mods: `~/CodexChat/global/mods`
-- Project mods: `<project>/mods`
+- Global: `~/CodexChat/global/mods`
+- Project: `<project>/mods`
 
 ## Precedence
 
 `defaults < global mod < project mod`
 
-## Mod Structure
+## Required Files
 
-Each mod is a directory containing `ui.mod.json`:
+Each mod package should contain:
 
 ```text
-MyMod/
+<mod-root>/
   ui.mod.json
+  codex.mod.json
 ```
 
-CodexChat discovers mods by scanning immediate subdirectories of each mod root.
+`ui.mod.json` is the runtime contract.
+`codex.mod.json` is the install/distribution contract.
 
-## Schema (`ui.mod.json`)
+## `ui.mod.json` Contract
 
 Top-level fields:
 
-- `schemaVersion` (int): `1` (theme-only) or `2` (theme + extensions)
-- `manifest` (object): `id`, `name`, `version`, optional metadata fields
-- `theme` (object): token overrides
-- `darkTheme` (optional object): dark-mode token overrides
-- `hooks` (schema v2, optional array): event handlers
-- `automations` (schema v2, optional array): cron-based automation handlers
-- `uiSlots` (schema v2, optional object): optional inspector slot contract
-- `future` (optional object): reserved for future surfaces
+- `schemaVersion`: must be `1`
+- `manifest`: `id`, `name`, `version` (+ optional metadata)
+- `theme` and optional `darkTheme`
+- `hooks` (optional array)
+- `automations` (optional array)
+- `uiSlots` (optional object, supports `modsBar`)
+- `future` (optional, reserved)
 
-Theme override groups (all optional):
+Legacy keys are rejected:
 
-- `typography`: `titleSize`, `bodySize`, `captionSize`
-- `spacing`: `xSmall`, `small`, `medium`, `large`
-- `radius`: `small`, `medium`, `large`
-- `palette`: `accentHex`, `backgroundHex`, `panelHex`
-- `materials`: `panelMaterial`, `cardMaterial` (`ultraThin|thin|regular|thick|ultraThick`)
-- `bubbles`: `style`, `userBackgroundHex`, `assistantBackgroundHex` (`plain|glass|solid`)
-- `iconography`: `style` (currently `sf-symbols`)
+- `uiSlots.rightInspector` is unsupported
+- `schemaVersion: 2` is unsupported
 
-## System Appearance Behavior
+## `uiSlots.modsBar`
 
-- Without a selected mod, CodexChat uses system-aware defaults.
-- In dark mode, if mod only defines `theme` and omits `darkTheme`, CodexChat keeps system dark colors and applies non-color tokens.
-- If `darkTheme` is present, those dark values are applied.
+`uiSlots.modsBar` is optional. When enabled:
 
-## Hex Color Support
+- users can toggle `Mods bar` from the toolbar
+- content is sourced from extension worker output
+- the surface stays non-persistent by default
+- output may be `thread` or `global` scope
+- output may include typed action buttons (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`)
 
-Accepted formats:
+## Hook Events
 
-- `#RGB`
-- `#RRGGBB`
-- `#AARRGGBB` (alpha first)
+- `thread.started`
+- `turn.started`
+- `assistant.delta`
+- `action.card`
+- `approval.requested`
+- `modsBar.action`
+- `turn.completed`
+- `turn.failed`
+- `transcript.persisted`
 
-## Hot Reload
+## Permissions
 
-CodexChat watches global and active project mod roots and refreshes mod lists when files change.
+Permission keys:
 
-## Extension Compatibility
+- `projectRead`
+- `projectWrite`
+- `network`
+- `runtimeControl`
+- `runWhenAppClosed`
 
-- `schemaVersion: 1` mods continue to work unchanged.
-- `schemaVersion: 2` enables `hooks`, `automations`, and `uiSlots`.
-- If v2 extension sections are malformed, CodexChat still loads the theme and disables extension sections for that mod.
+Permission prompts are runtime-gated on first privileged use.

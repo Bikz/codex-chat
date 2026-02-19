@@ -16,10 +16,17 @@ This folder contains contributor-facing documentation tracked in git.
 - `MODS_SHARING.md` — canonical builder guide for creating/sharing Skills/Mods, including extension schema/protocol (experimental).
 - `EXTENSIONS.md` — compatibility landing page linking to canonical `MODS_SHARING.md` sections.
 - `ADR-EXTENSIONS-RUNTIME.md` — extension runtime architecture decision.
+- `EXTENSIONS_SPEC_VNEXT.md` — proposed package/runtime extension spec for ecosystem scaling.
+- `EXTENSIONS_QUICKSTART.md` — quickstart for creating/installing extension packages.
+- `EXTENSIONS_CURRENT_STATE_AUDIT.md` — architecture + DX audit and prioritized roadmap.
+- `ADR-EXTENSIONS-PACKAGE-MANIFEST.md` — package manifest + installer architecture decision.
+- `ADR-MODS-SCHEMA-RESET-V1.md` — clean-slate `ui.mod.json` schema reset + breaking-change policy.
+- `ADR-MODS-BAR-ACTIONS-AND-GITHUB-SUBDIR-INSTALL.md` — Mods bar actions + GitHub subdirectory install decision.
 
 ## Notes
 
 - `docs/` is private planning memory and intentionally not part of public contributor docs.
+- `mods/first-party/` contains first-party exemplar mod packages; third-party mods should live in external repos.
 - Canonical GUI entrypoint is `apps/CodexChatHost`.
 - `apps/CodexChatApp` is shared logic + contributor CLI (`CodexChatCLI`).
 - Preferred onboarding command is `bash scripts/bootstrap.sh`.

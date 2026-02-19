@@ -1,4 +1,4 @@
-# ADR: Extension Runtime v1 (Hooks + Automations + Optional Inspector)
+# ADR: Extension Runtime v1 (Hooks + Automations + Optional Mods bar)
 
 ## Status
 
@@ -10,15 +10,15 @@ CodexChat needed a first-class extension model beyond theme overrides so third-p
 
 - turn/thread lifecycle hooks
 - scheduled automations
-- contextual inspector output without changing default two-pane IA
+- contextual modsBar output without changing default two-pane IA
 
 ## Decision
 
-- Extend `ui.mod.json` to `schemaVersion: 2` for extension sections (`hooks`, `automations`, `uiSlots`).
+- Use `ui.mod.json` `schemaVersion: 1` as the clean-slate runtime contract for theme + extension sections (`hooks`, `automations`, `uiSlots`).
 - Keep theme parsing in `CodexMods`.
 - Add extension runtime primitives in `packages/CodexExtensions`.
 - Execute extension handlers as isolated subprocesses over stdio JSONL.
-- Keep two-pane default IA; expose only an optional, collapsed-by-default right inspector slot.
+- Keep two-pane default IA; expose only an optional, collapsed-by-default right modsBar slot.
 - Gate privileged extension behavior with per-mod permission prompts.
 - Require one-time global consent for background automations when app is closed.
 

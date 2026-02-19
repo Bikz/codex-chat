@@ -18,7 +18,7 @@ Core differentiators:
 - Project safety controls for sandbox mode, approval policy, network access, and web search.
 - Chat archive persistence with searchable local metadata.
 - Skill discovery/install/enablement with per-project control.
-- UI Mods (`ui.mod.json`) with theme overrides and experimental extension hooks/automations.
+- UI Mods (`ui.mod.json`) plus package manifest (`codex.mod.json`) for install/distribution metadata.
 - Keychain-backed secret handling for API keys.
 - Deterministic contributor workflows via CLI diagnostics and fixtures.
 

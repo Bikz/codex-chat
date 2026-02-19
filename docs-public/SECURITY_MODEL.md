@@ -45,7 +45,7 @@ When runtime proposes edits in mod roots, CodexChat enforces review:
 
 ## Extension Runtime Safety
 
-Schema v2 mods can define hooks and automations. These capabilities are permission-gated.
+`ui.mod.json` schemaVersion 1 mods can define hooks and automations. These capabilities are permission-gated.
 
 - Permission keys: `projectRead`, `projectWrite`, `network`, `runtimeControl`, `runWhenAppClosed`
 - Privileged permissions are prompted on first use per mod.

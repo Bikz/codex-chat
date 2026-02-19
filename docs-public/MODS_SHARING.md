@@ -1,20 +1,20 @@
 # Create And Share Skills + Mods
 
-CodexChat supports both Skills and UI Mods. This page is the canonical builder guide for mod authoring, including extension surfaces (`schemaVersion: 2`).
+Canonical builder guide for CodexChat mods.
 
 ## Skills Quickstart
 
 1. Create a folder with `SKILL.md`.
-2. Add any helper scripts under `scripts/` if needed.
-3. Push to git and share the repo URL.
-4. In CodexChat, open `Skills`, install, and enable per project.
+2. Add helper scripts under `scripts/` if needed.
+3. Push to GitHub and share the repo URL.
+4. In CodexChat, open `Skills`, install, and enable.
 
-## Mod Quickstart
+## Mods Quickstart
 
 1. Open `Skills & Mods` -> `Mods`.
 2. Click `Create Sample` in Global Mod or Project Mod.
-3. Edit the generated `ui.mod.json`.
-4. Select the mod in the Mods picker.
+3. Edit `ui.mod.json` and `codex.mod.json`.
+4. Review + install from local path or GitHub URL.
 
 Mod roots:
 
@@ -27,43 +27,31 @@ Precedence:
 
 ## What You Can Build
 
-1. Theme Packs (`schemaVersion: 1/2`): visual token overrides.
-2. Turn/Thread Hooks: event-driven summaries or side effects.
-3. Scheduled Automations: cron-driven jobs (notes sync, logging, exports).
-4. Right Inspector Panels: optional toolbar-toggled inspector content.
+1. Theme packs.
+2. Slash command and workflow helper mods.
+3. Turn/thread summary and automation mods.
+4. `Mods bar` UI experiences (`uiSlots.modsBar`).
 
-Extension APIs are experimental and may change in minor releases.
+## Package Layout
+
+```text
+<mod-root>/
+  codex.mod.json
+  ui.mod.json
+  scripts/
+  README.md
+```
 
 ## `ui.mod.json` Schema
 
-### v1 (theme-only)
+`schemaVersion` must be `1`.
 
 ```json
 {
   "schemaVersion": 1,
   "manifest": {
-    "id": "acme.theme.solarized",
-    "name": "Solarized Theme",
-    "version": "1.0.0"
-  },
-  "theme": {
-    "palette": {
-      "accentHex": "#268BD2",
-      "backgroundHex": "#FDF6E3",
-      "panelHex": "#EEE8D5"
-    }
-  }
-}
-```
-
-### v2 (theme + extensions)
-
-```json
-{
-  "schemaVersion": 2,
-  "manifest": {
-    "id": "acme.extension.summary",
-    "name": "Summary Sidebar",
+    "id": "acme.thread-summary",
+    "name": "Thread Summary",
     "version": "1.0.0"
   },
   "theme": {},
@@ -71,89 +59,51 @@ Extension APIs are experimental and may change in minor releases.
     {
       "id": "turn-summary",
       "event": "turn.completed",
-      "handler": {
-        "command": ["node", "scripts/hook.js"],
-        "cwd": "."
-      },
-      "permissions": {
-        "projectRead": true,
-        "projectWrite": false,
-        "network": false,
-        "runtimeControl": false
-      },
-      "timeoutMs": 8000,
-      "debounceMs": 0
-    }
-  ],
-  "automations": [
-    {
-      "id": "daily-notes",
-      "schedule": "0 9 * * *",
-      "handler": {
-        "command": ["python3", "scripts/automation.py"],
-        "cwd": "."
-      },
-      "permissions": {
-        "projectRead": true,
-        "projectWrite": true,
-        "network": false,
-        "runWhenAppClosed": true
-      },
-      "timeoutMs": 60000
+      "handler": { "command": ["sh", "scripts/hook.sh"], "cwd": "." },
+      "permissions": { "projectRead": true },
+      "timeoutMs": 8000
     }
   ],
   "uiSlots": {
-    "rightInspector": {
+    "modsBar": {
       "enabled": true,
-      "title": "Summary",
-      "source": {
-        "type": "handlerOutput",
-        "hookId": "turn-summary"
-      }
+      "title": "Thread Summary",
+      "source": { "type": "handlerOutput", "hookId": "turn-summary" }
     }
   }
 }
 ```
 
-Top-level fields:
+Unsupported legacy inputs:
 
-- `schemaVersion`: `1` or `2`
-- `manifest`: `id`, `name`, `version`, optional metadata
-- `theme`, optional `darkTheme`: theme token overrides
-- `hooks` (v2 optional): event handlers
-- `automations` (v2 optional): scheduled handlers
-- `uiSlots` (v2 optional): optional inspector slot
+- `schemaVersion: 2`
+- `uiSlots.rightInspector`
 
-## Hook Events (v1)
+## Hook Events
 
 - `thread.started`
 - `turn.started`
 - `assistant.delta`
 - `action.card`
 - `approval.requested`
+- `modsBar.action`
 - `turn.completed`
 - `turn.failed`
 - `transcript.persisted`
 
-## Worker Protocol (stdio JSONL)
+## Worker Protocol
 
-Input line:
-
-```json
-{"protocol":"codexchat.extension.v1","event":"turn.completed","timestamp":"...","project":{"id":"...","path":"..."},"thread":{"id":"..."},"turn":{"id":"...","status":"completed"},"payload":{}}
-```
-
-Output line:
+Input (one JSON line):
 
 ```json
-{"ok":true,"inspector":{"title":"Current turn","markdown":"One-line summary..."},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}],"log":"..."}
+{"protocol":"codexchat.extension.v1","event":"turn.completed","timestamp":"...","project":{"id":"...","path":"..."},"thread":{"id":"..."},"payload":{}}
 ```
 
-Rules:
+Output:
 
-- One request event per process invocation.
-- Non-zero exit or malformed JSON marks execution as failed.
-- Unknown response fields are ignored.
+```json
+{"ok":true,"modsBar":{"title":"Thread Summary","scope":"thread","markdown":"- Turn completed","actions":[{"id":"clear","label":"Clear","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"summary-action"}}]},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}]}
+```
 
 ## Permissions And Safety
 
@@ -165,49 +115,33 @@ Permission keys:
 - `runtimeControl`
 - `runWhenAppClosed`
 
-Behavior:
+Rules:
 
-- Install auto-enables a mod.
-- Auto-enable does not bypass permission prompts.
-- Privileged actions prompt on first use.
-- Worker execution is bounded by timeout and output caps.
+- install does not auto-grant privileged permissions
+- privileged behavior is prompted on first use
+- automations are timeout-bounded
 
-## Automations And Background Execution
+## `Mods bar` Contract
 
-- When app is open, automations run in-app.
-- App-closed runs use launchd only when:
-  - automation requests `runWhenAppClosed: true`
-  - global background permission is granted
-  - per-mod permissions are granted
-- Background permission is prompted once globally, then enforced per automation.
+- Two-pane layout remains unchanged.
+- `Mods bar` is user-toggled and collapsed by default.
+- Content comes from `uiSlots.modsBar` + worker output.
 
-## Inspector Slot Contract
+## Install And Sharing
 
-`uiSlots.rightInspector` is optional.
+1. Commit your mod package to GitHub.
+2. In CodexChat, open `Install Mod`.
+3. Review package metadata + permissions.
+4. Install to global or project scope.
 
-- Two-pane default remains unchanged.
-- Inspector is collapsed by default.
-- Users reveal it via toolbar `Inspector` toggle.
-- Content comes from the active mod.
-- The inspector surface is non-persistent by default behavior.
+Repository policy for this cycle:
 
-## Packaging, Sharing, And Install
-
-1. Keep each mod in its own folder containing `ui.mod.json`.
-2. Commit the folder/repo to git.
-3. Share the repo URL.
-4. In CodexChat, use `Install Mod` (global or project scope).
-5. Mod installs auto-enable immediately.
-6. First privileged hook/automation run prompts for permissions.
-
-## Compatibility
-
-- `schemaVersion: 1` mods continue to work unchanged.
-- `schemaVersion: 2` enables hooks/automations/inspector surfaces.
-- If v2 sections are invalid, theme behavior remains available and extension surfaces are disabled.
+- first-party exemplar mods live under `mods/first-party` in the CodexChat repo
+- third-party mods should stay in external GitHub repositories (or local folders)
+- no hosted catalog onboarding in this cycle
 
 ## Related Docs
 
-- `MODS.md` (theme format and precedence reference)
-- `EXTENSIONS.md` (compatibility landing page)
-- `ADR-EXTENSIONS-RUNTIME.md` (runtime architecture)
+- `MODS.md`
+- `EXTENSIONS.md`
+- `EXTENSIONS_SPEC_VNEXT.md`
