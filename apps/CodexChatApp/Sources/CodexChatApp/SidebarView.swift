@@ -14,6 +14,8 @@ struct SidebarView: View {
     @State private var flashedProjectID: UUID?
     @State private var hoveredThreadID: UUID?
     @State private var isSeeMoreHovered = false
+    @State private var isThreadSelectionSuppressed = false
+    @State private var threadSelectionSuppressionGeneration = 0
 
     private let projectsPreviewCount = 3
 
@@ -371,6 +373,9 @@ struct SidebarView: View {
 
         return ZStack(alignment: .trailing) {
             Button {
+                guard !isThreadSelectionSuppressed else {
+                    return
+                }
                 model.selectThread(thread.id)
             } label: {
                 HStack(spacing: SidebarLayoutSpec.iconTextGap) {
@@ -440,6 +445,8 @@ struct SidebarView: View {
                     .accessibilityLabel(thread.isPinned ? "Remove star from \(thread.title)" : "Star \(thread.title)")
 
                     Button {
+                        suppressThreadSelectionInteraction()
+                        hoveredThreadID = nil
                         model.archiveThread(threadID: thread.id)
                     } label: {
                         Image(systemName: "archivebox")
@@ -460,6 +467,10 @@ struct SidebarView: View {
         .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
         .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
         .onHover { hovering in
+            guard !isThreadSelectionSuppressed else {
+                hoveredThreadID = nil
+                return
+            }
             let nextHoveredID = hovering ? thread.id : nil
             guard hoveredThreadID != nextHoveredID else {
                 return
@@ -599,6 +610,19 @@ struct SidebarView: View {
     private func openSettingsWindow() {
         openSettings()
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func suppressThreadSelectionInteraction(for duration: TimeInterval = 0.24) {
+        threadSelectionSuppressionGeneration += 1
+        let generation = threadSelectionSuppressionGeneration
+        isThreadSelectionSuppressed = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            guard threadSelectionSuppressionGeneration == generation else {
+                return
+            }
+            isThreadSelectionSuppressed = false
+        }
     }
 
     private var searchFieldFillColor: Color {
