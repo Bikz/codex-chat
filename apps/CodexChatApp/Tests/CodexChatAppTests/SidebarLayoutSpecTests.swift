@@ -4,7 +4,14 @@ import XCTest
 final class SidebarLayoutSpecTests: XCTestCase {
     func testTrailingWidthsMatchControlGeometry() {
         XCTAssertEqual(SidebarLayoutSpec.projectTrailingWidth, 54)
-        XCTAssertEqual(SidebarLayoutSpec.threadTrailingWidth, 54)
+        XCTAssertEqual(
+            SidebarLayoutSpec.threadTrailingWidth,
+            (SidebarLayoutSpec.controlButtonSize * 2) + SidebarLayoutSpec.threadControlSlotSpacing
+        )
+        XCTAssertGreaterThanOrEqual(
+            SidebarLayoutSpec.threadTrailingWidth,
+            SidebarLayoutSpec.timestampColumnWidth
+        )
     }
 
     func testSectionHeaderLeadingInsetAlignsToIconRailStart() {
@@ -12,7 +19,7 @@ final class SidebarLayoutSpecTests: XCTestCase {
     }
 
     func testFooterAndListHorizontalRailsMatch() {
-        XCTAssertEqual(SidebarLayoutSpec.listHorizontalInset, 16)
+        XCTAssertEqual(SidebarLayoutSpec.listHorizontalInset, 12)
         XCTAssertEqual(SidebarLayoutSpec.footerHorizontalInset, SidebarLayoutSpec.listHorizontalInset)
     }
 

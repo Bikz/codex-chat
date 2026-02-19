@@ -396,7 +396,7 @@ struct SidebarView: View {
                         .lineLimit(1)
                         .foregroundStyle(.primary)
 
-                    Spacer(minLength: SidebarLayoutSpec.controlSlotSpacing)
+                    Spacer(minLength: SidebarLayoutSpec.threadControlSlotSpacing)
 
                     Color.clear
                         .frame(width: SidebarLayoutSpec.threadTrailingWidth)
@@ -419,9 +419,10 @@ struct SidebarView: View {
             ZStack(alignment: .trailing) {
                 Group {
                     if isAwaitingInput {
-                        Text("Awaiting input")
+                        Text("Pending")
                             .font(sidebarMetaFont.weight(.medium))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     } else {
                         Text(compactRelativeAge(from: thread.updatedAt))
                             .font(sidebarMetaFont)
@@ -433,7 +434,7 @@ struct SidebarView: View {
                 .opacity(isHovered ? 0 : 1)
                 .allowsHitTesting(false)
 
-                HStack(spacing: SidebarLayoutSpec.controlSlotSpacing) {
+                HStack(spacing: SidebarLayoutSpec.threadControlSlotSpacing) {
                     Button {
                         model.togglePin(threadID: thread.id)
                     } label: {

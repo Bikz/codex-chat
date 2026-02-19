@@ -30,7 +30,6 @@ struct ChatsCanvasView: View {
             VStack(alignment: .leading, spacing: 8) {
                 FollowUpQueueView(model: model)
                 composerSurface
-                adaptiveActionRail
 
                 if let followUpStatus = model.followUpStatusMessage {
                     Text(followUpStatus)
@@ -294,70 +293,6 @@ struct ChatsCanvasView: View {
         )
         .padding(.horizontal, tokens.spacing.medium)
         .padding(.vertical, tokens.spacing.small)
-    }
-
-    private var adaptiveActionRail: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                adaptiveActionChip("Clean Desktop", systemImage: "folder.badge.gearshape") {
-                    model.triggerAdaptiveIntent(.desktopCleanup)
-                }
-                .disabled(!model.areNativeComputerActionsEnabled)
-
-                adaptiveActionChip("Calendar Today", systemImage: "calendar") {
-                    model.triggerAdaptiveIntent(.calendarToday(rangeHours: 24))
-                }
-                .disabled(!model.areNativeComputerActionsEnabled)
-
-                adaptiveActionChip("Send Message", systemImage: "message") {
-                    model.triggerAdaptiveIntent(
-                        .messagesSend(
-                            recipient: "Contact",
-                            body: "Draft message"
-                        ),
-                        originalText: "Send message to Contact: Draft message"
-                    )
-                }
-                .disabled(!model.areNativeComputerActionsEnabled)
-
-                adaptiveActionChip("Run Plan", systemImage: "list.number") {
-                    model.openPlanRunnerSheet()
-                }
-
-                adaptiveActionChip("Role Builder", systemImage: "person.crop.rectangle.badge.plus") {
-                    model.triggerAdaptiveIntent(.agentRoleSetup)
-                }
-            }
-            .padding(.horizontal, tokens.spacing.medium)
-            .padding(.vertical, 2)
-        }
-    }
-
-    private func adaptiveActionChip(
-        _ title: String,
-        systemImage: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.caption.weight(.semibold))
-                Text(title)
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     private var voiceButtonForegroundColor: Color {
