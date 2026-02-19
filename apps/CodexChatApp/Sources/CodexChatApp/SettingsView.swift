@@ -27,24 +27,29 @@ struct SettingsView: View {
     @State private var isGeneralDangerConfirmationVisible = false
     @State private var generalDangerConfirmationInput = ""
     @State private var generalDangerConfirmationError: String?
+    @State private var isRuntimeConfigExpanded = false
 
     var body: some View {
-        SettingsScaffold(
-            title: "Settings",
-            subtitle: "Global CodexChat configuration and General project controls.",
-            sidebar: {
-                sidebar
-            },
-            content: {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: tokens.spacing.small) {
-                        sectionContent
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(tokens.spacing.xSmall)
+        NavigationSplitView {
+            sidebar
+                .padding(tokens.spacing.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color(hex: tokens.palette.sidebarHex))
+                .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
+        } detail: {
+            ScrollView {
+                VStack(alignment: .leading, spacing: tokens.spacing.small) {
+                    SettingsInlineHeader(eyebrow: "Settings", title: selectedSection.title)
+                    sectionContent
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(tokens.spacing.medium)
             }
-        )
+            .background(Color(hex: tokens.palette.backgroundHex))
+        }
+        .navigationSplitViewStyle(.balanced)
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .navigationTitle("")
         .tint(Color(hex: tokens.palette.accentHex))
         .frame(minWidth: 940, minHeight: 620)
         .onAppear {
@@ -58,7 +63,17 @@ struct SettingsView: View {
         .onChange(of: model.defaultModel) { _, newValue in
             runtimeModelDraft = newValue
         }
+        .onChange(of: selectedSection) { _, newValue in
+            if newValue == .generalProject {
+                syncGeneralProjectFromModel()
+            } else if newValue != .runtime {
+                isRuntimeConfigExpanded = false
+            }
+        }
         .onReceive(model.$projectsState) { _ in
+            guard selectedSection == .generalProject else {
+                return
+            }
             syncGeneralProjectFromModel()
         }
         .confirmationDialog(
@@ -128,7 +143,9 @@ struct SettingsView: View {
                     selectedSection = section
                 }
             }
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -154,7 +171,25 @@ struct SettingsView: View {
     private var runtimeContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             runtimeDefaultsCard
-            codexConfigCard
+            runtimeConfigCard
+        }
+    }
+
+    private var runtimeConfigCard: some View {
+        Group {
+            if isRuntimeConfigExpanded {
+                codexConfigCard
+            } else {
+                SettingsSectionCard(
+                    title: "Codex Config",
+                    subtitle: "Advanced config editor. Expand only when needed to keep Runtime settings responsive."
+                ) {
+                    Button("Open Config Editor") {
+                        isRuntimeConfigExpanded = true
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
         }
     }
 
@@ -207,9 +242,9 @@ struct SettingsView: View {
                     } label: {
                         Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
                     }
-                    .buttonStyle(.bordered)
                     .disabled(model.isAccountOperationInProgress)
                 }
+                .buttonStyle(.bordered)
 
                 Text("API keys are stored in macOS Keychain. Per-project secret references are tracked in local metadata.")
                     .font(.caption)
@@ -241,7 +276,7 @@ struct SettingsView: View {
                     Button("Save") {
                         model.setDefaultModel(runtimeModelDraft)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .disabled(runtimeModelDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
@@ -405,7 +440,7 @@ struct SettingsView: View {
                         )
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .accessibilityHint("Saves updated safety controls for the General project.")
 
                 if let status = model.projectStatusMessage {
@@ -440,7 +475,7 @@ struct SettingsView: View {
                         embeddingsEnabled: generalMemoryEmbeddingsEnabled
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
 
                 Text("General project memory is stored under the General project folder in `memory/*.md`.")
                     .font(.caption)
@@ -501,7 +536,7 @@ struct SettingsView: View {
                     )
                     isSafetyApplyPromptVisible = true
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
 
                 Text("These defaults initialize new projects. After saving, you can choose whether to bulk-apply them to existing projects.")
                     .font(.caption)
@@ -540,7 +575,7 @@ struct SettingsView: View {
                 } label: {
                     Label("Copy diagnostics bundle", systemImage: "doc.zipper")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .disabled(model.isAccountOperationInProgress)
 
                 Text("Exports non-sensitive runtime state and logs as a zip archive, then copies the saved file path to clipboard.")
@@ -576,6 +611,7 @@ struct SettingsView: View {
                         Label("Reveal in Finder", systemImage: "folder")
                     }
                 }
+                .buttonStyle(.bordered)
 
                 Text("Changing the storage root moves CodexChat-managed data and requires an app restart.")
                     .font(.caption)

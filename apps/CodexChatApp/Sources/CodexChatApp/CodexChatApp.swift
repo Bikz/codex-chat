@@ -92,6 +92,34 @@ private struct WindowAccessor: NSViewRepresentable {
     func updateNSView(_: NSView, context _: Context) {}
 }
 
+private struct SettingsWindowAccessor: NSViewRepresentable {
+    func makeNSView(context _: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            configureWindow(for: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        DispatchQueue.main.async {
+            configureWindow(for: nsView)
+        }
+    }
+
+    private func configureWindow(for view: NSView) {
+        guard let window = view.window else { return }
+
+        window.styleMask.insert(.fullSizeContentView)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unifiedCompact
+        window.toolbar?.showsBaselineSeparator = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
+    }
+}
+
 private struct SettingsRoot: View {
     @ObservedObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
@@ -99,6 +127,7 @@ private struct SettingsRoot: View {
     var body: some View {
         SettingsView(model: model)
             .designTokens(resolvedTokens)
+            .background(SettingsWindowAccessor())
     }
 
     private var resolvedTokens: DesignTokens {

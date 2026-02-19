@@ -23,35 +23,40 @@ struct ProjectSettingsSheet: View {
     @State private var pendingSafetySettings: ProjectSafetySettings?
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsInlineHeader(
+                    eyebrow: "Settings",
+                    title: "Project Settings",
+                    subtitle: "Per-project trust, safety, and archived chat controls."
+                )
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let project = model.selectedProject {
-                        projectSummaryCard(project)
-                        trustAndSafetyCard(project)
-                        archivedChatsCard
-                    } else {
-                        SettingsSectionCard(
-                            title: "Project Settings",
-                            subtitle: "Select a project first."
-                        ) {
-                            Text("No project selected.")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if let status = model.projectStatusMessage {
-                        Text(status)
-                            .font(.caption)
+                if let project = model.selectedProject {
+                    projectSummaryCard(project)
+                    trustAndSafetyCard(project)
+                    archivedChatsCard
+                } else {
+                    SettingsSectionCard(
+                        title: "Project Settings",
+                        subtitle: "Select a project first."
+                    ) {
+                        Text("No project selected.")
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 2)
                     }
                 }
-                .padding(18)
+
+                if let status = model.projectStatusMessage {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 2)
+                }
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .navigationTitle("")
         .tint(Color(hex: tokens.palette.accentHex))
         .background(Color(hex: tokens.palette.backgroundHex))
         .frame(minWidth: 700, minHeight: 500)
@@ -97,29 +102,6 @@ struct ProjectSettingsSheet: View {
                 }
             )
         }
-    }
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Project Settings")
-                    .font(.title3.weight(.semibold))
-                Text("Per-project trust, safety, and archived chat controls.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Button("Done") {
-                model.closeProjectSettings()
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
-        .background(Color(hex: tokens.palette.backgroundHex))
     }
 
     private func projectSummaryCard(_ project: ProjectRecord) -> some View {
@@ -227,7 +209,7 @@ struct ProjectSettingsSheet: View {
                     Button("Save Safety Settings") {
                         saveSafetySettings()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .accessibilityHint("Saves updated safety settings for this project.")
                 }
             }
@@ -343,14 +325,7 @@ struct ProjectSettingsSheet: View {
                             .buttonStyle(.borderless)
                         }
                         .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                                .fill(Color(hex: tokens.palette.panelHex).opacity(0.72))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.08))
-                        )
+                        .tokenCard(style: .panel, radius: tokens.radius.small, strokeOpacity: 0.08)
                     }
                 }
             }
