@@ -2,7 +2,7 @@ import CoreGraphics
 
 enum SidebarLayoutSpec {
     static let listHorizontalInset: CGFloat = 16
-    static let listRowSpacing: CGFloat = 2
+    static let listRowSpacing: CGFloat = 4
     static let rowHorizontalPadding: CGFloat = 8
     static let rowVerticalPadding: CGFloat = 4
     static let rowMinHeight: CGFloat = 32
@@ -18,12 +18,12 @@ enum SidebarLayoutSpec {
     static let threadMetaColumnWidth: CGFloat = 104
     static let timestampColumnWidth: CGFloat = 44
 
-    static let sectionHeaderTopPadding: CGFloat = 12
-    static let sectionHeaderBottomPadding: CGFloat = 3
+    static let sectionHeaderTopPadding: CGFloat = 8
+    static let sectionHeaderBottomPadding: CGFloat = 2
     static let sectionHeaderLeadingInset: CGFloat = 0
     static let headerActionTrailingPadding: CGFloat = rowHorizontalPadding
 
-    static let selectedRowInset: CGFloat = 1
+    static let selectedRowInset: CGFloat = 0
     static let selectedRowCornerRadius: CGFloat = 10
 
     static let footerHeight: CGFloat = 64

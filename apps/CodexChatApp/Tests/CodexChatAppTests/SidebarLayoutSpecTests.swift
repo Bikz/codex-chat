@@ -17,10 +17,10 @@ final class SidebarLayoutSpecTests: XCTestCase {
     }
 
     func testDenseSidebarSpacingConstants() {
-        XCTAssertEqual(SidebarLayoutSpec.selectedRowInset, 1)
-        XCTAssertEqual(SidebarLayoutSpec.listRowSpacing, 2)
-        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderTopPadding, 12)
-        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderBottomPadding, 3)
+        XCTAssertEqual(SidebarLayoutSpec.selectedRowInset, 0)
+        XCTAssertEqual(SidebarLayoutSpec.listRowSpacing, 4)
+        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderTopPadding, 8)
+        XCTAssertEqual(SidebarLayoutSpec.sectionHeaderBottomPadding, 2)
     }
 
     func testHeaderActionTrailingPaddingMatchesRowHorizontalPadding() {
