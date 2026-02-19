@@ -185,7 +185,7 @@ struct LiveTurnActivityRow: View {
     let activity: LiveTurnActivityPresentation
     let detailLevel: TranscriptDetailLevel
 
-    @State private var isDetailsExpanded = true
+    @State private var isDetailsSheetPresented = false
     @Environment(\.designTokens) private var tokens
 
     var body: some View {
@@ -222,20 +222,23 @@ struct LiveTurnActivityRow: View {
             }
 
             if !activity.actions.isEmpty {
-                DisclosureGroup("View details", isExpanded: $isDetailsExpanded) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(activity.actions) { action in
-                            ActionCardRow(card: action)
-                        }
-                    }
-                    .padding(.top, 4)
+                Button("View details") {
+                    isDetailsSheetPresented = true
                 }
+                .buttonStyle(.plain)
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             }
         }
         .padding(10)
         .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
         .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
+        .sheet(isPresented: $isDetailsSheetPresented) {
+            TurnActionDetailsSheet(
+                title: "Live activity details",
+                actions: activity.actions
+            )
+        }
     }
 }
 
@@ -243,7 +246,7 @@ struct TurnSummaryRow: View {
     let summary: TurnSummaryPresentation
     let detailLevel: TranscriptDetailLevel
 
-    @State private var isDetailsExpanded = false
+    @State private var isDetailsSheetPresented = false
     @Environment(\.designTokens) private var tokens
 
     var body: some View {
@@ -258,10 +261,8 @@ struct TurnSummaryRow: View {
                     .font(.callout.weight(.semibold))
                 Spacer(minLength: 8)
 
-                Button(isDetailsExpanded ? "Hide details" : "View details") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isDetailsExpanded.toggle()
-                    }
+                Button("View details") {
+                    isDetailsSheetPresented = true
                 }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.semibold))
@@ -289,19 +290,54 @@ struct TurnSummaryRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-
-            if isDetailsExpanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(summary.actions) { action in
-                        ActionCardRow(card: action)
-                    }
-                }
-                .padding(.top, 4)
-            }
         }
         .padding(10)
         .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
         .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
+        .sheet(isPresented: $isDetailsSheetPresented) {
+            TurnActionDetailsSheet(
+                title: summary.title,
+                actions: summary.actions
+            )
+        }
+    }
+}
+
+private struct TurnActionDetailsSheet: View {
+    let title: String
+    let actions: [ActionCard]
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if actions.isEmpty {
+                    Text("No action details available.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: tokens.spacing.small) {
+                            ForEach(actions) { action in
+                                ActionCardRow(card: action)
+                            }
+                        }
+                        .padding(tokens.spacing.medium)
+                    }
+                }
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
