@@ -1,5 +1,6 @@
 @testable import CodexChatShared
 import CodexKit
+import Combine
 import XCTest
 
 @MainActor
@@ -12,17 +13,13 @@ final class VoiceCaptureStateTests: XCTestCase {
         let model = makeReadyModel(voiceService: voiceService)
 
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 5.0) {
-            if case .recording = model.voiceCaptureState {
-                return true
-            }
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 5.0) { state in
+            if case .recording = state { return true }
             return false
         }
 
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 3.0) {
-            model.voiceCaptureState == .idle
-        }
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { $0 == .idle }
 
         XCTAssertEqual(model.composerText, "calendar check for today")
         XCTAssertEqual(voiceService.startCaptureCallCount, 1)
@@ -36,10 +33,8 @@ final class VoiceCaptureStateTests: XCTestCase {
         let model = makeReadyModel(voiceService: voiceService)
         model.toggleVoiceCapture()
 
-        try await eventually(timeoutSeconds: 3.0) {
-            if case .failed = model.voiceCaptureState {
-                return true
-            }
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { state in
+            if case .failed = state { return true }
             return false
         }
 
@@ -60,9 +55,11 @@ final class VoiceCaptureStateTests: XCTestCase {
         model.voiceAutoStopDurationNanoseconds = 30_000_000
 
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 3.0) {
-            model.voiceCaptureState == .idle
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { state in
+            if case .recording = state { return true }
+            return false
         }
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { $0 == .idle }
 
         XCTAssertEqual(model.composerText, "auto-stopped transcription")
         XCTAssertEqual(voiceService.stopCaptureCallCount, 1)
@@ -75,15 +72,13 @@ final class VoiceCaptureStateTests: XCTestCase {
 
         let model = makeReadyModel(voiceService: voiceService)
         model.toggleVoiceCapture()
-        try await eventually(timeoutSeconds: 8.0) {
-            if case .recording = model.voiceCaptureState {
-                return true
-            }
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 8.0) { state in
+            if case .recording = state { return true }
             return false
         }
 
         model.cancelVoiceCapture()
-        XCTAssertEqual(model.voiceCaptureState, .idle)
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .idle }
         XCTAssertEqual(voiceService.cancelCaptureCallCount, 1)
     }
 
@@ -95,15 +90,15 @@ final class VoiceCaptureStateTests: XCTestCase {
         let model = makeReadyModel(voiceService: voiceService)
         model.toggleVoiceCapture()
 
-        try await eventually(timeoutSeconds: 3.0) {
-            model.isVoiceCaptureRecording && model.voiceCaptureElapsedText != nil
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { state in
+            if case .recording = state { return true }
+            return false
         }
+        try await waitForVoiceCaptureElapsedText(model, timeoutSeconds: 3.0)
 
         model.toggleVoiceCapture()
 
-        try await eventually(timeoutSeconds: 3.0) {
-            model.voiceCaptureState == .idle
-        }
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { $0 == .idle }
 
         XCTAssertNil(model.voiceCaptureElapsedText)
     }
@@ -122,16 +117,43 @@ final class VoiceCaptureStateTests: XCTestCase {
         return model
     }
 
-    private func eventually(timeoutSeconds: TimeInterval, condition: @escaping () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if condition() {
-                return
-            }
-            await Task.yield()
-            try await Task.sleep(nanoseconds: 20_000_000)
+    private func waitForVoiceCaptureState(
+        _ model: AppModel,
+        timeoutSeconds: TimeInterval,
+        predicate: @escaping (AppModel.VoiceCaptureState) -> Bool
+    ) async throws {
+        if predicate(model.voiceCaptureState) {
+            return
         }
-        throw XCTestError(.failureWhileWaiting)
+
+        let expectation = XCTestExpectation(description: "voice-capture-state")
+        let cancellable = model.$voiceCaptureState.sink { state in
+            if predicate(state) {
+                expectation.fulfill()
+            }
+        }
+        defer { cancellable.cancel() }
+
+        await fulfillment(of: [expectation], timeout: timeoutSeconds)
+    }
+
+    private func waitForVoiceCaptureElapsedText(
+        _ model: AppModel,
+        timeoutSeconds: TimeInterval
+    ) async throws {
+        if model.voiceCaptureElapsedText != nil {
+            return
+        }
+
+        let expectation = XCTestExpectation(description: "voice-capture-elapsed")
+        let cancellable = model.$voiceCaptureElapsedText.sink { elapsed in
+            if elapsed != nil {
+                expectation.fulfill()
+            }
+        }
+        defer { cancellable.cancel() }
+
+        await fulfillment(of: [expectation], timeout: timeoutSeconds)
     }
 }
 
