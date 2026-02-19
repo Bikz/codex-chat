@@ -10,6 +10,7 @@ struct ChatsCanvasView: View {
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isComposerFocused: Bool
     @State private var isComposerDropTargeted = false
+    @State private var revealedTraceTurnIDs: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,6 +59,7 @@ struct ChatsCanvasView: View {
             }
         }
         .onChange(of: model.selectedThreadID) { _, _ in
+            revealedTraceTurnIDs.removeAll()
             Task {
                 await model.refreshModsBarForSelectedThread()
             }
@@ -610,16 +612,42 @@ struct ChatsCanvasView: View {
             case let .loaded(entries):
                 conversationWithModsBar {
                     let presentationRows = model.presentationRowsForSelectedConversation(entries: entries)
+                    let indexedRows = Array(presentationRows.enumerated())
 
                     ScrollViewReader { proxy in
-                        List(presentationRows) { row in
+                        List(indexedRows, id: \.element.id) { index, row in
                             switch row {
                             case let .message(message):
-                                MessageRow(
-                                    message: message,
-                                    tokens: tokens,
-                                    allowsExternalMarkdownContent: model.isSelectedProjectTrusted
-                                )
+                                Group {
+                                    if let traceTurnID = traceTurnIDForAssistantMessage(
+                                        at: index,
+                                        rows: presentationRows,
+                                        message: message
+                                    ) {
+                                        MessageRow(
+                                            message: message,
+                                            tokens: tokens,
+                                            allowsExternalMarkdownContent: model.isSelectedProjectTrusted
+                                        )
+                                        .contextMenu {
+                                            if revealedTraceTurnIDs.contains(traceTurnID) {
+                                                Button("Hide traces") {
+                                                    revealedTraceTurnIDs.remove(traceTurnID)
+                                                }
+                                            } else {
+                                                Button("Show traces") {
+                                                    revealedTraceTurnIDs.insert(traceTurnID)
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        MessageRow(
+                                            message: message,
+                                            tokens: tokens,
+                                            allowsExternalMarkdownContent: model.isSelectedProjectTrusted
+                                        )
+                                    }
+                                }
                                 .padding(.vertical, tokens.spacing.xSmall)
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
@@ -680,22 +708,27 @@ struct ChatsCanvasView: View {
                                     )
                                 )
                             case let .turnSummary(summary):
-                                TurnSummaryRow(
-                                    summary: summary,
-                                    detailLevel: model.transcriptDetailLevel,
-                                    model: model
-                                )
-                                .padding(.vertical, tokens.spacing.xSmall)
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(
-                                    EdgeInsets(
-                                        top: 0,
-                                        leading: tokens.spacing.medium,
-                                        bottom: 0,
-                                        trailing: tokens.spacing.medium
+                                if revealedTraceTurnIDs.contains(summary.id) {
+                                    TurnSummaryRow(
+                                        summary: summary,
+                                        detailLevel: model.transcriptDetailLevel,
+                                        model: model,
+                                        onHide: {
+                                            revealedTraceTurnIDs.remove(summary.id)
+                                        }
                                     )
-                                )
+                                    .padding(.vertical, tokens.spacing.xSmall)
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(
+                                        EdgeInsets(
+                                            top: 0,
+                                            leading: tokens.spacing.medium,
+                                            bottom: 0,
+                                            trailing: tokens.spacing.medium
+                                        )
+                                    )
+                                }
                             }
                         }
                         .listStyle(.plain)
@@ -748,6 +781,33 @@ struct ChatsCanvasView: View {
                 proxy.scrollTo(lastID, anchor: .bottom)
             }
         }
+    }
+
+    private func traceTurnIDForAssistantMessage(
+        at index: Int,
+        rows: [TranscriptPresentationRow],
+        message: ChatMessage
+    ) -> UUID? {
+        guard message.role == .assistant else {
+            return nil
+        }
+
+        var cursor = index + 1
+        while cursor < rows.count {
+            switch rows[cursor] {
+            case let .turnSummary(summary):
+                return summary.id
+            case let .message(nextMessage):
+                if nextMessage.role == .user {
+                    return nil
+                }
+            case .action, .liveActivity:
+                break
+            }
+            cursor += 1
+        }
+
+        return nil
     }
 }
 

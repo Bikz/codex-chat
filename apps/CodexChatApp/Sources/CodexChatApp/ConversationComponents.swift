@@ -305,8 +305,7 @@ struct TurnSummaryRow: View {
     let summary: TurnSummaryPresentation
     let detailLevel: TranscriptDetailLevel
     let model: AppModel
-
-    @State private var isExpanded = false
+    var onHide: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -322,17 +321,17 @@ struct TurnSummaryRow: View {
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
-                Button(isExpanded ? "Hide" : "Show") {
-                    isExpanded.toggle()
+                if let onHide {
+                    Button("Hide traces") {
+                        onHide()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
             }
 
-            if isExpanded {
-                InlineActionDetailsList(actions: summary.actions, model: model)
-            }
+            InlineActionDetailsList(actions: summary.actions, model: model)
         }
     }
 
