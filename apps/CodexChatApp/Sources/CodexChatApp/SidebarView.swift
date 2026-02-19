@@ -402,7 +402,7 @@ struct SidebarView: View {
                         .frame(width: SidebarLayoutSpec.threadTrailingWidth)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, SidebarLayoutSpec.rowHorizontalPadding)
+                .padding(.horizontal, SidebarLayoutSpec.threadRowHorizontalPadding)
                 .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
                 .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
             }
@@ -469,7 +469,7 @@ struct SidebarView: View {
                 .allowsHitTesting(isHovered)
             }
             .frame(width: SidebarLayoutSpec.threadTrailingWidth, alignment: .trailing)
-            .padding(.trailing, SidebarLayoutSpec.rowHorizontalPadding)
+            .padding(.trailing, SidebarLayoutSpec.threadRowHorizontalPadding)
         }
         .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
         .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)

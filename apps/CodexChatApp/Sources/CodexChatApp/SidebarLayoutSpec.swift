@@ -4,6 +4,7 @@ enum SidebarLayoutSpec {
     static let listHorizontalInset: CGFloat = 12
     static let listRowSpacing: CGFloat = 4
     static let rowHorizontalPadding: CGFloat = 8
+    static let threadRowHorizontalPadding: CGFloat = 7
     static let rowVerticalPadding: CGFloat = 4
     static let rowMinHeight: CGFloat = 32
     static let searchMinHeight: CGFloat = 40

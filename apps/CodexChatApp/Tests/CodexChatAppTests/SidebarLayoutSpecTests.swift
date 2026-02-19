@@ -32,6 +32,7 @@ final class SidebarLayoutSpecTests: XCTestCase {
 
     func testHeaderActionTrailingPaddingMatchesRowHorizontalPadding() {
         XCTAssertEqual(SidebarLayoutSpec.headerActionTrailingPadding, SidebarLayoutSpec.rowHorizontalPadding)
+        XCTAssertLessThan(SidebarLayoutSpec.threadRowHorizontalPadding, SidebarLayoutSpec.rowHorizontalPadding)
     }
 
     func testHitTargetsMeetMinimums() {
