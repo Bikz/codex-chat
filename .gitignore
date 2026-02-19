@@ -24,6 +24,7 @@ node_modules/
 # Logs and temp
 *.log
 .tmp/
+.codexchat/
 
 # Local editor and env
 .idea/
