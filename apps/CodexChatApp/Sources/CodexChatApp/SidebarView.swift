@@ -118,7 +118,7 @@ struct SidebarView: View {
                     SidebarSectionHeader(
                         title: "General",
                         font: sidebarSectionFont,
-                        actionSystemImage: "plus",
+                        actionSystemImage: "square.and.pencil",
                         actionAccessibilityLabel: "New chat",
                         trailingAlignmentWidth: threadTrailingWidth,
                         action: model.createGlobalNewChat
@@ -181,11 +181,11 @@ struct SidebarView: View {
         .padding(.horizontal, rowHorizontalPadding)
         .padding(.vertical, rowVerticalPadding + 1)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(searchFieldFillColor)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(
                     searchFieldBorderColor,
                     lineWidth: 1
@@ -247,18 +247,48 @@ struct SidebarView: View {
         let isHovered = hoveredProjectID == project.id
         let isFlashed = flashedProjectID == project.id
 
-        return HStack(spacing: 8) {
-            Image(systemName: projectLeadingIconName(isExpanded: isExpanded, isHovered: isHovered))
-                .font(sidebarBodyIconFont)
-                .foregroundStyle(.secondary)
-                .frame(width: iconColumnWidth, alignment: .leading)
+        return ZStack(alignment: .trailing) {
+            Button {
+                flashedProjectID = project.id
+                withAnimation(.easeInOut(duration: tokens.motion.transitionDuration)) {
+                    model.toggleProjectExpanded(project.id)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                    if flashedProjectID == project.id {
+                        flashedProjectID = nil
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: projectLeadingIconName(isExpanded: isExpanded, isHovered: isHovered))
+                        .font(sidebarBodyIconFont)
+                        .foregroundStyle(.secondary)
+                        .frame(width: iconColumnWidth, alignment: .leading)
 
-            Text(project.name)
-                .font(sidebarBodyFont)
-                .lineLimit(1)
-                .foregroundStyle(.primary)
+                    Text(project.name)
+                        .font(sidebarBodyFont)
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
 
-            Spacer(minLength: 6)
+                    Spacer(minLength: 6)
+
+                    Color.clear
+                        .frame(width: projectTrailingWidth)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, rowHorizontalPadding)
+                .padding(.vertical, rowVerticalPadding)
+                .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
+            }
+            .buttonStyle(SidebarRowButtonStyle(
+                isActive: isSelected,
+                cornerRadius: 5,
+                isHovered: isHovered || isFlashed
+            ))
+            .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .accessibilityLabel(project.name)
+            .accessibilityHint("Selects this project and toggles its thread list.")
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
             HStack(spacing: controlSlotSpacing) {
                 Button {
@@ -275,6 +305,7 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .help("New thread")
+                .accessibilityLabel("New thread in \(project.name)")
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
 
@@ -292,46 +323,19 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Project settings")
+                .accessibilityLabel("Open settings for \(project.name)")
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
             }
             .frame(width: projectTrailingWidth, alignment: .trailing)
+            .padding(.trailing, rowHorizontalPadding)
         }
-        .padding(.horizontal, rowHorizontalPadding)
-        .padding(.vertical, rowVerticalPadding)
         .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(rowFillColor(isActive: isSelected, isHovered: isHovered || isFlashed))
-        )
-        .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 1, style: .continuous)
-                    .fill(Color(hex: tokens.palette.accentHex).opacity(0.85))
-                    .frame(width: 2)
-                    .padding(.vertical, 5)
-                    .padding(.leading, 2)
-            }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .onHover { hovering in
             withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
                 hoveredProjectID = hovering ? project.id : (hoveredProjectID == project.id ? nil : hoveredProjectID)
             }
         }
-        .onTapGesture {
-            flashedProjectID = project.id
-            withAnimation(.easeInOut(duration: tokens.motion.transitionDuration)) {
-                model.toggleProjectExpanded(project.id)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                if flashedProjectID == project.id {
-                    flashedProjectID = nil
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(project.name)
     }
 
     @ViewBuilder
@@ -350,13 +354,37 @@ struct SidebarView: View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
 
-        return HStack(spacing: 8) {
-            Text(thread.title)
-                .font(sidebarBodyFont)
-                .lineLimit(1)
-                .foregroundStyle(.primary)
+        return ZStack(alignment: .trailing) {
+            Button {
+                model.selectThread(thread.id)
+            } label: {
+                HStack(spacing: 8) {
+                    threadStatusMarker(for: thread.id)
 
-            Spacer(minLength: 6)
+                    Text(thread.title)
+                        .font(sidebarBodyFont)
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+
+                    Spacer(minLength: 6)
+
+                    Color.clear
+                        .frame(width: threadTrailingWidth)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, rowHorizontalPadding)
+                .padding(.vertical, rowVerticalPadding)
+                .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
+            }
+            .buttonStyle(SidebarRowButtonStyle(
+                isActive: isSelected,
+                cornerRadius: 5,
+                isHovered: isHovered
+            ))
+            .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .accessibilityLabel(thread.title)
+            .accessibilityHint(threadStatusHint(threadID: thread.id))
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
             ZStack(alignment: .trailing) {
                 Text(compactRelativeAge(from: thread.updatedAt))
@@ -376,6 +404,7 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .help(thread.isPinned ? "Unpin chat" : "Pin chat")
+                    .accessibilityLabel(thread.isPinned ? "Unpin \(thread.title)" : "Pin \(thread.title)")
 
                     Button {
                         model.archiveThread(threadID: thread.id)
@@ -387,49 +416,51 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Archive chat")
+                    .accessibilityLabel("Archive \(thread.title)")
                 }
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
             }
             .frame(width: threadTrailingWidth, alignment: .trailing)
+            .padding(.trailing, rowHorizontalPadding)
         }
-        .padding(.horizontal, rowHorizontalPadding)
-        .padding(.vertical, rowVerticalPadding)
         .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(rowFillColor(isActive: isSelected, isHovered: isHovered))
-        )
-        .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 1, style: .continuous)
-                    .fill(Color(hex: tokens.palette.accentHex).opacity(0.85))
-                    .frame(width: 2)
-                    .padding(.vertical, 5)
-                    .padding(.leading, 2)
-            }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-        .onTapGesture {
-            model.selectThread(thread.id)
-        }
         .onHover { hovering in
             withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
                 hoveredThreadID = hovering ? thread.id : (hoveredThreadID == thread.id ? nil : hoveredThreadID)
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(thread.title)
     }
 
-    private func rowFillColor(isActive: Bool, isHovered: Bool) -> Color {
-        if isActive {
-            return Color.primary.opacity(tokens.surfaces.activeOpacity)
+    @ViewBuilder
+    private func threadStatusMarker(for threadID: UUID) -> some View {
+        if model.isThreadWorking(threadID) {
+            ProgressView()
+                .controlSize(.small)
+                .scaleEffect(0.72)
+                .frame(width: iconColumnWidth, alignment: .leading)
+                .accessibilityLabel("Working")
+        } else if model.isThreadUnread(threadID) {
+            Circle()
+                .fill(Color(hex: tokens.palette.accentHex).opacity(0.9))
+                .frame(width: 8, height: 8)
+                .frame(width: iconColumnWidth, alignment: .leading)
+                .accessibilityLabel("Unread updates")
+        } else {
+            Color.clear
+                .frame(width: iconColumnWidth, height: 8, alignment: .leading)
+                .accessibilityHidden(true)
         }
-        if isHovered {
-            return Color.primary.opacity(tokens.surfaces.raisedOpacity)
+    }
+
+    private func threadStatusHint(threadID: UUID) -> String {
+        if model.isThreadWorking(threadID) {
+            return "Codex is currently working in this chat."
         }
-        return .clear
+        if model.isThreadUnread(threadID) {
+            return "This chat has unread updates."
+        }
+        return "Open chat."
     }
 
     private func compactRelativeAge(from date: Date) -> String {

@@ -29,6 +29,17 @@ final class SidebarSelectionTests: XCTestCase {
         XCTAssertTrue(model.isProjectSidebarVisuallySelected(projectID))
     }
 
+    func testToggleProjectExpandedTracksExpandedState() {
+        let model = makeModel()
+        let projectID = UUID()
+
+        model.toggleProjectExpanded(projectID)
+        XCTAssertTrue(model.expandedProjectIDs.contains(projectID))
+
+        model.toggleProjectExpanded(projectID)
+        XCTAssertFalse(model.expandedProjectIDs.contains(projectID))
+    }
+
     private func makeModel() -> AppModel {
         let model = AppModel(
             repositories: nil,
