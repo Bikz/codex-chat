@@ -96,7 +96,7 @@ struct SidebarView: View {
                     actionAccessibilityLabel: "New project",
                     trailingAlignmentWidth: SidebarLayoutSpec.projectTrailingWidth,
                     horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
-                    trailingPadding: 0,
+                    trailingPadding: SidebarLayoutSpec.headerActionTrailingPadding,
                     leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
                     topPadding: SidebarLayoutSpec.sectionHeaderTopPadding,
                     bottomPadding: SidebarLayoutSpec.sectionHeaderBottomPadding,
@@ -118,7 +118,7 @@ struct SidebarView: View {
                     actionAccessibilityLabel: "New chat",
                     trailingAlignmentWidth: SidebarLayoutSpec.threadTrailingWidth,
                     horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
-                    trailingPadding: 0,
+                    trailingPadding: SidebarLayoutSpec.headerActionTrailingPadding,
                     leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
                     topPadding: SidebarLayoutSpec.sectionHeaderTopPadding,
                     bottomPadding: SidebarLayoutSpec.sectionHeaderBottomPadding,
@@ -131,6 +131,7 @@ struct SidebarView: View {
             .listRowSeparator(.hidden)
         }
         .listStyle(.sidebar)
+        .listRowSpacing(SidebarLayoutSpec.listRowSpacing)
         .scrollContentBackground(.hidden)
         .background(sidebarBackgroundColor)
         .listRowInsets(EdgeInsets(
@@ -371,6 +372,7 @@ struct SidebarView: View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
         let rowSpacing = isGeneralThread ? 0 : SidebarLayoutSpec.iconTextGap
+        let isAwaitingInput = model.hasPendingApproval(for: thread.id)
 
         return ZStack(alignment: .trailing) {
             Button {
@@ -416,13 +418,21 @@ struct SidebarView: View {
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
             ZStack(alignment: .trailing) {
-                Text(compactRelativeAge(from: thread.updatedAt))
-                    .font(sidebarMetaFont)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(width: SidebarLayoutSpec.timestampColumnWidth, alignment: .trailing)
-                    .opacity(isHovered ? 0 : 1)
-                    .allowsHitTesting(false)
+                Group {
+                    if isAwaitingInput {
+                        Text("Awaiting input")
+                            .font(sidebarMetaFont.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(compactRelativeAge(from: thread.updatedAt))
+                            .font(sidebarMetaFont)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: SidebarLayoutSpec.threadMetaColumnWidth, alignment: .trailing)
+                .opacity(isHovered ? 0 : 1)
+                .allowsHitTesting(false)
 
                 HStack(spacing: SidebarLayoutSpec.controlSlotSpacing) {
                     Button {
@@ -478,7 +488,13 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func threadStatusMarker(for threadID: UUID) -> some View {
-        if model.isThreadWorking(threadID) {
+        if model.hasPendingApproval(for: threadID) {
+            Image(systemName: "questionmark.circle.fill")
+                .font(sidebarMetaIconFont)
+                .foregroundStyle(Color(hex: tokens.palette.accentHex).opacity(0.9))
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
+                .accessibilityLabel("Awaiting input")
+        } else if model.isThreadWorking(threadID) {
             ProgressView()
                 .controlSize(.small)
                 .scaleEffect(0.72)
@@ -498,6 +514,9 @@ struct SidebarView: View {
     }
 
     private func threadStatusHint(threadID: UUID) -> String {
+        if model.hasPendingApproval(for: threadID) {
+            return "This chat is awaiting your approval input."
+        }
         if model.isThreadWorking(threadID) {
             return "Codex is currently working in this chat."
         }
