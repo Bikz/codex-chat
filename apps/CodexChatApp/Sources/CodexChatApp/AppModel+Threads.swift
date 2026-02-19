@@ -358,6 +358,7 @@ extension AppModel {
 
         let title = "New chat"
         let thread = try await threadRepository.createThread(projectID: selectedProjectID, title: title)
+        let isGeneralProject = generalProject?.id == selectedProjectID
         pendingFirstTurnTitleThreadIDs.insert(thread.id)
 
         try await chatSearchRepository?.indexThreadTitle(
@@ -366,20 +367,80 @@ extension AppModel {
             title: title
         )
 
-        if generalProject?.id == selectedProjectID {
-            try await refreshGeneralThreads(generalProjectID: selectedProjectID)
-        } else {
-            try await refreshThreads()
-        }
-        try await refreshArchivedThreads()
         selectedThreadID = thread.id
         draftChatProjectID = nil
         detailDestination = .thread
+        seedThreadListForMaterializedDraft(thread, projectID: selectedProjectID, isGeneralProject: isGeneralProject)
+        followUpQueueByThreadID[thread.id] = []
+        clearUnreadMarker(for: thread.id)
         try await persistSelection()
-        try await refreshFollowUpQueue(threadID: thread.id)
         refreshConversationState()
+        schedulePostMaterializationRefresh(
+            threadID: thread.id,
+            projectID: selectedProjectID,
+            isGeneralProject: isGeneralProject
+        )
         appendLog(.info, "Created thread from draft chat \(thread.id.uuidString)")
         return thread.id
+    }
+
+    private func seedThreadListForMaterializedDraft(_ thread: ThreadRecord, projectID: UUID, isGeneralProject: Bool) {
+        if isGeneralProject {
+            var updatedThreads = generalThreads
+            if !updatedThreads.contains(where: { $0.id == thread.id }) {
+                updatedThreads.append(thread)
+                updatedThreads.sort(by: Self.threadsListSortsBefore(_:_:))
+                generalThreadsState = .loaded(updatedThreads)
+            }
+            return
+        }
+
+        guard selectedProjectID == projectID else {
+            return
+        }
+
+        var updatedThreads = threads
+        if !updatedThreads.contains(where: { $0.id == thread.id }) {
+            updatedThreads.append(thread)
+            updatedThreads.sort(by: Self.threadsListSortsBefore(_:_:))
+            threadsState = .loaded(updatedThreads)
+        }
+    }
+
+    private func schedulePostMaterializationRefresh(threadID: UUID, projectID: UUID, isGeneralProject: Bool) {
+        Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+
+            do {
+                try await refreshFollowUpQueue(threadID: threadID)
+
+                if isGeneralProject {
+                    try await refreshGeneralThreads(generalProjectID: projectID)
+                } else if selectedProjectID == projectID {
+                    try await refreshThreads()
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                appendLog(
+                    .warning,
+                    "Deferred draft materialization refresh failed for thread \(threadID.uuidString): \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    private static func threadsListSortsBefore(_ lhs: ThreadRecord, _ rhs: ThreadRecord) -> Bool {
+        if lhs.isPinned != rhs.isPinned {
+            return lhs.isPinned && !rhs.isPinned
+        }
+        if lhs.updatedAt != rhs.updatedAt {
+            return lhs.updatedAt > rhs.updatedAt
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     func rehydrateThreadTranscript(threadID: UUID, limit: Int = 50) async {
