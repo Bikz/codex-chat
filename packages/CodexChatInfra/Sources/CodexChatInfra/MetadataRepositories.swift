@@ -14,6 +14,10 @@ public struct MetadataRepositories: Sendable {
     public let extensionPermissionRepository: any ExtensionPermissionRepository
     public let extensionHookStateRepository: any ExtensionHookStateRepository
     public let extensionAutomationStateRepository: any ExtensionAutomationStateRepository
+    public let computerActionPermissionRepository: any ComputerActionPermissionRepository
+    public let computerActionRunRepository: any ComputerActionRunRepository
+    public let planRunRepository: any PlanRunRepository
+    public let planRunTaskRepository: any PlanRunTaskRepository
 
     public init(database: MetadataDatabase) {
         projectRepository = SQLiteProjectRepository(dbQueue: database.dbQueue)
@@ -28,5 +32,9 @@ public struct MetadataRepositories: Sendable {
         extensionPermissionRepository = SQLiteExtensionPermissionRepository(dbQueue: database.dbQueue)
         extensionHookStateRepository = SQLiteExtensionHookStateRepository(dbQueue: database.dbQueue)
         extensionAutomationStateRepository = SQLiteExtensionAutomationStateRepository(dbQueue: database.dbQueue)
+        computerActionPermissionRepository = SQLiteComputerActionPermissionRepository(dbQueue: database.dbQueue)
+        computerActionRunRepository = SQLiteComputerActionRunRepository(dbQueue: database.dbQueue)
+        planRunRepository = SQLitePlanRunRepository(dbQueue: database.dbQueue)
+        planRunTaskRepository = SQLitePlanRunTaskRepository(dbQueue: database.dbQueue)
     }
 }

@@ -292,6 +292,86 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v16_add_computer_actions_and_plan_runs") { db in
+            try db.create(table: "computer_action_permissions") { table in
+                table.column("actionID", .text).notNull()
+                table.column("projectKey", .text).notNull()
+                table.column("projectID", .text)
+                table.column("decision", .text).notNull()
+                table.column("decidedAt", .datetime).notNull()
+                table.primaryKey(["actionID", "projectKey"])
+            }
+            try db.create(
+                index: "idx_computer_action_permissions_project",
+                on: "computer_action_permissions",
+                columns: ["projectKey", "actionID"]
+            )
+
+            try db.create(table: "computer_action_runs") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("actionID", .text).notNull()
+                table.column("runContextID", .text).notNull()
+                table.column("threadID", .text)
+                    .references("threads", onDelete: .cascade)
+                table.column("projectID", .text)
+                    .references("projects", onDelete: .cascade)
+                table.column("phase", .text).notNull()
+                table.column("status", .text).notNull()
+                table.column("previewArtifact", .text)
+                table.column("summary", .text)
+                table.column("errorMessage", .text)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_computer_action_runs_context_updated",
+                on: "computer_action_runs",
+                columns: ["runContextID", "updatedAt"]
+            )
+            try db.create(
+                index: "idx_computer_action_runs_thread_updated",
+                on: "computer_action_runs",
+                columns: ["threadID", "updatedAt"]
+            )
+
+            try db.create(table: "plan_runs") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("threadID", .text).notNull()
+                    .references("threads", onDelete: .cascade)
+                table.column("projectID", .text).notNull()
+                    .references("projects", onDelete: .cascade)
+                table.column("title", .text).notNull()
+                table.column("sourcePath", .text)
+                table.column("status", .text).notNull()
+                table.column("totalTasks", .integer).notNull().defaults(to: 0)
+                table.column("completedTasks", .integer).notNull().defaults(to: 0)
+                table.column("lastError", .text)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_plan_runs_thread_updated",
+                on: "plan_runs",
+                columns: ["threadID", "updatedAt"]
+            )
+
+            try db.create(table: "plan_run_tasks") { table in
+                table.column("planRunID", .text).notNull()
+                    .references("plan_runs", onDelete: .cascade)
+                table.column("taskID", .text).notNull()
+                table.column("title", .text).notNull()
+                table.column("dependencyIDs", .text).notNull()
+                table.column("status", .text).notNull()
+                table.column("updatedAt", .datetime).notNull()
+                table.primaryKey(["planRunID", "taskID"])
+            }
+            try db.create(
+                index: "idx_plan_run_tasks_plan_status",
+                on: "plan_run_tasks",
+                columns: ["planRunID", "status"]
+            )
+        }
+
         return migrator
     }
 }

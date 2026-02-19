@@ -105,3 +105,34 @@ public protocol ExtensionAutomationStateRepository: Sendable {
     func list(modID: String) async throws -> [ExtensionAutomationStateRecord]
     func upsert(_ record: ExtensionAutomationStateRecord) async throws -> ExtensionAutomationStateRecord
 }
+
+public protocol ComputerActionPermissionRepository: Sendable {
+    func list(projectID: UUID?) async throws -> [ComputerActionPermissionRecord]
+    func get(actionID: String, projectID: UUID?) async throws -> ComputerActionPermissionRecord?
+    func set(
+        actionID: String,
+        projectID: UUID?,
+        decision: ComputerActionPermissionDecision,
+        decidedAt: Date
+    ) async throws -> ComputerActionPermissionRecord
+}
+
+public protocol ComputerActionRunRepository: Sendable {
+    func list(threadID: UUID?) async throws -> [ComputerActionRunRecord]
+    func list(runContextID: String) async throws -> [ComputerActionRunRecord]
+    func upsert(_ record: ComputerActionRunRecord) async throws -> ComputerActionRunRecord
+    func latest(runContextID: String) async throws -> ComputerActionRunRecord?
+}
+
+public protocol PlanRunRepository: Sendable {
+    func list(threadID: UUID) async throws -> [PlanRunRecord]
+    func get(id: UUID) async throws -> PlanRunRecord?
+    func upsert(_ record: PlanRunRecord) async throws -> PlanRunRecord
+    func delete(id: UUID) async throws
+}
+
+public protocol PlanRunTaskRepository: Sendable {
+    func list(planRunID: UUID) async throws -> [PlanRunTaskRecord]
+    func upsert(_ record: PlanRunTaskRecord) async throws -> PlanRunTaskRecord
+    func replace(planRunID: UUID, tasks: [PlanRunTaskRecord]) async throws
+}

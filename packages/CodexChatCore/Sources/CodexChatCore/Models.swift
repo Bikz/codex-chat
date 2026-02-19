@@ -351,6 +351,9 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case extensionsBackgroundAutomationPermission = "extensions.background_automation_permission"
     case extensionsModsBarVisibilityByThread = "extensions.mods_bar_visibility_by_thread"
     case extensionsLegacyModsBarVisibility = "extensions.inspector_visibility_by_thread"
+    case advancedExecutableModsUnlock = "mods.advanced_executable_unlock"
+    case advancedExecutableModsMigrationV1 = "mods.advanced_executable_unlock_migration_v1"
+    case workerTraceCacheByTurn = "runtime.worker_trace_cache_by_turn"
     case transcriptDetailLevel = "transcript_detail_level"
 }
 
@@ -472,6 +475,175 @@ public struct ExtensionAutomationStateRecord: Hashable, Sendable, Codable {
         self.lastStatus = lastStatus
         self.lastError = lastError
         self.launchdLabel = launchdLabel
+    }
+}
+
+public enum ComputerActionSafetyLevel: String, CaseIterable, Hashable, Sendable, Codable {
+    case readOnly = "read-only"
+    case externallyVisible = "externally-visible"
+    case destructive
+}
+
+public enum ComputerActionPermissionDecision: String, CaseIterable, Hashable, Sendable, Codable {
+    case granted
+    case denied
+}
+
+public struct ComputerActionPermissionRecord: Hashable, Sendable, Codable {
+    public let actionID: String
+    public let projectID: UUID?
+    public var decision: ComputerActionPermissionDecision
+    public var decidedAt: Date
+
+    public init(
+        actionID: String,
+        projectID: UUID? = nil,
+        decision: ComputerActionPermissionDecision,
+        decidedAt: Date = Date()
+    ) {
+        self.actionID = actionID
+        self.projectID = projectID
+        self.decision = decision
+        self.decidedAt = decidedAt
+    }
+}
+
+public enum ComputerActionRunPhase: String, CaseIterable, Hashable, Sendable, Codable {
+    case preview
+    case execute
+    case undo
+}
+
+public enum ComputerActionRunStatus: String, CaseIterable, Hashable, Sendable, Codable {
+    case previewReady = "preview-ready"
+    case awaitingConfirmation = "awaiting-confirmation"
+    case executed
+    case failed
+    case denied
+    case undone
+}
+
+public struct ComputerActionRunRecord: Identifiable, Hashable, Sendable, Codable {
+    public let id: UUID
+    public let actionID: String
+    public let runContextID: String
+    public let threadID: UUID?
+    public let projectID: UUID?
+    public var phase: ComputerActionRunPhase
+    public var status: ComputerActionRunStatus
+    public var previewArtifact: String?
+    public var summary: String?
+    public var errorMessage: String?
+    public let createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        actionID: String,
+        runContextID: String,
+        threadID: UUID? = nil,
+        projectID: UUID? = nil,
+        phase: ComputerActionRunPhase,
+        status: ComputerActionRunStatus,
+        previewArtifact: String? = nil,
+        summary: String? = nil,
+        errorMessage: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.actionID = actionID
+        self.runContextID = runContextID
+        self.threadID = threadID
+        self.projectID = projectID
+        self.phase = phase
+        self.status = status
+        self.previewArtifact = previewArtifact
+        self.summary = summary
+        self.errorMessage = errorMessage
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public enum PlanRunStatus: String, CaseIterable, Hashable, Sendable, Codable {
+    case pending
+    case running
+    case completed
+    case failed
+    case cancelled
+}
+
+public struct PlanRunRecord: Identifiable, Hashable, Sendable, Codable {
+    public let id: UUID
+    public let threadID: UUID
+    public let projectID: UUID
+    public var title: String
+    public var sourcePath: String?
+    public var status: PlanRunStatus
+    public var totalTasks: Int
+    public var completedTasks: Int
+    public var lastError: String?
+    public let createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        threadID: UUID,
+        projectID: UUID,
+        title: String,
+        sourcePath: String? = nil,
+        status: PlanRunStatus = .pending,
+        totalTasks: Int = 0,
+        completedTasks: Int = 0,
+        lastError: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.projectID = projectID
+        self.title = title
+        self.sourcePath = sourcePath
+        self.status = status
+        self.totalTasks = totalTasks
+        self.completedTasks = completedTasks
+        self.lastError = lastError
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public enum PlanTaskRunStatus: String, CaseIterable, Hashable, Sendable, Codable {
+    case pending
+    case running
+    case completed
+    case failed
+    case skipped
+}
+
+public struct PlanRunTaskRecord: Hashable, Sendable, Codable {
+    public let planRunID: UUID
+    public let taskID: String
+    public var title: String
+    public var dependencyIDs: [String]
+    public var status: PlanTaskRunStatus
+    public var updatedAt: Date
+
+    public init(
+        planRunID: UUID,
+        taskID: String,
+        title: String,
+        dependencyIDs: [String] = [],
+        status: PlanTaskRunStatus = .pending,
+        updatedAt: Date = Date()
+    ) {
+        self.planRunID = planRunID
+        self.taskID = taskID
+        self.title = title
+        self.dependencyIDs = dependencyIDs
+        self.status = status
+        self.updatedAt = updatedAt
     }
 }
 
