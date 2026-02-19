@@ -299,46 +299,50 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                if model.reasoningPresets.count <= 3 {
+                if model.canChooseReasoningForSelectedModel {
+                    if model.reasoningPresets.count <= 3 {
+                        Picker(
+                            "Reasoning",
+                            selection: Binding(
+                                get: { model.defaultReasoning },
+                                set: { model.setDefaultReasoning($0) }
+                            )
+                        ) {
+                            ForEach(model.reasoningPresets, id: \.self) { level in
+                                Text(level.title).tag(level)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    } else {
+                        Picker(
+                            "Reasoning",
+                            selection: Binding(
+                                get: { model.defaultReasoning },
+                                set: { model.setDefaultReasoning($0) }
+                            )
+                        ) {
+                            ForEach(model.reasoningPresets, id: \.self) { level in
+                                Text(level.title).tag(level)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+
+                if model.canChooseWebSearchForSelectedModel {
                     Picker(
-                        "Reasoning",
+                        "Web search",
                         selection: Binding(
-                            get: { model.defaultReasoning },
-                            set: { model.setDefaultReasoning($0) }
+                            get: { model.defaultWebSearch },
+                            set: { model.setDefaultWebSearch($0) }
                         )
                     ) {
-                        ForEach(model.reasoningPresets, id: \.self) { level in
-                            Text(level.title).tag(level)
+                        ForEach(model.webSearchPresets, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
-                } else {
-                    Picker(
-                        "Reasoning",
-                        selection: Binding(
-                            get: { model.defaultReasoning },
-                            set: { model.setDefaultReasoning($0) }
-                        )
-                    ) {
-                        ForEach(model.reasoningPresets, id: \.self) { level in
-                            Text(level.title).tag(level)
-                        }
-                    }
-                    .pickerStyle(.menu)
                 }
-
-                Picker(
-                    "Web search",
-                    selection: Binding(
-                        get: { model.defaultWebSearch },
-                        set: { model.setDefaultWebSearch($0) }
-                    )
-                ) {
-                    ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
 
                 Text("Composer controls inherit these defaults. Project safety policy still clamps effective web-search behavior at turn time.")
                     .font(.caption)

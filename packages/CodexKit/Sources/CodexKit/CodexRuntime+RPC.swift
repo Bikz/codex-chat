@@ -166,6 +166,15 @@ extension CodexRuntime {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let defaultReasoningEffort = (rawDefaultEffort?.isEmpty == false) ? rawDefaultEffort : nil
 
+            let supportedWebSearchModes = decodeSupportedWebSearchModes(from: object)
+            let rawDefaultWebSearchMode = (
+                object["defaultWebSearchMode"]?.stringValue
+                    ?? object["defaultWebSearch"]?.stringValue
+                    ?? object["default_web_search_mode"]?.stringValue
+                    ?? object["default_web_search"]?.stringValue
+            )?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let defaultWebSearchMode = parseRuntimeWebSearchMode(rawDefaultWebSearchMode)
+
             let rawUpgrade = object["upgrade"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
             let upgrade = (rawUpgrade?.isEmpty == false) ? rawUpgrade : nil
 
@@ -193,6 +202,8 @@ extension CodexRuntime {
                 description: description,
                 supportedReasoningEfforts: supportedReasoningEfforts,
                 defaultReasoningEffort: defaultReasoningEffort,
+                supportedWebSearchModes: supportedWebSearchModes,
+                defaultWebSearchMode: defaultWebSearchMode,
                 isDefault: object["isDefault"]?.boolValue ?? false,
                 upgrade: upgrade
             )
@@ -201,5 +212,58 @@ extension CodexRuntime {
         let rawNextCursor = result.value(at: ["nextCursor"])?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextCursor = (rawNextCursor?.isEmpty == false) ? rawNextCursor : nil
         return RuntimeModelList(models: models, nextCursor: nextCursor)
+    }
+
+    private static func decodeSupportedWebSearchModes(from object: [String: JSONValue]) -> [RuntimeWebSearchMode]? {
+        let explicitModeKeys = [
+            "supportedWebSearchModes",
+            "supported_web_search_modes",
+            "webSearchModes",
+            "web_search_modes",
+        ]
+
+        for key in explicitModeKeys {
+            guard let entries = object[key]?.arrayValue else {
+                continue
+            }
+
+            var seen: Set<RuntimeWebSearchMode> = []
+            return entries.compactMap { entry -> RuntimeWebSearchMode? in
+                let rawValue = (
+                    entry.stringValue
+                        ?? entry.value(at: ["mode"])?.stringValue
+                        ?? entry.value(at: ["webSearch"])?.stringValue
+                        ?? entry.value(at: ["web_search"])?.stringValue
+                )?.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let mode = parseRuntimeWebSearchMode(rawValue),
+                      seen.insert(mode).inserted
+                else {
+                    return nil
+                }
+                return mode
+            }
+        }
+
+        let supportsWebSearch = object["supportsWebSearch"]?.boolValue
+            ?? object["supports_web_search"]?.boolValue
+        if let supportsWebSearch {
+            return supportsWebSearch ? RuntimeWebSearchMode.allCases : [.disabled]
+        }
+
+        return nil
+    }
+
+    private static func parseRuntimeWebSearchMode(_ rawValue: String?) -> RuntimeWebSearchMode? {
+        let normalized = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        switch normalized {
+        case RuntimeWebSearchMode.cached.rawValue:
+            return .cached
+        case RuntimeWebSearchMode.live.rawValue:
+            return .live
+        case RuntimeWebSearchMode.disabled.rawValue, "none", "off":
+            return .disabled
+        default:
+            return nil
+        }
     }
 }

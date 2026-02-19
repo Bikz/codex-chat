@@ -16,19 +16,19 @@ extension AppModel {
     var modelPresets: [String] {
         let runtimeModelIDs = runtimeModelCatalog.map(\.id)
         if !runtimeModelIDs.isEmpty {
-            return runtimeModelIDs
+            return normalizeModelPresetIDs(runtimeModelIDs)
         }
 
         if let configuredModel = configuredModelOverride() {
-            return [configuredModel]
+            return normalizeModelPresetIDs([configuredModel])
         }
 
         let fallbackModel = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !fallbackModel.isEmpty {
-            return [fallbackModel]
+            return normalizeModelPresetIDs([fallbackModel])
         }
 
-        return []
+        return normalizeModelPresetIDs([])
     }
 
     var runtimeDefaultModelID: String? {
@@ -57,12 +57,35 @@ extension AppModel {
             return supportedBySelectedModel
         }
 
+        let inferred = inferredReasoningLevels(forModelID: selectedModelID)
+        if !inferred.isEmpty {
+            return inferred
+        }
+
         let schemaReasoning = reasoningLevelsFromSchema()
         if !schemaReasoning.isEmpty {
             return schemaReasoning
         }
 
         return ReasoningLevel.allCases.sorted { reasoningRank($0) < reasoningRank($1) }
+    }
+
+    var webSearchPresets: [ProjectWebSearchMode] {
+        let selectedModelID = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let supportedBySelectedModel = supportedWebSearchModes(forModelID: selectedModelID)
+        if !supportedBySelectedModel.isEmpty {
+            return supportedBySelectedModel
+        }
+
+        return ProjectWebSearchMode.allCases.sorted { webSearchRank($0) < webSearchRank($1) }
+    }
+
+    var canChooseReasoningForSelectedModel: Bool {
+        reasoningPresets.count > 1
+    }
+
+    var canChooseWebSearchForSelectedModel: Bool {
+        webSearchPresets.count > 1
     }
 
     func modelDisplayName(for modelID: String) -> String {
@@ -121,12 +144,13 @@ extension AppModel {
     }
 
     func setDefaultReasoning(_ reasoning: ReasoningLevel) {
-        guard reasoning != defaultReasoning else {
+        let clamped = clampedReasoningLevel(reasoning, forModelID: defaultModel)
+        guard clamped != defaultReasoning else {
             return
         }
 
-        defaultReasoning = reasoning
-        updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: .string(reasoning.rawValue))
+        defaultReasoning = clamped
+        updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: .string(clamped.rawValue))
 
         Task {
             await saveCodexConfig(restartRuntime: false)
@@ -134,12 +158,13 @@ extension AppModel {
     }
 
     func setDefaultWebSearch(_ webSearch: ProjectWebSearchMode) {
-        guard webSearch != defaultWebSearch else {
+        let clamped = clampedWebSearchMode(webSearch, forModelID: defaultModel)
+        guard clamped != defaultWebSearch else {
             return
         }
 
-        defaultWebSearch = webSearch
-        updateCodexConfigValue(path: [.key("web_search")], value: .string(webSearch.rawValue))
+        defaultWebSearch = clamped
+        updateCodexConfigValue(path: [.key("web_search")], value: .string(clamped.rawValue))
 
         Task {
             await saveCodexConfig(restartRuntime: false)
@@ -172,7 +197,7 @@ extension AppModel {
 
     func defaultReasoningForModel(_ modelID: String?) -> ReasoningLevel? {
         guard let model = runtimeModelInfo(for: modelID) else {
-            return nil
+            return inferredReasoningLevels(forModelID: modelID).first
         }
 
         if let defaultReasoningEffort = model.defaultReasoningEffort,
@@ -203,8 +228,17 @@ extension AppModel {
 
     func clampedReasoningLevel(_ level: ReasoningLevel, forModelID modelID: String?) -> ReasoningLevel {
         let supported = supportedReasoningLevels(forModelID: modelID)
-        guard !supported.isEmpty else {
-            return level
+        if supported.isEmpty {
+            let inferred = inferredReasoningLevels(forModelID: modelID)
+            guard !inferred.isEmpty else {
+                return level
+            }
+
+            if inferred.contains(level) {
+                return level
+            }
+
+            return inferred.first ?? level
         }
 
         if supported.contains(level) {
@@ -212,6 +246,33 @@ extension AppModel {
         }
 
         return defaultReasoningForModel(modelID) ?? supported.first ?? level
+    }
+
+    func defaultWebSearchForModel(_ modelID: String?) -> ProjectWebSearchMode? {
+        if let model = runtimeModelInfo(for: modelID) {
+            if let defaultWebSearchMode = model.defaultWebSearchMode {
+                return mapProjectWebSearchMode(defaultWebSearchMode)
+            }
+
+            let supported = supportedWebSearchModes(forModelID: model.id)
+            return supported.first
+        }
+
+        let inferred = inferredWebSearchModes(forModelID: modelID)
+        return inferred.first
+    }
+
+    func clampedWebSearchMode(_ mode: ProjectWebSearchMode, forModelID modelID: String?) -> ProjectWebSearchMode {
+        let supported = supportedWebSearchModes(forModelID: modelID)
+        guard !supported.isEmpty else {
+            return mode
+        }
+
+        if supported.contains(mode) {
+            return mode
+        }
+
+        return defaultWebSearchForModel(modelID) ?? supported.first ?? mode
     }
 
     func configuredModelOverride() -> String? {
@@ -240,6 +301,106 @@ extension AppModel {
 
         return runtimeModelCatalog.first { model in
             model.id == trimmedModelID || model.model == trimmedModelID
+        }
+    }
+
+    private func normalizeModelPresetIDs(_ modelIDs: [String]) -> [String] {
+        var seen: Set<String> = []
+        var normalized: [String] = []
+
+        for rawModelID in modelIDs {
+            let modelID = rawModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !modelID.isEmpty else {
+                continue
+            }
+
+            let lowered = modelID.lowercased()
+            guard !lowered.hasPrefix("gpt-5.1") else {
+                continue
+            }
+
+            guard seen.insert(lowered).inserted else {
+                continue
+            }
+            normalized.append(modelID)
+        }
+
+        if seen.insert("gpt-4o").inserted {
+            normalized.append("gpt-4o")
+        }
+
+        return normalized
+    }
+
+    private func supportedWebSearchModes(forModelID modelID: String?) -> [ProjectWebSearchMode] {
+        if let model = runtimeModelInfo(for: modelID) {
+            if let supportedWebSearchModes = model.supportedWebSearchModes {
+                let mapped = uniqueWebSearchModes(supportedWebSearchModes.map(mapProjectWebSearchMode))
+                if !mapped.isEmpty {
+                    return mapped
+                }
+            }
+
+            if let defaultWebSearchMode = model.defaultWebSearchMode {
+                return [mapProjectWebSearchMode(defaultWebSearchMode)]
+            }
+        }
+
+        return inferredWebSearchModes(forModelID: modelID)
+    }
+
+    private func inferredReasoningLevels(forModelID modelID: String?) -> [ReasoningLevel] {
+        let normalizedModelID = modelID?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        guard !normalizedModelID.isEmpty else {
+            return []
+        }
+
+        if normalizedModelID.hasPrefix("gpt-4o") {
+            return [.none]
+        }
+
+        return []
+    }
+
+    private func canChooseReasoning(forModelID modelID: String?) -> Bool {
+        let supported = supportedReasoningLevels(forModelID: modelID)
+        if !supported.isEmpty {
+            return supported.count > 1
+        }
+
+        let inferred = inferredReasoningLevels(forModelID: modelID)
+        if !inferred.isEmpty {
+            return inferred.count > 1
+        }
+
+        return true
+    }
+
+    private func inferredWebSearchModes(forModelID modelID: String?) -> [ProjectWebSearchMode] {
+        let normalizedModelID = modelID?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        guard !normalizedModelID.isEmpty else {
+            return []
+        }
+
+        if normalizedModelID.hasPrefix("gpt-4o") {
+            return [.disabled]
+        }
+
+        return []
+    }
+
+    private func uniqueWebSearchModes(_ modes: [ProjectWebSearchMode]) -> [ProjectWebSearchMode] {
+        var seen: Set<ProjectWebSearchMode> = []
+        return modes
+            .filter { seen.insert($0).inserted }
+            .sorted { webSearchRank($0) < webSearchRank($1) }
+    }
+
+    private func mapProjectWebSearchMode(_ mode: RuntimeWebSearchMode) -> ProjectWebSearchMode {
+        return switch mode {
+        case .disabled: .disabled
+        case .cached: .cached
+        case .live: .live
         }
     }
 
@@ -363,10 +524,12 @@ extension AppModel {
 
     func runtimeTurnOptions() -> RuntimeTurnOptions {
         let effectiveModel = configuredModelOverride()
+        let selectedModelID = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effort = canChooseReasoning(forModelID: selectedModelID) ? defaultReasoning.rawValue : nil
 
         return RuntimeTurnOptions(
             model: effectiveModel,
-            effort: defaultReasoning.rawValue,
+            effort: effort,
             experimental: [:]
         )
     }

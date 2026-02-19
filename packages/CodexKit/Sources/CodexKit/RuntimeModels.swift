@@ -39,6 +39,8 @@ public struct RuntimeModelInfo: Hashable, Sendable, Codable, Identifiable {
     public let description: String?
     public let supportedReasoningEfforts: [RuntimeReasoningEffortOption]
     public let defaultReasoningEffort: String?
+    public let supportedWebSearchModes: [RuntimeWebSearchMode]?
+    public let defaultWebSearchMode: RuntimeWebSearchMode?
     public let isDefault: Bool
     public let upgrade: String?
 
@@ -49,6 +51,8 @@ public struct RuntimeModelInfo: Hashable, Sendable, Codable, Identifiable {
         description: String? = nil,
         supportedReasoningEfforts: [RuntimeReasoningEffortOption] = [],
         defaultReasoningEffort: String? = nil,
+        supportedWebSearchModes: [RuntimeWebSearchMode]? = nil,
+        defaultWebSearchMode: RuntimeWebSearchMode? = nil,
         isDefault: Bool = false,
         upgrade: String? = nil
     ) {
@@ -58,6 +62,8 @@ public struct RuntimeModelInfo: Hashable, Sendable, Codable, Identifiable {
         self.description = description
         self.supportedReasoningEfforts = supportedReasoningEfforts
         self.defaultReasoningEffort = defaultReasoningEffort
+        self.supportedWebSearchModes = supportedWebSearchModes
+        self.defaultWebSearchMode = defaultWebSearchMode
         self.isDefault = isDefault
         self.upgrade = upgrade
     }
@@ -221,7 +227,7 @@ public enum RuntimeApprovalPolicy: String, Hashable, Sendable, Codable {
     case never
 }
 
-public enum RuntimeWebSearchMode: String, Hashable, Sendable, Codable {
+public enum RuntimeWebSearchMode: String, Hashable, Sendable, Codable, CaseIterable {
     case cached
     case live
     case disabled

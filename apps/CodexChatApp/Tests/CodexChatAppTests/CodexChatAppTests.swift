@@ -486,6 +486,46 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testModelPresetsExcludeLegacyGPT51AndIncludeGPT4o() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.runtimeModelCatalog = [
+            RuntimeModelInfo(
+                id: "gpt-5.1-codex-mini",
+                model: "gpt-5.1-codex-mini",
+                displayName: "GPT-5.1 Codex Mini"
+            ),
+            RuntimeModelInfo(
+                id: "gpt-5.3-codex",
+                model: "gpt-5.3-codex",
+                displayName: "GPT-5.3 Codex"
+            ),
+        ]
+
+        XCTAssertEqual(model.modelPresets, ["gpt-5.3-codex", "gpt-4o"])
+    }
+
+    @MainActor
+    func testGPT4oAutoClampsReasoningAndWebAndDisablesSelectionControls() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        model.updateCodexConfigValue(path: [.key("model")], value: .string("gpt-4o"))
+        model.updateCodexConfigValue(path: [.key("model_reasoning_effort")], value: .string("high"))
+        model.updateCodexConfigValue(path: [.key("web_search")], value: .string("live"))
+
+        XCTAssertEqual(model.reasoningPresets, [.none])
+        XCTAssertFalse(model.canChooseReasoningForSelectedModel)
+        XCTAssertEqual(model.defaultReasoning, .none)
+
+        XCTAssertEqual(model.webSearchPresets, [.disabled])
+        XCTAssertFalse(model.canChooseWebSearchForSelectedModel)
+        XCTAssertEqual(model.defaultWebSearch, .disabled)
+
+        let turnOptions = model.runtimeTurnOptions()
+        XCTAssertEqual(turnOptions.model, "gpt-4o")
+        XCTAssertNil(turnOptions.effort)
+    }
+
+    @MainActor
     func testLoadInitialDataContinuesWhenConfigTomlInvalid() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-invalid-config-\(UUID().uuidString)", isDirectory: true)

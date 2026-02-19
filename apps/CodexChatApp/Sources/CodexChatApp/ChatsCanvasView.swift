@@ -544,43 +544,47 @@ private struct ComposerControlBar: View {
                 .accessibilityLabel("Model")
                 .help("Select model")
 
-                Menu {
-                    ForEach(model.reasoningPresets, id: \.self) { level in
-                        Button(level.title) {
-                            model.setDefaultReasoning(level)
+                if model.canChooseReasoningForSelectedModel {
+                    Menu {
+                        ForEach(model.reasoningPresets, id: \.self) { level in
+                            Button(level.title) {
+                                model.setDefaultReasoning(level)
+                            }
                         }
+                    } label: {
+                        controlChip(
+                            title: "Reasoning",
+                            value: model.defaultReasoning.title,
+                            systemImage: "brain.head.profile",
+                            tint: Color(hex: tokens.palette.accentHex).opacity(0.78),
+                            minWidth: 140
+                        )
                     }
-                } label: {
-                    controlChip(
-                        title: "Reasoning",
-                        value: model.defaultReasoning.title,
-                        systemImage: "brain.head.profile",
-                        tint: Color(hex: tokens.palette.accentHex).opacity(0.78),
-                        minWidth: 140
-                    )
+                    .menuStyle(.borderlessButton)
+                    .accessibilityLabel("Reasoning")
+                    .help("Select reasoning effort")
                 }
-                .menuStyle(.borderlessButton)
-                .accessibilityLabel("Reasoning")
-                .help("Select reasoning effort")
 
-                Menu {
-                    ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
-                        Button(webSearchLabel(mode)) {
-                            model.setDefaultWebSearch(mode)
+                if model.canChooseWebSearchForSelectedModel {
+                    Menu {
+                        ForEach(model.webSearchPresets, id: \.self) { mode in
+                            Button(webSearchLabel(mode)) {
+                                model.setDefaultWebSearch(mode)
+                            }
                         }
+                    } label: {
+                        controlChip(
+                            title: "Web",
+                            value: webSearchLabel(model.defaultWebSearch),
+                            systemImage: "globe",
+                            tint: webSearchTint(model.defaultWebSearch),
+                            minWidth: 110
+                        )
                     }
-                } label: {
-                    controlChip(
-                        title: "Web",
-                        value: webSearchLabel(model.defaultWebSearch),
-                        systemImage: "globe",
-                        tint: webSearchTint(model.defaultWebSearch),
-                        minWidth: 110
-                    )
+                    .menuStyle(.borderlessButton)
+                    .accessibilityLabel("Web search mode")
+                    .help("Select web search mode")
                 }
-                .menuStyle(.borderlessButton)
-                .accessibilityLabel("Web search mode")
-                .help("Select web search mode")
 
                 Menu {
                     ForEach(AppModel.ComposerMemoryMode.allCases, id: \.self) { mode in

@@ -109,6 +109,8 @@ extension AppModel {
             defaultWebSearch = mode
         }
 
+        defaultWebSearch = clampedWebSearchMode(defaultWebSearch, forModelID: defaultModel)
+
         let sandboxMode = codexConfigDocument
             .value(at: [.key("sandbox_mode")])?
             .stringValue

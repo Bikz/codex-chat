@@ -35,6 +35,11 @@ final class CodexKitTests: XCTestCase {
                         ]),
                     ]),
                     "defaultReasoningEffort": .string("medium"),
+                    "supportedWebSearchModes": .array([
+                        .string("disabled"),
+                        .string("cached"),
+                    ]),
+                    "defaultWebSearchMode": .string("cached"),
                     "isDefault": .bool(true),
                     "upgrade": .null,
                 ]),
@@ -52,6 +57,8 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(first.defaultReasoningEffort, "medium")
         XCTAssertTrue(first.isDefault)
         XCTAssertEqual(first.supportedReasoningEfforts.map(\.reasoningEffort), ["low", "xhigh"])
+        XCTAssertEqual(first.supportedWebSearchModes, [.disabled, .cached])
+        XCTAssertEqual(first.defaultWebSearchMode, .cached)
     }
 
     func testDecodeModelListRejectsMissingDataArray() {
