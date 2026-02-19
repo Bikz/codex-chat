@@ -359,6 +359,7 @@ final class AppModel: ObservableObject {
     var extensionHookDebounceTimestamps: [String: Date] = [:]
     var extensionAutomationScheduler = ExtensionAutomationScheduler()
     var runtimeRepairSuggestedThreadIDs: Set<UUID> = []
+    var runtimeRepairPendingRuntimeThreadIDs: Set<String> = []
 
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
@@ -907,6 +908,16 @@ final class AppModel: ObservableObject {
 
         let entries = transcriptStore[selectedThreadID, default: []]
         conversationState = .loaded(entries)
+    }
+
+    var activeTurnContextForSelectedThread: ActiveTurnContext? {
+        guard let selectedThreadID,
+              activeTurnContext?.localThreadID == selectedThreadID
+        else {
+            return nil
+        }
+
+        return activeTurnContext
     }
 
     func isThreadWorking(_ threadID: UUID) -> Bool {

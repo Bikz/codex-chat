@@ -228,7 +228,7 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
-    func testRuntimeStderrRolloutPathLogsWarningAndInjectsRepairSuggestionCard() {
+    func testRuntimeStderrRolloutPathErrorStaysInlineAndInjectsRepairSuggestionCard() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let threadID = UUID()
         model.activeTurnContext = makeActiveTurnContext(threadID: threadID, userText: "List calendar events")
@@ -251,7 +251,7 @@ final class CodexChatAppTests: XCTestCase {
         )
 
         let threadLogs = model.threadLogsByThreadID[threadID, default: []]
-        XCTAssertEqual(threadLogs.last?.level, .warning)
+        XCTAssertEqual(threadLogs.last?.level, .error)
 
         let entries = model.transcriptStore[threadID, default: []]
         let rows = TranscriptPresentationBuilder.rows(entries: entries, detailLevel: .chat, activeTurnContext: nil)
@@ -259,7 +259,7 @@ final class CodexChatAppTests: XCTestCase {
             guard case let .action(card) = row else { return nil }
             return card.method
         }
-        XCTAssertFalse(actionMethods.contains("runtime/stderr"))
+        XCTAssertTrue(actionMethods.contains("runtime/stderr"))
         XCTAssertTrue(actionMethods.contains("runtime/repair-suggested"))
     }
 
@@ -287,6 +287,59 @@ final class CodexChatAppTests: XCTestCase {
                 )
             )
         }
+
+        let entries = model.transcriptStore[threadID, default: []]
+        let repairSuggestions = entries.filter { entry in
+            guard case let .actionCard(card) = entry else { return false }
+            return card.method == "runtime/repair-suggested"
+        }
+        XCTAssertEqual(repairSuggestions.count, 1)
+    }
+
+    @MainActor
+    func testRuntimeStderrRolloutPathInjectsRepairSuggestionAfterThreadMappingResolves() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        let runtimeThreadID = "runtime-thread-delayed-map"
+        model.transcriptStore[threadID] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "List calendar events")),
+        ]
+
+        model.handleRuntimeEvent(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stderr",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: runtimeThreadID,
+                    turnID: nil,
+                    title: "Runtime stderr",
+                    detail: "state db missing rollout path for thread abc"
+                )
+            )
+        )
+
+        let afterStderrEntries = model.transcriptStore[threadID, default: []]
+        XCTAssertFalse(afterStderrEntries.contains { entry in
+            guard case let .actionCard(card) = entry else { return false }
+            return card.method == "runtime/repair-suggested"
+        })
+
+        model.localThreadIDByRuntimeThreadID[runtimeThreadID] = threadID
+
+        model.handleRuntimeEvent(
+            .action(
+                RuntimeAction(
+                    method: "item/started",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: runtimeThreadID,
+                    turnID: nil,
+                    title: "Started",
+                    detail: "runtime resumed"
+                )
+            )
+        )
 
         let entries = model.transcriptStore[threadID, default: []]
         let repairSuggestions = entries.filter { entry in
@@ -336,6 +389,57 @@ final class CodexChatAppTests: XCTestCase {
         }
         XCTAssertTrue(actionMethods.contains("runtime/stderr/coalesced"))
         XCTAssertFalse(actionMethods.contains("runtime/stderr"))
+    }
+
+    @MainActor
+    func testRuntimeStderrTranscriptDetailIsSanitized() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.activeTurnContext = makeActiveTurnContext(threadID: threadID, userText: "Check logs")
+        model.transcriptStore[threadID] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "Check logs")),
+        ]
+        let secret = "sk-abcdefghijklmnopqrstuvwxyz1234"
+        let detail = "warning Authorization: Bearer \(secret) temporary network jitter"
+
+        model.handleRuntimeEvent(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stderr",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: nil,
+                    turnID: nil,
+                    title: "Runtime stderr",
+                    detail: detail
+                )
+            )
+        )
+
+        let actionCards = model.transcriptStore[threadID, default: []].compactMap { entry -> ActionCard? in
+            guard case let .actionCard(card) = entry else {
+                return nil
+            }
+            return card
+        }
+        let runtimeStderr = actionCards.filter { $0.method == "runtime/stderr" }
+        XCTAssertEqual(runtimeStderr.count, 1)
+        XCTAssertFalse(runtimeStderr[0].detail.contains(secret))
+        XCTAssertTrue(runtimeStderr[0].detail.contains("[REDACTED]"))
+    }
+
+    @MainActor
+    func testActiveTurnContextForSelectedThreadScopesToSelectedThreadOnly() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let selectedThreadID = UUID()
+        let otherThreadID = UUID()
+        model.selectedThreadID = selectedThreadID
+        model.activeTurnContext = makeActiveTurnContext(threadID: otherThreadID, userText: "Other thread")
+
+        XCTAssertNil(model.activeTurnContextForSelectedThread)
+
+        model.activeTurnContext = makeActiveTurnContext(threadID: selectedThreadID, userText: "Selected thread")
+        XCTAssertEqual(model.activeTurnContextForSelectedThread?.localThreadID, selectedThreadID)
     }
 
     func testApprovalStateMachineQueuesAndResolvesInOrder() {

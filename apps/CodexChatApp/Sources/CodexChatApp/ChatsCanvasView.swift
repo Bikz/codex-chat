@@ -537,7 +537,7 @@ struct ChatsCanvasView: View {
                     let presentationRows = TranscriptPresentationBuilder.rows(
                         entries: entries,
                         detailLevel: model.transcriptDetailLevel,
-                        activeTurnContext: model.activeTurnContext
+                        activeTurnContext: model.activeTurnContextForSelectedThread
                     )
 
                     ScrollViewReader { proxy in

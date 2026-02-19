@@ -108,7 +108,7 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertFalse(rows.actionMethods.contains("runtime/stderr"))
     }
 
-    func testRolloutPathRuntimeStderrIsRecoverableAndRemainsCompact() {
+    func testRolloutPathRuntimeStderrWithErrorLevelRemainsInline() {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [
             .message(userMessage(threadID: threadID, text: "List calendar events")),
@@ -117,6 +117,27 @@ final class TranscriptPresentationTests: XCTestCase {
                 method: "runtime/stderr",
                 title: "Runtime stderr",
                 detail: "ERROR state db missing rollout path for thread abc"
+            )),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        XCTAssertTrue(rows.actionMethods.contains("runtime/stderr"))
+    }
+
+    func testRolloutPathRuntimeStderrWarningRemainsCompact() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "List calendar events")),
+            .actionCard(action(
+                threadID: threadID,
+                method: "runtime/stderr",
+                title: "Runtime stderr",
+                detail: "state db missing rollout path for thread abc"
             )),
         ]
 
@@ -149,6 +170,27 @@ final class TranscriptPresentationTests: XCTestCase {
         )
 
         XCTAssertTrue(rows.actionMethods.contains("runtime/stderr"))
+    }
+
+    func testChatModeCoalescesRepeatedCriticalRuntimeStderr() {
+        let threadID = UUID()
+        let stderrDetail = "fatal: segmentation fault"
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "Run command")),
+            .actionCard(action(threadID: threadID, method: "runtime/stderr", title: "Runtime stderr", detail: stderrDetail)),
+            .actionCard(action(threadID: threadID, method: "runtime/stderr", title: "Runtime stderr", detail: stderrDetail)),
+            .actionCard(action(threadID: threadID, method: "runtime/stderr", title: "Runtime stderr", detail: stderrDetail)),
+            .actionCard(action(threadID: threadID, method: "runtime/stderr", title: "Runtime stderr", detail: stderrDetail)),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        XCTAssertTrue(rows.actionMethods.contains("runtime/stderr/coalesced"))
+        XCTAssertFalse(rows.actionMethods.contains("runtime/stderr"))
     }
 
     @MainActor
@@ -211,6 +253,23 @@ final class TranscriptPresentationTests: XCTestCase {
             if case .liveActivity = $0 { return true }
             return false
         })
+    }
+
+    func testCompactRowsUseUniqueRowIdentifiers() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "Summarize this repo")),
+            .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        let ids = rows.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count)
     }
 
     private func userMessage(threadID: UUID, text: String) -> ChatMessage {

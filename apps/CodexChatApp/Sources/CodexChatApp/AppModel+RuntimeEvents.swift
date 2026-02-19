@@ -161,25 +161,33 @@ extension AppModel {
             detail: action.detail,
             itemType: action.itemType
         )
+        let transcriptDetail = action.method == "runtime/stderr"
+            ? sanitizeLogText(action.detail)
+            : action.detail
 
         let localThreadID = resolveLocalThreadID(
             runtimeThreadID: action.threadID,
             itemID: action.itemID
         ) ?? activeTurnContext?.localThreadID
 
+        if let localThreadID,
+           let runtimeThreadID = action.threadID,
+           dequeuePendingRuntimeRepairSuggestion(for: runtimeThreadID)
+        {
+            appendRuntimeRepairSuggestionIfNeeded(to: localThreadID)
+        }
+
         if action.method == "runtime/stderr" {
             let isRolloutPathWarning = TranscriptActionPolicy.isRolloutPathStateDBWarning(action.detail)
-            let level: LogLevel = if isRolloutPathWarning {
-                .warning
-            } else {
-                TranscriptActionPolicy.isCriticalStderr(action.detail) ? .error : .warning
-            }
+            let level: LogLevel = TranscriptActionPolicy.isCriticalStderr(action.detail) ? .error : .warning
 
             if let localThreadID {
                 appendThreadLog(level: level, text: action.detail, to: localThreadID)
                 if isRolloutPathWarning {
                     appendRuntimeRepairSuggestionIfNeeded(to: localThreadID)
                 }
+            } else if isRolloutPathWarning, let runtimeThreadID = action.threadID {
+                enqueuePendingRuntimeRepairSuggestion(for: runtimeThreadID)
             }
             appendLog(
                 level,
@@ -206,7 +214,7 @@ extension AppModel {
             threadID: localThreadID,
             method: action.method,
             title: action.title,
-            detail: action.detail
+            detail: transcriptDetail
         )
         appendEntry(.actionCard(card), to: localThreadID)
         markThreadUnreadIfNeeded(localThreadID)
@@ -357,5 +365,17 @@ extension AppModel {
             to: threadID
         )
         markThreadUnreadIfNeeded(threadID)
+    }
+
+    private func enqueuePendingRuntimeRepairSuggestion(for runtimeThreadID: String) {
+        runtimeRepairPendingRuntimeThreadIDs.insert(runtimeThreadID)
+    }
+
+    private func dequeuePendingRuntimeRepairSuggestion(for runtimeThreadID: String) -> Bool {
+        runtimeRepairPendingRuntimeThreadIDs.remove(runtimeThreadID) != nil
+    }
+
+    func clearPendingRuntimeRepairSuggestions() {
+        runtimeRepairPendingRuntimeThreadIDs.removeAll()
     }
 }

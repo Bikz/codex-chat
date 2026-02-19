@@ -7,16 +7,16 @@ enum TranscriptPresentationRow: Identifiable, Hashable {
     case liveActivity(LiveTurnActivityPresentation)
     case turnSummary(TurnSummaryPresentation)
 
-    var id: UUID {
+    var id: String {
         switch self {
         case let .message(message):
-            message.id
+            "message:\(message.id.uuidString)"
         case let .action(action):
-            action.id
+            "action:\(action.id.uuidString)"
         case let .liveActivity(activity):
-            activity.id
+            "live-activity:\(activity.id.uuidString)"
         case let .turnSummary(summary):
-            summary.id
+            "turn-summary:\(summary.id.uuidString)"
         }
     }
 }
@@ -112,14 +112,21 @@ enum TranscriptActionPolicy {
     }
 
     static func isCriticalStderr(_ detail: String) -> Bool {
+        let lowered = detail.lowercased()
+        let hasExplicitErrorLevel = lowered.contains("error")
+            || lowered.contains("failed")
+            || lowered.contains("fatal")
+            || lowered.contains("panic")
+
         if isRolloutPathStateDBWarning(detail) {
-            return false
+            return hasExplicitErrorLevel
         }
 
-        let lowered = detail.lowercased()
         let criticalPhrases = [
             "fatal",
             "panic",
+            "error",
+            "failed",
             "permission denied",
             "segmentation fault",
             "thread '",
@@ -277,6 +284,7 @@ enum TranscriptPresentationBuilder {
 
     private static func inlineActions(for actions: [ActionCard]) -> [ActionCard] {
         var inline: [ActionCard] = []
+        var criticalStderrBySignature: [String: [ActionCard]] = [:]
         var nonCriticalStderrBySignature: [String: [ActionCard]] = [:]
 
         for action in actions {
@@ -290,10 +298,10 @@ enum TranscriptPresentationBuilder {
             case .critical:
                 inline.append(action)
             case .stderr:
+                let signature = TranscriptActionPolicy.normalizedStderrSignature(action.detail)
                 if TranscriptActionPolicy.isCriticalStderr(action.detail) {
-                    inline.append(action)
+                    criticalStderrBySignature[signature, default: []].append(action)
                 } else {
-                    let signature = TranscriptActionPolicy.normalizedStderrSignature(action.detail)
                     nonCriticalStderrBySignature[signature, default: []].append(action)
                 }
             case .lifecycleNoise, .milestone, .informational:
@@ -301,18 +309,18 @@ enum TranscriptPresentationBuilder {
             }
         }
 
+        for group in criticalStderrBySignature.values {
+            guard !group.isEmpty else { continue }
+            if group.count >= 3 {
+                inline.append(coalescedStderrAction(group: group, isCritical: true))
+            } else {
+                inline.append(contentsOf: group)
+            }
+        }
+
         for group in nonCriticalStderrBySignature.values {
-            guard group.count >= 3, let first = group.first else { continue }
-            let sample = preview(first.detail, maxLength: 220)
-            inline.append(
-                ActionCard(
-                    threadID: first.threadID,
-                    method: "runtime/stderr/coalesced",
-                    title: "Runtime stderr repeated (\(group.count)x)",
-                    detail: "\(sample)\n\nAdditional matching stderr lines were collapsed in chat view.",
-                    createdAt: first.createdAt
-                )
-            )
+            guard group.count >= 3 else { continue }
+            inline.append(coalescedStderrAction(group: group, isCritical: false))
         }
 
         return inline.sorted { lhs, rhs in
@@ -321,6 +329,25 @@ enum TranscriptPresentationBuilder {
             }
             return lhs.id.uuidString < rhs.id.uuidString
         }
+    }
+
+    private static func coalescedStderrAction(group: [ActionCard], isCritical: Bool) -> ActionCard {
+        let first = group[0]
+        let sample = preview(first.detail, maxLength: 220)
+        let titleSuffix = isCritical ? ", critical" : ""
+        let collapseMessage = if isCritical {
+            "Critical stderr repeated; matching lines were collapsed in chat view."
+        } else {
+            "Additional matching stderr lines were collapsed in chat view."
+        }
+
+        return ActionCard(
+            threadID: first.threadID,
+            method: "runtime/stderr/coalesced",
+            title: "Runtime stderr repeated (\(group.count)x\(titleSuffix))",
+            detail: "\(sample)\n\n\(collapseMessage)",
+            createdAt: first.createdAt
+        )
     }
 
     private static func turnSummary(

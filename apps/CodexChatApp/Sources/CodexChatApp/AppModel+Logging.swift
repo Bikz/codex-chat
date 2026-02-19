@@ -2,8 +2,12 @@ import CodexKit
 import Foundation
 
 extension AppModel {
+    func sanitizeLogText(_ text: String) -> String {
+        redactSensitiveText(in: text)
+    }
+
     func appendThreadLog(level: LogLevel, text: String, to threadID: UUID) {
-        let sanitized = redactSensitiveText(in: text)
+        let sanitized = sanitizeLogText(text)
         var logs = threadLogsByThreadID[threadID, default: []]
         logs.append(ThreadLogEntry(level: level, text: sanitized))
         if logs.count > 1000 {
@@ -13,7 +17,7 @@ extension AppModel {
     }
 
     func appendLog(_ level: LogLevel, _ message: String) {
-        logs.append(LogEntry(level: level, message: redactSensitiveText(in: message)))
+        logs.append(LogEntry(level: level, message: sanitizeLogText(message)))
         if logs.count > 500 {
             logs.removeFirst(logs.count - 500)
         }
