@@ -60,61 +60,33 @@ enum SettingsSectionCardEmphasis {
     case secondary
 }
 
-struct SettingsScaffold<Sidebar: View, Content: View>: View {
+struct SettingsInlineHeader: View {
+    let eyebrow: String
     let title: String
-    let subtitle: String
-    let sidebarWidth: CGFloat
-    let sidebar: () -> Sidebar
-    let content: () -> Content
+    let subtitle: String?
 
-    @Environment(\.designTokens) private var tokens
-
-    init(
-        title: String,
-        subtitle: String,
-        sidebarWidth: CGFloat = 230,
-        @ViewBuilder sidebar: @escaping () -> Sidebar,
-        @ViewBuilder content: @escaping () -> Content
-    ) {
+    init(eyebrow: String, title: String, subtitle: String? = nil) {
+        self.eyebrow = eyebrow
         self.title = title
         self.subtitle = subtitle
-        self.sidebarWidth = sidebarWidth
-        self.sidebar = sidebar
-        self.content = content
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: tokens.spacing.medium) {
-            VStack(alignment: .leading, spacing: tokens.spacing.xSmall) {
-                Text(title)
-                    .font(.title)
-                    .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(eyebrow.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
 
+            Text(title)
+                .font(.title3.weight(.semibold))
+
+            if let subtitle {
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(alignment: .top, spacing: tokens.spacing.medium) {
-                VStack(alignment: .leading, spacing: tokens.spacing.xSmall) {
-                    sidebar()
-                }
-                .padding(tokens.spacing.small)
-                .frame(width: sidebarWidth, alignment: .topLeading)
-                .settingsFlatSurface(fillColor: Color(hex: tokens.palette.sidebarHex), borderColor: Color.primary.opacity(0.08))
-
-                VStack(alignment: .leading, spacing: tokens.spacing.small) {
-                    content()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(tokens.spacing.small)
-                .settingsFlatSurface(fillColor: Color(hex: tokens.palette.panelHex), borderColor: Color.primary.opacity(0.08))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .padding(tokens.spacing.large)
-        .background(Color(hex: tokens.palette.backgroundHex))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -139,19 +111,31 @@ struct SettingsSidebarItem: View {
 
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(isSelected ? Color(hex: tokens.palette.accentHex) : .primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(isSelected ? .primary : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
+            .frame(minHeight: 34, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                    .fill(isSelected ? Color(hex: tokens.palette.accentHex).opacity(0.10) : .clear)
+                    .fill(isSelected ? Color.primary.opacity(0.05) : .clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                    .strokeBorder(isSelected ? Color(hex: tokens.palette.accentHex).opacity(0.30) : .clear)
+                    .strokeBorder(isSelected ? Color.primary.opacity(0.10) : .clear)
             )
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(Color(hex: tokens.palette.accentHex))
+                    .frame(width: 2, height: 16)
+                    .padding(.leading, 2)
+                    .opacity(isSelected ? 1 : 0)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
@@ -181,6 +165,7 @@ struct SettingsSectionCard<Content: View>: View {
         VStack(alignment: .leading, spacing: tokens.spacing.small) {
             Text(title)
                 .font(.headline)
+                .foregroundStyle(emphasis == .primary ? .primary : .secondary)
 
             if let subtitle {
                 Text(subtitle)
@@ -190,17 +175,29 @@ struct SettingsSectionCard<Content: View>: View {
 
             content
         }
-        .padding(tokens.spacing.medium)
-        .settingsFlatSurface(fillColor: backgroundFill, borderColor: Color.primary.opacity(0.08))
+        .padding(tokens.spacing.small)
+        .tokenCard(
+            style: cardStyle,
+            radius: tokens.radius.small,
+            strokeOpacity: borderOpacity
+        )
     }
 
-    private var backgroundFill: Color {
-        let panel = Color(hex: tokens.palette.panelHex)
-        return switch emphasis {
+    private var cardStyle: TokenCardStyle {
+        switch emphasis {
         case .primary:
-            panel
+            .card
         case .secondary:
-            panel.opacity(0.82)
+            .panel
+        }
+    }
+
+    private var borderOpacity: Double {
+        switch emphasis {
+        case .primary:
+            0.08
+        case .secondary:
+            0.06
         }
     }
 }
@@ -224,15 +221,15 @@ struct SettingsStatusBadge: View {
     var body: some View {
         Text(text)
             .font(.caption.weight(.semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
             .foregroundStyle(textColor)
             .background(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(backgroundColor)
             )
             .overlay(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(borderColor)
             )
     }
@@ -240,27 +237,27 @@ struct SettingsStatusBadge: View {
     private var textColor: Color {
         switch tone {
         case .neutral:
-            .primary
+            .secondary
         case .accent:
-            Color(hex: tokens.palette.accentHex)
+            .primary
         }
     }
 
     private var backgroundColor: Color {
         switch tone {
         case .neutral:
-            Color.primary.opacity(0.08)
+            Color.clear
         case .accent:
-            Color(hex: tokens.palette.accentHex).opacity(0.12)
+            Color.primary.opacity(0.04)
         }
     }
 
     private var borderColor: Color {
         switch tone {
         case .neutral:
-            Color.primary.opacity(0.12)
+            Color.primary.opacity(0.16)
         case .accent:
-            Color(hex: tokens.palette.accentHex).opacity(0.26)
+            Color.primary.opacity(0.22)
         }
     }
 }
@@ -280,29 +277,5 @@ struct SettingsFieldRow<Content: View>: View {
             content()
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-    }
-}
-
-private struct SettingsFlatSurface: ViewModifier {
-    let fillColor: Color
-    let borderColor: Color
-    @Environment(\.designTokens) private var tokens
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
-                    .fill(fillColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: 1)
-            )
-    }
-}
-
-private extension View {
-    func settingsFlatSurface(fillColor: Color, borderColor: Color) -> some View {
-        modifier(SettingsFlatSurface(fillColor: fillColor, borderColor: borderColor))
     }
 }

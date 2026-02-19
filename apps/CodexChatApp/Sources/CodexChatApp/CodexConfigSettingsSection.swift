@@ -6,7 +6,9 @@ struct CodexConfigSettingsSection: View {
         case schema
         case raw
 
-        var id: String { rawValue }
+        var id: String {
+            rawValue
+        }
 
         var title: String {
             switch self {
@@ -25,26 +27,30 @@ struct CodexConfigSettingsSection: View {
     @State private var rawDraft = ""
     @State private var rawParseError: String?
     @State private var isProgrammaticRawUpdate = false
+    @State private var isSchemaDraftDirty = false
+    @State private var hasHydratedDraft = false
+    @State private var rawParseDebounceTask: Task<Void, Never>?
+    @Environment(\.designTokens) private var tokens
+
+    private let rawParseDebounceNanoseconds: UInt64 = 220_000_000
 
     var body: some View {
-        SkillsModsCard {
+        SettingsSectionCard(
+            title: "Codex Config",
+            subtitle: "User-level config from `config.toml` is the source of truth for defaults and flags."
+        ) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Codex Config")
-                        .font(.title3.weight(.semibold))
-
+                HStack {
                     Text(model.codexConfigSchemaSource.rawValue.uppercased())
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.secondary.opacity(0.15), in: Capsule())
-
-                    Spacer(minLength: 0)
+                        .background(tokens.materials.panelMaterial.material, in: Capsule(style: .continuous))
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.14))
+                        )
                 }
-
-                Text("User-level config from `config.toml` is the source of truth for defaults and flags.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
 
                 HStack(spacing: 8) {
                     Button {
@@ -70,7 +76,8 @@ struct CodexConfigSettingsSection: View {
                     Spacer(minLength: 0)
 
                     Button {
-                        guard rawParseError == nil else {
+                        let hasBlockingRawError = selectedTab == .raw && rawParseError != nil
+                        guard !hasBlockingRawError else {
                             model.codexConfigStatusMessage = "Fix TOML parse errors before saving."
                             return
                         }
@@ -85,8 +92,8 @@ struct CodexConfigSettingsSection: View {
                     } label: {
                         Label("Save + Restart Runtime", systemImage: "arrow.clockwise.circle")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.isCodexConfigBusy || rawParseError != nil)
+                    .buttonStyle(.bordered)
+                    .disabled(model.isCodexConfigBusy || (selectedTab == .raw && rawParseError != nil))
                 }
 
                 Picker("Editor", selection: $selectedTab) {
@@ -104,7 +111,7 @@ struct CodexConfigSettingsSection: View {
                 } else {
                     CodexConfigRawEditorView(rawText: $rawDraft, parseError: rawParseError)
                         .onChange(of: rawDraft) { _, _ in
-                            parseRawDraftIfNeeded()
+                            scheduleRawDraftParsing()
                         }
                 }
 
@@ -129,15 +136,30 @@ struct CodexConfigSettingsSection: View {
             }
         }
         .onAppear {
+            guard !hasHydratedDraft else {
+                return
+            }
             hydrateDraftFromModel()
+            hasHydratedDraft = true
         }
         .onChange(of: model.codexConfigDocument) { _, _ in
             hydrateDraftFromModel()
+            hasHydratedDraft = true
         }
         .onChange(of: draftRoot) { _, _ in
             if selectedTab == .schema {
-                syncRawFromDraftRoot()
+                isSchemaDraftDirty = true
             }
+        }
+        .onChange(of: selectedTab) { _, newValue in
+            guard newValue == .raw, isSchemaDraftDirty else {
+                return
+            }
+            syncRawFromDraftRoot()
+            isSchemaDraftDirty = false
+        }
+        .onDisappear {
+            rawParseDebounceTask?.cancel()
         }
     }
 
@@ -153,6 +175,7 @@ struct CodexConfigSettingsSection: View {
         rawDraft = document.rawText
         isProgrammaticRawUpdate = false
         rawParseError = nil
+        isSchemaDraftDirty = false
     }
 
     private func syncRawFromDraftRoot() {
@@ -181,6 +204,28 @@ struct CodexConfigSettingsSection: View {
             rawParseError = nil
         } catch {
             rawParseError = error.localizedDescription
+        }
+    }
+
+    private func scheduleRawDraftParsing() {
+        guard !isProgrammaticRawUpdate else {
+            return
+        }
+
+        rawParseDebounceTask?.cancel()
+        let draftAtScheduleTime = rawDraft
+        rawParseDebounceTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: rawParseDebounceNanoseconds)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled, draftAtScheduleTime == rawDraft else {
+                return
+            }
+
+            parseRawDraftIfNeeded()
         }
     }
 }
