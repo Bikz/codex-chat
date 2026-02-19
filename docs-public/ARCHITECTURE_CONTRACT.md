@@ -68,9 +68,17 @@ Internal/system-managed artifacts:
 
 - `system/metadata.sqlite*`
 - `system/mod-snapshots/`
+- `system/codex-home-quarantine/`
 - `projects/<project>/.agents/skills/`
 - `global/codex-home/`
 - `global/agents-home/`
+
+Codex runtime ownership under `global/codex-home/`:
+
+- Runtime internals are Codex-owned caches/state (for example `sessions/`, `archived_sessions/`, `shell_snapshots/`, `sqlite/`, `log/`, `tmp/`, `vendor_imports/`, `worktrees/`).
+- CodexChat must not migrate runtime internals across homes as user data.
+- CodexChat startup repair may quarantine stale runtime internals into `system/codex-home-quarantine/<timestamp>/`.
+- CodexChat project archives (`projects/<project>/chats/threads/*.md`) remain independent from Codex runtime session caches.
 
 ## Reset Rules
 
@@ -86,3 +94,9 @@ Schema/layout changes must include:
 - migration path
 - failure/rollback behavior
 - docs updates in `docs-public/`
+
+Codex home migration policy:
+
+- Initial import from legacy `~/.codex` and `~/.agents` is selective and copy-if-missing only.
+- Importable user artifacts: config/auth/history/credentials/instructions/memory/skills.
+- Runtime internals are excluded from import and can be quarantined by normalization.

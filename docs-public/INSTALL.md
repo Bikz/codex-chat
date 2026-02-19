@@ -55,6 +55,16 @@ If `codex` is missing, the app remains usable for local-only flows and shows set
 
 CodexChat targets the current app-server protocol (`approvalPolicy` values like `untrusted`/`on-request`, turn `effort`, steer `expectedTurnId` + `input[]`). If you see runtime schema mismatch errors (for example unknown variant or missing field), update Codex CLI and restart runtime.
 
+## Managed `CODEX_HOME` Behavior
+
+CodexChat manages runtime home at `<storage-root>/global/codex-home`.
+
+- Codex-owned runtime internals (`sessions/`, `archived_sessions/`, `shell_snapshots/`, runtime sqlite/log/tmp caches) are treated as disposable runtime state.
+- Startup migration imports only user artifacts from legacy homes: `config.toml`, auth/history files, credentials, instruction files, memory, and skills.
+- Existing installs are auto-normalized once; stale runtime internals are moved to `<storage-root>/system/codex-home-quarantine/<timestamp>/`.
+- Use Settings > Storage > `Repair Codex Home` to run forced repair (stop runtime, quarantine stale state, restart runtime).
+- CodexChat project chat archives under `projects/<project>/chats/threads/` are separate from Codex runtime session caches.
+
 ## Voice Input Permissions
 
 On first voice use, macOS asks for:
