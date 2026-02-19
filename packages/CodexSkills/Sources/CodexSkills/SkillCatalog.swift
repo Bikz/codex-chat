@@ -258,10 +258,27 @@ public final class SkillCatalogService: @unchecked Sendable {
         let updatedAt: Date?
     }
 
+    private struct DiscoveryCacheKey: Hashable {
+        let roots: [String]
+    }
+
+    private struct DiscoveryRootSignature: Hashable {
+        let rootPath: String
+        let skillFileCount: Int
+        let latestSkillFileMTime: TimeInterval
+    }
+
+    private struct DiscoveryCacheEntry {
+        let signatures: [DiscoveryRootSignature]
+        let skills: [DiscoveredSkill]
+    }
+
     private let fileManager: FileManager
     private let codexHomeURL: URL
     private let agentsHomeURL: URL
     private let processRunner: ProcessRunner
+    private let discoveryCacheLock = NSLock()
+    private var discoveryCache: [DiscoveryCacheKey: DiscoveryCacheEntry] = [:]
 
     public init(
         fileManager: FileManager = .default,
@@ -278,6 +295,14 @@ public final class SkillCatalogService: @unchecked Sendable {
 
     public func discoverSkills(projectPath: String?) throws -> [DiscoveredSkill] {
         let roots = discoveryRoots(projectPath: projectPath)
+        let cacheKey = DiscoveryCacheKey(
+            roots: roots.map { "\($0.0.standardizedFileURL.path)#\($0.1.rawValue)" }
+        )
+        let signatures = discoverySignatures(for: roots)
+        if let cached = cachedDiscovery(for: cacheKey, signatures: signatures) {
+            return cached
+        }
+
         var skillsByPath: [String: DiscoveredSkill] = [:]
 
         for (root, scope) in roots {
@@ -298,10 +323,12 @@ public final class SkillCatalogService: @unchecked Sendable {
                 }
 
                 let metadata = try parseSkillMetadata(at: entry)
+                let installMetadata = try? readInstallMetadata(at: skillDirectory)
                 let hasScripts = directoryExists(skillDirectory.appendingPathComponent("scripts", isDirectory: true).path)
                 let isGitRepository = directoryExists(skillDirectory.appendingPathComponent(".git", isDirectory: true).path)
-                let sourceURL = try? gitRemoteURL(for: skillDirectory.path)
-                let installMetadata = try? readInstallMetadata(at: skillDirectory)
+                let sourceURL = installMetadata?.source
+                    ?? metadata.optionalMetadata["source"]
+                    ?? metadata.optionalMetadata["repository"]
 
                 let skill = DiscoveredSkill(
                     name: metadata.name,
@@ -319,7 +346,7 @@ public final class SkillCatalogService: @unchecked Sendable {
             }
         }
 
-        return skillsByPath.values.sorted {
+        let sortedSkills = skillsByPath.values.sorted {
             if $0.scope != $1.scope {
                 return $0.scope.rawValue < $1.scope.rawValue
             }
@@ -328,6 +355,8 @@ public final class SkillCatalogService: @unchecked Sendable {
             }
             return $0.skillPath < $1.skillPath
         }
+        storeDiscovery(sortedSkills, for: cacheKey, signatures: signatures)
+        return sortedSkills
     }
 
     public func installSkill(_ request: SkillInstallRequest) throws -> SkillInstallResult {
@@ -357,6 +386,7 @@ public final class SkillCatalogService: @unchecked Sendable {
                     metadata: SkillInstallMetadata(source: source, installer: .git, installedAt: Date(), updatedAt: Date())
                 )
             }
+            invalidateDiscoveryCache()
             return SkillInstallResult(installedPath: destination.path, output: output)
 
         case .npx:
@@ -378,6 +408,7 @@ public final class SkillCatalogService: @unchecked Sendable {
                 at: URL(fileURLWithPath: installedPath, isDirectory: true),
                 metadata: SkillInstallMetadata(source: source, installer: .npx, installedAt: Date(), updatedAt: Date())
             )
+            invalidateDiscoveryCache()
             return SkillInstallResult(installedPath: installedPath, output: output)
         }
     }
@@ -401,6 +432,7 @@ public final class SkillCatalogService: @unchecked Sendable {
             )
             try? writeInstallMetadata(at: URL(fileURLWithPath: path, isDirectory: true), metadata: metadata)
         }
+        invalidateDiscoveryCache()
         return SkillUpdateResult(output: output)
     }
 
@@ -424,6 +456,7 @@ public final class SkillCatalogService: @unchecked Sendable {
                 metadata: SkillInstallMetadata(source: source, installer: .git, installedAt: Date(), updatedAt: Date())
             )
             try replaceDirectoryAtomically(existingURL: skillURL, replacementURL: stagingURL)
+            invalidateDiscoveryCache()
             return SkillInstallResult(installedPath: skillURL.path, output: output)
 
         case .npx:
@@ -452,6 +485,7 @@ public final class SkillCatalogService: @unchecked Sendable {
                 metadata: SkillInstallMetadata(source: source, installer: .npx, installedAt: Date(), updatedAt: Date())
             )
             try replaceDirectoryAtomically(existingURL: skillURL, replacementURL: installedURL)
+            invalidateDiscoveryCache()
 
             return SkillInstallResult(installedPath: skillURL.path, output: output)
         }
@@ -518,6 +552,68 @@ public final class SkillCatalogService: @unchecked Sendable {
             return URL(fileURLWithPath: codexHome, isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+    }
+
+    private func cachedDiscovery(
+        for key: DiscoveryCacheKey,
+        signatures: [DiscoveryRootSignature]
+    ) -> [DiscoveredSkill]? {
+        discoveryCacheLock.lock()
+        defer { discoveryCacheLock.unlock() }
+        guard let entry = discoveryCache[key], entry.signatures == signatures else {
+            return nil
+        }
+        return entry.skills
+    }
+
+    private func storeDiscovery(
+        _ skills: [DiscoveredSkill],
+        for key: DiscoveryCacheKey,
+        signatures: [DiscoveryRootSignature]
+    ) {
+        discoveryCacheLock.lock()
+        discoveryCache[key] = DiscoveryCacheEntry(signatures: signatures, skills: skills)
+        discoveryCacheLock.unlock()
+    }
+
+    private func invalidateDiscoveryCache() {
+        discoveryCacheLock.lock()
+        discoveryCache = [:]
+        discoveryCacheLock.unlock()
+    }
+
+    private func discoverySignatures(
+        for roots: [(URL, SkillScope)]
+    ) -> [DiscoveryRootSignature] {
+        roots.map { root, _ in
+            guard directoryExists(root.path) else {
+                return DiscoveryRootSignature(rootPath: root.standardizedFileURL.path, skillFileCount: 0, latestSkillFileMTime: 0)
+            }
+
+            let enumerator = fileManager.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            var fileCount = 0
+            var latest = TimeInterval(0)
+            while let entry = enumerator?.nextObject() as? URL {
+                guard entry.lastPathComponent == "SKILL.md" else { continue }
+                fileCount += 1
+                let mTime = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+                    .timeIntervalSince1970 ?? 0
+                if mTime > latest {
+                    latest = mTime
+                }
+            }
+
+            return DiscoveryRootSignature(
+                rootPath: root.standardizedFileURL.path,
+                skillFileCount: fileCount,
+                latestSkillFileMTime: latest
+            )
+        }
     }
 
     private func discoveryRoots(projectPath: String?) -> [(URL, SkillScope)] {

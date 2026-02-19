@@ -60,7 +60,7 @@ Legacy keys are rejected:
 - content is sourced from extension worker output
 - the surface stays non-persistent by default
 - output may be `thread` or `global` scope
-- output may include typed action buttons (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`)
+- output may include typed action buttons (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`, `native.action`)
 
 ## Hook Events
 
@@ -85,3 +85,27 @@ Permission keys:
 - `runWhenAppClosed`
 
 Permission prompts are runtime-gated on first privileged use.
+
+## Native Action Bridge
+
+Mods bar actions can dispatch native computer actions through:
+
+- `kind: "native.action"`
+- `nativeActionID` (or `payload.actionID`) to select the native action
+- optional metadata (`safetyLevel`, `requiresConfirmation`, `externallyVisible`) for install/review surfaces
+
+Current first-party native actions:
+
+- `desktop.cleanup`
+- `calendar.today`
+- `messages.send`
+
+Native actions still execute through CodexChat safety rules (preview + confirmation for sensitive actions).
+
+## Advanced Executable Mods Unlock
+
+Executable mod behavior (hooks/automations) for non-vetted mods is gated by an advanced unlock in Settings.
+
+- Existing users retain legacy behavior.
+- New users default to locked advanced executable mods.
+- Vetted first-party packs are exempt from this lock.

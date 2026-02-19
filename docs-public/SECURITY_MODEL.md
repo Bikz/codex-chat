@@ -55,3 +55,24 @@ When runtime proposes edits in mod roots, CodexChat enforces review:
 - Worker execution uses isolated subprocess invocation with hard timeouts and output caps.
 - Artifact writes are confined to project roots; traversal outside project root is rejected.
 - Extension diagnostics sanitize token-like secret patterns before logging.
+
+## Native Computer Actions Safety
+
+CodexChat supports native macOS computer actions for personal workflows (desktop cleanup, calendar lookups, and message drafting/sending).
+
+- Preview-first execution is mandatory for externally visible or file-changing actions.
+- Execution requires explicit confirmation from the preview sheet before the action runs.
+- Action execution is bound to the same run context as its preview artifact.
+- Desktop cleanup only performs move operations in v1 (no permanent delete) and stores undo manifests.
+- Calendar access is read-only in v1.
+- Messages send requires explicit draft preview and send confirmation.
+- Permission grants/denials and run outcomes are persisted locally in metadata SQLite.
+
+## Executable Mods Guardrail
+
+To reduce non-vetted script risk, CodexChat applies an advanced unlock gate for executable mod behavior:
+
+- Existing installs preserve prior behavior after migration.
+- New installs default to locked advanced executable mods.
+- Non-vetted mods using hooks/automations stay disabled until explicit unlock.
+- First-party vetted packs under `mods/first-party` remain available without custom unlock.

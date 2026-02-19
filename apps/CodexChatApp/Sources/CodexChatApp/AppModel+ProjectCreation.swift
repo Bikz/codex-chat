@@ -149,8 +149,20 @@ extension AppModel {
     }
 
     private func activateProject(_ project: ProjectRecord) async throws {
+        let span = await PerformanceTracer.shared.begin(
+            name: "thread.activateProject",
+            metadata: ["projectID": project.id.uuidString]
+        )
+        defer {
+            Task {
+                await PerformanceTracer.shared.end(span)
+            }
+        }
+
         try await refreshProjects()
         selectedProjectID = project.id
+        selectedThreadID = nil
+        refreshConversationState()
         try await prepareProjectFolderStructure(projectPath: project.path)
         try await persistSelection()
         try await refreshThreads()

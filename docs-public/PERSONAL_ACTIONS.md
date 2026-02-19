@@ -1,0 +1,61 @@
+# Personal Actions (macOS)
+
+CodexChat includes native personal actions so everyday users can ask for practical computer help without leaving chat.
+
+## Scope (V1)
+
+- Desktop cleanup (`desktop.cleanup`)
+- Calendar lookup (`calendar.today`)
+- Messages draft/send (`messages.send`)
+
+## Adaptive Intent Routing
+
+Composer text is routed locally for common intent patterns, including:
+
+- "clean up desktop"
+- "what's on my calendar today"
+- "send message to <recipient>: <body>"
+
+Routing runs inside the existing two-pane experience (inline cards + sheets) with no persistent third pane.
+
+## Safety Contract
+
+- Sensitive actions require preview artifacts before execution.
+- Externally visible or file-changing actions require explicit confirmation.
+- Execute calls are bound to the same run context as their preview.
+- Permission decisions and outcomes are persisted locally.
+
+## Action Behavior
+
+### Desktop Cleanup
+
+- Preview-only diff first (candidate files, target folders, operation summary).
+- V1 performs move operations only (no permanent delete).
+- Undo manifest is written and can restore the last cleanup.
+
+### Calendar Today
+
+- Read-only event listing for today (or supplied range window).
+- Permission denial returns actionable guidance.
+
+### Messages Send
+
+- Draft preview shows recipient + body.
+- Final send requires explicit user confirmation.
+- Transcript action cards reflect sent/denied/failure outcomes.
+
+## First-Party Packs
+
+`mods/first-party` ships companion packs:
+
+- `desktop-cleanup`
+- `calendar-assistant`
+- `messages-assistant`
+
+These packs expose native actions from Mods bar while preserving native safety checks.
+
+## Privacy
+
+- Local-first storage only.
+- No new remote analytics for personal action usage.
+- Minimal persisted diagnostics (permissions + run outcomes).

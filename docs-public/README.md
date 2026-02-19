@@ -14,6 +14,8 @@ This folder contains contributor-facing documentation tracked in git.
 
 - `MODS.md` — UI mod format and precedence.
 - `MODS_SHARING.md` — canonical builder guide for creating/sharing Skills/Mods, including extension schema/protocol (experimental).
+- `PERSONAL_ACTIONS.md` — native macOS personal actions, adaptive intent routing, and preview/confirm safety model.
+- `DEVELOPER_AGENT_WORKFLOWS.md` — worker trace, role/profile builder, and dependency-aware plan runner primitives.
 - `EXTENSIONS.md` — compatibility landing page linking to canonical `MODS_SHARING.md` sections.
 - `ADR-EXTENSIONS-RUNTIME.md` — extension runtime architecture decision.
 - `EXTENSIONS_SPEC_VNEXT.md` — proposed package/runtime extension spec for ecosystem scaling.

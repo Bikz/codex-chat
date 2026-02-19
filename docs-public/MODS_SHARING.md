@@ -30,7 +30,7 @@ Precedence:
 1. Theme packs.
 2. Slash command and workflow helper mods.
 3. Turn/thread summary and automation mods.
-4. `Mods bar` UI experiences (`uiSlots.modsBar`).
+4. `Mods bar` UI experiences (`uiSlots.modsBar`) including native action buttons.
 
 ## Package Layout
 
@@ -105,6 +105,12 @@ Output:
 {"ok":true,"modsBar":{"title":"Thread Summary","scope":"thread","markdown":"- Turn completed","actions":[{"id":"clear","label":"Clear","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"summary-action"}}]},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}]}
 ```
 
+Native action output example:
+
+```json
+{"ok":true,"modsBar":{"title":"Desktop Cleanup","scope":"thread","markdown":"Preview cleanup before running moves.","actions":[{"id":"cleanup-preview","label":"Preview Cleanup","kind":"native.action","nativeActionID":"desktop.cleanup","safetyLevel":"destructive","requiresConfirmation":true,"payload":{}}]}}
+```
+
 ## Default macOS runtime baseline
 
 For mods that should work on stock macOS installs, prefer:
@@ -128,6 +134,7 @@ Rules:
 - install does not auto-grant privileged permissions
 - privileged behavior is prompted on first use
 - automations are timeout-bounded
+- non-vetted executable mods are blocked for new installs until advanced unlock
 
 ## `Mods bar` Contract
 
@@ -146,6 +153,7 @@ Rules:
 Repository policy for this cycle:
 
 - first-party exemplar mods live under `mods/first-party` in the CodexChat repo
+- first-party personal-action packs include `desktop-cleanup`, `calendar-assistant`, and `messages-assistant`
 - third-party mods should stay in external GitHub repositories (or local folders)
 - no hosted catalog onboarding in this cycle
 

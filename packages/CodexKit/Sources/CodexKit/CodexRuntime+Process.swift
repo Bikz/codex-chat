@@ -34,6 +34,7 @@ extension CodexRuntime {
         stdoutHandle = stdoutPipe.fileHandleForReading
         stderrHandle = stderrPipe.fileHandleForReading
         framer = JSONLFramer()
+        stderrLineBuffer = Data()
 
         installReadHandlers()
     }
@@ -147,28 +148,25 @@ extension CodexRuntime {
             return
         }
 
-        let trimmed = String(bytes: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let message = trimmed, !message.isEmpty else {
-            return
+        stderrLineBuffer.append(data)
+        while let newlineIndex = stderrLineBuffer.firstIndex(of: 0x0A) {
+            let lineData = stderrLineBuffer.prefix(upTo: newlineIndex)
+            stderrLineBuffer.removeSubrange(...newlineIndex)
+            emitStderrLine(Data(lineData))
         }
 
-        eventContinuation.yield(
-            .action(
-                RuntimeAction(
-                    method: "runtime/stderr",
-                    itemID: nil,
-                    itemType: nil,
-                    threadID: nil,
-                    turnID: nil,
-                    title: "Runtime stderr",
-                    detail: message
-                )
-            )
-        )
+        // If stderr is a stream without newlines, flush periodically to keep memory bounded.
+        if stderrLineBuffer.count > 256 * 1024 {
+            emitStderrLine(stderrLineBuffer)
+            stderrLineBuffer = Data()
+        }
     }
 
     func stopProcess() async {
+        if !stderrLineBuffer.isEmpty {
+            emitStderrLine(stderrLineBuffer)
+            stderrLineBuffer = Data()
+        }
         stdoutHandle?.readabilityHandler = nil
         stderrHandle?.readabilityHandler = nil
         stdoutPumpContinuation?.finish()
@@ -189,6 +187,7 @@ extension CodexRuntime {
         stdinHandle = nil
         stdoutHandle = nil
         stderrHandle = nil
+        stderrLineBuffer = Data()
         pendingApprovalRequests.removeAll()
         runtimeCapabilities = .none
 
@@ -196,6 +195,10 @@ extension CodexRuntime {
     }
 
     private func handleProcessTermination(status: Int32) async {
+        if !stderrLineBuffer.isEmpty {
+            emitStderrLine(stderrLineBuffer)
+            stderrLineBuffer = Data()
+        }
         stdoutHandle?.readabilityHandler = nil
         stderrHandle?.readabilityHandler = nil
         stdoutPumpContinuation?.finish()
@@ -211,6 +214,7 @@ extension CodexRuntime {
         stdinHandle = nil
         stdoutHandle = nil
         stderrHandle = nil
+        stderrLineBuffer = Data()
         pendingApprovalRequests.removeAll()
         runtimeCapabilities = .none
 
@@ -226,5 +230,27 @@ extension CodexRuntime {
             detail: "codex app-server exited with status \(status)."
         )
         eventContinuation.yield(.action(action))
+    }
+
+    private func emitStderrLine(_ lineData: Data) {
+        let trimmed = String(bytes: lineData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let message = trimmed, !message.isEmpty else {
+            return
+        }
+
+        eventContinuation.yield(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stderr",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: nil,
+                    turnID: nil,
+                    title: "Runtime stderr",
+                    detail: message
+                )
+            )
+        )
     }
 }

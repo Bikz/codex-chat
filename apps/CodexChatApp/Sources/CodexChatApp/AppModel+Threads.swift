@@ -2,6 +2,7 @@ import AppKit
 import CodexChatCore
 import CodexKit
 import CodexMemory
+import CryptoKit
 import Foundation
 
 extension AppModel {
@@ -22,7 +23,20 @@ extension AppModel {
     }
 
     func selectProject(_ projectID: UUID?) {
-        Task {
+        let transitionGeneration = beginSelectionTransition()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let span = await PerformanceTracer.shared.begin(
+                name: "thread.selectProject",
+                metadata: ["projectID": projectID?.uuidString ?? "nil"]
+            )
+            defer {
+                Task {
+                    await PerformanceTracer.shared.end(span)
+                }
+                finishSelectionTransition(transitionGeneration)
+            }
+
             selectedProjectID = projectID
             selectedThreadID = nil
             if draftChatProjectID != projectID {
@@ -33,19 +47,23 @@ extension AppModel {
 
             do {
                 try await persistSelection()
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshThreads()
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshSkills()
                 refreshModsSurface()
                 if let selectedThreadID {
                     try await refreshFollowUpQueue(threadID: selectedThreadID)
                     await rehydrateThreadTranscript(threadID: selectedThreadID)
                 }
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationState()
             } catch {
                 threadsState = .failed(error.localizedDescription)
                 appendLog(.error, "Select project failed: \(error.localizedDescription)")
             }
         }
+        registerSelectionTransitionTask(task, generation: transitionGeneration)
     }
 
     func createThread() {
@@ -144,14 +162,29 @@ extension AppModel {
         refreshConversationState()
         appendLog(.debug, "Selected thread: \(threadID?.uuidString ?? "none")")
 
-        Task {
+        let transitionGeneration = beginSelectionTransition()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let span = await PerformanceTracer.shared.begin(
+                name: "thread.selectThread",
+                metadata: ["threadID": threadID?.uuidString ?? "nil"]
+            )
+            defer {
+                Task {
+                    await PerformanceTracer.shared.end(span)
+                }
+                finishSelectionTransition(transitionGeneration)
+            }
+
             do {
                 let didAlignProject = await alignSelectedProjectToSelectedThreadIfNeeded(threadID: threadID)
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 guard selectedThreadID == threadID else {
                     return
                 }
 
                 try await persistSelection()
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
 
                 if didAlignProject {
                     do {
@@ -169,6 +202,7 @@ extension AppModel {
                     try await refreshFollowUpQueue(threadID: threadID)
                     await rehydrateThreadTranscript(threadID: threadID)
                 }
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationState()
                 requestAutoDrain(reason: "thread selection changed")
             } catch {
@@ -176,6 +210,7 @@ extension AppModel {
                 appendLog(.error, "Select thread failed: \(error.localizedDescription)")
             }
         }
+        registerSelectionTransitionTask(task, generation: transitionGeneration)
     }
 
     private func alignSelectedProjectToSelectedThreadIfNeeded(threadID: UUID?) async -> Bool {
@@ -263,24 +298,47 @@ extension AppModel {
         refreshConversationState()
         appendLog(.info, "Started draft chat for project \(projectID.uuidString)")
 
-        Task {
+        let transitionGeneration = beginSelectionTransition()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let span = await PerformanceTracer.shared.begin(
+                name: "thread.beginDraftChat",
+                metadata: ["projectID": projectID.uuidString]
+            )
+            defer {
+                Task {
+                    await PerformanceTracer.shared.end(span)
+                }
+                finishSelectionTransition(transitionGeneration)
+            }
+
             do {
                 if generalProject?.id == projectID {
                     try await refreshGeneralThreads(generalProjectID: projectID)
                 } else {
                     try await refreshThreads()
                 }
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshSkills()
                 refreshModsSurface()
                 try await persistSelection()
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationState()
             } catch {
                 appendLog(.error, "Start draft chat failed: \(error.localizedDescription)")
             }
         }
+        registerSelectionTransitionTask(task, generation: transitionGeneration)
     }
 
     func materializeDraftThreadIfNeeded() async throws -> UUID {
+        let span = await PerformanceTracer.shared.begin(name: "thread.materializeDraftThread")
+        defer {
+            Task {
+                await PerformanceTracer.shared.end(span)
+            }
+        }
+
         if let selectedThreadID {
             return selectedThreadID
         }
@@ -319,16 +377,31 @@ extension AppModel {
     }
 
     func rehydrateThreadTranscript(threadID: UUID, limit: Int = 50) async {
+        let span = await PerformanceTracer.shared.begin(
+            name: "thread.rehydrateTranscript",
+            metadata: ["threadID": threadID.uuidString, "limit": "\(limit)"]
+        )
+        defer {
+            Task {
+                await PerformanceTracer.shared.end(span)
+            }
+        }
+
         do {
             guard let projectPath = try await projectPathForThread(threadID: threadID) else {
                 return
             }
-            let turns = try ChatArchiveStore.loadRecentTurns(
-                projectPath: projectPath,
-                threadID: threadID,
-                limit: limit
-            )
-            transcriptStore[threadID] = Self.transcriptEntries(from: turns, threadID: threadID)
+            let turns = try await Task.detached(priority: .userInitiated) {
+                try ChatArchiveStore.loadRecentTurns(
+                    projectPath: projectPath,
+                    threadID: threadID,
+                    limit: limit
+                )
+            }.value
+            let entries = await Task.detached(priority: .userInitiated) {
+                Self.transcriptEntries(from: turns, threadID: threadID)
+            }.value
+            transcriptStore[threadID] = entries
         } catch {
             appendLog(
                 .warning,
@@ -352,23 +425,21 @@ extension AppModel {
         return project.path
     }
 
-    private static func transcriptEntries(
+    nonisolated private static func transcriptEntries(
         from turns: [ArchivedTurnSummary],
         threadID: UUID
     ) -> [TranscriptEntry] {
-        let ordered = turns.sorted {
-            if $0.timestamp != $1.timestamp {
-                return $0.timestamp < $1.timestamp
-            }
-            return $0.turnID.uuidString < $1.turnID.uuidString
-        }
-
         var entries: [TranscriptEntry] = []
-        entries.reserveCapacity(ordered.count * 3)
+        entries.reserveCapacity(turns.count * 3)
 
-        for turn in ordered {
+        for turn in turns {
             let userMessage = ChatMessage(
-                id: UUID(),
+                id: deterministicMessageID(
+                    threadID: threadID,
+                    turnID: turn.turnID,
+                    role: .user,
+                    ordinal: 0
+                ),
                 threadId: threadID,
                 role: .user,
                 text: turn.userText,
@@ -379,7 +450,12 @@ extension AppModel {
             let assistantText = turn.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !assistantText.isEmpty {
                 let assistantMessage = ChatMessage(
-                    id: UUID(),
+                    id: deterministicMessageID(
+                        threadID: threadID,
+                        turnID: turn.turnID,
+                        role: .assistant,
+                        ordinal: 0
+                    ),
                     threadId: threadID,
                     role: .assistant,
                     text: assistantText,
@@ -402,5 +478,29 @@ extension AppModel {
         }
 
         return entries
+    }
+
+    nonisolated private static func deterministicMessageID(
+        threadID: UUID,
+        turnID: UUID,
+        role: ChatMessageRole,
+        ordinal: Int
+    ) -> UUID {
+        let payload = "\(threadID.uuidString)|\(turnID.uuidString)|\(role.rawValue)|\(ordinal)"
+        let digest = SHA256.hash(data: Data(payload.utf8))
+        let bytes = Array(digest.prefix(16))
+        guard bytes.count == 16 else {
+            return turnID
+        }
+
+        let versionedByte6 = (bytes[6] & 0x0F) | 0x40
+        let variantByte8 = (bytes[8] & 0x3F) | 0x80
+
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], versionedByte6, bytes[7],
+            variantByte8, bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15],
+        ))
     }
 }

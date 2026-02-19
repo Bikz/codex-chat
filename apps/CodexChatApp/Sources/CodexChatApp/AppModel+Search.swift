@@ -38,22 +38,48 @@ extension AppModel {
     }
 
     func selectSearchResult(_ result: ChatSearchResult) {
-        Task {
+        selectedProjectID = result.projectID
+        selectedThreadID = result.threadID
+        draftChatProjectID = nil
+        detailDestination = .thread
+        refreshConversationState()
+
+        let transitionGeneration = beginSelectionTransition()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let span = await PerformanceTracer.shared.begin(
+                name: "thread.selectSearchResult",
+                metadata: [
+                    "threadID": result.threadID.uuidString,
+                    "projectID": result.projectID.uuidString,
+                ]
+            )
+            defer {
+                Task {
+                    await PerformanceTracer.shared.end(span)
+                }
+                finishSelectionTransition(transitionGeneration)
+            }
+
             selectedProjectID = result.projectID
             selectedThreadID = result.threadID
             draftChatProjectID = nil
             detailDestination = .thread
             do {
                 try await persistSelection()
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshThreads()
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshSkills()
                 refreshModsSurface()
                 try await refreshFollowUpQueue(threadID: result.threadID)
                 await rehydrateThreadTranscript(threadID: result.threadID)
+                guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationState()
             } catch {
                 appendLog(.error, "Failed to open search result: \(error.localizedDescription)")
             }
         }
+        registerSelectionTransitionTask(task, generation: transitionGeneration)
     }
 }

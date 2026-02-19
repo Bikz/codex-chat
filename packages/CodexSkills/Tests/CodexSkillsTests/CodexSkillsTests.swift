@@ -56,6 +56,108 @@ final class CodexSkillsTests: XCTestCase {
         XCTAssertTrue(projectSkill?.hasScripts ?? false)
     }
 
+    func testDiscoverSkillsDoesNotInvokeProcessRunnerOnRepeatedDiscovery() throws {
+        final class InvocationCounter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = 0
+
+            func increment() {
+                lock.lock()
+                value += 1
+                lock.unlock()
+            }
+
+            func read() -> Int {
+                lock.lock()
+                defer { lock.unlock() }
+                return value
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-discover-nogit-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let agentsHome = root.appendingPathComponent(".agents", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        let skillDirectory = codexHome.appendingPathComponent("skills/git-backed-skill", isDirectory: true)
+
+        try createSkill(
+            at: skillDirectory,
+            body: """
+            # Git Backed Skill
+
+            Uses repo metadata.
+            """
+        )
+        try FileManager.default.createDirectory(
+            at: skillDirectory.appendingPathComponent(".git", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        let counter = InvocationCounter()
+        let service = SkillCatalogService(
+            codexHomeURL: codexHome,
+            agentsHomeURL: agentsHome,
+            processRunner: { _, _ in
+                counter.increment()
+                throw NSError(
+                    domain: "CodexSkillsTests",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "discoverSkills should not invoke processRunner"]
+                )
+            }
+        )
+
+        let first = try service.discoverSkills(projectPath: project.path)
+        let second = try service.discoverSkills(projectPath: project.path)
+
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(second.count, 1)
+        XCTAssertEqual(counter.read(), 0)
+        XCTAssertNil(first.first?.sourceURL)
+    }
+
+    func testDiscoverSkillsCacheInvalidatesWhenSkillDefinitionChanges() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-cache-invalidate-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let agentsHome = root.appendingPathComponent(".agents", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        let skillDirectory = codexHome.appendingPathComponent("skills/cache-skill", isDirectory: true)
+        let skillFile = skillDirectory.appendingPathComponent("SKILL.md", isDirectory: false)
+
+        try createSkill(
+            at: skillDirectory,
+            body: """
+            # Cache Skill
+
+            First description.
+            """
+        )
+
+        let service = SkillCatalogService(codexHomeURL: codexHome, agentsHomeURL: agentsHome)
+
+        let first = try service.discoverSkills(projectPath: project.path)
+        XCTAssertEqual(first.first(where: { $0.name == "Cache Skill" })?.description, "First description.")
+
+        // Keep this >1s so file mtime advances on filesystems with coarse timestamp precision.
+        Thread.sleep(forTimeInterval: 1.1)
+        try """
+        # Cache Skill
+
+        Updated description.
+        """.write(to: skillFile, atomically: true, encoding: .utf8)
+
+        let second = try service.discoverSkills(projectPath: project.path)
+        XCTAssertEqual(second.first(where: { $0.name == "Cache Skill" })?.description, "Updated description.")
+    }
+
     func testTrustedSourceDetection() {
         let service = SkillCatalogService(
             processRunner: { _, _ in "" }

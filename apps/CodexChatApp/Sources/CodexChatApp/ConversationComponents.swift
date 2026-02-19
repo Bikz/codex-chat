@@ -151,6 +151,62 @@ struct ActionCardRow: View {
     }
 }
 
+struct InlineActionNoticeRow: View {
+    let card: ActionCard
+
+    @State private var isDetailsSheetPresented = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(methodTint(card.method))
+                .frame(width: 6, height: 6)
+                .accessibilityHidden(true)
+
+            Text(card.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 8)
+
+            Button("Details") {
+                isDetailsSheetPresented = true
+            }
+            .buttonStyle(.plain)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isDetailsSheetPresented = true
+        }
+        .accessibilityLabel("\(card.title). Action details available.")
+        .sheet(isPresented: $isDetailsSheetPresented) {
+            TurnActionDetailsSheet(
+                title: card.title,
+                actions: [card]
+            )
+        }
+    }
+
+    private func methodTint(_ method: String) -> Color {
+        let lower = method.lowercased()
+        if lower.contains("error")
+            || lower.contains("failed")
+            || lower.contains("stderr")
+            || lower.contains("terminated")
+        {
+            return .red
+        }
+        if lower.contains("approval") {
+            return .orange
+        }
+        return .secondary.opacity(0.85)
+    }
+}
+
 private struct TranscriptMilestoneChips: View {
     let counts: TranscriptMilestoneCounts
 
@@ -247,59 +303,69 @@ struct TurnSummaryRow: View {
     let detailLevel: TranscriptDetailLevel
 
     @State private var isDetailsSheetPresented = false
-    @Environment(\.designTokens) private var tokens
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
+        HStack(spacing: 8) {
+            Circle()
+                .fill(summary.isFailure ? .red : .secondary.opacity(0.8))
+                .frame(width: 6, height: 6)
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(summary.isFailure ? .red : .secondary)
-                    .frame(width: 8, height: 8)
-                Text(summary.title)
-                    .font(.callout.weight(.semibold))
-                Spacer(minLength: 8)
-
-                Button("View details") {
-                    isDetailsSheetPresented = true
-                }
-                .buttonStyle(.plain)
-                .font(.caption.weight(.semibold))
+            Text(summaryLine)
+                .font(.caption)
                 .foregroundStyle(.secondary)
-            }
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            if detailLevel == .balanced, summary.milestoneCounts.hasAny {
-                TranscriptMilestoneChips(counts: summary.milestoneCounts)
-            }
+            Spacer(minLength: 8)
 
-            if !summary.assistantPreview.isEmpty {
-                Text(summary.assistantPreview)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(4)
-            } else if !summary.userPreview.isEmpty {
-                Text(summary.userPreview)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+            Button("View details") {
+                isDetailsSheetPresented = true
             }
-
-            if summary.hiddenActionCount > 0 {
-                Text("\(summary.hiddenActionCount) internal event(s) compacted in transcript view.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            .buttonStyle(.plain)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
         }
-        .padding(10)
-        .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isDetailsSheetPresented = true
+        }
         .sheet(isPresented: $isDetailsSheetPresented) {
             TurnActionDetailsSheet(
-                title: summary.title,
+                title: summary.isFailure ? "Turn details (issues detected)" : "Turn details",
                 actions: summary.actions
             )
         }
+    }
+
+    private var summaryLine: String {
+        var segments: [String] = []
+
+        if summary.actionCount == 1 {
+            segments.append("1 action")
+        } else {
+            segments.append("\(summary.actionCount) actions")
+        }
+
+        if summary.hiddenActionCount > 0 {
+            segments.append("\(summary.hiddenActionCount) compacted")
+        }
+
+        if detailLevel == .balanced {
+            if summary.milestoneCounts.reasoning > 0 {
+                segments.append("\(summary.milestoneCounts.reasoning) reasoning")
+            }
+            if summary.milestoneCounts.commandExecution > 0 {
+                segments.append("\(summary.milestoneCounts.commandExecution) commands")
+            }
+            if summary.milestoneCounts.warnings > 0 {
+                segments.append("\(summary.milestoneCounts.warnings) warnings")
+            }
+            if summary.milestoneCounts.errors > 0 {
+                segments.append("\(summary.milestoneCounts.errors) errors")
+            }
+        }
+
+        return segments.joined(separator: " • ")
     }
 }
 

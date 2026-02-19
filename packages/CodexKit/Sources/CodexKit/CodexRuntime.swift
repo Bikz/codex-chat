@@ -14,6 +14,7 @@ public actor CodexRuntime {
     var stdoutHandle: FileHandle?
     var stderrHandle: FileHandle?
     var framer = JSONLFramer()
+    var stderrLineBuffer = Data()
     var pendingApprovalRequests: [Int: RuntimeApprovalRequest] = [:]
     var runtimeCapabilities: RuntimeCapabilities = .none
 

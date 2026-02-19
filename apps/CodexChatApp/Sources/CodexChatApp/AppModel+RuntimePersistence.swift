@@ -5,6 +5,16 @@ import Foundation
 
 extension AppModel {
     func persistCompletedTurn(context: ActiveTurnContext, completion: RuntimeTurnCompletion) async {
+        let span = await PerformanceTracer.shared.begin(
+            name: "thread.persistCompletedTurn",
+            metadata: ["threadID": context.localThreadID.uuidString]
+        )
+        defer {
+            Task {
+                await PerformanceTracer.shared.end(span)
+            }
+        }
+
         let assistantText = context.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedStatus = completion.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let turnFailed = completion.errorMessage != nil
@@ -43,26 +53,12 @@ extension AppModel {
         )
 
         do {
-            let archiveURL: URL = switch turnStatus {
-            case .completed:
-                try ChatArchiveStore.finalizeCheckpoint(
-                    projectPath: context.projectPath,
-                    threadID: context.localThreadID,
-                    turn: summary
-                )
-            case .failed:
-                try ChatArchiveStore.failCheckpoint(
-                    projectPath: context.projectPath,
-                    threadID: context.localThreadID,
-                    turn: summary
-                )
-            case .pending:
-                try ChatArchiveStore.beginCheckpoint(
-                    projectPath: context.projectPath,
-                    threadID: context.localThreadID,
-                    turn: summary
-                )
-            }
+            let archiveURL = try await TurnPersistenceWorker.shared.persistArchive(
+                projectPath: context.projectPath,
+                threadID: context.localThreadID,
+                summary: summary,
+                turnStatus: turnStatus
+            )
             projectStatusMessage = "Archived chat turn to \(archiveURL.lastPathComponent)."
             emitExtensionEvent(
                 .transcriptPersisted,

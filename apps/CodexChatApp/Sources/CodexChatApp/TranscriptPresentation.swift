@@ -44,10 +44,8 @@ struct LiveTurnActivityPresentation: Identifiable, Hashable {
 
 struct TurnSummaryPresentation: Identifiable, Hashable {
     let id: UUID
-    let title: String
-    let userPreview: String
-    let assistantPreview: String
     let actions: [ActionCard]
+    let actionCount: Int
     let hiddenActionCount: Int
     let milestoneCounts: TranscriptMilestoneCounts
     let isFailure: Bool
@@ -355,7 +353,7 @@ enum TranscriptPresentationBuilder {
         hiddenActions: [ActionCard],
         detailLevel: TranscriptDetailLevel
     ) -> TurnSummaryPresentation? {
-        guard let userMessage = bucket.userMessage else {
+        guard bucket.userMessage != nil else {
             return nil
         }
 
@@ -367,8 +365,6 @@ enum TranscriptPresentationBuilder {
             return nil
         }
 
-        let assistantPreview = preview(bucket.assistantMessages.last?.text ?? "", maxLength: 220)
-        let userPreview = preview(userMessage.text, maxLength: 160)
         let milestones = milestoneCounts(from: bucket.actions)
         let hasFailure = bucket.actions.contains {
             let method = $0.method.lowercased()
@@ -384,10 +380,8 @@ enum TranscriptPresentationBuilder {
 
         return TurnSummaryPresentation(
             id: bucket.id,
-            title: hasFailure ? "Turn completed with issues" : "Turn completed",
-            userPreview: userPreview,
-            assistantPreview: assistantPreview,
             actions: bucket.actions,
+            actionCount: bucket.actions.count,
             hiddenActionCount: hiddenActions.count,
             milestoneCounts: milestones,
             isFailure: hasFailure

@@ -5,6 +5,20 @@ import Foundation
 
 extension AppModel {
     func handleRuntimeEvent(_ event: CodexRuntimeEvent) {
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        defer {
+            let duration = clock.now - startedAt
+            let components = duration.components
+            let durationMS = (Double(components.seconds) + (Double(components.attoseconds) / 1_000_000_000_000_000_000)) * 1_000
+            Task {
+                await PerformanceTracer.shared.record(
+                    name: "runtime.event.\(event.performanceName)",
+                    durationMS: durationMS
+                )
+            }
+        }
+
         switch event {
         case let .threadStarted(threadID):
             appendLog(.debug, "Runtime thread started: \(threadID)")
@@ -256,7 +270,7 @@ extension AppModel {
             return
         }
 
-        appendThreadLog(
+        enqueueThreadLog(
             level: .info,
             text: output.delta,
             to: localThreadID
@@ -377,5 +391,34 @@ extension AppModel {
 
     func clearPendingRuntimeRepairSuggestions() {
         runtimeRepairPendingRuntimeThreadIDs.removeAll()
+    }
+}
+
+private extension CodexRuntimeEvent {
+    var performanceName: String {
+        switch self {
+        case .threadStarted:
+            "threadStarted"
+        case .turnStarted:
+            "turnStarted"
+        case .assistantMessageDelta:
+            "assistantDelta"
+        case .commandOutputDelta:
+            "commandOutputDelta"
+        case .followUpSuggestions:
+            "followUpSuggestions"
+        case .fileChangesUpdated:
+            "fileChangesUpdated"
+        case .approvalRequested:
+            "approvalRequested"
+        case .action:
+            "action"
+        case .turnCompleted:
+            "turnCompleted"
+        case .accountUpdated:
+            "accountUpdated"
+        case .accountLoginCompleted:
+            "accountLoginCompleted"
+        }
     }
 }

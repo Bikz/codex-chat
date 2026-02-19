@@ -168,6 +168,40 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
         XCTAssertTrue(outcome.contains("Steered via legacy payload: Legacy steer"))
     }
 
+    func testStderrChunkFragmentationReconstructsLines() async throws {
+        let fakeCodexPath = try Self.makeStderrFragmentFixtureExecutable()
+        let runtime = CodexRuntime(executableResolver: { fakeCodexPath })
+        defer { Task { await runtime.stop() } }
+
+        let stream = await runtime.events()
+        let threadID = try await runtime.startThread(cwd: FileManager.default.temporaryDirectory.path)
+        _ = try await runtime.startTurn(threadID: threadID, text: "Emit stderr")
+
+        let stderrLines = try await withTimeout(seconds: 2.0) {
+            var lines: [String] = []
+            for await event in stream {
+                switch event {
+                case let .action(action) where action.method == "runtime/stderr":
+                    lines.append(action.detail)
+                case .turnCompleted:
+                    return lines
+                default:
+                    continue
+                }
+            }
+
+            throw XCTestError(.failureWhileWaiting)
+        }
+
+        XCTAssertEqual(
+            stderrLines,
+            [
+                "chunked stderr line one",
+                "chunked stderr line two",
+            ]
+        )
+    }
+
     private static func resolveFakeCodexPath(filePath: String = #filePath) throws -> String {
         var url = URL(fileURLWithPath: filePath).deletingLastPathComponent()
         let fileManager = FileManager.default
@@ -406,6 +440,116 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
                     "params": {"threadId": thread_id, "turn": {"id": active_turn_id, "status": "completed"}}
                 })
                 active_turn_id = None
+                continue
+
+            send({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32601, "message": f"method not found: {method}", "data": None}
+            })
+        """
+
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: scriptURL.path
+        )
+        return scriptURL.path
+    }
+
+    private static func makeStderrFragmentFixtureExecutable() throws -> String {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-stderr-fragment-fixture-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let scriptURL = root.appendingPathComponent("fake-codex-stderr-fragment")
+
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        def send(message):
+            sys.stdout.write(json.dumps(message) + "\\n")
+            sys.stdout.flush()
+
+        args = sys.argv[1:]
+        if len(args) != 1 or args[0] != "app-server":
+            sys.stderr.write("usage: fake-codex-stderr-fragment app-server\\n")
+            raise SystemExit(2)
+
+        thread_id = "thr_stderr"
+        initialized = False
+
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line:
+                continue
+
+            try:
+                msg = json.loads(line)
+            except Exception:
+                continue
+
+            msg_id = msg.get("id")
+            method = msg.get("method")
+            params = msg.get("params") or {}
+            result = msg.get("result")
+            error = msg.get("error")
+
+            is_request = msg_id is not None and method is not None and result is None and error is None
+            is_notification = msg_id is None and method is not None and result is None and error is None
+
+            if is_notification:
+                if method == "initialized":
+                    initialized = True
+                continue
+
+            if not is_request:
+                continue
+
+            if method == "initialize":
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {}})
+                continue
+
+            if not initialized:
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {"code": -32002, "message": "not initialized", "data": None}
+                })
+                continue
+
+            if method == "thread/start":
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {"thread": {"id": thread_id}}
+                })
+                continue
+
+            if method == "turn/start":
+                turn_id = "turn_stderr"
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {"turn": {"id": turn_id}}
+                })
+
+                sys.stderr.write("chunked stderr ")
+                sys.stderr.flush()
+                sys.stderr.write("line one\\nchunked ")
+                sys.stderr.flush()
+                sys.stderr.write("stderr line two\\n")
+                sys.stderr.flush()
+
+                send({
+                    "jsonrpc": "2.0",
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": thread_id,
+                        "turn": {"id": turn_id, "status": "completed"}
+                    }
+                })
                 continue
 
             send({

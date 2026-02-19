@@ -5,6 +5,12 @@ struct DiagnosticsView: View {
     let runtimeStatus: RuntimeStatus
     let logs: [LogEntry]
     let onClose: () -> Void
+    @State private var performanceSnapshot = PerformanceSnapshot(
+        generatedAt: .distantPast,
+        operations: [],
+        recent: []
+    )
+    @State private var refreshTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -22,6 +28,31 @@ struct DiagnosticsView: View {
                     Spacer()
                     Text(runtimeStatus.rawValue.capitalized)
                         .foregroundStyle(.secondary)
+                }
+            }
+
+            GroupBox("Performance") {
+                if performanceSnapshot.operations.isEmpty {
+                    Text("No performance samples yet")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(performanceSnapshot.operations.prefix(12), id: \.name) { operation in
+                            HStack {
+                                Text(operation.name)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("p95 \(operation.p95MS, specifier: "%.1f")ms")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("n=\(operation.count)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -57,6 +88,13 @@ struct DiagnosticsView: View {
         }
         .padding(16)
         .frame(minWidth: 640, minHeight: 480)
+        .onAppear {
+            startRefreshingPerformanceSnapshot()
+        }
+        .onDisappear {
+            refreshTask?.cancel()
+            refreshTask = nil
+        }
     }
 
     private func color(for level: LogLevel) -> Color {
@@ -69,6 +107,19 @@ struct DiagnosticsView: View {
             .orange
         case .error:
             .red
+        }
+    }
+
+    private func startRefreshingPerformanceSnapshot() {
+        refreshTask?.cancel()
+        refreshTask = Task {
+            while !Task.isCancelled {
+                let snapshot = await PerformanceTracer.shared.snapshot()
+                await MainActor.run {
+                    performanceSnapshot = snapshot
+                }
+                try? await Task.sleep(nanoseconds: 750_000_000)
+            }
         }
     }
 }

@@ -84,6 +84,121 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testRehydrateThreadTranscriptProducesStableMessageIDsAcrossReloads() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-rehydrate-stable-ids-\(UUID().uuidString)", isDirectory: true)
+        let projectURL = root.appendingPathComponent("project", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        let project = try await repositories.projectRepository.createProject(
+            named: "Perf Project",
+            path: projectURL.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let thread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Latency test"
+        )
+
+        let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let olderTurnID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let newerTurnID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+
+        _ = try ChatArchiveStore.appendTurn(
+            projectPath: project.path,
+            threadID: thread.id,
+            turn: ArchivedTurnSummary(
+                turnID: newerTurnID,
+                timestamp: baseDate.addingTimeInterval(30),
+                userText: "later user",
+                assistantText: "later assistant",
+                actions: []
+            )
+        )
+        _ = try ChatArchiveStore.appendTurn(
+            projectPath: project.path,
+            threadID: thread.id,
+            turn: ArchivedTurnSummary(
+                turnID: olderTurnID,
+                timestamp: baseDate,
+                userText: "earlier user",
+                assistantText: "earlier assistant",
+                actions: []
+            )
+        )
+
+        await model.rehydrateThreadTranscript(threadID: thread.id)
+        let firstEntries = try XCTUnwrap(model.transcriptStore[thread.id])
+        let firstMessages = firstEntries.compactMap { entry -> (UUID, String, String)? in
+            guard case let .message(message) = entry else {
+                return nil
+            }
+            return (message.id, message.role.rawValue, message.text)
+        }
+        XCTAssertEqual(
+            firstMessages.map(\.2),
+            ["earlier user", "earlier assistant", "later user", "later assistant"]
+        )
+
+        await model.rehydrateThreadTranscript(threadID: thread.id)
+        let secondEntries = try XCTUnwrap(model.transcriptStore[thread.id])
+        let secondMessages = secondEntries.compactMap { entry -> (UUID, String, String)? in
+            guard case let .message(message) = entry else {
+                return nil
+            }
+            return (message.id, message.role.rawValue, message.text)
+        }
+
+        XCTAssertEqual(secondMessages.count, firstMessages.count)
+        XCTAssertEqual(secondMessages.map { $0.0 }, firstMessages.map { $0.0 })
+        XCTAssertEqual(secondMessages.map { $0.1 }, firstMessages.map { $0.1 })
+        XCTAssertEqual(secondMessages.map { $0.2 }, firstMessages.map { $0.2 })
+    }
+
+    @MainActor
+    func testSelectionTransitionRegistrationCancelsOlderTask() async {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let firstGeneration = model.beginSelectionTransition()
+        let firstTask = Task<Void, Never> {
+            do {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+            } catch {}
+        }
+        model.registerSelectionTransitionTask(firstTask, generation: firstGeneration)
+
+        let secondGeneration = model.beginSelectionTransition()
+        let secondTask = Task<Void, Never> {
+            do {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+            } catch {}
+        }
+        model.registerSelectionTransitionTask(secondTask, generation: secondGeneration)
+        await Task.yield()
+
+        XCTAssertTrue(firstTask.isCancelled)
+        XCTAssertFalse(model.isCurrentSelectionTransition(firstGeneration))
+        XCTAssertTrue(model.isCurrentSelectionTransition(secondGeneration))
+
+        model.finishSelectionTransition(secondGeneration)
+        XCTAssertTrue(model.isCurrentSelectionTransition(secondGeneration))
+        let thirdGeneration = model.beginSelectionTransition()
+        XCTAssertFalse(model.isCurrentSelectionTransition(secondGeneration))
+        XCTAssertTrue(model.isCurrentSelectionTransition(thirdGeneration))
+
+        firstTask.cancel()
+        secondTask.cancel()
+    }
+
+    @MainActor
     func testLaunchHealthCheckRepairsExistingProjectAndRecoversSelectionFromMissingPath() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-launch-health-\(UUID().uuidString)", isDirectory: true)

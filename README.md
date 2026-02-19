@@ -19,6 +19,9 @@ Core differentiators:
 - Chat archive persistence with searchable local metadata.
 - Skill discovery/install/enablement with per-project control.
 - UI Mods (`ui.mod.json`) plus package manifest (`codex.mod.json`) for install/distribution metadata.
+- Native computer actions (desktop cleanup, calendar lookup, message draft/send) with preview-first confirmations.
+- Adaptive intent routing for practical personal tasks and developer orchestration prompts.
+- Config role/profile builder plus dependency-aware plan runner primitives for multi-agent workflows.
 - Keychain-backed secret handling for API keys.
 - Deterministic contributor workflows via CLI diagnostics and fixtures.
 
@@ -123,6 +126,8 @@ Builds signed/notarized DMG artifacts when signing credentials are configured.
 - `docs-public/SECURITY_MODEL.md`
 - `docs-public/MODS.md`
 - `docs-public/MODS_SHARING.md`
+- `docs-public/PERSONAL_ACTIONS.md`
+- `docs-public/DEVELOPER_AGENT_WORKFLOWS.md`
 - `docs-public/RELEASE.md`
 
 ## Validation Reference

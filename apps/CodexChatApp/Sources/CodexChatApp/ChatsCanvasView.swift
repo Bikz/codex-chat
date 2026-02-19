@@ -561,18 +561,24 @@ struct ChatsCanvasView: View {
                                     )
                                 )
                             case let .action(card):
-                                ActionCardRow(card: card)
-                                    .padding(.vertical, tokens.spacing.xSmall)
-                                    .listRowSeparator(.hidden)
-                                    .listRowBackground(Color.clear)
-                                    .listRowInsets(
-                                        EdgeInsets(
-                                            top: 0,
-                                            leading: tokens.spacing.medium,
-                                            bottom: 0,
-                                            trailing: tokens.spacing.medium
-                                        )
+                                Group {
+                                    if model.transcriptDetailLevel == .detailed {
+                                        ActionCardRow(card: card)
+                                    } else {
+                                        InlineActionNoticeRow(card: card)
+                                    }
+                                }
+                                .padding(.vertical, tokens.spacing.xSmall)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: 0,
+                                        leading: tokens.spacing.medium,
+                                        bottom: 0,
+                                        trailing: tokens.spacing.medium
                                     )
+                                )
                             case let .liveActivity(activity):
                                 LiveTurnActivityRow(
                                     activity: activity,
