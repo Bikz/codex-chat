@@ -432,6 +432,7 @@ final class AppModel: ObservableObject {
     var modsDebounceTask: Task<Void, Never>?
     var planRunnerTask: Task<Void, Never>?
     var workerTracePersistenceTask: Task<Void, Never>?
+    var secondarySurfaceRefreshTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
     var voiceAutoStopTask: Task<Void, Never>?
@@ -540,6 +541,7 @@ final class AppModel: ObservableObject {
         modsDebounceTask?.cancel()
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()
+        secondarySurfaceRefreshTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         globalModsWatcher?.stop()
@@ -579,6 +581,7 @@ final class AppModel: ObservableObject {
         modsDebounceTask?.cancel()
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()
+        secondarySurfaceRefreshTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         globalModsWatcher?.stop()
@@ -804,7 +807,7 @@ final class AppModel: ObservableObject {
 
     func appendEntry(_ entry: TranscriptEntry, to threadID: UUID) {
         transcriptStore[threadID, default: []].append(entry)
-        refreshConversationState()
+        refreshConversationStateIfSelectedThreadChanged(threadID)
     }
 
     func appendAssistantDelta(_ delta: String, itemID: String, to threadID: UUID) {
@@ -823,7 +826,7 @@ final class AppModel: ObservableObject {
             existingMessage.text += delta
             entries[index] = .message(existingMessage)
             transcriptStore[threadID] = entries
-            refreshConversationState()
+            refreshConversationStateIfSelectedThreadChanged(threadID)
             return
         }
 
@@ -833,7 +836,7 @@ final class AppModel: ObservableObject {
 
         transcriptStore[threadID] = entries
         assistantMessageIDsByItemID[threadID] = itemMap
-        refreshConversationState()
+        refreshConversationStateIfSelectedThreadChanged(threadID)
     }
 
     func refreshProjects() async throws {
@@ -1003,6 +1006,24 @@ final class AppModel: ObservableObject {
 
         let entries = transcriptStore[selectedThreadID, default: []]
         conversationState = .loaded(entries)
+    }
+
+    func refreshConversationStateIfSelectedThreadChanged(_ changedThreadID: UUID?) {
+        guard let selectedThreadID else {
+            refreshConversationState()
+            return
+        }
+
+        guard let changedThreadID else {
+            refreshConversationState()
+            return
+        }
+
+        guard changedThreadID == selectedThreadID else {
+            return
+        }
+
+        refreshConversationState()
     }
 
     var activeTurnContextForSelectedThread: ActiveTurnContext? {

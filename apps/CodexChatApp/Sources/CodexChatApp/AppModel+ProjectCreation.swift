@@ -149,6 +149,7 @@ extension AppModel {
     }
 
     private func activateProject(_ project: ProjectRecord) async throws {
+        let transitionGeneration = beginSelectionTransition()
         let span = await PerformanceTracer.shared.begin(
             name: "thread.activateProject",
             metadata: ["projectID": project.id.uuidString]
@@ -157,17 +158,32 @@ extension AppModel {
             Task {
                 await PerformanceTracer.shared.end(span)
             }
+            finishSelectionTransition(transitionGeneration)
         }
 
+        let previousProjectID = selectedProjectID
         try await refreshProjects()
+        guard isCurrentSelectionTransition(transitionGeneration) else { return }
         selectedProjectID = project.id
         selectedThreadID = nil
         refreshConversationState()
         try await prepareProjectFolderStructure(projectPath: project.path)
+        guard isCurrentSelectionTransition(transitionGeneration) else { return }
         try await persistSelection()
+        guard isCurrentSelectionTransition(transitionGeneration) else { return }
         try await refreshThreads()
-        try await refreshSkills()
-        refreshModsSurface()
-        refreshConversationState()
+        guard isCurrentSelectionTransition(transitionGeneration) else { return }
+        if let selectedThreadID {
+            try await refreshFollowUpQueue(threadID: selectedThreadID)
+            await rehydrateThreadTranscript(threadID: selectedThreadID)
+        }
+        guard isCurrentSelectionTransition(transitionGeneration) else { return }
+        refreshConversationStateIfSelectedThreadChanged(selectedThreadID)
+        scheduleProjectSecondarySurfaceRefresh(
+            transitionGeneration: transitionGeneration,
+            targetProjectID: project.id,
+            projectContextChanged: previousProjectID != project.id,
+            reason: "activateProject"
+        )
     }
 }

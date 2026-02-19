@@ -37,6 +37,7 @@ extension AppModel {
                 finishSelectionTransition(transitionGeneration)
             }
 
+            let previousProjectID = selectedProjectID
             selectedProjectID = projectID
             selectedThreadID = nil
             if draftChatProjectID != projectID {
@@ -49,15 +50,18 @@ extension AppModel {
                 try await persistSelection()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshThreads()
-                guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                try await refreshSkills()
-                refreshModsSurface()
                 if let selectedThreadID {
                     try await refreshFollowUpQueue(threadID: selectedThreadID)
                     await rehydrateThreadTranscript(threadID: selectedThreadID)
                 }
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                refreshConversationState()
+                refreshConversationStateIfSelectedThreadChanged(selectedThreadID)
+                scheduleProjectSecondarySurfaceRefresh(
+                    transitionGeneration: transitionGeneration,
+                    targetProjectID: projectID,
+                    projectContextChanged: previousProjectID != projectID,
+                    reason: "selectProject"
+                )
             } catch {
                 threadsState = .failed(error.localizedDescription)
                 appendLog(.error, "Select project failed: \(error.localizedDescription)")
@@ -187,15 +191,12 @@ extension AppModel {
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
 
                 if didAlignProject {
-                    do {
-                        try await refreshSkills()
-                        refreshModsSurface()
-                    } catch {
-                        appendLog(
-                            .warning,
-                            "Failed to refresh project-scoped surfaces after thread selection: \(error.localizedDescription)"
-                        )
-                    }
+                    scheduleProjectSecondarySurfaceRefresh(
+                        transitionGeneration: transitionGeneration,
+                        targetProjectID: selectedProjectID,
+                        projectContextChanged: true,
+                        reason: "selectThread"
+                    )
                 }
 
                 if let threadID {
@@ -203,7 +204,7 @@ extension AppModel {
                     await rehydrateThreadTranscript(threadID: threadID)
                 }
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                refreshConversationState()
+                refreshConversationStateIfSelectedThreadChanged(threadID)
                 requestAutoDrain(reason: "thread selection changed")
             } catch {
                 conversationState = .failed(error.localizedDescription)
@@ -291,6 +292,7 @@ extension AppModel {
     }
 
     func beginDraftChat(in projectID: UUID) {
+        let previousProjectID = selectedProjectID
         selectedProjectID = projectID
         selectedThreadID = nil
         draftChatProjectID = projectID
@@ -319,11 +321,15 @@ extension AppModel {
                     try await refreshThreads()
                 }
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                try await refreshSkills()
-                refreshModsSurface()
                 try await persistSelection()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                refreshConversationState()
+                refreshConversationStateIfSelectedThreadChanged(selectedThreadID)
+                scheduleProjectSecondarySurfaceRefresh(
+                    transitionGeneration: transitionGeneration,
+                    targetProjectID: projectID,
+                    projectContextChanged: previousProjectID != projectID,
+                    reason: "beginDraftChat"
+                )
             } catch {
                 appendLog(.error, "Start draft chat failed: \(error.localizedDescription)")
             }

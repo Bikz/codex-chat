@@ -38,6 +38,7 @@ extension AppModel {
     }
 
     func selectSearchResult(_ result: ChatSearchResult) {
+        let previousProjectID = selectedProjectID
         selectedProjectID = result.projectID
         selectedThreadID = result.threadID
         draftChatProjectID = nil
@@ -70,12 +71,16 @@ extension AppModel {
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshThreads()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                try await refreshSkills()
-                refreshModsSurface()
                 try await refreshFollowUpQueue(threadID: result.threadID)
                 await rehydrateThreadTranscript(threadID: result.threadID)
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
-                refreshConversationState()
+                refreshConversationStateIfSelectedThreadChanged(result.threadID)
+                scheduleProjectSecondarySurfaceRefresh(
+                    transitionGeneration: transitionGeneration,
+                    targetProjectID: result.projectID,
+                    projectContextChanged: previousProjectID != result.projectID,
+                    reason: "selectSearchResult"
+                )
             } catch {
                 appendLog(.error, "Failed to open search result: \(error.localizedDescription)")
             }
