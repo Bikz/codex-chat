@@ -156,7 +156,6 @@ public final class UIModDiscoveryService: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(definition)
         try data.write(to: definitionURL, options: [.atomic])
-        let definitionChecksum = Self.sha256Hex(of: data)
 
         let packageManifest = ModPackageManifest(
             schemaVersion: 1,
@@ -177,7 +176,7 @@ public final class UIModDiscoveryService: @unchecked Sendable {
                 minCodexChatVersion: "0.1.0",
                 maxCodexChatVersion: nil
             ),
-            integrity: ModIntegrity(uiModSha256: "sha256:\(definitionChecksum)")
+            integrity: nil
         )
         let manifestURL = modDirectory.appendingPathComponent("codex.mod.json", isDirectory: false)
         let packageData = try encoder.encode(packageManifest)

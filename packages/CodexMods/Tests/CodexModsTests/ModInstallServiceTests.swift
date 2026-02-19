@@ -592,6 +592,7 @@ final class ModInstallServiceTests: XCTestCase {
         let resolved = try ModPackageManifestLoader.load(packageRootURL: modDirectory)
         XCTAssertEqual(resolved.manifestSource, .codexManifest)
         XCTAssertTrue(resolved.requestedPermissions.contains(.projectRead))
+        XCTAssertNil(resolved.manifest.integrity?.uiModSha256)
     }
 
     private func makeTempDirectory(prefix: String) throws -> URL {
