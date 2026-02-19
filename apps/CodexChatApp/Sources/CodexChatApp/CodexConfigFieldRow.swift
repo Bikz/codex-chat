@@ -1,6 +1,11 @@
 import SwiftUI
 
 struct CodexConfigFieldRow: View {
+    private struct ArrayItemDescriptor: Identifiable {
+        let id: String
+        let index: Int
+    }
+
     @Binding var rootValue: CodexConfigValue
     let path: [CodexConfigPathSegment]
     let key: String
@@ -9,6 +14,26 @@ struct CodexConfigFieldRow: View {
     @State private var isExpanded = true
     @State private var revealSensitive = false
     @State private var pendingMapKey = ""
+
+    init(
+        rootValue: Binding<CodexConfigValue>,
+        path: [CodexConfigPathSegment],
+        key: String,
+        schema: CodexConfigSchemaNode
+    ) {
+        _rootValue = rootValue
+        self.path = path
+        self.key = key
+        self.schema = schema
+
+        let initialExpanded = switch schema.kind {
+        case .object, .array:
+            path.isEmpty
+        case .string, .integer, .number, .boolean, .enumeration, .unknown:
+            true
+        }
+        _isExpanded = State(initialValue: initialExpanded)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -71,7 +96,6 @@ struct CodexConfigFieldRow: View {
         .padding(.vertical, 4)
     }
 
-    @ViewBuilder
     private var label: some View {
         HStack(spacing: 6) {
             Text(key)
@@ -89,8 +113,7 @@ struct CodexConfigFieldRow: View {
         }
     }
 
-    @ViewBuilder
-    private func primitiveRow<Editor: View>(@ViewBuilder editor: () -> Editor) -> some View {
+    private func primitiveRow(@ViewBuilder editor: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 8) {
                 label
@@ -197,7 +220,8 @@ struct CodexConfigFieldRow: View {
                 .buttonStyle(.bordered)
             } else {
                 let items = value?.arrayValue ?? []
-                ForEach(Array(items.indices), id: \.self) { index in
+                ForEach(arrayDescriptors(for: items)) { descriptor in
+                    let index = descriptor.index
                     HStack(alignment: .top, spacing: 8) {
                         CodexConfigFieldRow(
                             rootValue: $rootValue,
@@ -338,5 +362,15 @@ struct CodexConfigFieldRow: View {
         var root = rootValue
         root.removeValue(at: targetPath)
         rootValue = root
+    }
+
+    private func arrayDescriptors(for items: [CodexConfigValue]) -> [ArrayItemDescriptor] {
+        var seenByValueHash: [Int: Int] = [:]
+        return items.enumerated().map { index, item in
+            let valueHash = item.hashValue
+            let occurrence = seenByValueHash[valueHash, default: 0]
+            seenByValueHash[valueHash] = occurrence + 1
+            return ArrayItemDescriptor(id: "\(valueHash)-\(occurrence)", index: index)
+        }
     }
 }
