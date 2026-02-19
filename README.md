@@ -1,18 +1,33 @@
 # CodexChat
 
-CodexChat is a local-first macOS SwiftUI chat app that integrates the local Codex runtime (`codex app-server`) so users can safely run agentic tasks from a chat-first interface.
+CodexChat is an open-source, local-first, macOS-native Codex client built with SwiftUI.
+It integrates with the local `codex app-server` runtime and is designed for safe, reviewable agent workflows against real project folders.
 
-## Product Contract
+Core differentiators:
 
-- UI is strictly two-pane: sidebar (projects + threads) and conversation canvas.
-- Do not ship a persistent third pane in current releases.
-- Capability discovery and invocation happen through the main composer (typed or voice).
+- Native SwiftUI macOS app (not a cross-platform web shell).
+- Conversations are persisted as local Markdown files you own.
+- Skills and Mods support workflow automation and deep UI customization.
+- Safety controls are explicit and legible (approvals, diff review, guardrails).
+- Contributor tooling is built in (`CodexChatCLI`) for reproducible diagnostics and smoke tests.
 
-## Architecture
+## Features
 
-- `apps/CodexChatHost`: canonical GUI app target (`com.codexchat.app`) for local QA/dev and release distribution.
-- `apps/CodexChatApp`: shared app/runtime module (`CodexChatShared`) and contributor CLI (`CodexChatCLI`).
-- `packages/*`: modular Swift packages (`Core`, `Infra`, `UI`, `CodexKit`, `Skills`, `Memory`, `Mods`).
+- Local-first project model with folder-backed chats, artifacts, memory, and mods.
+- Streaming runtime transcript with action cards and approval-driven escalation.
+- Project safety controls for sandbox mode, approval policy, network access, and web search.
+- Chat archive persistence with searchable local metadata.
+- Skill discovery/install/enablement with per-project control.
+- UI Mods (`ui.mod.json`) with theme overrides and experimental extension hooks/automations.
+- Keychain-backed secret handling for API keys.
+- Deterministic contributor workflows via CLI diagnostics and fixtures.
+
+## Repository Layout
+
+- `apps/CodexChatHost`: canonical GUI app target (`com.codexchat.app`) and release source.
+- `apps/CodexChatApp`: shared app/runtime module (`CodexChatShared`) and `CodexChatCLI`.
+- `packages/*`: modular Swift packages (`Core`, `Infra`, `UI`, `CodexKit`, `Skills`, `Memory`, `Mods`, `Extensions`).
+- `tests/fixtures`: shared fake runtime fixtures used by smoke/integration paths.
 
 ## Requirements
 
@@ -22,31 +37,55 @@ CodexChat is a local-first macOS SwiftUI chat app that integrates the local Code
 - Homebrew
 - SwiftFormat, SwiftLint, gitleaks
 
-## Setup
+## Quick Start
 
 ```sh
 bash scripts/bootstrap.sh
 ```
 
-## Validation
-
-```sh
-make quick
-make oss-smoke
-pnpm -s run check
-```
-
-## Run Locally
-
-Primary run path (canonical GUI behavior):
+Run the canonical GUI:
 
 ```sh
 open apps/CodexChatHost/CodexChatHost.xcodeproj
 ```
 
-Use the `CodexChatHost` scheme.
+Use scheme `CodexChatHost`.
 
-Contributor CLI (headless diagnostics/repro):
+## Contributor Commands
+
+### Fast validation
+
+```sh
+make quick
+```
+
+Runs metadata/parity checks, format check, lint, and fast tests.
+
+### OSS smoke checks
+
+```sh
+make oss-smoke
+```
+
+Runs deterministic contributor smoke checks using `CodexChatCLI`.
+
+### Full build + test validation
+
+```sh
+pnpm -s run check
+```
+
+Builds and runs full Swift test suites.
+
+### CI-equivalent local flow
+
+```sh
+make ci
+```
+
+Runs the full local CI gate sequence.
+
+### Headless diagnostics and reproducible fixtures
 
 ```sh
 cd apps/CodexChatApp
@@ -55,24 +94,44 @@ swift run CodexChatCLI smoke
 swift run CodexChatCLI repro --fixture basic-turn
 ```
 
-Use `CodexChatCLI` explicitly for contributor tooling; host app remains the only canonical GUI run path.
-
-One-command contributor smoke path:
+### Release packaging
 
 ```sh
-make oss-smoke
+make release-dmg
 ```
 
-## Docs
+Builds signed/notarized DMG artifacts when signing credentials are configured.
 
+## Test Layout
+
+- App-level tests: `apps/CodexChatApp/Tests/CodexChatAppTests`
+- Package-level tests: `packages/*/Tests`
+- Root `tests/`: shared fixtures and cross-package integration assets (not the primary home of unit tests)
+
+## Design Constraints
+
+- Conversation-first UI with a stable two-pane layout.
+- No persistent third pane in current releases.
+- Accessibility and explicit safety controls are mandatory.
+
+## Documentation
+
+- `CONTRIBUTING.md`
 - `docs-public/README.md`
 - `docs-public/INSTALL.md`
-- `docs-public/CONTRIBUTING.md`
 - `docs-public/ARCHITECTURE_CONTRACT.md`
 - `docs-public/SECURITY_MODEL.md`
 - `docs-public/MODS.md`
 - `docs-public/MODS_SHARING.md`
 - `docs-public/RELEASE.md`
+
+## Validation Reference
+
+```sh
+make quick
+make oss-smoke
+pnpm -s run check
+```
 
 ## License
 
