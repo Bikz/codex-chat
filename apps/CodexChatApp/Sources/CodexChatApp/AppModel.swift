@@ -436,6 +436,8 @@ final class AppModel: ObservableObject {
     var followUpDrainTask: Task<Void, Never>?
     var modsRefreshTask: Task<Void, Never>?
     var modsDebounceTask: Task<Void, Never>?
+    var startupBackgroundTask: Task<Void, Never>?
+    var startupLoadGeneration: UInt64 = 0
     var planRunnerTask: Task<Void, Never>?
     var workerTracePersistenceTask: Task<Void, Never>?
     var secondarySurfaceRefreshTask: Task<Void, Never>?
@@ -545,6 +547,7 @@ final class AppModel: ObservableObject {
         followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
+        startupBackgroundTask?.cancel()
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
@@ -586,6 +589,7 @@ final class AppModel: ObservableObject {
         followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
+        startupBackgroundTask?.cancel()
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
@@ -877,14 +881,6 @@ final class AppModel: ObservableObject {
         threadsState = .loading
         let loadedThreads = try await threadRepository.listThreads(projectID: selectedProjectID)
         threadsState = .loaded(loadedThreads)
-
-        for thread in loadedThreads {
-            try await chatSearchRepository?.indexThreadTitle(
-                threadID: thread.id,
-                projectID: selectedProjectID,
-                title: thread.title
-            )
-        }
 
         if let selectedThreadID,
            loadedThreads.contains(where: { $0.id == selectedThreadID })

@@ -1090,6 +1090,61 @@ final class CodexChatAppTests: XCTestCase {
         })
     }
 
+    @MainActor
+    func testNonSelectedThreadUpdateDoesNotRepaintSelectedConversation() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let selectedThreadID = UUID()
+        let otherThreadID = UUID()
+
+        model.selectedThreadID = selectedThreadID
+        model.transcriptStore[selectedThreadID] = [
+            .message(ChatMessage(threadId: selectedThreadID, role: .assistant, text: "Selected thread message")),
+        ]
+        model.refreshConversationState()
+
+        model.appendEntry(
+            .message(ChatMessage(threadId: otherThreadID, role: .assistant, text: "Other thread update")),
+            to: otherThreadID
+        )
+
+        guard case let .loaded(entries) = model.conversationState else {
+            XCTFail("Expected loaded selected conversation state")
+            return
+        }
+        XCTAssertTrue(entries.contains {
+            guard case let .message(message) = $0 else { return false }
+            return message.text == "Selected thread message"
+        })
+        XCTAssertFalse(entries.contains {
+            guard case let .message(message) = $0 else { return false }
+            return message.text == "Other thread update"
+        })
+    }
+
+    @MainActor
+    func testSelectedThreadUpdateRepaintsConversationImmediately() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let selectedThreadID = UUID()
+
+        model.selectedThreadID = selectedThreadID
+        model.transcriptStore[selectedThreadID] = []
+        model.refreshConversationState()
+
+        model.appendEntry(
+            .message(ChatMessage(threadId: selectedThreadID, role: .assistant, text: "Fresh selected update")),
+            to: selectedThreadID
+        )
+
+        guard case let .loaded(entries) = model.conversationState else {
+            XCTFail("Expected loaded selected conversation state")
+            return
+        }
+        XCTAssertTrue(entries.contains {
+            guard case let .message(message) = $0 else { return false }
+            return message.text == "Fresh selected update"
+        })
+    }
+
     func testMemoryAutoSummaryFormattingRespectsMode() {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let threadID = UUID()
@@ -1690,6 +1745,97 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(persistedProjectID, generalID.uuidString)
         XCTAssertEqual(persistedThreadID, generalThread.id.uuidString)
         XCTAssertFalse(model.isProjectSidebarVisuallySelected(project.id))
+    }
+
+    @MainActor
+    func testRefreshThreadsDoesNotReindexThreadTitles() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-refresh-thread-indexing-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Search Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        _ = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Legacy Title Needle"
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        model.selectedProjectID = project.id
+        try await model.refreshThreads()
+
+        let results = try await repositories.chatSearchRepository.search(
+            query: "Needle",
+            projectID: project.id,
+            limit: 20
+        )
+        XCTAssertTrue(results.isEmpty)
+    }
+
+    @MainActor
+    func testThreadTitleBackfillRunsOnceAndSetsMigrationPreference() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-thread-title-backfill-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Backfill Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let legacyThread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Legacy Alpha Thread"
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        await model.loadInitialData()
+
+        let preferenceDeadline = Date().addingTimeInterval(5.0)
+        while Date() < preferenceDeadline {
+            if try await repositories.preferenceRepository.getPreference(key: .threadTitleIndexBackfillV1) == "1" {
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        let migrationPreference = try await repositories.preferenceRepository.getPreference(key: .threadTitleIndexBackfillV1)
+        XCTAssertEqual(migrationPreference, "1")
+
+        let legacyResults = try await repositories.chatSearchRepository.search(
+            query: "Alpha",
+            projectID: project.id,
+            limit: 20
+        )
+        XCTAssertTrue(legacyResults.contains(where: { $0.threadID == legacyThread.id }))
+
+        _ = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Legacy Beta Thread"
+        )
+        await model.loadInitialData()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let postMigrationResults = try await repositories.chatSearchRepository.search(
+            query: "Beta",
+            projectID: project.id,
+            limit: 20
+        )
+        XCTAssertTrue(postMigrationResults.isEmpty)
     }
 
     func testAutoTitleFromFirstTurnPrefersAssistantAndCleansPreamble() {
