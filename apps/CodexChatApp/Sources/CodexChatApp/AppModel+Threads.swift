@@ -50,6 +50,12 @@ extension AppModel {
                 try await persistSelection()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 try await refreshThreads(refreshSelectedThreadFollowUpQueue: false)
+                if selectedThreadID == nil, let selectedProjectID {
+                    draftChatProjectID = selectedProjectID
+                    detailDestination = .thread
+                    refreshConversationState()
+                    try await persistSelection()
+                }
                 let hydratedThreadID = selectedThreadID
                 if let hydratedThreadID {
                     scheduleSelectedThreadHydration(

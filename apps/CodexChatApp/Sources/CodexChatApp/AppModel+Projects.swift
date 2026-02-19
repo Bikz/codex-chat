@@ -477,12 +477,13 @@ extension AppModel {
         guard !hasActiveDraftChatForSelectedProject else {
             return
         }
-        guard let generalProjectID = generalProject?.id else {
+        let targetProjectID = selectedProjectID ?? generalProject?.id
+        guard let targetProjectID else {
             return
         }
 
-        beginDraftChat(in: generalProjectID)
-        appendLog(.debug, "Activated General draft chat because no active thread was selected.")
+        beginDraftChat(in: targetProjectID)
+        appendLog(.debug, "Activated draft chat fallback because no active thread was selected.")
     }
 
     func ensureGeneralProject() async throws {
