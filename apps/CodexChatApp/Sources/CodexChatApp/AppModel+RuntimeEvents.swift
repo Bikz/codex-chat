@@ -10,7 +10,7 @@ extension AppModel {
         defer {
             let duration = clock.now - startedAt
             let components = duration.components
-            let durationMS = (Double(components.seconds) + (Double(components.attoseconds) / 1_000_000_000_000_000_000)) * 1_000
+            let durationMS = (Double(components.seconds) + (Double(components.attoseconds) / 1_000_000_000_000_000_000)) * 1000
             Task {
                 await PerformanceTracer.shared.record(
                     name: "runtime.event.\(event.performanceName)",

@@ -63,7 +63,7 @@ actor PerformanceTracer {
 
     func end(_ span: PerformanceSpan, status: String = "ok", extraMetadata: [String: String] = [:]) {
         let duration = clock.now - span.startedAt
-        let durationMS = duration.seconds * 1_000
+        let durationMS = duration.seconds * 1000
         var metadata = span.metadata
         for (key, value) in extraMetadata {
             metadata[key] = value
@@ -162,9 +162,9 @@ actor PerformanceTracer {
         recentSamples = []
     }
 
-    private func percentile(_ p: Double, sortedValues: [Double]) -> Double {
+    private func percentile(_ quantile: Double, sortedValues: [Double]) -> Double {
         guard !sortedValues.isEmpty else { return 0 }
-        let bounded = min(max(p, 0), 1)
+        let bounded = min(max(quantile, 0), 1)
         let index = Int((Double(sortedValues.count - 1) * bounded).rounded())
         return sortedValues[index]
     }

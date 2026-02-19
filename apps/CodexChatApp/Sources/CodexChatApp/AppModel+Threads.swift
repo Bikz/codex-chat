@@ -425,7 +425,7 @@ extension AppModel {
         return project.path
     }
 
-    nonisolated private static func transcriptEntries(
+    private nonisolated static func transcriptEntries(
         from turns: [ArchivedTurnSummary],
         threadID: UUID
     ) -> [TranscriptEntry] {
@@ -480,7 +480,7 @@ extension AppModel {
         return entries
     }
 
-    nonisolated private static func deterministicMessageID(
+    private nonisolated static func deterministicMessageID(
         threadID: UUID,
         turnID: UUID,
         role: ChatMessageRole,
@@ -500,7 +500,7 @@ extension AppModel {
             bytes[0], bytes[1], bytes[2], bytes[3],
             bytes[4], bytes[5], versionedByte6, bytes[7],
             variantByte8, bytes[9], bytes[10], bytes[11],
-            bytes[12], bytes[13], bytes[14], bytes[15],
+            bytes[12], bytes[13], bytes[14], bytes[15]
         ))
     }
 }

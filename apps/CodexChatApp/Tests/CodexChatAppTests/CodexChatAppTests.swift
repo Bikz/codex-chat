@@ -109,8 +109,8 @@ final class CodexChatAppTests: XCTestCase {
         )
 
         let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let olderTurnID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-        let newerTurnID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let olderTurnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        let newerTurnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
 
         _ = try ChatArchiveStore.appendTurn(
             projectPath: project.path,
@@ -158,9 +158,9 @@ final class CodexChatAppTests: XCTestCase {
         }
 
         XCTAssertEqual(secondMessages.count, firstMessages.count)
-        XCTAssertEqual(secondMessages.map { $0.0 }, firstMessages.map { $0.0 })
-        XCTAssertEqual(secondMessages.map { $0.1 }, firstMessages.map { $0.1 })
-        XCTAssertEqual(secondMessages.map { $0.2 }, firstMessages.map { $0.2 })
+        XCTAssertEqual(secondMessages.map(\.0), firstMessages.map(\.0))
+        XCTAssertEqual(secondMessages.map(\.1), firstMessages.map(\.1))
+        XCTAssertEqual(secondMessages.map(\.2), firstMessages.map(\.2))
     }
 
     @MainActor

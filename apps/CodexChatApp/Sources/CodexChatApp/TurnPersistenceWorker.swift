@@ -11,19 +11,19 @@ actor TurnPersistenceWorker {
     ) throws -> URL {
         switch turnStatus {
         case .completed:
-            return try ChatArchiveStore.finalizeCheckpoint(
+            try ChatArchiveStore.finalizeCheckpoint(
                 projectPath: projectPath,
                 threadID: threadID,
                 turn: summary
             )
         case .failed:
-            return try ChatArchiveStore.failCheckpoint(
+            try ChatArchiveStore.failCheckpoint(
                 projectPath: projectPath,
                 threadID: threadID,
                 turn: summary
             )
         case .pending:
-            return try ChatArchiveStore.beginCheckpoint(
+            try ChatArchiveStore.beginCheckpoint(
                 projectPath: projectPath,
                 threadID: threadID,
                 turn: summary
