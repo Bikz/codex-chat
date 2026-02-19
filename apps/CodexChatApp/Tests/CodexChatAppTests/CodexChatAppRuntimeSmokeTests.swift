@@ -365,9 +365,13 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         }
 
         func cleanup() {
-            Task {
+            let stopGroup = DispatchGroup()
+            stopGroup.enter()
+            Task.detached {
                 await runtime.stop()
+                stopGroup.leave()
             }
+            _ = stopGroup.wait(timeout: .now() + 5)
             try? FileManager.default.removeItem(at: rootURL)
         }
     }
