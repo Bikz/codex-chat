@@ -193,6 +193,49 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertFalse(rows.actionMethods.contains("runtime/stderr"))
     }
 
+    func testKnownSkillLoaderRuntimeStderrNoiseIsSuppressedInChatMode() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "hi")),
+            .actionCard(action(
+                threadID: threadID,
+                method: "runtime/stderr",
+                title: "Runtime stderr",
+                detail: "ERROR codex_core::skills::loader failed to stat skills entry /tmp/skills/broken"
+            )),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        XCTAssertFalse(rows.actionMethods.contains("runtime/stderr"))
+        XCTAssertFalse(rows.actionMethods.contains("runtime/stderr/coalesced"))
+    }
+
+    func testKnownSkillLoaderRuntimeStderrNoiseIsSuppressedInDetailedMode() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "hi")),
+            .actionCard(action(
+                threadID: threadID,
+                method: "runtime/stderr",
+                title: "Runtime stderr",
+                detail: "ERROR codex_core::skills::loader failed to stat skills entry /tmp/skills/broken"
+            )),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .detailed,
+            activeTurnContext: nil
+        )
+
+        XCTAssertFalse(rows.actionMethods.contains("runtime/stderr"))
+    }
+
     @MainActor
     func testLiveActivityRowAppearsWhileTurnIsActive() {
         let threadID = UUID()

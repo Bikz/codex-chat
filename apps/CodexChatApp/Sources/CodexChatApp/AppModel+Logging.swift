@@ -3,7 +3,7 @@ import Foundation
 
 extension AppModel {
     func sanitizeLogText(_ text: String) -> String {
-        redactSensitiveText(in: text)
+        redactSensitiveText(in: stripANSIEscapeCodes(from: text))
     }
 
     func appendThreadLog(level: LogLevel, text: String, to threadID: UUID) {
@@ -40,5 +40,13 @@ extension AppModel {
         }
 
         return sanitized
+    }
+
+    private func stripANSIEscapeCodes(from text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"\u{001B}\[[0-9;?]*[ -/]*[@-~]"#) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
     }
 }

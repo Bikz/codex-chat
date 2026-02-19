@@ -265,6 +265,71 @@ final class CodexStorageMigrationCoordinatorTests: XCTestCase {
         XCTAssertNil(result.quarantineURL)
     }
 
+    func testRepairManagedCodexHomeSkillSymlinksRelinksBrokenEntriesToManagedAgentsHome() throws {
+        let fileManager = FileManager.default
+        let root = tempDirectory(prefix: "codexchat-storage-repair-symlink")
+        defer { try? fileManager.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure(fileManager: fileManager)
+
+        let managedSkillURL = paths.agentsHomeURL
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent("agent-browser", isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
+        try write("managed skill", to: managedSkillURL)
+
+        let staleLink = paths.codexHomeURL
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent("agent-browser", isDirectory: true)
+        try fileManager.createDirectory(at: staleLink.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.createSymbolicLink(
+            atPath: staleLink.path,
+            withDestinationPath: "../../.agents/skills/agent-browser"
+        )
+
+        XCTAssertFalse(fileManager.fileExists(atPath: staleLink.path))
+
+        let result = try CodexChatStorageMigrationCoordinator.repairManagedCodexHomeSkillSymlinksIfNeeded(
+            paths: paths,
+            fileManager: fileManager
+        )
+
+        XCTAssertEqual(result.relinkedEntries, ["agent-browser"])
+        XCTAssertTrue(result.removedEntries.isEmpty)
+        XCTAssertTrue(fileManager.fileExists(atPath: staleLink.path))
+        XCTAssertTrue(fileManager.fileExists(atPath: staleLink.appendingPathComponent("SKILL.md").path))
+    }
+
+    func testRepairManagedCodexHomeSkillSymlinksRemovesBrokenEntriesWithoutManagedReplacement() throws {
+        let fileManager = FileManager.default
+        let root = tempDirectory(prefix: "codexchat-storage-remove-broken-symlink")
+        defer { try? fileManager.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure(fileManager: fileManager)
+
+        let staleLink = paths.codexHomeURL
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent("missing-skill", isDirectory: true)
+        try fileManager.createDirectory(at: staleLink.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.createSymbolicLink(
+            atPath: staleLink.path,
+            withDestinationPath: "../../.agents/skills/missing-skill"
+        )
+
+        XCTAssertFalse(fileManager.fileExists(atPath: staleLink.path))
+
+        let result = try CodexChatStorageMigrationCoordinator.repairManagedCodexHomeSkillSymlinksIfNeeded(
+            paths: paths,
+            fileManager: fileManager
+        )
+
+        XCTAssertTrue(result.relinkedEntries.isEmpty)
+        XCTAssertEqual(result.removedEntries, ["missing-skill"])
+        XCTAssertFalse(fileManager.fileExists(atPath: staleLink.path))
+    }
+
     private func tempDirectory(prefix: String) -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)

@@ -201,6 +201,10 @@ public enum CodexChatBootstrap {
     ) throws -> BootstrapDependencies {
         try storagePaths.ensureRootStructure(fileManager: fileManager)
         try CodexChatStorageMigrationCoordinator.performInitialMigrationIfNeeded(paths: storagePaths, fileManager: fileManager)
+        _ = try? CodexChatStorageMigrationCoordinator.repairManagedCodexHomeSkillSymlinksIfNeeded(
+            paths: storagePaths,
+            fileManager: fileManager
+        )
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
         let repositories = MetadataRepositories(database: database)

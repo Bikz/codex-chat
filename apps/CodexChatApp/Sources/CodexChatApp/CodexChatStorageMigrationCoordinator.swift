@@ -44,6 +44,15 @@ struct CodexHomeNormalizationReport: Codable, Sendable {
     let failedEntries: [String]
 }
 
+struct CodexHomeSkillsSymlinkRepairResult: Sendable, Equatable {
+    let relinkedEntries: [String]
+    let removedEntries: [String]
+
+    var didRepair: Bool {
+        !relinkedEntries.isEmpty || !removedEntries.isEmpty
+    }
+}
+
 enum CodexChatStorageMigrationCoordinator {
     private static let codexHomeImportFiles = [
         "config.toml",
@@ -208,6 +217,58 @@ enum CodexChatStorageMigrationCoordinator {
 
         let data = try Data(contentsOf: paths.codexHomeLastRepairReportURL)
         return try JSONDecoder().decode(CodexHomeNormalizationReport.self, from: data)
+    }
+
+    static func repairManagedCodexHomeSkillSymlinksIfNeeded(
+        paths: CodexChatStoragePaths,
+        fileManager: FileManager = .default
+    ) throws -> CodexHomeSkillsSymlinkRepairResult {
+        let skillsRoot = paths.codexHomeURL.appendingPathComponent("skills", isDirectory: true)
+        guard fileManager.fileExists(atPath: skillsRoot.path) else {
+            return CodexHomeSkillsSymlinkRepairResult(relinkedEntries: [], removedEntries: [])
+        }
+
+        let entries = try fileManager.contentsOfDirectory(
+            at: skillsRoot,
+            includingPropertiesForKeys: [.isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        var relinkedEntries: [String] = []
+        var removedEntries: [String] = []
+
+        for entry in entries {
+            let values = try entry.resourceValues(forKeys: [.isSymbolicLinkKey])
+            guard values.isSymbolicLink == true else {
+                continue
+            }
+
+            // fileExists resolves symlinks; false means the link target is stale.
+            guard !fileManager.fileExists(atPath: entry.path) else {
+                continue
+            }
+
+            let skillName = entry.lastPathComponent
+            let managedTarget = paths.agentsHomeURL
+                .appendingPathComponent("skills", isDirectory: true)
+                .appendingPathComponent(skillName, isDirectory: true)
+
+            try fileManager.removeItem(at: entry)
+            if fileManager.fileExists(atPath: managedTarget.path) {
+                try fileManager.createSymbolicLink(
+                    atPath: entry.path,
+                    withDestinationPath: managedTarget.path
+                )
+                relinkedEntries.append(skillName)
+            } else {
+                removedEntries.append(skillName)
+            }
+        }
+
+        return CodexHomeSkillsSymlinkRepairResult(
+            relinkedEntries: relinkedEntries.sorted(),
+            removedEntries: removedEntries.sorted()
+        )
     }
 
     static func validateRootSelection(

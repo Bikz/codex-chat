@@ -72,6 +72,9 @@ enum TranscriptActionPolicy {
         let itemTypeLower = itemType?.lowercased() ?? ""
 
         if methodLower == "runtime/stderr" {
+            if isKnownSkillLoaderStderrNoise(detail) {
+                return .lifecycleNoise
+            }
             return .stderr
         }
 
@@ -110,6 +113,10 @@ enum TranscriptActionPolicy {
     }
 
     static func isCriticalStderr(_ detail: String) -> Bool {
+        if isKnownSkillLoaderStderrNoise(detail) {
+            return false
+        }
+
         let lowered = detail.lowercased()
         let hasExplicitErrorLevel = lowered.contains("error")
             || lowered.contains("failed")
@@ -166,6 +173,16 @@ enum TranscriptActionPolicy {
         normalized = normalized.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return normalized.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    static func shouldSuppressFromTranscript(_ action: ActionCard) -> Bool {
+        action.method.lowercased() == "runtime/stderr" && isKnownSkillLoaderStderrNoise(action.detail)
+    }
+
+    private static func isKnownSkillLoaderStderrNoise(_ detail: String) -> Bool {
+        let lowered = detail.lowercased()
+        return lowered.contains("codex_core::skills::loader")
+            && lowered.contains("failed to stat skills entry")
+    }
 }
 
 enum TranscriptPresentationBuilder {
@@ -182,12 +199,15 @@ enum TranscriptPresentationBuilder {
         activeTurnContext: AppModel.ActiveTurnContext?
     ) -> [TranscriptPresentationRow] {
         if detailLevel == .detailed {
-            return entries.map {
+            return entries.compactMap {
                 switch $0 {
                 case let .message(message):
-                    .message(message)
+                    return TranscriptPresentationRow.message(message)
                 case let .actionCard(action):
-                    .action(action)
+                    guard !TranscriptActionPolicy.shouldSuppressFromTranscript(action) else {
+                        return nil
+                    }
+                    return TranscriptPresentationRow.action(action)
                 }
             }
         }
@@ -255,6 +275,9 @@ enum TranscriptPresentationBuilder {
                 }
 
             case let .actionCard(action):
+                if TranscriptActionPolicy.shouldSuppressFromTranscript(action) {
+                    continue
+                }
                 if let activeBucketIndex {
                     buckets[activeBucketIndex].actions.append(action)
                 } else {
