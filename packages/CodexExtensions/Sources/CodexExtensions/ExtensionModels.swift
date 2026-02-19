@@ -238,6 +238,13 @@ public struct ExtensionModsBarOutput: Hashable, Sendable, Codable {
         case promptThenEmitEvent
         case composerInsert = "composer.insert"
         case composerInsertAndSend = "composer.insertAndSend"
+        case nativeAction = "native.action"
+    }
+
+    public enum ActionSafetyLevel: String, Hashable, Sendable, Codable {
+        case readOnly = "read-only"
+        case externallyVisible = "externally-visible"
+        case destructive
     }
 
     public struct Action: Hashable, Sendable, Codable, Identifiable {
@@ -246,19 +253,31 @@ public struct ExtensionModsBarOutput: Hashable, Sendable, Codable {
         public var kind: ActionKind
         public var payload: [String: String]
         public var prompt: ActionPrompt?
+        public var nativeActionID: String?
+        public var safetyLevel: ActionSafetyLevel?
+        public var requiresConfirmation: Bool?
+        public var externallyVisible: Bool?
 
         public init(
             id: String,
             label: String,
             kind: ActionKind,
             payload: [String: String] = [:],
-            prompt: ActionPrompt? = nil
+            prompt: ActionPrompt? = nil,
+            nativeActionID: String? = nil,
+            safetyLevel: ActionSafetyLevel? = nil,
+            requiresConfirmation: Bool? = nil,
+            externallyVisible: Bool? = nil
         ) {
             self.id = id
             self.label = label
             self.kind = kind
             self.payload = payload
             self.prompt = prompt
+            self.nativeActionID = nativeActionID
+            self.safetyLevel = safetyLevel
+            self.requiresConfirmation = requiresConfirmation
+            self.externallyVisible = externallyVisible
         }
     }
 

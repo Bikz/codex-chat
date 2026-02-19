@@ -111,9 +111,12 @@ final class CodexExtensionsTests: XCTestCase {
         let script = """
         #!/bin/zsh
         read line
-        printf "%s%s%s\\n" \
+        printf "%s%s%s%s%s%s%s\\n" \
           '{"ok":true,"modsBar":{"title":"Prompt Book","markdown":"Saved prompts","scope":"global","actions":[' \
-          '{"id":"send-1","label":"Ship Checklist","kind":"composer.insertAndSend","payload":{"text":"Run ship checklist."}}' \
+          '{"id":"send-1","label":"Ship Checklist","kind":"composer.insertAndSend","payload":{"text":"Run ship checklist."}},' \
+          '{"id":"calendar","label":"Today","kind":"native.action","payload":{},' \
+          '"nativeActionID":"calendar.today","safetyLevel":"read-only",' \
+          '"requiresConfirmation":false,"externallyVisible":false}' \
           ']}}'
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
@@ -138,9 +141,16 @@ final class CodexExtensionsTests: XCTestCase {
         )
 
         XCTAssertEqual(result.output.modsBar?.scope, .global)
-        XCTAssertEqual(result.output.modsBar?.actions?.count, 1)
+        XCTAssertEqual(result.output.modsBar?.actions?.count, 2)
         XCTAssertEqual(result.output.modsBar?.actions?.first?.kind, .composerInsertAndSend)
         XCTAssertEqual(result.output.modsBar?.actions?.first?.payload["text"], "Run ship checklist.")
+
+        let nativeAction = result.output.modsBar?.actions?.last
+        XCTAssertEqual(nativeAction?.kind, .nativeAction)
+        XCTAssertEqual(nativeAction?.nativeActionID, "calendar.today")
+        XCTAssertEqual(nativeAction?.safetyLevel, .readOnly)
+        XCTAssertEqual(nativeAction?.requiresConfirmation, false)
+        XCTAssertEqual(nativeAction?.externallyVisible, false)
     }
 
     func testExtensionStateStorePersistsThreadAndGlobalModsBarOutputs() async throws {

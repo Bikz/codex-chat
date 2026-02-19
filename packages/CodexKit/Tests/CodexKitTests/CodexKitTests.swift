@@ -326,6 +326,69 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(batch.suggestions.first?.priority, 0)
     }
 
+    func testEventDecoderParsesWorkerTraceMetadata() {
+        let notification = JSONRPCMessageEnvelope.notification(
+            method: "item/completed",
+            params: .object([
+                "threadId": .string("thr_worker"),
+                "turnId": .string("turn_worker"),
+                "item": .object([
+                    "id": .string("item_worker_1"),
+                    "type": .string("toolCall"),
+                    "worker": .object([
+                        "id": .string("worker-1"),
+                        "role": .string("security_auditor"),
+                        "prompt": .string("Audit auth paths."),
+                        "output": .string("Found one missing check."),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ])
+        )
+
+        let events = AppServerEventDecoder.decodeAll(notification)
+        guard case let .action(action)? = events.first else {
+            XCTFail("Expected action event")
+            return
+        }
+
+        XCTAssertEqual(action.itemID, "item_worker_1")
+        XCTAssertEqual(action.workerTrace?.workerID, "worker-1")
+        XCTAssertEqual(action.workerTrace?.role, "security_auditor")
+        XCTAssertEqual(action.workerTrace?.prompt, "Audit auth paths.")
+        XCTAssertEqual(action.workerTrace?.output, "Found one missing check.")
+        XCTAssertEqual(action.workerTrace?.status, "completed")
+        XCTAssertNil(action.workerTrace?.unavailableReason)
+    }
+
+    func testEventDecoderWorkerTraceFallsBackToUnavailableReason() {
+        let notification = JSONRPCMessageEnvelope.notification(
+            method: "item/started",
+            params: .object([
+                "item": .object([
+                    "id": .string("item_worker_2"),
+                    "type": .string("toolCall"),
+                    "worker": .object([
+                        "id": .string("worker-2"),
+                        "role": .string("reviewer"),
+                    ]),
+                ]),
+            ])
+        )
+
+        let events = AppServerEventDecoder.decodeAll(notification)
+        guard case let .action(action)? = events.first else {
+            XCTFail("Expected action event")
+            return
+        }
+
+        XCTAssertEqual(action.workerTrace?.workerID, "worker-2")
+        XCTAssertEqual(action.workerTrace?.role, "reviewer")
+        XCTAssertNil(action.workerTrace?.prompt)
+        XCTAssertNil(action.workerTrace?.output)
+        XCTAssertEqual(action.workerTrace?.unavailableReason, "trace unavailable from runtime")
+    }
+
     func testExecutableCandidatesIncludeCommonFallbackPaths() {
         let homeDirectory = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
         let candidates = CodexRuntime.executableCandidates(

@@ -101,6 +101,35 @@ public struct LogEntry: Identifiable, Hashable, Codable, Sendable {
 }
 
 public struct RuntimeAction: Hashable, Sendable {
+    public struct WorkerTrace: Hashable, Sendable, Codable {
+        public let workerID: String?
+        public let role: String?
+        public let prompt: String?
+        public let output: String?
+        public let status: String?
+        public let unavailableReason: String?
+
+        public init(
+            workerID: String? = nil,
+            role: String? = nil,
+            prompt: String? = nil,
+            output: String? = nil,
+            status: String? = nil,
+            unavailableReason: String? = nil
+        ) {
+            self.workerID = workerID
+            self.role = role
+            self.prompt = prompt
+            self.output = output
+            self.status = status
+            self.unavailableReason = unavailableReason
+        }
+
+        public var isUnavailable: Bool {
+            prompt == nil && output == nil
+        }
+    }
+
     public let method: String
     public let itemID: String?
     public let itemType: String?
@@ -108,6 +137,7 @@ public struct RuntimeAction: Hashable, Sendable {
     public let turnID: String?
     public let title: String
     public let detail: String
+    public let workerTrace: WorkerTrace?
 
     public init(
         method: String,
@@ -116,7 +146,8 @@ public struct RuntimeAction: Hashable, Sendable {
         threadID: String?,
         turnID: String?,
         title: String,
-        detail: String
+        detail: String,
+        workerTrace: WorkerTrace? = nil
     ) {
         self.method = method
         self.itemID = itemID
@@ -125,6 +156,7 @@ public struct RuntimeAction: Hashable, Sendable {
         self.turnID = turnID
         self.title = title
         self.detail = detail
+        self.workerTrace = workerTrace
     }
 }
 

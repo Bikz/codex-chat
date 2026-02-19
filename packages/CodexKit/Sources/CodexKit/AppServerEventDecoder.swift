@@ -93,6 +93,7 @@ enum AppServerEventDecoder {
             }
 
             let verb = method.hasSuffix("started") ? "Started" : "Completed"
+            let workerTrace = parseWorkerTrace(params: params, item: item)
             let action = RuntimeAction(
                 method: method,
                 itemID: item.value(at: ["id"])?.stringValue,
@@ -100,7 +101,8 @@ enum AppServerEventDecoder {
                 threadID: threadID,
                 turnID: turnID,
                 title: "\(verb) \(itemType)",
-                detail: item.prettyPrinted()
+                detail: item.prettyPrinted(),
+                workerTrace: workerTrace
             )
 
             var events: [CodexRuntimeEvent] = [.action(action)]
@@ -151,5 +153,75 @@ enum AppServerEventDecoder {
             let diff = value.value(at: ["diff"])?.stringValue
             return RuntimeFileChange(path: path, kind: kind, diff: diff)
         }
+    }
+
+    private static func parseWorkerTrace(params: JSONValue, item: JSONValue) -> RuntimeAction.WorkerTrace? {
+        let worker = item.value(at: ["worker"])
+            ?? item.value(at: ["subagent"])
+            ?? params.value(at: ["worker"])
+            ?? params.value(at: ["subagent"])
+
+        let workerID = worker?.value(at: ["id"])?.stringValue
+            ?? item.value(at: ["workerId"])?.stringValue
+            ?? item.value(at: ["subagentId"])?.stringValue
+            ?? params.value(at: ["workerId"])?.stringValue
+            ?? params.value(at: ["subagentId"])?.stringValue
+
+        let role = worker?.value(at: ["role"])?.stringValue
+            ?? worker?.value(at: ["name"])?.stringValue
+            ?? item.value(at: ["workerRole"])?.stringValue
+            ?? item.value(at: ["subagentRole"])?.stringValue
+
+        let prompt = worker?.value(at: ["prompt"])?.stringValue
+            ?? worker?.value(at: ["promptText"])?.stringValue
+            ?? item.value(at: ["prompt"])?.stringValue
+            ?? item.value(at: ["workerPrompt"])?.stringValue
+            ?? item.value(at: ["subagentPrompt"])?.stringValue
+
+        let output = worker?.value(at: ["output"])?.stringValue
+            ?? worker?.value(at: ["result"])?.stringValue
+            ?? item.value(at: ["output"])?.stringValue
+            ?? item.value(at: ["workerOutput"])?.stringValue
+            ?? item.value(at: ["subagentOutput"])?.stringValue
+
+        let status = worker?.value(at: ["status"])?.stringValue
+            ?? item.value(at: ["workerStatus"])?.stringValue
+            ?? item.value(at: ["subagentStatus"])?.stringValue
+
+        var unavailableReason = worker?.value(at: ["traceUnavailableReason"])?.stringValue
+            ?? item.value(at: ["traceUnavailableReason"])?.stringValue
+            ?? item.value(at: ["workerTraceUnavailableReason"])?.stringValue
+            ?? item.value(at: ["subagentTraceUnavailableReason"])?.stringValue
+
+        let hasWorkerContext = worker != nil
+            || workerID != nil
+            || role != nil
+            || item.value(at: ["worker"]) != nil
+            || item.value(at: ["subagent"]) != nil
+
+        if hasWorkerContext,
+           prompt == nil,
+           output == nil,
+           unavailableReason == nil
+        {
+            unavailableReason = "trace unavailable from runtime"
+        }
+
+        let trace = RuntimeAction.WorkerTrace(
+            workerID: workerID,
+            role: role,
+            prompt: prompt,
+            output: output,
+            status: status,
+            unavailableReason: unavailableReason
+        )
+
+        let hasAnyValue = trace.workerID != nil
+            || trace.role != nil
+            || trace.prompt != nil
+            || trace.output != nil
+            || trace.status != nil
+            || trace.unavailableReason != nil
+        return hasAnyValue ? trace : nil
     }
 }
