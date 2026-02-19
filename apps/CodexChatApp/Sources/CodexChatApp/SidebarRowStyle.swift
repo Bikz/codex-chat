@@ -25,15 +25,6 @@ struct SidebarRowButtonStyle: ButtonStyle {
         configuration.label
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(backgroundFill(isPressed: configuration.isPressed, isHovered: isHovered))
-            .overlay(alignment: .leading) {
-                if isActive {
-                    RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(Color(hex: tokens.palette.accentHex).opacity(0.85))
-                        .frame(width: 2)
-                        .padding(.vertical, 5)
-                        .padding(.leading, 2)
-                }
-            }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.988 : 1.0)
@@ -104,6 +95,8 @@ struct SidebarSectionHeader: View {
     let action: (() -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.designTokens) private var tokens
+    @State private var isActionHovered = false
 
     init(
         title: String,
@@ -130,6 +123,14 @@ struct SidebarSectionHeader: View {
         return Color.primary.opacity(0.68)
     }
 
+    private var actionBackgroundColor: Color {
+        Color.primary.opacity(isActionHovered ? tokens.surfaces.raisedOpacity * 1.25 : 0)
+    }
+
+    private var actionBorderColor: Color {
+        Color.primary.opacity(isActionHovered ? tokens.surfaces.hairlineOpacity * 1.3 : 0)
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Text(title.uppercased())
@@ -141,14 +142,27 @@ struct SidebarSectionHeader: View {
             if let action, let actionSystemImage {
                 Button(action: action) {
                     Image(systemName: actionSystemImage)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 13.5, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(actionIconColor)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(actionBackgroundColor)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(actionBorderColor)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .animation(.easeInOut(duration: tokens.motion.hoverDuration), value: isActionHovered)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(actionAccessibilityLabel ?? title)
+                .onHover { hovering in
+                    guard isActionHovered != hovering else { return }
+                    isActionHovered = hovering
+                }
                 .frame(width: trailingAlignmentWidth, alignment: .trailing)
                 .padding(.trailing, trailingPadding)
             }

@@ -6,38 +6,45 @@ import Darwin
 import Foundation
 
 extension AppModel {
-    func toggleExtensionInspector() {
+    func toggleModsBar() {
         guard let selectedThreadID else { return }
-        let next = !(extensionInspectorVisibilityByThreadID[selectedThreadID] ?? false)
-        extensionInspectorVisibilityByThreadID[selectedThreadID] = next
-        Task { try? await persistInspectorVisibilityPreference() }
+        let next = !(extensionModsBarVisibilityByThreadID[selectedThreadID] ?? false)
+        extensionModsBarVisibilityByThreadID[selectedThreadID] = next
+        Task { try? await persistModsBarVisibilityPreference() }
     }
 
-    func restoreExtensionInspectorVisibility() async {
+    func restoreModsBarVisibility() async {
         guard let preferenceRepository else { return }
         do {
-            guard let raw = try await preferenceRepository.getPreference(key: .extensionsInspectorVisibilityByThread),
+            let raw: String? = if let current = try await preferenceRepository.getPreference(
+                key: .extensionsModsBarVisibilityByThread
+            ) {
+                current
+            } else {
+                try await preferenceRepository.getPreference(key: .extensionsLegacyModsBarVisibility)
+            }
+            guard let raw,
                   let data = raw.data(using: .utf8)
             else {
-                extensionInspectorVisibilityByThreadID = [:]
+                extensionModsBarVisibilityByThreadID = [:]
                 return
             }
             let decoded = try JSONDecoder().decode([String: Bool].self, from: data)
-            extensionInspectorVisibilityByThreadID = Dictionary(uniqueKeysWithValues: decoded.compactMap { key, value in
+            extensionModsBarVisibilityByThreadID = Dictionary(uniqueKeysWithValues: decoded.compactMap { key, value in
                 guard let id = UUID(uuidString: key) else { return nil }
                 return (id, value)
             })
         } catch {
-            appendLog(.warning, "Failed to restore inspector visibility state: \(error.localizedDescription)")
+            appendLog(.warning, "Failed to restore modsBar visibility state: \(error.localizedDescription)")
         }
     }
 
-    func persistInspectorVisibilityPreference() async throws {
+    func persistModsBarVisibilityPreference() async throws {
         guard let preferenceRepository else { return }
-        let raw = Dictionary(uniqueKeysWithValues: extensionInspectorVisibilityByThreadID.map { ($0.key.uuidString, $0.value) })
+        let raw = Dictionary(uniqueKeysWithValues: extensionModsBarVisibilityByThreadID.map { ($0.key.uuidString, $0.value) })
         let data = try JSONEncoder().encode(raw)
         let text = String(data: data, encoding: .utf8) ?? "{}"
-        try await preferenceRepository.setPreference(key: .extensionsInspectorVisibilityByThread, value: text)
+        try await preferenceRepository.setPreference(key: .extensionsModsBarVisibilityByThread, value: text)
     }
 
     func syncActiveExtensions(
@@ -73,15 +80,15 @@ extension AppModel {
         activeExtensionHooks = hooks
         activeExtensionAutomations = automations
 
-        if let projectInspector = projectMod?.definition.uiSlots?.rightInspector {
-            activeRightInspectorSlot = projectInspector
+        if let projectModsBar = projectMod?.definition.uiSlots?.modsBar {
+            activeModsBarSlot = projectModsBar
         } else {
-            activeRightInspectorSlot = globalMod?.definition.uiSlots?.rightInspector
+            activeModsBarSlot = globalMod?.definition.uiSlots?.modsBar
         }
 
         Task {
             await refreshAutomationScheduler()
-            await loadInspectorCacheForSelectedThread()
+            await loadModsBarCacheForSelectedThread()
         }
     }
 
@@ -111,8 +118,8 @@ extension AppModel {
         await extensionAutomationScheduler.stopAll()
     }
 
-    func refreshExtensionInspectorForSelectedThread() async {
-        await loadInspectorCacheForSelectedThread()
+    func refreshModsBarForSelectedThread() async {
+        await loadModsBarCacheForSelectedThread()
     }
 
     func emitExtensionEvent(
@@ -376,29 +383,29 @@ extension AppModel {
             appendLog(.info, "[extension] \(sanitizeExtensionLog(log))")
         }
 
-        if let inspector = output.inspector,
+        if let modsBar = output.modsBar,
            let threadID = UUID(uuidString: envelope.thread.id),
-           shouldApplyInspectorOutput(sourceHookID: sourceHookID)
+           shouldApplyModsBarOutput(sourceHookID: sourceHookID)
         {
-            let resolvedTitle = activeRightInspectorSlot?.title ?? inspector.title
-            extensionInspectorByThreadID[threadID] = ExtensionInspectorState(
+            let resolvedTitle = activeModsBarSlot?.title ?? modsBar.title
+            extensionModsBarByThreadID[threadID] = ExtensionModsBarState(
                 title: resolvedTitle,
-                markdown: inspector.markdown,
+                markdown: modsBar.markdown,
                 updatedAt: Date()
             )
             do {
-                _ = try await extensionStateStore.writeInspector(
-                    markdown: inspector.markdown,
+                _ = try await extensionStateStore.writeModsBar(
+                    markdown: modsBar.markdown,
                     modDirectory: URL(fileURLWithPath: modDirectoryPath, isDirectory: true),
                     threadID: threadID
                 )
             } catch {
-                appendLog(.warning, "Failed to persist extension inspector output: \(error.localizedDescription)")
+                appendLog(.warning, "Failed to persist extension modsBar output: \(error.localizedDescription)")
             }
 
-            if extensionInspectorVisibilityByThreadID[threadID] != true {
-                extensionInspectorVisibilityByThreadID[threadID] = true
-                try? await persistInspectorVisibilityPreference()
+            if extensionModsBarVisibilityByThreadID[threadID] != true {
+                extensionModsBarVisibilityByThreadID[threadID] = true
+                try? await persistModsBarVisibilityPreference()
             }
         }
 
@@ -479,8 +486,8 @@ extension AppModel {
         return "app.codexchat.\(safeMod).\(safeAutomation)"
     }
 
-    private func shouldApplyInspectorOutput(sourceHookID: String?) -> Bool {
-        guard let slot = activeRightInspectorSlot,
+    private func shouldApplyModsBarOutput(sourceHookID: String?) -> Bool {
+        guard let slot = activeModsBarSlot,
               slot.enabled
         else {
             return false
@@ -500,15 +507,15 @@ extension AppModel {
         return requiredHookID == sourceHookID
     }
 
-    private func loadInspectorCacheForSelectedThread() async {
+    private func loadModsBarCacheForSelectedThread() async {
         guard let selectedThreadID,
-              let activeRightInspectorSlot,
-              activeRightInspectorSlot.enabled
+              let activeModsBarSlot,
+              activeModsBarSlot.enabled
         else {
             return
         }
 
-        let hookID = activeRightInspectorSlot.source?.hookID
+        let hookID = activeModsBarSlot.source?.hookID
         let modDirectoryPath: String? = if let hookID {
             activeExtensionHooks.first(where: { $0.definition.id == hookID })?.modDirectoryPath
         } else {
@@ -518,19 +525,19 @@ extension AppModel {
         guard let modDirectoryPath else { return }
 
         do {
-            let cached = try await extensionStateStore.readInspector(
+            let cached = try await extensionStateStore.readModsBar(
                 modDirectory: URL(fileURLWithPath: modDirectoryPath, isDirectory: true),
                 threadID: selectedThreadID
             )
             if let cached, !cached.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                extensionInspectorByThreadID[selectedThreadID] = ExtensionInspectorState(
-                    title: activeRightInspectorSlot.title,
+                extensionModsBarByThreadID[selectedThreadID] = ExtensionModsBarState(
+                    title: activeModsBarSlot.title,
                     markdown: cached,
                     updatedAt: Date()
                 )
             }
         } catch {
-            appendLog(.warning, "Failed to load extension inspector cache: \(error.localizedDescription)")
+            appendLog(.warning, "Failed to load extension modsBar cache: \(error.localizedDescription)")
         }
     }
 

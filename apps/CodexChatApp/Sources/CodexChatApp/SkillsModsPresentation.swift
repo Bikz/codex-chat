@@ -13,7 +13,7 @@ enum SkillsModsPresentation {
         case theme = "Theme"
         case hooks = "Hooks"
         case automations = "Automations"
-        case inspector = "Inspector"
+        case modsBar = "Mods bar"
     }
 
     enum ModExtensionStatus: String {
@@ -21,21 +21,21 @@ enum SkillsModsPresentation {
         case extensionEnabled = "Extension-enabled"
     }
 
-    static let extensionExperimentalBadge = "Experimental API (schemaVersion: 2)"
+    static let extensionExperimentalBadge = "Extension API (schemaVersion: 1)"
     static let installModDescription = """
-    Install from a git URL or a local folder containing `ui.mod.json`. Installed mods are enabled immediately. \
+    Install from a GitHub URL or a local folder containing `ui.mod.json`. Review package metadata and permissions before install. \
     Privileged hook or automation actions are permission-gated and prompted on first use.
     """
-    static let inspectorToolbarHelp = """
-    Inspector content comes from the active mod. Hidden by default, and opens automatically when new inspector output arrives.
+    static let modsBarToolbarHelp = """
+    Mods bar content comes from the active mod. Hidden by default, and opens automatically when new modsBar output arrives.
     """
-    static let inspectorToolbarEmptyHelp = "No active inspector mod. Install one in Skills & Mods > Mods."
+    static let modsBarToolbarEmptyHelp = "No active modsBar mod. Install one in Skills & Mods > Mods."
     static let skillsSectionDescription = "Installed skills are shown first. Available skills from skills.sh are listed below."
     static let modArchetypes: [ModArchetype] = [
-        .init(title: "Theme Packs", detail: "Visual token overrides (`schemaVersion: 1/2`)."),
+        .init(title: "Theme Packs", detail: "Visual token overrides (`schemaVersion: 1`)."),
         .init(title: "Turn/Thread Hooks", detail: "Event-driven summaries and side effects."),
         .init(title: "Scheduled Automations", detail: "Cron jobs for notes and log sync workflows."),
-        .init(title: "Right Inspector Panels", detail: "Toggleable inspector content, collapsed by default."),
+        .init(title: "Right Mods bar Panels", detail: "Toggleable modsBar content, collapsed by default."),
     ]
 
     static func filteredSkills(_ items: [AppModel.SkillListItem], query: String) -> [AppModel.SkillListItem] {
@@ -154,8 +154,8 @@ enum SkillsModsPresentation {
         if !mod.definition.automations.isEmpty {
             capabilities.append(.automations)
         }
-        if mod.definition.uiSlots?.rightInspector?.enabled == true {
-            capabilities.append(.inspector)
+        if mod.definition.uiSlots?.modsBar?.enabled == true {
+            capabilities.append(.modsBar)
         }
 
         return capabilities
@@ -165,13 +165,13 @@ enum SkillsModsPresentation {
         hasExtensionFeatures(mod.definition) ? .extensionEnabled : .themeOnly
     }
 
-    static func inspectorHelpText(hasActiveInspectorSource: Bool) -> String {
-        hasActiveInspectorSource ? inspectorToolbarHelp : inspectorToolbarEmptyHelp
+    static func modsBarHelpText(hasActiveModsBarSource: Bool) -> String {
+        hasActiveModsBarSource ? modsBarToolbarHelp : modsBarToolbarEmptyHelp
     }
 
     private static func hasExtensionFeatures(_ definition: UIModDefinition) -> Bool {
         !definition.hooks.isEmpty
             || !definition.automations.isEmpty
-            || definition.uiSlots?.rightInspector?.enabled == true
+            || definition.uiSlots?.modsBar?.enabled == true
     }
 }

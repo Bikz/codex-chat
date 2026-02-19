@@ -6,6 +6,7 @@ struct ChatsCanvasView: View {
     @ObservedObject var model: AppModel
     @Binding var isInsertMemorySheetVisible: Bool
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
@@ -50,12 +51,12 @@ struct ChatsCanvasView: View {
         .toolbarBackground(.hidden, for: .windowToolbar)
         .onAppear {
             Task {
-                await model.refreshExtensionInspectorForSelectedThread()
+                await model.refreshModsBarForSelectedThread()
             }
         }
         .onChange(of: model.selectedThreadID) { _, _ in
             Task {
-                await model.refreshExtensionInspectorForSelectedThread()
+                await model.refreshModsBarForSelectedThread()
             }
         }
         .toolbar {
@@ -89,15 +90,19 @@ struct ChatsCanvasView: View {
                 .accessibilityLabel("Toggle shell workspace")
                 .help("Toggle shell workspace")
 
-                if model.canToggleInspectorForSelectedThread {
+                if model.canToggleModsBarForSelectedThread {
                     Button {
-                        model.toggleExtensionInspector()
+                        model.toggleModsBar()
                     } label: {
-                        Label("Inspector", systemImage: "sidebar.right")
+                        Label("Mods bar", systemImage: "sidebar.right")
                             .labelStyle(.iconOnly)
                     }
-                    .accessibilityLabel("Toggle inspector")
-                    .help(SkillsModsPresentation.inspectorHelpText(hasActiveInspectorSource: model.isInspectorAvailableForSelectedThread))
+                    .accessibilityLabel("Toggle mods bar")
+                    .help(
+                        SkillsModsPresentation.modsBarHelpText(
+                            hasActiveModsBarSource: model.isModsBarAvailableForSelectedThread
+                        )
+                    )
                 }
             }
         }
@@ -110,38 +115,31 @@ struct ChatsCanvasView: View {
             Divider()
                 .opacity(tokens.surfaces.hairlineOpacity)
 
-            HStack(alignment: .bottom, spacing: tokens.spacing.small) {
-                Button {
+            HStack(alignment: .center, spacing: tokens.spacing.small) {
+                composerLeadingButton(
+                    systemImage: "brain",
+                    accessibilityLabel: "Insert memory snippet",
+                    helpText: "Insert memory snippet",
+                    isDisabled: model.selectedProjectID == nil
+                ) {
                     isInsertMemorySheetVisible = true
-                } label: {
-                    Image(systemName: "brain")
-                        .foregroundStyle(.secondary)
-                        .symbolRenderingMode(.hierarchical)
-                        .frame(width: 22, height: 22)
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Insert memory snippet")
-                .help("Insert memory snippet")
-                .disabled(model.selectedProjectID == nil)
 
-                Button {
+                composerLeadingButton(
+                    systemImage: "paperclip",
+                    accessibilityLabel: "Attach files or images",
+                    helpText: "Attach files or images",
+                    isDisabled: model.selectedProjectID == nil
+                ) {
                     model.pickComposerAttachments()
-                } label: {
-                    Image(systemName: "paperclip")
-                        .foregroundStyle(.secondary)
-                        .symbolRenderingMode(.hierarchical)
-                        .frame(width: 22, height: 22)
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Attach files or images")
-                .help("Attach files or images")
-                .disabled(model.selectedProjectID == nil)
 
                 TextField(composerPlaceholder, text: $model.composerText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: tokens.typography.bodySize + 0.5, weight: .medium))
                     .lineLimit(1 ... 6)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 30)
                     .focused($isComposerFocused)
                     .onTapGesture {
                         isComposerFocused = true
@@ -369,6 +367,42 @@ struct ChatsCanvasView: View {
         return "Ask CodexChat to do something…"
     }
 
+    private func composerLeadingButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        helpText: String,
+        isDisabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13.5, weight: .semibold))
+                .foregroundStyle(composerLeadingButtonIconColor)
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.55))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .help(helpText)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.45 : 1)
+    }
+
+    private var composerLeadingButtonIconColor: Color {
+        if colorScheme == .dark {
+            return Color.primary.opacity(0.88)
+        }
+        return Color.primary.opacity(0.7)
+    }
+
     @ViewBuilder
     private var runtimeAwareConversationSurface: some View {
         if case .installCodex? = model.runtimeIssue {
@@ -384,7 +418,7 @@ struct ChatsCanvasView: View {
         } else {
             switch model.conversationState {
             case .idle:
-                conversationWithInspector {
+                conversationWithModsBar {
                     EmptyStateView(
                         title: "No active thread",
                         message: "Choose or create a thread to start chatting.",
@@ -392,25 +426,21 @@ struct ChatsCanvasView: View {
                     )
                 }
             case .loading:
-                conversationWithInspector {
+                conversationWithModsBar {
                     LoadingStateView(title: "Preparing conversation…")
                 }
             case let .failed(message):
-                conversationWithInspector {
+                conversationWithModsBar {
                     ErrorStateView(title: "Conversation unavailable", message: message, actionLabel: "Retry") {
                         model.retryLoad()
                     }
                 }
             case let .loaded(entries) where entries.isEmpty:
-                conversationWithInspector {
-                    EmptyStateView(
-                        title: "Thread is empty",
-                        message: "Use the composer below to send the first message.",
-                        systemImage: "text.cursor"
-                    )
+                conversationWithModsBar {
+                    ThreadEmptyStateView()
                 }
             case let .loaded(entries):
-                conversationWithInspector {
+                conversationWithModsBar {
                     ScrollViewReader { proxy in
                         List(entries) { entry in
                             switch entry {
@@ -461,17 +491,17 @@ struct ChatsCanvasView: View {
     }
 
     @ViewBuilder
-    private func conversationWithInspector(
+    private func conversationWithModsBar(
         @ViewBuilder _ content: () -> some View
     ) -> some View {
-        if model.canToggleInspectorForSelectedThread {
+        if model.canToggleModsBarForSelectedThread {
             HStack(spacing: 0) {
                 content()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if model.isInspectorVisibleForSelectedThread {
+                if model.isModsBarVisibleForSelectedThread {
                     Divider()
-                    ExtensionInspectorView(model: model)
+                    ExtensionModsBarView(model: model)
                         .frame(minWidth: 260, idealWidth: 320, maxWidth: 440)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
@@ -499,6 +529,33 @@ struct ChatsCanvasView: View {
     }
 }
 
+private struct ThreadEmptyStateView: View {
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.6))
+                    .frame(width: 66, height: 66)
+                Image(systemName: "triangle.fill")
+                    .font(.system(size: 25, weight: .semibold))
+                    .foregroundStyle(Color(hex: tokens.palette.accentHex).opacity(0.88))
+            }
+
+            Text("Start a conversation")
+                .font(.headline)
+
+            Text("Send your first message using the composer below.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}
+
 private struct ComposerControlBar: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
@@ -506,12 +563,18 @@ private struct ComposerControlBar: View {
     @State private var customModelDraft = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Menu {
                     if model.runtimeDefaultModelID != nil {
-                        Button("Runtime default") {
+                        Button {
                             model.setDefaultModel("")
+                        } label: {
+                            menuOptionLabel(
+                                title: "Runtime default",
+                                subtitle: model.runtimeDefaultModelID.map { model.modelDisplayName(for: $0) },
+                                isSelected: model.isUsingRuntimeDefaultModel
+                            )
                         }
 
                         if !model.modelPresets.isEmpty {
@@ -520,8 +583,13 @@ private struct ComposerControlBar: View {
                     }
 
                     ForEach(model.modelPresets, id: \.self) { preset in
-                        Button(model.modelMenuLabel(for: preset)) {
+                        Button {
                             model.setDefaultModel(preset)
+                        } label: {
+                            menuOptionLabel(
+                                title: model.modelMenuLabel(for: preset),
+                                isSelected: model.defaultModel.trimmingCharacters(in: .whitespacesAndNewlines) == preset.trimmingCharacters(in: .whitespacesAndNewlines)
+                            )
                         }
                     }
 
@@ -547,8 +615,10 @@ private struct ComposerControlBar: View {
                 if model.canChooseReasoningForSelectedModel {
                     Menu {
                         ForEach(model.reasoningPresets, id: \.self) { level in
-                            Button(level.title) {
+                            Button {
                                 model.setDefaultReasoning(level)
+                            } label: {
+                                menuOptionLabel(title: level.title, isSelected: level == model.defaultReasoning)
                             }
                         }
                     } label: {
@@ -568,8 +638,14 @@ private struct ComposerControlBar: View {
                 if model.canChooseWebSearchForSelectedModel {
                     Menu {
                         ForEach(model.webSearchPresets, id: \.self) { mode in
-                            Button(webSearchLabel(mode)) {
+                            Button {
                                 model.setDefaultWebSearch(mode)
+                            } label: {
+                                menuOptionLabel(
+                                    title: webSearchLabel(mode),
+                                    subtitle: webSearchDescription(mode),
+                                    isSelected: mode == model.defaultWebSearch
+                                )
                             }
                         }
                     } label: {
@@ -588,8 +664,14 @@ private struct ComposerControlBar: View {
 
                 Menu {
                     ForEach(AppModel.ComposerMemoryMode.allCases, id: \.self) { mode in
-                        Button(mode.title) {
+                        Button {
                             model.setComposerMemoryMode(mode)
+                        } label: {
+                            menuOptionLabel(
+                                title: memoryModeLabel(mode),
+                                subtitle: memoryModeDescription(mode),
+                                isSelected: mode == model.composerMemoryMode
+                            )
                         }
                     }
                 } label: {
@@ -606,18 +688,6 @@ private struct ComposerControlBar: View {
                 .help("Select memory behavior for this turn")
 
                 Spacer()
-            }
-
-            if model.isDefaultWebSearchClampedForSelectedProject() {
-                Text("Web mode is clamped by project safety policy for this thread.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let memoryStatusLine = model.composerMemoryStatusLine {
-                Text(memoryStatusLine)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
         }
         .sheet(isPresented: $isCustomModelSheetVisible) {
@@ -681,7 +751,78 @@ private struct ComposerControlBar: View {
     }
 
     private func webSearchLabel(_ mode: ProjectWebSearchMode) -> String {
-        mode.title
+        switch mode {
+        case .cached:
+            "Standard"
+        case .live:
+            "Live web"
+        case .disabled:
+            "Web off"
+        }
+    }
+
+    private func webSearchDescription(_ mode: ProjectWebSearchMode) -> String {
+        switch mode {
+        case .cached:
+            "Uses cached web context."
+        case .live:
+            "Fetches fresh web results."
+        case .disabled:
+            "Disables web search."
+        }
+    }
+
+    private func memoryModeLabel(_ mode: AppModel.ComposerMemoryMode) -> String {
+        switch mode {
+        case .projectDefault:
+            "Auto"
+        case .off:
+            "Off"
+        case .summariesOnly:
+            "Summaries"
+        case .summariesAndKeyFacts:
+            "Summaries + facts"
+        }
+    }
+
+    private func memoryModeDescription(_ mode: AppModel.ComposerMemoryMode) -> String? {
+        switch mode {
+        case .projectDefault:
+            "Uses the project default memory setting."
+        case .off:
+            "Skips memory writes for this turn."
+        case .summariesOnly:
+            "Writes summary memory only."
+        case .summariesAndKeyFacts:
+            "Writes summaries and key facts."
+        }
+    }
+
+    private func menuOptionLabel(
+        title: String,
+        subtitle: String? = nil,
+        isSelected: Bool
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: isSelected ? "checkmark" : "circle")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(
+                    isSelected
+                        ? Color(hex: tokens.palette.accentHex)
+                        : Color.secondary.opacity(0.45)
+                )
+                .frame(width: 14, height: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private func webSearchTint(_ mode: ProjectWebSearchMode) -> Color {

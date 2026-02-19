@@ -368,6 +368,12 @@ struct SidebarView: View {
                         threadStatusMarker(for: thread.id)
                     }
 
+                    if thread.isPinned {
+                        Image(systemName: "star.fill")
+                            .font(sidebarMetaIconFont)
+                            .foregroundStyle(Color(hex: tokens.palette.accentHex).opacity(0.9))
+                    }
+
                     Text(thread.title)
                         .font(sidebarBodyFont)
                         .lineLimit(1)
@@ -405,14 +411,18 @@ struct SidebarView: View {
                     Button {
                         model.togglePin(threadID: thread.id)
                     } label: {
-                        Image(systemName: thread.isPinned ? "pin.fill" : "pin")
+                        Image(systemName: thread.isPinned ? "star.fill" : "star")
                             .font(sidebarMetaIconFont)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(
+                                thread.isPinned
+                                    ? Color(hex: tokens.palette.accentHex).opacity(0.9)
+                                    : .secondary
+                            )
                             .frame(width: controlIconWidth, height: controlIconWidth)
                     }
                     .buttonStyle(.plain)
-                    .help(thread.isPinned ? "Unpin chat" : "Pin chat")
-                    .accessibilityLabel(thread.isPinned ? "Unpin \(thread.title)" : "Pin \(thread.title)")
+                    .help(thread.isPinned ? "Remove star" : "Star chat")
+                    .accessibilityLabel(thread.isPinned ? "Remove star from \(thread.title)" : "Star \(thread.title)")
 
                     Button {
                         model.archiveThread(threadID: thread.id)
@@ -574,16 +584,16 @@ struct SidebarView: View {
 
     private var searchFieldFillColor: Color {
         if colorScheme == .dark {
-            return Color.white.opacity(isSearchFocused ? 0.14 : 0.10)
+            return Color.white.opacity(0.10)
         }
-        return Color.black.opacity(isSearchFocused ? 0.055 : 0.04)
+        return Color.black.opacity(0.04)
     }
 
     private var searchFieldBorderColor: Color {
         if colorScheme == .dark {
-            return Color.white.opacity(isSearchFocused ? 0.18 : 0.12)
+            return Color.white.opacity(0.12)
         }
-        return Color.black.opacity(isSearchFocused ? 0.12 : 0.07)
+        return Color.black.opacity(0.07)
     }
 
     private func projectLeadingIconName(isExpanded: Bool, isHovered: Bool) -> String {

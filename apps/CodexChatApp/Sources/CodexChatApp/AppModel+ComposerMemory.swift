@@ -21,13 +21,13 @@ extension AppModel {
     var composerMemoryDisplayLabel: String {
         switch composerMemoryMode {
         case .projectDefault:
-            "Default"
+            "Auto"
         case .off:
             "Off"
         case .summariesOnly:
-            "Summary"
+            "Summaries"
         case .summariesAndKeyFacts:
-            "Key facts"
+            "Summaries + facts"
         }
     }
 
@@ -36,9 +36,9 @@ extension AppModel {
         case .off:
             "Off"
         case .summariesOnly:
-            "Summary"
+            "Summaries"
         case .summariesAndKeyFacts:
-            "Key facts"
+            "Summaries + facts"
         }
     }
 

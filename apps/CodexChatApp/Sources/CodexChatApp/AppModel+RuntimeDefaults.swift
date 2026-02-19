@@ -397,7 +397,7 @@ extension AppModel {
     }
 
     private func mapProjectWebSearchMode(_ mode: RuntimeWebSearchMode) -> ProjectWebSearchMode {
-        return switch mode {
+        switch mode {
         case .disabled: .disabled
         case .cached: .cached
         case .live: .live

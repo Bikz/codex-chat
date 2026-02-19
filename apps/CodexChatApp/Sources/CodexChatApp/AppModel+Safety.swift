@@ -15,7 +15,7 @@ extension AppModel {
         preferredWebSearch: ProjectWebSearchMode? = nil
     ) -> RuntimeSafetyConfiguration {
         let effectiveWebSearch: ProjectWebSearchMode = if let preferredWebSearch {
-            effectiveWebSearchMode(preferred: preferredWebSearch, projectPolicy: project.webSearch)
+            preferredWebSearch
         } else {
             project.webSearch
         }

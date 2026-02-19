@@ -1,6 +1,7 @@
 # CodexChat Safety Policy
 
 CodexChat applies project-level safety settings to Codex app-server turns.
+The composer web mode selector can override a project's web search mode for the current turn.
 
 ## Recommended Defaults
 
