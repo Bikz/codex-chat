@@ -93,6 +93,8 @@ struct ShellPaneChromeView<Content: View>: View {
             .padding(.horizontal, 10)
             .frame(height: 32)
             .background(Color.primary.opacity(isActive ? tokens.surfaces.activeOpacity : tokens.surfaces.baseOpacity))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onFocus)
 
             Divider()
                 .opacity(tokens.surfaces.hairlineOpacity)
@@ -109,7 +111,5 @@ struct ShellPaneChromeView<Content: View>: View {
                 )
         )
         .clipShape(RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onFocus)
     }
 }

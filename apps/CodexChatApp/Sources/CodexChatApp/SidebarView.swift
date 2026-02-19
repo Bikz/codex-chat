@@ -333,9 +333,11 @@ struct SidebarView: View {
         }
         .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
-                hoveredProjectID = hovering ? project.id : (hoveredProjectID == project.id ? nil : hoveredProjectID)
+            let nextHoveredID = hovering ? project.id : nil
+            guard hoveredProjectID != nextHoveredID else {
+                return
             }
+            hoveredProjectID = nextHoveredID
         }
     }
 
@@ -430,9 +432,11 @@ struct SidebarView: View {
         }
         .frame(maxWidth: .infinity, minHeight: rowMinimumHeight, alignment: .leading)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: tokens.motion.hoverDuration)) {
-                hoveredThreadID = hovering ? thread.id : (hoveredThreadID == thread.id ? nil : hoveredThreadID)
+            let nextHoveredID = hovering ? thread.id : nil
+            guard hoveredThreadID != nextHoveredID else {
+                return
             }
+            hoveredThreadID = nextHoveredID
         }
     }
 
