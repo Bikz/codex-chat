@@ -414,9 +414,20 @@ extension AppModel {
                     return cached
                 }
 
+                if let migratedCached = await migrateLegacyRuntimeThreadMappingIfNeeded(
+                    rawRuntimeThreadID: cached,
+                    localThreadID: localThreadID,
+                    source: "cache"
+                ) {
+                    await PerformanceTracer.shared.end(
+                        span,
+                        extraMetadata: ["result": "migrated-cache"]
+                    )
+                    return migratedCached
+                }
+
                 runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID)
                 localThreadIDByRuntimeThreadID.removeValue(forKey: cached)
-                appendLog(.warning, "Discarded legacy unscoped runtime thread mapping from cache for \(localThreadID.uuidString)")
             }
 
             if let persisted = try await runtimeThreadMappingRepository?.getRuntimeThreadID(localThreadID: localThreadID),
@@ -440,7 +451,17 @@ extension AppModel {
                     return persisted
                 }
 
-                appendLog(.warning, "Discarded legacy unscoped persisted runtime thread mapping for \(localThreadID.uuidString)")
+                if let migratedPersisted = await migrateLegacyRuntimeThreadMappingIfNeeded(
+                    rawRuntimeThreadID: persisted,
+                    localThreadID: localThreadID,
+                    source: "persistence"
+                ) {
+                    await PerformanceTracer.shared.end(
+                        span,
+                        extraMetadata: ["result": "migrated-persisted"]
+                    )
+                    return migratedPersisted
+                }
             }
 
             let runtimePool = runtimePool
@@ -488,6 +509,54 @@ extension AppModel {
             )
             throw error
         }
+    }
+
+    private func migrateLegacyRuntimeThreadMappingIfNeeded(
+        rawRuntimeThreadID: String,
+        localThreadID: UUID,
+        source: String
+    ) async -> String? {
+        let trimmedRuntimeThreadID = rawRuntimeThreadID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRuntimeThreadID.isEmpty else {
+            return nil
+        }
+        guard RuntimePool.parseScopedID(trimmedRuntimeThreadID) == nil else {
+            return trimmedRuntimeThreadID
+        }
+
+        let migratedRuntimeThreadID = RuntimePool.scope(
+            id: trimmedRuntimeThreadID,
+            workerID: RuntimePoolWorkerID(0)
+        )
+        if let previous = runtimeThreadIDByLocalThreadID.updateValue(migratedRuntimeThreadID, forKey: localThreadID),
+           previous != migratedRuntimeThreadID
+        {
+            localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
+        }
+        localThreadIDByRuntimeThreadID.removeValue(forKey: trimmedRuntimeThreadID)
+        localThreadIDByRuntimeThreadID[migratedRuntimeThreadID] = localThreadID
+
+        do {
+            try await runtimeThreadMappingRepository?.setRuntimeThreadID(
+                localThreadID: localThreadID,
+                runtimeThreadID: migratedRuntimeThreadID
+            )
+        } catch {
+            appendLog(
+                .warning,
+                "Failed to persist migrated runtime thread mapping for \(localThreadID.uuidString): \(error.localizedDescription)"
+            )
+        }
+
+        if let runtimePool {
+            await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: migratedRuntimeThreadID)
+        }
+
+        appendLog(
+            .info,
+            "Migrated legacy unscoped runtime thread mapping from \(source) for \(localThreadID.uuidString) to \(migratedRuntimeThreadID)"
+        )
+        return migratedRuntimeThreadID
     }
 
     func ensureRuntimeThreadIDForPrewarm(
@@ -830,6 +899,10 @@ extension AppModel {
             if let mappedContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeThreadID == runtimeThreadID }) {
                 return mappedContext.localThreadID
             }
+        }
+
+        if activeTurnContextsByThreadID.count == 1 {
+            return activeTurnContextsByThreadID.first?.key
         }
 
         return nil

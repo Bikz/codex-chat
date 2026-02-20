@@ -563,6 +563,10 @@ extension AppModel {
             }
         }
 
+        if activeTurnContextsByThreadID.count == 1 {
+            return activeTurnContextsByThreadID.first?.key
+        }
+
         return nil
     }
 

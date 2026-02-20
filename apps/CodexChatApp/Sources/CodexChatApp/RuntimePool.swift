@@ -303,7 +303,9 @@ actor RuntimePool {
         try await ensureWorkersInitialized()
         guard let worker = workersByID[workerID] else {
             if workerID.rawValue < 0 || workerID.rawValue >= configuredWorkerCount {
-                throw CodexRuntimeError.invalidResponse("Invalid scoped runtime worker id: \(workerID.rawValue)")
+                throw CodexRuntimeError.invalidResponse(
+                    "Invalid scoped runtime worker id for thread route: \(workerID.rawValue)"
+                )
             }
             throw CodexRuntimeError.processNotRunning
         }

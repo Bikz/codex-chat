@@ -177,6 +177,53 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         }
     }
 
+    func testLegacyUnscopedRuntimeThreadMappingMigratesDuringHydration() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        try await harness.repositories.runtimeThreadMappingRepository
+            .setRuntimeThreadID(localThreadID: harness.thread.id, runtimeThreadID: "thr_legacy")
+
+        await harness.model.loadInitialData()
+
+        try await eventuallyAsync(timeoutSeconds: 8.0) {
+            let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
+                .getRuntimeThreadID(localThreadID: harness.thread.id)
+            return mappedRuntimeThreadID == "w0|thr_legacy"
+        }
+
+        let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
+            .getRuntimeThreadID(localThreadID: harness.thread.id)
+        XCTAssertEqual(mappedRuntimeThreadID, "w0|thr_legacy")
+    }
+
+    func testOutOfRangeScopedRuntimeThreadMappingRecoversByRecreatingThread() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        try await harness.repositories.runtimeThreadMappingRepository
+            .setRuntimeThreadID(localThreadID: harness.thread.id, runtimeThreadID: "w999|thr_stale")
+
+        await harness.model.loadInitialData()
+        harness.model.composerText = "Hello"
+        harness.model.sendMessage()
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
+            .getRuntimeThreadID(localThreadID: harness.thread.id)
+        let parsedMappedRuntimeThread = try XCTUnwrap(mappedRuntimeThreadID.flatMap(RuntimePool.parseScopedID))
+        XCTAssertEqual(parsedMappedRuntimeThread.1, "thr_test")
+        XCTAssertNotEqual(parsedMappedRuntimeThread.0, RuntimePoolWorkerID(999))
+
+        harness.model.approvePendingApprovalOnce()
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.canSendMessages
+        }
+    }
+
     func testSafeEscalationUpdatesSafetySettingsButApprovalsStillAppear() async throws {
         let harness = try await Harness.make(trustState: .untrusted)
         defer { harness.cleanup() }
