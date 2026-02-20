@@ -37,6 +37,7 @@ extension AppModel {
         projectID: UUID,
         projectPath: String,
         sourceQueueItemID: UUID?,
+        priority: TurnConcurrencyScheduler.Priority = .manual,
         composerAttachments: [ComposerAttachment] = []
     ) async throws {
         guard let runtime else {
@@ -54,7 +55,6 @@ extension AppModel {
 
         appendEntry(.message(ChatMessage(threadId: threadID, role: .user, text: displayText)), to: threadID)
         followUpStatusMessage = nil
-        isTurnInProgress = true
         autoDrainPreferredThreadID = threadID
 
         guard let project = try await projectRepository?.getProject(id: projectID) else {
@@ -71,7 +71,11 @@ extension AppModel {
             RuntimeSkillInput(name: $0.skill.name, path: $0.skill.skillPath)
         } : nil
 
+        var didReserveTurnPermit = false
         do {
+            try await turnConcurrencyScheduler.reserve(threadID: threadID, priority: priority)
+            didReserveTurnPermit = true
+
             var runtimeThreadID = try await ensureRuntimeThreadID(
                 for: threadID,
                 projectPath: projectPath,
@@ -80,7 +84,7 @@ extension AppModel {
             )
             let startedAt = Date()
             let localTurnID = UUID()
-            activeTurnContext = ActiveTurnContext(
+            let context = ActiveTurnContext(
                 localTurnID: localTurnID,
                 localThreadID: threadID,
                 projectID: projectID,
@@ -92,6 +96,7 @@ extension AppModel {
                 actions: [],
                 startedAt: startedAt
             )
+            upsertActiveTurnContext(context)
 
             do {
                 _ = try ChatArchiveStore.beginCheckpoint(
@@ -110,7 +115,7 @@ extension AppModel {
                 appendLog(.warning, "Failed to checkpoint turn start: \(error.localizedDescription)")
             }
 
-            activeModSnapshot = {
+            let modSnapshot: ModEditSafety.Snapshot? = {
                 do {
                     return try captureModSnapshot(
                         projectPath: projectPath,
@@ -122,6 +127,9 @@ extension AppModel {
                     return nil
                 }
             }()
+            if let snapshot = modSnapshot {
+                activeModSnapshotByThreadID[threadID] = snapshot
+            }
 
             let turnID: String
             do {
@@ -147,12 +155,9 @@ extension AppModel {
                     safetyConfiguration: safetyConfiguration
                 )
 
-                if var context = activeTurnContext,
-                   context.localThreadID == threadID
-                {
+                _ = updateActiveTurnContext(for: threadID, mutate: { context in
                     context.runtimeThreadID = runtimeThreadID
-                    activeTurnContext = context
-                }
+                })
 
                 turnID = try await startTurnWithRuntimeFallback(
                     runtime: runtime,
@@ -165,12 +170,9 @@ extension AppModel {
                 )
             }
 
-            if var context = activeTurnContext,
-               context.localThreadID == threadID
-            {
+            _ = updateActiveTurnContext(for: threadID, mutate: { context in
                 context.runtimeTurnID = turnID
-                activeTurnContext = context
-            }
+            })
 
             if let sourceQueueItemID {
                 do {
@@ -186,9 +188,7 @@ extension AppModel {
 
             appendLog(.info, "Started turn \(turnID) for local thread \(threadID.uuidString)")
         } catch {
-            if let context = activeTurnContext,
-               context.localThreadID == threadID
-            {
+            if let context = activeTurnContext(for: threadID) {
                 let failureAction = ActionCard(
                     threadID: threadID,
                     method: "turn/start/error",
@@ -212,6 +212,16 @@ extension AppModel {
                 } catch {
                     appendLog(.warning, "Failed to persist failed turn checkpoint: \(error.localizedDescription)")
                 }
+            }
+
+            if didReserveTurnPermit {
+                _ = removeActiveTurnContext(for: threadID)
+                await turnConcurrencyScheduler.release(threadID: threadID)
+            }
+
+            if error is CancellationError {
+                appendLog(.debug, "Turn dispatch cancelled for local thread \(threadID.uuidString)")
+                throw error
             }
 
             handleRuntimeError(error)
@@ -272,12 +282,15 @@ extension AppModel {
         }
 
         let stream = await runtime.events()
-        runtimeEventTask = Task { [weak self] in
-            guard let self else { return }
-
+        let dispatchBridge = runtimeEventDispatchBridge
+        runtimeEventTask = Task.detached {
             for await event in stream {
-                handleRuntimeEvent(event)
+                if Task.isCancelled {
+                    break
+                }
+                await dispatchBridge.enqueue(event)
             }
+            await dispatchBridge.flushNow()
         }
     }
 
@@ -599,14 +612,12 @@ extension AppModel {
 
     private func clearActiveTurnState() {
         conversationUpdateScheduler.flushImmediately()
+        clearActiveTurnContexts()
 
-        if let context = activeTurnContext {
-            assistantMessageIDsByItemID[context.localThreadID] = [:]
-            localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != context.localThreadID }
-            activeTurnContext = nil
+        let scheduler = turnConcurrencyScheduler
+        Task {
+            await scheduler.cancelAll()
         }
-
-        isTurnInProgress = false
 
         // If a mod review is pending, keep the snapshot so the user can still revert.
         if pendingModReview == nil {
@@ -622,6 +633,7 @@ extension AppModel {
 
         runtimeThreadIDByLocalThreadID.removeAll()
         localThreadIDByRuntimeThreadID.removeAll()
+        localThreadIDByRuntimeTurnID.removeAll()
         localThreadIDByCommandItemID.removeAll()
         clearPendingRuntimeRepairSuggestions()
     }
@@ -752,10 +764,8 @@ extension AppModel {
                 return mappedThreadID
             }
 
-            if let activeTurnContext,
-               activeTurnContext.runtimeThreadID == runtimeThreadID
-            {
-                return activeTurnContext.localThreadID
+            if let mappedContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeThreadID == runtimeThreadID }) {
+                return mappedContext.localThreadID
             }
         }
 

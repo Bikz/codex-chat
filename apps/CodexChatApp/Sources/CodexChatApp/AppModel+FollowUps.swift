@@ -31,11 +31,18 @@ extension AppModel {
             return
         }
 
+        let pendingThreadID: UUID? = {
+            guard case .readyNow = initialPolicy else {
+                return nil
+            }
+            return selectedThreadID
+        }()
+        if let pendingThreadID {
+            markTurnStartPending(threadID: pendingThreadID)
+        }
+
         composerText = ""
         clearComposerAttachments()
-        if case .readyNow = initialPolicy {
-            isTurnInProgress = true
-        }
 
         Task {
             do {
@@ -52,19 +59,14 @@ extension AppModel {
                             projectID: project.id,
                             projectPath: project.path,
                             sourceQueueItemID: nil,
+                            priority: .selected,
                             composerAttachments: attachments
                         )
                     } catch {
-                        if activeTurnContext == nil {
-                            isTurnInProgress = false
-                        }
                         throw error
                     }
 
                 case .queueOnly:
-                    if case .readyNow = initialPolicy {
-                        isTurnInProgress = false
-                    }
                     guard attachments.isEmpty else {
                         composerText = trimmedText
                         composerAttachments = attachments
@@ -81,12 +83,12 @@ extension AppModel {
                     requestAutoDrain(reason: "composer queued")
 
                 case let .disabled(reason):
-                    if case .readyNow = initialPolicy {
-                        isTurnInProgress = false
-                    }
                     followUpStatusMessage = reason
                 }
             } catch {
+                if let pendingThreadID {
+                    clearTurnStartPending(threadID: pendingThreadID)
+                }
                 followUpStatusMessage = "Failed to send follow-up: \(error.localizedDescription)"
                 appendLog(.error, "Composer dispatch failed: \(error.localizedDescription)")
             }
@@ -209,8 +211,9 @@ extension AppModel {
         Task {
             guard let localThreadID = resolveLocalThreadID(
                 runtimeThreadID: batch.threadID,
-                itemID: nil
-            ) ?? activeTurnContext?.localThreadID
+                itemID: nil,
+                runtimeTurnID: batch.turnID
+            )
             else {
                 appendLog(.debug, "Dropped follow-up suggestions with no thread mapping")
                 return
@@ -315,11 +318,9 @@ extension AppModel {
             return
         }
 
-        if isTurnInProgress {
+        if let activeTurnContext = activeTurnContext(for: item.threadID) {
             guard runtimeCapabilities.supportsTurnSteer,
-                  let runtime,
-                  let activeTurnContext,
-                  activeTurnContext.localThreadID == item.threadID
+                  let runtime
             else {
                 await fallbackSteerToQueuedAuto(item)
                 return
@@ -365,7 +366,8 @@ extension AppModel {
                 threadID: item.threadID,
                 projectID: project.id,
                 projectPath: project.path,
-                sourceQueueItemID: item.id
+                sourceQueueItemID: item.id,
+                priority: .manual
             )
         } catch {
             do {
@@ -418,7 +420,8 @@ extension AppModel {
                 threadID: candidate.threadID,
                 projectID: project.id,
                 projectPath: project.path,
-                sourceQueueItemID: candidate.id
+                sourceQueueItemID: candidate.id,
+                priority: candidate.threadID == selectedThreadID ? .selected : .queuedAuto
             )
             appendLog(.debug, "Auto-dispatched queued follow-up (\(reason))")
         } catch {
@@ -496,7 +499,7 @@ extension AppModel {
             && runtimeStatus == .connected
             && pendingModReview == nil
             && !isModReviewDecisionInProgress
-            && !isTurnInProgress
+            && activeTurnThreadIDs.count < AppModel.defaultMaxConcurrentTurns
             && isSignedInForRuntime
     }
 
@@ -510,7 +513,8 @@ extension AppModel {
             && !hasPendingApprovalForSelectedThread
             && !isSelectedThreadApprovalInProgress
             && !isModReviewDecisionInProgress
-            && !isTurnInProgress
+            && !isSelectedThreadWorking
+            && activeTurnThreadIDs.count < AppModel.defaultMaxConcurrentTurns
             && isSignedInForRuntime
     }
 

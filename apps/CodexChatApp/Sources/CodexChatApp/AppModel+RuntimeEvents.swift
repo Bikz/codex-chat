@@ -4,6 +4,16 @@ import CodexKit
 import Foundation
 
 extension AppModel {
+    func handleRuntimeEventBatch(_ events: [CodexRuntimeEvent]) {
+        guard !events.isEmpty else {
+            return
+        }
+
+        for event in events {
+            handleRuntimeEvent(event)
+        }
+    }
+
     func handleRuntimeEvent(_ event: CodexRuntimeEvent) {
         let clock = ContinuousClock()
         let startedAt = clock.now
@@ -22,7 +32,9 @@ extension AppModel {
         switch event {
         case let .threadStarted(threadID):
             appendLog(.debug, "Runtime thread started: \(threadID)")
-            if let context = activeTurnContext {
+            if let localThreadID = resolveLocalThreadID(runtimeThreadID: threadID, itemID: nil),
+               let context = activeTurnContext(for: localThreadID)
+            {
                 emitExtensionEvent(
                     .threadStarted,
                     projectID: context.projectID,
@@ -33,47 +45,62 @@ extension AppModel {
                 )
             }
 
-        case let .turnStarted(turnID):
-            if var context = activeTurnContext {
-                context.runtimeTurnID = turnID
-                activeTurnContext = context
-                appendEntry(
-                    .actionCard(
-                        ActionCard(
-                            threadID: context.localThreadID,
-                            method: "turn/started",
-                            title: "Turn started",
-                            detail: "turnId=\(turnID)"
-                        )
-                    ),
-                    to: context.localThreadID
-                )
-                emitExtensionEvent(
-                    .turnStarted,
-                    projectID: context.projectID,
-                    projectPath: context.projectPath,
-                    threadID: context.localThreadID,
-                    turnID: turnID
-                )
-                markThreadUnreadIfNeeded(context.localThreadID)
-            }
-
-        case let .assistantMessageDelta(itemID, delta):
-            guard let context = activeTurnContext else {
-                appendLog(.debug, "Dropped delta with no active turn")
+        case let .turnStarted(runtimeThreadID, turnID):
+            guard let localThreadID = resolveLocalThreadID(
+                runtimeThreadID: runtimeThreadID,
+                itemID: nil,
+                runtimeTurnID: turnID
+            ),
+                let context = updateActiveTurnContext(for: localThreadID, mutate: { updated in
+                    updated.runtimeTurnID = turnID
+                })
+            else {
+                appendLog(.debug, "Turn started without thread mapping: \(turnID)")
                 return
             }
 
-            enqueueAssistantDeltaForUI(delta, itemID: itemID, threadID: context.localThreadID)
+            appendEntry(
+                .actionCard(
+                    ActionCard(
+                        threadID: context.localThreadID,
+                        method: "turn/started",
+                        title: "Turn started",
+                        detail: "turnId=\(turnID)"
+                    )
+                ),
+                to: context.localThreadID
+            )
             emitExtensionEvent(
-                .assistantDelta,
+                .turnStarted,
                 projectID: context.projectID,
                 projectPath: context.projectPath,
                 threadID: context.localThreadID,
-                turnID: context.localTurnID.uuidString,
-                payload: ["itemID": itemID, "delta": delta]
+                turnID: turnID
             )
             markThreadUnreadIfNeeded(context.localThreadID)
+
+        case let .assistantMessageDelta(runtimeThreadID, runtimeTurnID, itemID, delta):
+            guard let localThreadID = resolveLocalThreadID(
+                runtimeThreadID: runtimeThreadID,
+                itemID: itemID,
+                runtimeTurnID: runtimeTurnID
+            ) else {
+                appendLog(.debug, "Dropped delta with no thread mapping")
+                return
+            }
+
+            enqueueAssistantDeltaForUI(delta, itemID: itemID, threadID: localThreadID)
+            if let context = activeTurnContext(for: localThreadID) {
+                emitExtensionEvent(
+                    .assistantDelta,
+                    projectID: context.projectID,
+                    projectPath: context.projectPath,
+                    threadID: context.localThreadID,
+                    turnID: context.localTurnID.uuidString,
+                    payload: ["itemID": itemID, "delta": delta]
+                )
+            }
+            markThreadUnreadIfNeeded(localThreadID)
 
         case let .commandOutputDelta(output):
             handleCommandOutputDelta(output)
@@ -92,8 +119,15 @@ extension AppModel {
 
         case let .turnCompleted(completion):
             conversationUpdateScheduler.flushImmediately()
-            isTurnInProgress = false
-            if let context = activeTurnContext {
+            let localThreadID = resolveLocalThreadID(
+                runtimeThreadID: completion.threadID,
+                itemID: nil,
+                runtimeTurnID: completion.turnID
+            )
+
+            if let localThreadID,
+               let context = removeActiveTurnContext(for: localThreadID)
+            {
                 let detail = if let errorMessage = completion.errorMessage {
                     "status=\(completion.status), error=\(errorMessage)"
                 } else {
@@ -112,8 +146,6 @@ extension AppModel {
                     to: context.localThreadID
                 )
 
-                assistantMessageIDsByItemID[context.localThreadID] = [:]
-                localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != context.localThreadID }
                 processModChangesIfNeeded(context: context)
                 let eventName: ExtensionEventName = isFailureCompletion(completion) ? .turnFailed : .turnCompleted
                 var payload = ["status": completion.status]
@@ -130,13 +162,18 @@ extension AppModel {
                     payload: payload
                 )
                 markThreadUnreadIfNeeded(context.localThreadID)
-                activeTurnContext = nil
 
                 Task {
-                    await persistCompletedTurn(context: context, completion: completion)
+                    await turnConcurrencyScheduler.release(threadID: context.localThreadID)
+                    await turnPersistenceScheduler.enqueue(context: context, completion: completion)
                 }
             } else {
                 appendLog(.debug, "Turn completed without active context: \(completion.status)")
+                if let localThreadID {
+                    Task {
+                        await turnConcurrencyScheduler.release(threadID: localThreadID)
+                    }
+                }
             }
             requestAutoDrain(reason: "turn completed")
 
@@ -179,8 +216,9 @@ extension AppModel {
 
         let localThreadID = resolveLocalThreadID(
             runtimeThreadID: action.threadID,
-            itemID: action.itemID
-        ) ?? activeTurnContext?.localThreadID
+            itemID: action.itemID,
+            runtimeTurnID: action.turnID
+        )
 
         if let localThreadID,
            let runtimeThreadID = action.threadID,
@@ -257,12 +295,9 @@ extension AppModel {
             )
         }
 
-        if var context = activeTurnContext,
-           context.localThreadID == localThreadID
-        {
+        _ = updateActiveTurnContext(for: localThreadID, mutate: { context in
             context.actions.append(card)
-            activeTurnContext = context
-        }
+        })
 
         if classification == .lifecycleNoise {
             appendLog(.debug, "Lifecycle runtime action received: \(action.method)")
@@ -284,20 +319,18 @@ extension AppModel {
 
         for item in batch {
             appendAssistantDelta(item.delta, itemID: item.itemID, to: item.threadID)
-            if var context = activeTurnContext,
-               context.localThreadID == item.threadID
-            {
+            _ = updateActiveTurnContext(for: item.threadID, mutate: { context in
                 context.assistantText += item.delta
-                activeTurnContext = context
-            }
+            })
         }
     }
 
     private func handleCommandOutputDelta(_ output: RuntimeCommandOutputDelta) {
         let localThreadID = resolveLocalThreadID(
             runtimeThreadID: output.threadID,
-            itemID: output.itemID
-        ) ?? activeTurnContext?.localThreadID
+            itemID: output.itemID,
+            runtimeTurnID: output.turnID
+        )
 
         guard let localThreadID else {
             appendLog(.debug, "Command output delta without thread mapping")
@@ -314,8 +347,9 @@ extension AppModel {
     private func handleFileChangesUpdate(_ update: RuntimeFileChangeUpdate) {
         let localThreadID = resolveLocalThreadID(
             runtimeThreadID: update.threadID,
-            itemID: update.itemID
-        ) ?? activeTurnContext?.localThreadID
+            itemID: update.itemID,
+            runtimeTurnID: update.turnID
+        )
 
         guard let localThreadID else {
             appendLog(.debug, "File changes update without thread mapping")
@@ -330,8 +364,9 @@ extension AppModel {
 
         let localThreadID = resolveLocalThreadID(
             runtimeThreadID: request.threadID,
-            itemID: request.itemID
-        ) ?? activeTurnContext?.localThreadID
+            itemID: request.itemID,
+            runtimeTurnID: request.turnID
+        )
 
         guard let localThreadID else {
             unscopedApprovalRequest = request
@@ -371,18 +406,28 @@ extension AppModel {
         }
     }
 
-    func resolveLocalThreadID(runtimeThreadID: String?, itemID: String?) -> UUID? {
+    func resolveLocalThreadID(runtimeThreadID: String?, itemID: String?, runtimeTurnID: String? = nil) -> UUID? {
         if let itemID, let threadID = localThreadIDByCommandItemID[itemID] {
             return threadID
+        }
+
+        if let runtimeTurnID,
+           let mapped = localThreadID(for: runtimeTurnID)
+        {
+            return mapped
         }
 
         if let runtimeThreadID {
             if let mapped = localThreadIDByRuntimeThreadID[runtimeThreadID] {
                 return mapped
             }
-            if let activeTurnContext, activeTurnContext.runtimeThreadID == runtimeThreadID {
-                return activeTurnContext.localThreadID
+            if let activeContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeThreadID == runtimeThreadID }) {
+                return activeContext.localThreadID
             }
+        }
+
+        if activeTurnContextsByThreadID.count == 1 {
+            return activeTurnContextsByThreadID.first?.key
         }
 
         return nil

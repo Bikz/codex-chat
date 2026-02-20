@@ -185,10 +185,12 @@ final class CodexKitTests: XCTestCase {
         )
 
         let deltaEvents = AppServerEventDecoder.decodeAll(deltaNotification)
-        guard case let .assistantMessageDelta(itemID, delta)? = deltaEvents.first else {
+        guard case let .assistantMessageDelta(threadID, turnID, itemID, delta)? = deltaEvents.first else {
             XCTFail("Expected assistantMessageDelta")
             return
         }
+        XCTAssertNil(threadID)
+        XCTAssertNil(turnID)
         XCTAssertEqual(itemID, "item_1")
         XCTAssertEqual(delta, "Hello")
 
@@ -209,6 +211,47 @@ final class CodexKitTests: XCTestCase {
         }
         XCTAssertEqual(completion.turnID, "turn_1")
         XCTAssertEqual(completion.status, "completed")
+    }
+
+    func testEventDecoderPreservesThreadAndTurnMetadataWhenPresent() {
+        let deltaNotification = JSONRPCMessageEnvelope.notification(
+            method: "item/agentMessage/delta",
+            params: .object([
+                "threadId": .string("thr_123"),
+                "turnId": .string("turn_abc"),
+                "itemId": .string("item_9"),
+                "delta": .string("Chunk"),
+            ])
+        )
+
+        let deltaEvents = AppServerEventDecoder.decodeAll(deltaNotification)
+        guard case let .assistantMessageDelta(threadID, turnID, itemID, delta)? = deltaEvents.first else {
+            XCTFail("Expected assistantMessageDelta with thread metadata")
+            return
+        }
+        XCTAssertEqual(threadID, "thr_123")
+        XCTAssertEqual(turnID, "turn_abc")
+        XCTAssertEqual(itemID, "item_9")
+        XCTAssertEqual(delta, "Chunk")
+
+        let completionNotification = JSONRPCMessageEnvelope.notification(
+            method: "turn/completed",
+            params: .object([
+                "threadId": .string("thr_123"),
+                "turn": .object([
+                    "id": .string("turn_abc"),
+                    "status": .string("completed"),
+                ]),
+            ])
+        )
+
+        let completionEvents = AppServerEventDecoder.decodeAll(completionNotification)
+        guard case let .turnCompleted(completion)? = completionEvents.first else {
+            XCTFail("Expected turnCompleted with thread metadata")
+            return
+        }
+        XCTAssertEqual(completion.threadID, "thr_123")
+        XCTAssertEqual(completion.turnID, "turn_abc")
     }
 
     func testEventDecoderAccountNotifications() {

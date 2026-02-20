@@ -123,7 +123,7 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
                 switch event {
                 case .followUpSuggestions:
                     sawSuggestions = true
-                case let .assistantMessageDelta(_, chunk):
+                case let .assistantMessageDelta(_, _, _, chunk):
                     delta += chunk
                 case .turnCompleted:
                     return (sawSuggestions, delta)
@@ -153,7 +153,7 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
             var delta = ""
             for await event in stream {
                 switch event {
-                case let .assistantMessageDelta(_, chunk):
+                case let .assistantMessageDelta(_, _, _, chunk):
                     delta += chunk
                 case .turnCompleted:
                     return delta
@@ -583,7 +583,7 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
             switch event {
             case let .approvalRequested(request):
                 try await runtime.respondToApproval(requestID: request.id, decision: .approveOnce)
-            case let .assistantMessageDelta(_, chunk):
+            case let .assistantMessageDelta(_, _, _, chunk):
                 delta += chunk
             case let .fileChangesUpdated(update):
                 changes = update.changes

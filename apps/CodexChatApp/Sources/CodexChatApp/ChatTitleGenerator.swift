@@ -149,7 +149,7 @@ enum ChatTitleGenerator {
                     var assistantText = ""
                     for await event in stream {
                         switch event {
-                        case let .assistantMessageDelta(_, delta):
+                        case let .assistantMessageDelta(_, _, _, delta):
                             assistantText += delta
                         case let .turnCompleted(completion):
                             guard !isFailureStatus(completion) else {

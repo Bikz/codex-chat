@@ -1072,7 +1072,14 @@ final class CodexChatAppTests: XCTestCase {
             startedAt: Date()
         )
 
-        model.handleRuntimeEvent(.assistantMessageDelta(itemID: "msg_1", delta: "Working"))
+        model.handleRuntimeEvent(
+            .assistantMessageDelta(
+                threadID: "thr_active",
+                turnID: "turn_active",
+                itemID: "msg_1",
+                delta: "Working"
+            )
+        )
         XCTAssertTrue(model.isThreadUnread(activeThreadID))
         XCTAssertTrue(model.isThreadWorking(activeThreadID))
         XCTAssertFalse(model.isThreadUnread(selectedThreadID))
@@ -1080,6 +1087,7 @@ final class CodexChatAppTests: XCTestCase {
         model.handleRuntimeEvent(
             .turnCompleted(
                 RuntimeTurnCompletion(
+                    threadID: "thr_active",
                     turnID: "turn_active",
                     status: "completed",
                     errorMessage: nil
@@ -1114,7 +1122,14 @@ final class CodexChatAppTests: XCTestCase {
         )
         model.isTurnInProgress = true
 
-        model.handleRuntimeEvent(.assistantMessageDelta(itemID: "msg_1", delta: "Buffered"))
+        model.handleRuntimeEvent(
+            .assistantMessageDelta(
+                threadID: "thr_buffered",
+                turnID: "turn_buffered",
+                itemID: "msg_1",
+                delta: "Buffered"
+            )
+        )
 
         let beforeFlush = model.transcriptStore[threadID, default: []]
         XCTAssertFalse(beforeFlush.contains {
@@ -1125,6 +1140,7 @@ final class CodexChatAppTests: XCTestCase {
         model.handleRuntimeEvent(
             .turnCompleted(
                 RuntimeTurnCompletion(
+                    threadID: "thr_buffered",
                     turnID: "turn_buffered",
                     status: "completed",
                     errorMessage: nil

@@ -34,7 +34,7 @@ public actor CodexRuntime {
         self.environmentOverrides = environmentOverrides
 
         var continuation: AsyncStream<CodexRuntimeEvent>.Continuation?
-        eventStream = AsyncStream(bufferingPolicy: .bufferingNewest(512)) { continuation = $0 }
+        eventStream = AsyncStream(bufferingPolicy: .unbounded) { continuation = $0 }
         eventContinuation = continuation!
     }
 

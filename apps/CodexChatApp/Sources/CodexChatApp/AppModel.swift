@@ -27,6 +27,19 @@ final class AppModel: ObservableObject {
         case signedOut
     }
 
+    static var defaultMaxConcurrentTurns: Int {
+        if let configured = ProcessInfo.processInfo.environment["CODEXCHAT_MAX_PARALLEL_TURNS"],
+           let parsed = Int(configured),
+           parsed > 0
+        {
+            return parsed
+        }
+
+        // Apple Silicon machines can handle many simultaneous sessions. Keep this high
+        // but bounded so runaway workloads still have a hard ceiling.
+        return max(16, min(96, ProcessInfo.processInfo.activeProcessorCount * 6))
+    }
+
     struct SkillListItem: Identifiable, Hashable {
         let skill: DiscoveredSkill
         var enabledTargets: Set<SkillEnablementTarget>
@@ -268,6 +281,31 @@ final class AppModel: ObservableObject {
         }
     }
 
+    struct PermissionRecoveryNotice: Identifiable, Equatable {
+        let id: UUID
+        let actionID: String
+        let target: PermissionRecoveryTarget
+        let title: String
+        let message: String
+        let remediationSteps: [String]
+
+        init(
+            id: UUID = UUID(),
+            actionID: String,
+            target: PermissionRecoveryTarget,
+            title: String,
+            message: String,
+            remediationSteps: [String]
+        ) {
+            self.id = id
+            self.actionID = actionID
+            self.target = target
+            self.title = title
+            self.message = message
+            self.remediationSteps = remediationSteps
+        }
+    }
+
     struct WorkerTraceEntry: Identifiable, Hashable {
         let id: String
         let threadID: UUID
@@ -397,7 +435,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    struct ActiveTurnContext {
+    struct ActiveTurnContext: Sendable {
         var localTurnID: UUID
         var localThreadID: UUID
         var projectID: UUID
@@ -492,6 +530,7 @@ final class AppModel: ObservableObject {
     @Published var pendingModReview: PendingModReview?
     @Published var isModReviewDecisionInProgress = false
     @Published var isTurnInProgress = false
+    @Published var activeTurnThreadIDs: Set<UUID> = []
     @Published var logs: [LogEntry] = []
     @Published var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
     @Published var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
@@ -513,6 +552,7 @@ final class AppModel: ObservableObject {
     @Published var pendingComputerActionPreview: PendingComputerActionPreview?
     @Published var isComputerActionExecutionInProgress = false
     @Published var computerActionStatusMessage: String?
+    @Published var permissionRecoveryNotice: PermissionRecoveryNotice?
     @Published var workerTraceByThreadID: [UUID: [WorkerTraceEntry]] = [:]
     @Published var activeWorkerTraceEntry: WorkerTraceEntry?
     @Published var areAdvancedExecutableModsUnlocked = false
@@ -561,6 +601,16 @@ final class AppModel: ObservableObject {
     let extensionStateStore = ExtensionStateStore()
     let extensionEventBus = ExtensionEventBus()
     let runtimeThreadResolutionCoordinator = RuntimeThreadResolutionCoordinator()
+    let turnConcurrencyScheduler = TurnConcurrencyScheduler(maxConcurrentTurns: AppModel.defaultMaxConcurrentTurns)
+    lazy var turnPersistenceScheduler = TurnPersistenceScheduler(maxConcurrentJobs: 4) { [weak self] job in
+        guard let self else { return }
+        await persistCompletedTurn(context: job.context, completion: job.completion)
+    }
+
+    lazy var runtimeEventDispatchBridge = RuntimeEventDispatchBridge { [weak self] events in
+        self?.handleRuntimeEventBatch(events)
+    }
+
     lazy var conversationUpdateScheduler = ConversationUpdateScheduler { [weak self] batch in
         self?.applyCoalescedAssistantDeltaBatch(batch)
     }
@@ -572,11 +622,13 @@ final class AppModel: ObservableObject {
     var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
     var runtimeThreadIDByLocalThreadID: [UUID: String] = [:]
     var localThreadIDByRuntimeThreadID: [String: UUID] = [:]
+    var localThreadIDByRuntimeTurnID: [String: UUID] = [:]
     var localThreadIDByCommandItemID: [String: UUID] = [:]
     var approvalStateMachine = ApprovalStateMachine()
     var approvalDecisionInFlightRequestIDs: Set<Int> = []
-    var activeTurnContext: ActiveTurnContext?
-    var activeModSnapshot: ModEditSafety.Snapshot?
+    var activeTurnContextsByThreadID: [UUID: ActiveTurnContext] = [:]
+    var pendingTurnStartThreadIDs: Set<UUID> = []
+    var activeModSnapshotByThreadID: [UUID: ModEditSafety.Snapshot] = [:]
     var runtimeEventTask: Task<Void, Never>?
     var runtimeAutoRecoveryTask: Task<Void, Never>?
     var onboardingCompletionTask: Task<Void, Never>?
@@ -610,6 +662,7 @@ final class AppModel: ObservableObject {
     var runtimeRepairSuggestedThreadIDs: Set<UUID> = []
     var runtimeRepairPendingRuntimeThreadIDs: Set<String> = []
     var workerTraceByActionFingerprint: [String: WorkerTraceEntry] = [:]
+    var computerActionPermissionPromptHandler: ((String, ComputerActionSafetyLevel) -> Bool)?
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
     var watchedProjectModsRootPath: String?
@@ -621,6 +674,7 @@ final class AppModel: ObservableObject {
         repositories: MetadataRepositories?,
         runtime: CodexRuntime?,
         bootError: String?,
+        computerActionRegistry: ComputerActionRegistry = ComputerActionRegistry(),
         skillCatalogService: SkillCatalogService = SkillCatalogService(),
         skillCatalogProvider: any SkillCatalogProvider = EmptySkillCatalogProvider(),
         modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService(),
@@ -645,7 +699,7 @@ final class AppModel: ObservableObject {
         planRunRepository = repositories?.planRunRepository
         planRunTaskRepository = repositories?.planRunTaskRepository
         self.runtime = runtime
-        computerActionRegistry = ComputerActionRegistry()
+        self.computerActionRegistry = computerActionRegistry
         self.skillCatalogService = skillCatalogService
         self.skillCatalogProvider = skillCatalogProvider
         self.modDiscoveryService = modDiscoveryService
@@ -722,8 +776,14 @@ final class AppModel: ObservableObject {
         }
 
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
+        let turnScheduler = turnConcurrencyScheduler
+        let persistenceScheduler = turnPersistenceScheduler
+        let eventBridge = runtimeEventDispatchBridge
         Task {
             await threadResolutionCoordinator.cancelAll()
+            await turnScheduler.cancelAll()
+            await persistenceScheduler.cancelQueuedJobs()
+            await eventBridge.stop()
         }
 
         if !activeExtensionAutomations.isEmpty {
@@ -768,8 +828,10 @@ final class AppModel: ObservableObject {
         }
 
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
+        let turnScheduler = turnConcurrencyScheduler
         Task {
             await threadResolutionCoordinator.cancelAll()
+            await turnScheduler.cancelAll()
         }
 
         if !activeExtensionAutomations.isEmpty {
@@ -857,7 +919,7 @@ final class AppModel: ObservableObject {
             && pendingModReview == nil
             && !hasPendingApprovalForSelectedThread
             && !isSelectedThreadApprovalInProgress
-            && !isTurnInProgress
+            && !isSelectedThreadWorking
             && isSignedInForRuntime
     }
 
@@ -1240,19 +1302,153 @@ final class AppModel: ObservableObject {
 
     var activeTurnContextForSelectedThread: ActiveTurnContext? {
         guard let selectedThreadID,
-              activeTurnContext?.localThreadID == selectedThreadID
+              let context = activeTurnContextsByThreadID[selectedThreadID]
         else {
             return nil
         }
 
-        return activeTurnContext
+        return context
+    }
+
+    var activeTurnContext: ActiveTurnContext? {
+        get {
+            if let selectedThreadID,
+               let selectedContext = activeTurnContextsByThreadID[selectedThreadID]
+            {
+                return selectedContext
+            }
+
+            return activeTurnContextsByThreadID
+                .values
+                .sorted(by: { $0.startedAt < $1.startedAt })
+                .first
+        }
+        set {
+            guard let newValue else {
+                if let selectedThreadID {
+                    _ = removeActiveTurnContext(for: selectedThreadID)
+                } else if let oldestThreadID = activeTurnContextsByThreadID
+                    .values
+                    .sorted(by: { $0.startedAt < $1.startedAt })
+                    .first?
+                    .localThreadID
+                {
+                    _ = removeActiveTurnContext(for: oldestThreadID)
+                }
+                return
+            }
+
+            upsertActiveTurnContext(newValue)
+        }
+    }
+
+    var isSelectedThreadWorking: Bool {
+        guard let selectedThreadID else {
+            return false
+        }
+        return activeTurnThreadIDs.contains(selectedThreadID)
     }
 
     func isThreadWorking(_ threadID: UUID) -> Bool {
-        guard isTurnInProgress else {
-            return false
+        activeTurnThreadIDs.contains(threadID)
+    }
+
+    func activeTurnContext(for threadID: UUID) -> ActiveTurnContext? {
+        activeTurnContextsByThreadID[threadID]
+    }
+
+    @discardableResult
+    func updateActiveTurnContext(
+        for threadID: UUID,
+        mutate: (inout ActiveTurnContext) -> Void
+    ) -> ActiveTurnContext? {
+        guard var context = activeTurnContextsByThreadID[threadID] else {
+            return nil
         }
-        return activeTurnContext?.localThreadID == threadID
+        mutate(&context)
+        activeTurnContextsByThreadID[threadID] = context
+        if let runtimeTurnID = context.runtimeTurnID,
+           !runtimeTurnID.isEmpty
+        {
+            localThreadIDByRuntimeTurnID[runtimeTurnID] = threadID
+        }
+        pendingTurnStartThreadIDs.remove(threadID)
+        syncActiveTurnPublishedState()
+        return context
+    }
+
+    func upsertActiveTurnContext(_ context: ActiveTurnContext) {
+        activeTurnContextsByThreadID[context.localThreadID] = context
+        if let runtimeTurnID = context.runtimeTurnID,
+           !runtimeTurnID.isEmpty
+        {
+            localThreadIDByRuntimeTurnID[runtimeTurnID] = context.localThreadID
+        }
+        pendingTurnStartThreadIDs.remove(context.localThreadID)
+        syncActiveTurnPublishedState()
+    }
+
+    @discardableResult
+    func removeActiveTurnContext(for threadID: UUID) -> ActiveTurnContext? {
+        let removed = activeTurnContextsByThreadID.removeValue(forKey: threadID)
+        if let runtimeTurnID = removed?.runtimeTurnID,
+           !runtimeTurnID.isEmpty
+        {
+            localThreadIDByRuntimeTurnID.removeValue(forKey: runtimeTurnID)
+        }
+        assistantMessageIDsByItemID[threadID] = [:]
+        localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != threadID }
+        pendingTurnStartThreadIDs.remove(threadID)
+        syncActiveTurnPublishedState()
+        return removed
+    }
+
+    func markTurnStartPending(threadID: UUID) {
+        let (inserted, _) = pendingTurnStartThreadIDs.insert(threadID)
+        guard inserted else {
+            return
+        }
+        syncActiveTurnPublishedState()
+    }
+
+    func clearTurnStartPending(threadID: UUID) {
+        guard pendingTurnStartThreadIDs.remove(threadID) != nil else {
+            return
+        }
+        syncActiveTurnPublishedState()
+    }
+
+    func localThreadID(for runtimeTurnID: String?) -> UUID? {
+        guard let runtimeTurnID,
+              !runtimeTurnID.isEmpty
+        else {
+            return nil
+        }
+        return localThreadIDByRuntimeTurnID[runtimeTurnID]
+    }
+
+    func clearActiveTurnContexts() {
+        let activeThreadIDs = Set(activeTurnContextsByThreadID.keys)
+        if !activeThreadIDs.isEmpty {
+            assistantMessageIDsByItemID = assistantMessageIDsByItemID.filter { !activeThreadIDs.contains($0.key) }
+            localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { !activeThreadIDs.contains($0.value) }
+        }
+        activeTurnContextsByThreadID.removeAll(keepingCapacity: false)
+        localThreadIDByRuntimeTurnID.removeAll(keepingCapacity: false)
+        pendingTurnStartThreadIDs.removeAll(keepingCapacity: false)
+        syncActiveTurnPublishedState()
+    }
+
+    func syncActiveTurnPublishedState() {
+        let nextActiveThreadIDs = Set(activeTurnContextsByThreadID.keys).union(pendingTurnStartThreadIDs)
+        if activeTurnThreadIDs != nextActiveThreadIDs {
+            activeTurnThreadIDs = nextActiveThreadIDs
+        }
+
+        let nextInProgress = !nextActiveThreadIDs.isEmpty
+        if isTurnInProgress != nextInProgress {
+            isTurnInProgress = nextInProgress
+        }
     }
 
     func isThreadUnread(_ threadID: UUID) -> Bool {

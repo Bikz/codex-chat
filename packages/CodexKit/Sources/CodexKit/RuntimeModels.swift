@@ -161,11 +161,13 @@ public struct RuntimeAction: Hashable, Sendable {
 }
 
 public struct RuntimeTurnCompletion: Hashable, Sendable {
+    public let threadID: String?
     public let turnID: String?
     public let status: String
     public let errorMessage: String?
 
-    public init(turnID: String?, status: String, errorMessage: String?) {
+    public init(threadID: String?, turnID: String?, status: String, errorMessage: String?) {
+        self.threadID = threadID
         self.turnID = turnID
         self.status = status
         self.errorMessage = errorMessage
@@ -469,8 +471,8 @@ public struct RuntimeApprovalRequest: Identifiable, Hashable, Sendable, Codable 
 
 public enum CodexRuntimeEvent: Hashable, Sendable {
     case threadStarted(threadID: String)
-    case turnStarted(turnID: String)
-    case assistantMessageDelta(itemID: String, delta: String)
+    case turnStarted(threadID: String?, turnID: String)
+    case assistantMessageDelta(threadID: String?, turnID: String?, itemID: String, delta: String)
     case commandOutputDelta(RuntimeCommandOutputDelta)
     case followUpSuggestions(RuntimeFollowUpSuggestionBatch)
     case fileChangesUpdated(RuntimeFileChangeUpdate)

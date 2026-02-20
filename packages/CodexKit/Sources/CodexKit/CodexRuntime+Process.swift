@@ -50,7 +50,7 @@ extension CodexRuntime {
         stderrPumpTask?.cancel()
 
         var stdoutContinuation: AsyncStream<Data>.Continuation?
-        let stdoutStream = AsyncStream<Data>(bufferingPolicy: .bufferingNewest(64)) { continuation in
+        let stdoutStream = AsyncStream<Data>(bufferingPolicy: .unbounded) { continuation in
             stdoutContinuation = continuation
         }
         let resolvedStdoutContinuation = stdoutContinuation!
@@ -73,7 +73,7 @@ extension CodexRuntime {
         }
 
         var stderrContinuation: AsyncStream<Data>.Continuation?
-        let stderrStream = AsyncStream<Data>(bufferingPolicy: .bufferingNewest(64)) { continuation in
+        let stderrStream = AsyncStream<Data>(bufferingPolicy: .unbounded) { continuation in
             stderrContinuation = continuation
         }
         let resolvedStderrContinuation = stderrContinuation!

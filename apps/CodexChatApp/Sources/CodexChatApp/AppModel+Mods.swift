@@ -7,9 +7,8 @@ extension AppModel {
         pendingModReview = nil
         isModReviewDecisionInProgress = false
 
-        if let snapshot = activeModSnapshot {
+        if let snapshot = activeModSnapshotByThreadID.removeValue(forKey: review.threadID) {
             ModEditSafety.discard(snapshot: snapshot)
-            activeModSnapshot = nil
         }
 
         appendLog(.info, "Accepted mod changes for thread \(review.threadID.uuidString)")
@@ -29,7 +28,7 @@ extension AppModel {
 
     func revertPendingModReview() {
         guard let review = pendingModReview else { return }
-        guard let snapshot = activeModSnapshot else {
+        guard let snapshot = activeModSnapshotByThreadID[review.threadID] else {
             modStatusMessage = "Revert is unavailable (no snapshot captured)."
             return
         }
@@ -41,7 +40,7 @@ extension AppModel {
             do {
                 try ModEditSafety.restore(from: snapshot)
                 pendingModReview = nil
-                activeModSnapshot = nil
+                activeModSnapshotByThreadID.removeValue(forKey: review.threadID)
                 refreshModsSurface()
                 appendLog(.warning, "Reverted mod changes for thread \(review.threadID.uuidString)")
                 appendEntry(

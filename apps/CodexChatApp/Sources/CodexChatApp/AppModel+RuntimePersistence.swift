@@ -296,11 +296,11 @@ extension AppModel {
 
         let changes = reviewChangesByThreadID[context.localThreadID] ?? []
         guard !changes.isEmpty else {
-            discardModSnapshotIfPresent()
+            discardModSnapshotIfPresent(threadID: context.localThreadID)
             return
         }
 
-        let snapshot = activeModSnapshot
+        let snapshot = activeModSnapshotByThreadID[context.localThreadID]
         let projectRootPath = snapshot?.projectRootPath ?? Self.projectModsRootPath(projectPath: context.projectPath)
         let globalRootPath = snapshot?.globalRootPath ?? (try? Self.globalModsRootPath())
 
@@ -312,7 +312,7 @@ extension AppModel {
         )
 
         guard !modChanges.isEmpty else {
-            discardModSnapshotIfPresent()
+            discardModSnapshotIfPresent(threadID: context.localThreadID)
             return
         }
 
@@ -337,10 +337,18 @@ extension AppModel {
         )
     }
 
-    func discardModSnapshotIfPresent() {
-        guard let snapshot = activeModSnapshot else { return }
-        ModEditSafety.discard(snapshot: snapshot)
-        activeModSnapshot = nil
+    func discardModSnapshotIfPresent(threadID: UUID? = nil) {
+        if let threadID {
+            guard let snapshot = activeModSnapshotByThreadID.removeValue(forKey: threadID) else { return }
+            ModEditSafety.discard(snapshot: snapshot)
+            return
+        }
+
+        let snapshots = activeModSnapshotByThreadID.values
+        activeModSnapshotByThreadID.removeAll(keepingCapacity: false)
+        for snapshot in snapshots {
+            ModEditSafety.discard(snapshot: snapshot)
+        }
     }
 
     private func appendMemorySummaryIfEnabled(context: ActiveTurnContext, assistantText: String) async {

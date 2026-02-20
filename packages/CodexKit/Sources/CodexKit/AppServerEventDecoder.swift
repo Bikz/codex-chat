@@ -25,7 +25,7 @@ enum AppServerEventDecoder {
             guard let turnID = params.value(at: ["turn", "id"])?.stringValue else {
                 return []
             }
-            return [.turnStarted(turnID: turnID)]
+            return [.turnStarted(threadID: threadID, turnID: turnID)]
 
         case "item/agentMessage/delta":
             guard let delta = params.value(at: ["delta"])?.stringValue,
@@ -38,7 +38,7 @@ enum AppServerEventDecoder {
                 ?? params.value(at: ["item", "id"])?.stringValue
                 ?? "agent-message"
 
-            return [.assistantMessageDelta(itemID: itemID, delta: delta)]
+            return [.assistantMessageDelta(threadID: threadID, turnID: turnID, itemID: itemID, delta: delta)]
 
         case "item/commandExecution/outputDelta":
             guard let itemID = params.value(at: ["itemId"])?.stringValue
@@ -120,6 +120,7 @@ enum AppServerEventDecoder {
 
         case "turn/completed":
             let completion = RuntimeTurnCompletion(
+                threadID: threadID,
                 turnID: params.value(at: ["turn", "id"])?.stringValue,
                 status: params.value(at: ["turn", "status"])?.stringValue ?? "unknown",
                 errorMessage: params.value(at: ["turn", "error", "message"])?.stringValue
