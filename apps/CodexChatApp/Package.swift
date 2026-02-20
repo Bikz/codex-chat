@@ -49,7 +49,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "CodexChatCLI",
-            dependencies: ["CodexChatShared"],
+            dependencies: ["CodexChatShared", "CodexMods"],
             path: "Sources/CodexChatCLI"
         ),
         .executableTarget(

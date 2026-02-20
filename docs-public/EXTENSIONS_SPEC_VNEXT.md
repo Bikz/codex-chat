@@ -162,3 +162,11 @@ Must not include:
 
 6. Recoverability:
 - Safe update path with rollback on failure.
+
+## CLI Developer Surfaces
+
+`CodexChatCLI` exposes package authoring and CI-friendly validation:
+
+- `mod init --name <name> [--output <path>]`
+- `mod validate --source <path-or-github-url>`
+- `mod inspect-source --source <path-or-github-url>` (JSON output for automation/CI)

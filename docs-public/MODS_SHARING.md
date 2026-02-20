@@ -16,6 +16,14 @@ Canonical builder guide for CodexChat mods.
 3. Edit `ui.mod.json` and `codex.mod.json`.
 4. Review + install from local path or GitHub URL.
 
+CLI-first equivalent:
+
+```bash
+CodexChatCLI mod init --name "My Mod" --output /path/to/mods
+CodexChatCLI mod validate --source /path/to/mods/my-mod
+CodexChatCLI mod inspect-source --source https://github.com/org/repo/tree/main/mods/my-mod
+```
+
 Mod roots:
 
 - Global: `~/CodexChat/global/mods`

@@ -1,4 +1,5 @@
 import CodexChatShared
+import CodexMods
 import Foundation
 
 @main
@@ -14,22 +15,18 @@ struct CodexChatCLI {
     }
 
     private static func run(arguments: [String]) throws {
-        guard let command = arguments.first else {
-            printUsage()
-            return
-        }
-
+        let command = try CodexChatCLICommandParser.parse(arguments: arguments)
         switch command {
-        case "doctor":
+        case .doctor:
             runDoctor()
-        case "smoke":
+        case .smoke:
             try runSmoke()
-        case "repro":
-            try runRepro(arguments: Array(arguments.dropFirst()))
-        case "help", "--help", "-h":
+        case let .repro(options):
+            try runRepro(options: options)
+        case let .mod(modCommand):
+            try runMod(modCommand)
+        case .help:
             printUsage()
-        default:
-            throw CLIError("Unknown command: \(command). Run `CodexChatCLI help`.")
         }
     }
 
@@ -56,38 +53,10 @@ struct CodexChatCLI {
         print("Codex CLI: \(summary.codexExecutablePath ?? "not found")")
     }
 
-    private static func runRepro(arguments: [String]) throws {
-        var fixtureName: String?
-        var fixturesRootOverride: String?
-
-        var index = 0
-        while index < arguments.count {
-            let argument = arguments[index]
-            switch argument {
-            case "--fixture":
-                guard index + 1 < arguments.count else {
-                    throw CLIError("Missing value for --fixture")
-                }
-                fixtureName = arguments[index + 1]
-                index += 2
-            case "--fixtures-root":
-                guard index + 1 < arguments.count else {
-                    throw CLIError("Missing value for --fixtures-root")
-                }
-                fixturesRootOverride = arguments[index + 1]
-                index += 2
-            default:
-                throw CLIError("Unknown repro option: \(argument)")
-            }
-        }
-
-        guard let fixtureName else {
-            throw CLIError("`repro` requires --fixture <name>")
-        }
-
+    private static func runRepro(options: CodexChatCLIReproOptions) throws {
         let fileManager = FileManager.default
         let fixturesRootURL: URL
-        if let fixturesRootOverride {
+        if let fixturesRootOverride = options.fixturesRootOverride {
             fixturesRootURL = URL(fileURLWithPath: fixturesRootOverride, isDirectory: true)
         } else {
             guard let repoRoot = discoverRepositoryRoot(fileManager: fileManager) else {
@@ -101,7 +70,7 @@ struct CodexChatCLI {
         }
 
         let summary = try CodexChatBootstrap.runReproFixture(
-            named: fixtureName,
+            named: options.fixtureName,
             fixturesRoot: fixturesRootURL,
             fileManager: fileManager
         )
@@ -110,6 +79,45 @@ struct CodexChatCLI {
         print("Transcript length: \(summary.transcriptLength)")
         print("Action count: \(summary.actionCount)")
         print("Final status: \(summary.finalStatus)")
+    }
+
+    private static func runMod(_ command: CodexChatCLIModCommand) throws {
+        switch command {
+        case let .validate(source):
+            let preview = try ModInstallService().preview(source: source)
+            print("Mod package is valid.")
+            print("source: \(preview.source)")
+            print("id: \(preview.packageManifest.id)")
+            print("name: \(preview.packageManifest.name)")
+            print("version: \(preview.packageManifest.version)")
+            print("permissions: \(preview.requestedPermissions.map(\.rawValue).sorted().joined(separator: ", "))")
+            if !preview.warnings.isEmpty {
+                fputs("warnings:\n", stderr)
+                for warning in preview.warnings {
+                    fputs("- \(warning)\n", stderr)
+                }
+            }
+
+        case let .inspectSource(source):
+            let preview = try ModInstallService().preview(source: source)
+            let payload = ModInspectPayload(preview: preview)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(payload)
+            guard let json = String(data: data, encoding: .utf8) else {
+                throw CLIError("Failed to encode inspect-source output")
+            }
+            print(json)
+
+        case let .initSample(name, outputPath):
+            let discovery = UIModDiscoveryService()
+            let definitionURL = try discovery.writeSampleMod(to: outputPath, name: name)
+            let packageRoot = definitionURL.deletingLastPathComponent().path
+            print("Created sample mod package:")
+            print(packageRoot)
+            print("Validate with:")
+            print("CodexChatCLI mod validate --source \"\(packageRoot)\"")
+        }
     }
 
     private static func discoverRepositoryRoot(fileManager: FileManager) -> URL? {
@@ -135,6 +143,11 @@ struct CodexChatCLI {
           smoke                             Run non-UI startup health checks.
           repro --fixture <name>            Run deterministic fixture replay.
                [--fixtures-root <path>]
+          mod init --name <name>            Create a sample mod package.
+               [--output <path>]
+          mod validate --source <path|url>  Validate a local/GitHub mod source.
+          mod inspect-source --source <path|url>
+                                            Print structured source metadata as JSON.
         """)
     }
 }
@@ -148,5 +161,41 @@ private struct CLIError: LocalizedError {
 
     var errorDescription: String? {
         message
+    }
+}
+
+private struct ModInspectPayload: Encodable {
+    struct UI: Encodable {
+        let hookCount: Int
+        let automationCount: Int
+        let hasModsBarSlot: Bool
+    }
+
+    let source: String
+    let manifestSource: String
+    let id: String
+    let name: String
+    let version: String
+    let permissions: [String]
+    let requestedPermissions: [String]
+    let warnings: [String]
+    let compatibility: ModCompatibility?
+    let ui: UI
+
+    init(preview: ModInstallPreview) {
+        source = preview.source
+        manifestSource = preview.manifestSource.rawValue
+        id = preview.packageManifest.id
+        name = preview.packageManifest.name
+        version = preview.packageManifest.version
+        permissions = preview.packageManifest.permissions.map(\.rawValue).sorted()
+        requestedPermissions = preview.requestedPermissions.map(\.rawValue).sorted()
+        warnings = preview.warnings
+        compatibility = preview.packageManifest.compatibility
+        ui = UI(
+            hookCount: preview.definition.hooks.count,
+            automationCount: preview.definition.automations.count,
+            hasModsBarSlot: preview.definition.uiSlots?.modsBar?.enabled == true
+        )
     }
 }

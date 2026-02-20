@@ -17,6 +17,12 @@ The sample now includes:
 - `scripts/hook.sh`
 - `scripts/automation.sh`
 
+CLI alternative:
+
+```bash
+CodexChatCLI mod init --name "Thread Summary" --output /path/to/mods
+```
+
 ## 2) Implement a thread summary extension
 
 Edit `scripts/hook.sh` to emit modsBar markdown.
@@ -49,6 +55,13 @@ In `codex.mod.json`:
 - set `entrypoints.uiMod` to `ui.mod.json` (or another safe relative path)
 - optionally set `integrity.uiModSha256` (samples do not scaffold integrity by default)
 - `codex.mod.json` is required for install (no legacy fallback)
+
+Validate from CLI (local path or GitHub URL):
+
+```bash
+CodexChatCLI mod validate --source /path/to/mods/thread-summary
+CodexChatCLI mod inspect-source --source https://github.com/org/repo/tree/main/mods/thread-summary
+```
 
 ## 4) Install from local path or GitHub URL
 
