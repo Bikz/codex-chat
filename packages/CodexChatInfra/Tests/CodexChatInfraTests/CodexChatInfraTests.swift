@@ -279,6 +279,8 @@ final class CodexChatInfraTests: XCTestCase {
 
         let older = try await repositories.threadRepository.createThread(projectID: project.id, title: "Older")
         let newer = try await repositories.threadRepository.createThread(projectID: project.id, title: "Newer")
+        // Ensure deterministic recency ordering even when thread creation timestamps collide.
+        _ = try await repositories.threadRepository.touchThread(id: newer.id)
         guard let persistedOlder = try await repositories.threadRepository.getThread(id: older.id) else {
             XCTFail("Expected persisted older thread")
             return
