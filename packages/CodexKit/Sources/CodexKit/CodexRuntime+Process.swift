@@ -40,7 +40,7 @@ extension CodexRuntime {
     }
 
     private func installReadHandlers() {
-        guard let stdoutHandle, let stderrHandle else {
+        guard stdoutHandle != nil, stderrHandle != nil else {
             return
         }
 
@@ -48,6 +48,10 @@ extension CodexRuntime {
         stderrPumpContinuation?.finish()
         stdoutPumpTask?.cancel()
         stderrPumpTask?.cancel()
+        stdoutBufferedBytes = 0
+        stderrBufferedBytes = 0
+        isStdoutReadPaused = false
+        isStderrReadPaused = false
 
         var stdoutContinuation: AsyncStream<Data>.Continuation?
         let stdoutStream = AsyncStream<Data>(bufferingPolicy: .unbounded) { continuation in
@@ -59,18 +63,11 @@ extension CodexRuntime {
             guard let self else { return }
             for await chunk in stdoutStream {
                 await consumeStdout(chunk)
+                await didConsumeStdoutChunk(byteCount: chunk.count)
             }
         }
 
-        stdoutHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                resolvedStdoutContinuation.finish()
-                handle.readabilityHandler = nil
-                return
-            }
-            resolvedStdoutContinuation.yield(data)
-        }
+        installStdoutReadabilityHandler(using: resolvedStdoutContinuation)
 
         var stderrContinuation: AsyncStream<Data>.Continuation?
         let stderrStream = AsyncStream<Data>(bufferingPolicy: .unbounded) { continuation in
@@ -85,15 +82,7 @@ extension CodexRuntime {
             }
         }
 
-        stderrHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                resolvedStderrContinuation.finish()
-                handle.readabilityHandler = nil
-                return
-            }
-            resolvedStderrContinuation.yield(data)
-        }
+        installStderrReadabilityHandler(using: resolvedStderrContinuation)
     }
 
     private func consumeStdout(_ data: Data) async {
@@ -188,6 +177,10 @@ extension CodexRuntime {
         stdoutHandle = nil
         stderrHandle = nil
         stderrLineBuffer = Data()
+        stdoutBufferedBytes = 0
+        stderrBufferedBytes = 0
+        isStdoutReadPaused = false
+        isStderrReadPaused = false
         pendingApprovalRequests.removeAll()
         runtimeCapabilities = .none
 
@@ -215,6 +208,10 @@ extension CodexRuntime {
         stdoutHandle = nil
         stderrHandle = nil
         stderrLineBuffer = Data()
+        stdoutBufferedBytes = 0
+        stderrBufferedBytes = 0
+        isStdoutReadPaused = false
+        isStderrReadPaused = false
         pendingApprovalRequests.removeAll()
         runtimeCapabilities = .none
 
@@ -252,5 +249,80 @@ extension CodexRuntime {
                 )
             )
         )
+    }
+
+    private func installStdoutReadabilityHandler(using continuation: AsyncStream<Data>.Continuation) {
+        guard let stdoutHandle else {
+            return
+        }
+
+        isStdoutReadPaused = false
+        stdoutHandle.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            Task {
+                await self?.handleStdoutReadableData(data, continuation: continuation)
+            }
+        }
+    }
+
+    private func installStderrReadabilityHandler(using continuation: AsyncStream<Data>.Continuation) {
+        guard let stderrHandle else {
+            return
+        }
+
+        isStderrReadPaused = false
+        stderrHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                continuation.finish()
+                handle.readabilityHandler = nil
+                return
+            }
+
+            continuation.yield(data)
+        }
+    }
+
+    private func handleStdoutReadableData(
+        _ data: Data,
+        continuation: AsyncStream<Data>.Continuation
+    ) {
+        guard !data.isEmpty else {
+            continuation.finish()
+            stdoutHandle?.readabilityHandler = nil
+            isStdoutReadPaused = false
+            stdoutBufferedBytes = 0
+            return
+        }
+
+        switch continuation.yield(data) {
+        case .enqueued:
+            stdoutBufferedBytes += data.count
+            if !isStdoutReadPaused,
+               stdoutBufferedBytes >= Self.ioBackpressurePauseHighWatermarkBytes
+            {
+                stdoutHandle?.readabilityHandler = nil
+                isStdoutReadPaused = true
+            }
+        case .dropped:
+            // We use an unbounded stream and expect no drops.
+            break
+        case .terminated:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    private func didConsumeStdoutChunk(byteCount: Int) {
+        stdoutBufferedBytes = max(0, stdoutBufferedBytes - byteCount)
+        guard isStdoutReadPaused,
+              stdoutBufferedBytes <= Self.ioBackpressureResumeLowWatermarkBytes,
+              let continuation = stdoutPumpContinuation
+        else {
+            return
+        }
+
+        installStdoutReadabilityHandler(using: continuation)
     }
 }

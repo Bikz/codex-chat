@@ -22,9 +22,16 @@ public actor CodexRuntime {
     var stderrPumpTask: Task<Void, Never>?
     var stdoutPumpContinuation: AsyncStream<Data>.Continuation?
     var stderrPumpContinuation: AsyncStream<Data>.Continuation?
+    var stdoutBufferedBytes = 0
+    var stderrBufferedBytes = 0
+    var isStdoutReadPaused = false
+    var isStderrReadPaused = false
 
     let eventStream: AsyncStream<CodexRuntimeEvent>
     let eventContinuation: AsyncStream<CodexRuntimeEvent>.Continuation
+
+    static let ioBackpressurePauseHighWatermarkBytes = 2 * 1024 * 1024
+    static let ioBackpressureResumeLowWatermarkBytes = 512 * 1024
 
     public init(
         executableResolver: @escaping ExecutableResolver = CodexRuntime.defaultExecutableResolver,
