@@ -64,6 +64,48 @@ final class AppModelComputerActionsTests: XCTestCase {
         XCTAssertEqual(second, .remindersToday(rangeHours: 6))
     }
 
+    func testAdaptiveIntentUsesCalendarContextForFollowUpQueries() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.selectedThreadID = threadID
+        model.transcriptStore[threadID] = [
+            .message(
+                ChatMessage(
+                    threadId: threadID,
+                    role: .user,
+                    text: "What's on my calendar today?"
+                )
+            ),
+        ]
+
+        let tomorrowIntent = model.adaptiveIntent(for: "tomorrow?")
+        XCTAssertEqual(tomorrowIntent, .calendarToday(rangeHours: 24))
+
+        let rangeIntent = model.adaptiveIntent(for: "next 8 hours")
+        XCTAssertEqual(rangeIntent, .calendarToday(rangeHours: 8))
+    }
+
+    func testAdaptiveIntentUsesRemindersContextForFollowUpQueries() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.selectedThreadID = threadID
+        model.transcriptStore[threadID] = [
+            .message(
+                ChatMessage(
+                    threadId: threadID,
+                    role: .user,
+                    text: "What reminders do I have today?"
+                )
+            ),
+        ]
+
+        let tomorrowIntent = model.adaptiveIntent(for: "tmrw?")
+        XCTAssertEqual(tomorrowIntent, .remindersToday(rangeHours: 24))
+
+        let rangeIntent = model.adaptiveIntent(for: "in 3 hours")
+        XCTAssertEqual(rangeIntent, .remindersToday(rangeHours: 3))
+    }
+
     func testAdaptiveIntentParsesExpandedMessageSendPhrases() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
 
@@ -476,6 +518,52 @@ final class AppModelComputerActionsTests: XCTestCase {
             return
         }
         XCTAssertEqual(userMessage.text, "What's on my calendar tomorrow?")
+    }
+
+    func testCalendarActionUsesOriginalQueryTextWhenProvided() async throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let event = CalendarEvent(
+            id: "event-4",
+            title: "Demo",
+            calendarName: "Work",
+            startAt: start,
+            endAt: start.addingTimeInterval(1800),
+            isAllDay: false
+        )
+
+        let calendarAction = CalendarTodayAction(
+            eventSource: FixedCalendarEventSource(events: [event]),
+            nowProvider: { start }
+        )
+        let registry = ComputerActionRegistry(calendarToday: calendarAction)
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            computerActionRegistry: registry
+        )
+
+        let threadID = UUID()
+        try await model.runNativeComputerAction(
+            actionID: "calendar.today",
+            arguments: [
+                "rangeHours": "24",
+                "queryText": "whats on my cal tmrw?",
+                "dayOffset": "1",
+                "anchor": "dayStart",
+            ],
+            threadID: threadID,
+            projectID: UUID()
+        )
+
+        guard let entries = model.transcriptStore[threadID],
+              case let .message(userMessage) = entries.first
+        else {
+            XCTFail("Expected first transcript entry to be a user message")
+            return
+        }
+
+        XCTAssertEqual(userMessage.text, "whats on my cal tmrw?")
     }
 
     private func eventually(

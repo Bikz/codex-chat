@@ -403,6 +403,11 @@ extension AppModel {
     ) -> String {
         switch actionID {
         case "calendar.today":
+            if let queryText = arguments["queryText"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !queryText.isEmpty
+            {
+                return queryText
+            }
             if let hoursRaw = arguments["rangeHours"],
                let hours = Int(hoursRaw),
                hours > 0
@@ -430,6 +435,11 @@ extension AppModel {
             }
             return "What's on my calendar today?"
         case "reminders.today":
+            if let queryText = arguments["queryText"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !queryText.isEmpty
+            {
+                return queryText
+            }
             if let hoursRaw = arguments["rangeHours"],
                let hours = Int(hoursRaw),
                hours > 0

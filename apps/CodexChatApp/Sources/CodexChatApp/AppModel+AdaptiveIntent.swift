@@ -68,16 +68,8 @@ extension AppModel {
             return .desktopCleanup
         }
 
-        if containsCalendarKeyword(in: lowered),
-           hasScheduleQueryCue(in: lowered, text: text)
-        {
-            return .calendarToday(rangeHours: parseRangeHours(text: text) ?? 24)
-        }
-
-        if containsRemindersKeyword(in: lowered),
-           hasScheduleQueryCue(in: lowered, text: text)
-        {
-            return .remindersToday(rangeHours: parseRangeHours(text: text) ?? 24)
+        if let scheduleIntent = parseScheduleAdaptiveIntent(text: text) {
+            return scheduleIntent
         }
 
         if let messageIntent = parseMessagesIntent(text: text) {
@@ -92,6 +84,45 @@ extension AppModel {
             return .agentRoleSetup
         }
 
+        return nil
+    }
+
+    private func parseScheduleAdaptiveIntent(text: String) -> AdaptiveIntent? {
+        let preferredDomain = preferredScheduleDomainForFollowUp()
+        guard let query = ScheduleQueryParser.parse(
+            text: text,
+            preferredDomain: preferredDomain
+        ) else {
+            return nil
+        }
+
+        switch query.domain {
+        case .calendar:
+            return .calendarToday(rangeHours: query.rangeHours)
+        case .reminders:
+            return .remindersToday(rangeHours: query.rangeHours)
+        }
+    }
+
+    private func preferredScheduleDomainForFollowUp() -> ScheduleQueryParser.Domain? {
+        guard let threadID = selectedThreadID else {
+            return nil
+        }
+        return preferredScheduleDomain(in: transcriptStore[threadID, default: []])
+    }
+
+    private func preferredScheduleDomain(in entries: [TranscriptEntry]) -> ScheduleQueryParser.Domain? {
+        for entry in entries.reversed() {
+            guard case let .message(message) = entry,
+                  message.role == .user
+            else {
+                continue
+            }
+
+            if let domain = ScheduleQueryParser.detectDomain(in: message.text.lowercased()) {
+                return domain
+            }
+        }
         return nil
     }
 
@@ -176,141 +207,43 @@ extension AppModel {
         return project
     }
 
-    private func parseRangeHours(text: String) -> Int? {
-        let pattern = #"next\s+(\d{1,3})\s+hours?"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return nil
-        }
-
-        let fullRange = NSRange(text.startIndex ..< text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, options: [], range: fullRange),
-              let valueRange = Range(match.range(at: 1), in: text),
-              let value = Int(text[valueRange])
-        else {
-            return nil
-        }
-
-        return min(max(value, 1), 168)
-    }
-
-    private func parseRangeDays(text: String) -> Int? {
-        let pattern = #"next\s+(\d{1,2})\s+days?"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return nil
-        }
-
-        let fullRange = NSRange(text.startIndex ..< text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, options: [], range: fullRange),
-              let valueRange = Range(match.range(at: 1), in: text),
-              let value = Int(text[valueRange])
-        else {
-            return nil
-        }
-
-        return min(max(value, 1), 7)
-    }
-
-    private func parseRelativeDayOffset(in lowered: String) -> Int? {
-        if lowered.contains("tomorrow")
-            || lowered.contains("tmrw")
-            || lowered.contains("tmr")
-        {
-            return 1
-        }
-        if lowered.contains("yesterday") {
-            return -1
-        }
-        if lowered.contains("today") || lowered.contains("tonight") {
-            return 0
-        }
-        return nil
-    }
-
-    private func containsCalendarKeyword(in lowered: String) -> Bool {
-        if lowered.contains("calendar") {
-            return true
-        }
-
-        return lowered.range(of: #"\bcal\b"#, options: .regularExpression) != nil
-    }
-
-    private func containsRemindersKeyword(in lowered: String) -> Bool {
-        lowered.range(of: #"\breminders?\b"#, options: .regularExpression) != nil
-    }
-
-    private func hasScheduleQueryCue(in lowered: String, text: String) -> Bool {
-        if parseRangeHours(text: text) != nil || parseRangeDays(text: text) != nil {
-            return true
-        }
-        if parseRelativeDayOffset(in: lowered) != nil {
-            return true
-        }
-
-        let cues = [
-            "what's on",
-            "whats on",
-            "what do i have",
-            "what do i got",
-            "check my",
-            "check",
-            "show my",
-            "show",
-            "look at",
-        ]
-
-        return cues.contains(where: lowered.contains)
-    }
-
     private func calendarActionArguments(text: String, defaultRangeHours: Int) -> [String: String] {
-        let lowered = text.lowercased()
-        let rangeHours = normalizedRangeHours(text: text, defaultRangeHours: defaultRangeHours)
-        let dayOffset = parseRelativeDayOffset(in: lowered) ?? 0
-        let anchor = shouldUseNowAnchor(loweredText: lowered, rangeHours: rangeHours, dayOffset: dayOffset) ? "now" : "dayStart"
-
-        var arguments: [String: String] = [
-            "rangeHours": String(rangeHours),
-            "anchor": anchor,
-        ]
-        if dayOffset != 0 {
-            arguments["dayOffset"] = String(dayOffset)
-        }
-        return arguments
+        scheduleActionArguments(
+            text: text,
+            defaultRangeHours: defaultRangeHours,
+            preferredDomain: .calendar
+        )
     }
 
     private func remindersActionArguments(text: String, defaultRangeHours: Int) -> [String: String] {
-        let lowered = text.lowercased()
-        let rangeHours = normalizedRangeHours(text: text, defaultRangeHours: defaultRangeHours)
-        let dayOffset = parseRelativeDayOffset(in: lowered) ?? 0
-        let anchor = shouldUseNowAnchor(loweredText: lowered, rangeHours: rangeHours, dayOffset: dayOffset) ? "now" : "dayStart"
+        scheduleActionArguments(
+            text: text,
+            defaultRangeHours: defaultRangeHours,
+            preferredDomain: .reminders
+        )
+    }
+
+    private func scheduleActionArguments(
+        text: String,
+        defaultRangeHours: Int,
+        preferredDomain: ScheduleQueryParser.Domain
+    ) -> [String: String] {
+        if let parsed = ScheduleQueryParser.parse(
+            text: text,
+            preferredDomain: preferredDomain
+        ) {
+            return parsed.actionArguments(queryText: text)
+        }
 
         var arguments: [String: String] = [
-            "rangeHours": String(rangeHours),
-            "anchor": anchor,
+            "rangeHours": String(min(max(defaultRangeHours, 1), 168)),
+            "anchor": ScheduleQueryParser.Anchor.dayStart.rawValue,
         ]
-        if dayOffset != 0 {
-            arguments["dayOffset"] = String(dayOffset)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            arguments["queryText"] = trimmed
         }
         return arguments
-    }
-
-    private func normalizedRangeHours(text: String, defaultRangeHours: Int) -> Int {
-        if let parsedHours = parseRangeHours(text: text) {
-            return min(max(parsedHours, 1), 168)
-        }
-        if let parsedDays = parseRangeDays(text: text) {
-            return min(max(parsedDays * 24, 1), 168)
-        }
-        return min(max(defaultRangeHours, 1), 168)
-    }
-
-    private func shouldUseNowAnchor(loweredText: String, rangeHours: Int, dayOffset: Int) -> Bool {
-        guard dayOffset == 0, rangeHours < 24 else {
-            return false
-        }
-
-        return loweredText.contains("next")
-            || loweredText.contains("in ")
-            || loweredText.contains("hours")
     }
 
     private func parseMessagesIntent(text: String) -> AdaptiveIntent? {
