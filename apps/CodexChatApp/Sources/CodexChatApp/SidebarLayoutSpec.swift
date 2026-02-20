@@ -20,7 +20,7 @@ enum SidebarLayoutSpec {
     static let threadMetaColumnWidth: CGFloat = (controlButtonSize * 2) + threadControlSlotSpacing
     static let timestampColumnWidth: CGFloat = 44
 
-    static let sectionHeaderTopPadding: CGFloat = 4
+    static let sectionHeaderTopPadding: CGFloat = 2
     static let sectionHeaderBottomPadding: CGFloat = 0
     static let sectionHeaderLeadingInset: CGFloat = 0
     static let headerActionTrailingPadding: CGFloat = rowHorizontalPadding
@@ -28,9 +28,9 @@ enum SidebarLayoutSpec {
     static let selectedRowInset: CGFloat = 0
     static let selectedRowCornerRadius: CGFloat = 10
 
-    static let footerHeight: CGFloat = 54
+    static let footerHeight: CGFloat = 50
     static let footerHorizontalInset: CGFloat = listHorizontalInset
-    static let footerVerticalInset: CGFloat = 5
+    static let footerVerticalInset: CGFloat = 4
 
     static let projectTrailingWidth: CGFloat = (controlButtonSize * 2) + controlSlotSpacing
     static let threadTrailingWidth: CGFloat = (controlButtonSize * 2) + threadControlSlotSpacing

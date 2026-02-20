@@ -163,6 +163,7 @@ struct SidebarView: View {
             .listRowSeparator(.hidden)
         }
         .listStyle(.sidebar)
+        .environment(\.defaultMinListHeaderHeight, 18)
         .scrollContentBackground(.hidden)
         .background(sidebarBackgroundColor)
         .listRowInsets(EdgeInsets(
