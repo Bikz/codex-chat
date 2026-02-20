@@ -261,7 +261,7 @@ struct SidebarView: View {
                     Spacer()
                 }
                 .padding(.horizontal, SidebarLayoutSpec.rowHorizontalPadding)
-                .padding(.vertical, 6)
+                .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
                 .frame(minHeight: SidebarLayoutSpec.rowMinHeight)
             }
             .buttonStyle(SidebarRowButtonStyle(
