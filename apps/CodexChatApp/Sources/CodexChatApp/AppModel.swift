@@ -447,6 +447,7 @@ final class AppModel: ObservableObject {
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
     var voiceAutoStopTask: Task<Void, Never>?
     var voiceElapsedTickerTask: Task<Void, Never>?
+    var voiceCaptureSessionID: UInt64 = 0
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
     let voiceElapsedClock = ContinuousClock()
     var voiceCaptureRecordingStart: ContinuousClock.Instant?

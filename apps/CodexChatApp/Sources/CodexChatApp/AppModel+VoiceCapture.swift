@@ -84,11 +84,16 @@ extension AppModel {
     }
 
     func cancelVoiceCapture() {
+        let invalidatedSession = invalidateVoiceCaptureSession()
         stopVoiceCaptureElapsedTicker()
         voiceAutoStopTask?.cancel()
         voiceAutoStopTask = nil
-        voiceCaptureService.cancelCapture()
         voiceCaptureState = .idle
+        debugVoiceCapture("Cancelled voice capture; invalidated session=\(invalidatedSession)")
+
+        Task { [voiceCaptureService] in
+            await voiceCaptureService.cancelCapture()
+        }
     }
 
     func handleVoiceTranscriptionResult(_ text: String) {
@@ -110,6 +115,7 @@ extension AppModel {
     }
 
     private func beginVoiceCapture() {
+        let sessionID = beginVoiceCaptureSession()
         guard canSubmitComposer else {
             stopVoiceCaptureElapsedTicker()
             voiceCaptureState = .failed(message: "Voice input is unavailable until the runtime is ready.")
@@ -118,22 +124,43 @@ extension AppModel {
 
         stopVoiceCaptureElapsedTicker()
         voiceCaptureState = .requestingPermission
+        debugVoiceCapture("Begin voice capture session=\(sessionID)")
         Task { @MainActor [weak self] in
             guard let self else { return }
 
             let authorization = await voiceCaptureService.requestAuthorization()
+            guard isCurrentVoiceCaptureSession(sessionID) else {
+                debugVoiceCapture("Ignoring stale authorization response for session=\(sessionID)")
+                return
+            }
+
             switch authorization {
             case .authorized:
                 do {
-                    try voiceCaptureService.startCapture()
+                    try await voiceCaptureService.startCapture()
+                    guard isCurrentVoiceCaptureSession(sessionID) else {
+                        debugVoiceCapture("Ignoring stale start capture completion for session=\(sessionID)")
+                        await voiceCaptureService.cancelCapture()
+                        return
+                    }
+
                     voiceCaptureState = .recording(startedAt: Date())
                     startVoiceCaptureElapsedTicker()
                     scheduleVoiceCaptureAutoStop()
+                    debugVoiceCapture("Voice capture recording started for session=\(sessionID)")
                 } catch {
+                    guard isCurrentVoiceCaptureSession(sessionID) else {
+                        debugVoiceCapture("Ignoring stale start capture error for session=\(sessionID)")
+                        return
+                    }
                     stopVoiceCaptureElapsedTicker()
                     voiceCaptureState = .failed(message: error.localizedDescription)
                 }
             case let .denied(reason):
+                guard isCurrentVoiceCaptureSession(sessionID) else {
+                    debugVoiceCapture("Ignoring stale denial for session=\(sessionID)")
+                    return
+                }
                 stopVoiceCaptureElapsedTicker()
                 voiceCaptureState = .failed(message: reason)
             }
@@ -144,23 +171,41 @@ extension AppModel {
         guard case .recording = voiceCaptureState else {
             return
         }
+        let sessionID = voiceCaptureSessionID
 
         voiceAutoStopTask?.cancel()
         voiceAutoStopTask = nil
         stopVoiceCaptureElapsedTicker()
         voiceCaptureState = .transcribing
+        debugVoiceCapture("Stopping voice capture for session=\(sessionID) reason=\(reason)")
 
         Task { @MainActor [weak self] in
             guard let self else { return }
 
             do {
                 let transcription = try await voiceCaptureService.stopCapture()
+                guard isCurrentVoiceCaptureSession(sessionID) else {
+                    debugVoiceCapture("Ignoring stale stop capture completion for session=\(sessionID)")
+                    return
+                }
                 handleVoiceTranscriptionResult(transcription)
             } catch VoiceCaptureServiceError.cancelled {
+                guard isCurrentVoiceCaptureSession(sessionID) else {
+                    debugVoiceCapture("Ignoring stale cancellation for session=\(sessionID)")
+                    return
+                }
                 voiceCaptureState = .idle
             } catch VoiceCaptureServiceError.noSpeechDetected where reason == .timeout {
+                guard isCurrentVoiceCaptureSession(sessionID) else {
+                    debugVoiceCapture("Ignoring stale timeout result for session=\(sessionID)")
+                    return
+                }
                 voiceCaptureState = .failed(message: "Stopped after 90 seconds with no speech detected.")
             } catch {
+                guard isCurrentVoiceCaptureSession(sessionID) else {
+                    debugVoiceCapture("Ignoring stale stop capture error for session=\(sessionID)")
+                    return
+                }
                 voiceCaptureState = .failed(message: error.localizedDescription)
             }
         }
@@ -214,5 +259,34 @@ extension AppModel {
             guard case .recording = voiceCaptureState else { return }
             stopVoiceCapture(reason: .timeout)
         }
+    }
+
+    @discardableResult
+    private func beginVoiceCaptureSession() -> UInt64 {
+        incrementVoiceCaptureSessionID()
+        return voiceCaptureSessionID
+    }
+
+    @discardableResult
+    private func invalidateVoiceCaptureSession() -> UInt64 {
+        incrementVoiceCaptureSessionID()
+        return voiceCaptureSessionID
+    }
+
+    private func incrementVoiceCaptureSessionID() {
+        voiceCaptureSessionID &+= 1
+        if voiceCaptureSessionID == 0 {
+            voiceCaptureSessionID = 1
+        }
+    }
+
+    private func isCurrentVoiceCaptureSession(_ sessionID: UInt64) -> Bool {
+        voiceCaptureSessionID == sessionID
+    }
+
+    private func debugVoiceCapture(_ message: String) {
+        #if DEBUG
+            NSLog("[VoiceCapture] \(message)")
+        #endif
     }
 }

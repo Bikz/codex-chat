@@ -169,7 +169,7 @@ final class VoiceCaptureRuntimeIntegrationTests: XCTestCase {
 }
 
 @MainActor
-private final class MockVoiceCaptureService: VoiceCaptureService {
+private final class MockVoiceCaptureService: VoiceCaptureService, @unchecked Sendable {
     private let transcription: String
     private(set) var startCaptureCallCount = 0
     private(set) var stopCaptureCallCount = 0
@@ -182,7 +182,7 @@ private final class MockVoiceCaptureService: VoiceCaptureService {
         .authorized
     }
 
-    func startCapture() throws {
+    func startCapture() async throws {
         startCaptureCallCount += 1
     }
 
@@ -191,5 +191,5 @@ private final class MockVoiceCaptureService: VoiceCaptureService {
         return transcription
     }
 
-    func cancelCapture() {}
+    func cancelCapture() async {}
 }

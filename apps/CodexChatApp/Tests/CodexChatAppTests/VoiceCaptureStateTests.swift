@@ -79,7 +79,9 @@ final class VoiceCaptureStateTests: XCTestCase {
 
         model.cancelVoiceCapture()
         try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .idle }
-        XCTAssertEqual(voiceService.cancelCaptureCallCount, 1)
+        try await waitForCondition(timeoutSeconds: 2.0) {
+            voiceService.cancelCaptureCallCount == 1
+        }
     }
 
     func testVoiceCaptureElapsedTextClearsWhenRecordingStops() async throws {
@@ -101,6 +103,91 @@ final class VoiceCaptureStateTests: XCTestCase {
         try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { $0 == .idle }
 
         XCTAssertNil(model.voiceCaptureElapsedText)
+    }
+
+    func testCancelDuringPermissionPromptDoesNotEnterRecordingAfterAuthorizationReturns() async throws {
+        let voiceService = MockVoiceCaptureService()
+        voiceService.authorizationStatus = .authorized
+        voiceService.authorizationDelayNanoseconds = 400_000_000
+
+        let model = makeReadyModel(voiceService: voiceService)
+
+        model.toggleVoiceCapture()
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .requestingPermission }
+
+        model.cancelVoiceCapture()
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .idle }
+
+        try await waitForCondition(timeoutSeconds: 2.0) {
+            voiceService.cancelCaptureCallCount == 1
+        }
+        try await waitForCondition(timeoutSeconds: 2.0) {
+            voiceService.requestAuthorizationCallCount == 1
+        }
+
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(model.voiceCaptureState, .idle)
+        XCTAssertEqual(voiceService.startCaptureCallCount, 0)
+    }
+
+    func testDelayedAuthorizationTransitionsRequestingPermissionToRecording() async throws {
+        let voiceService = MockVoiceCaptureService()
+        voiceService.authorizationStatus = .authorized
+        voiceService.authorizationDelayNanoseconds = 200_000_000
+
+        let model = makeReadyModel(voiceService: voiceService)
+        model.toggleVoiceCapture()
+
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .requestingPermission }
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { state in
+            if case .recording = state { return true }
+            return false
+        }
+
+        XCTAssertEqual(voiceService.startCaptureCallCount, 1)
+    }
+
+    func testRapidTogglePreventsStaleSessionMutations() async throws {
+        let voiceService = MockVoiceCaptureService()
+        voiceService.authorizationStatus = .authorized
+        voiceService.authorizationDelayNanoseconds = 250_000_000
+        voiceService.stopResult = .success("fresh session result")
+
+        let model = makeReadyModel(voiceService: voiceService)
+
+        model.toggleVoiceCapture()
+        model.cancelVoiceCapture()
+        model.toggleVoiceCapture()
+
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { state in
+            if case .recording = state { return true }
+            return false
+        }
+
+        try await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertEqual(voiceService.startCaptureCallCount, 1)
+        if case .recording = model.voiceCaptureState {
+            // expected
+        } else {
+            XCTFail("Expected recording state after rapid toggle flow")
+        }
+
+        model.toggleVoiceCapture()
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { $0 == .idle }
+        XCTAssertEqual(model.composerText, "fresh session result")
+    }
+
+    func testCancelIsIdempotentWhenNotRecording() async throws {
+        let voiceService = MockVoiceCaptureService()
+        let model = makeReadyModel(voiceService: voiceService)
+
+        model.cancelVoiceCapture()
+        model.cancelVoiceCapture()
+
+        try await waitForCondition(timeoutSeconds: 2.0) {
+            voiceService.cancelCaptureCallCount == 2
+        }
+        XCTAssertEqual(model.voiceCaptureState, .idle)
     }
 
     private func makeReadyModel(voiceService: MockVoiceCaptureService) -> AppModel {
@@ -155,23 +242,47 @@ final class VoiceCaptureStateTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: timeoutSeconds)
     }
+
+    private func waitForCondition(
+        timeoutSeconds: TimeInterval,
+        condition: @escaping () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        throw XCTestError(.failureWhileWaiting)
+    }
 }
 
 @MainActor
-private final class MockVoiceCaptureService: VoiceCaptureService {
+private final class MockVoiceCaptureService: VoiceCaptureService, @unchecked Sendable {
     var authorizationStatus: VoiceCaptureAuthorizationStatus = .authorized
+    var authorizationDelayNanoseconds: UInt64 = 0
+    var startCaptureDelayNanoseconds: UInt64 = 0
     var startError: Error?
     var stopResult: Result<String, Error> = .success("mock transcript")
 
+    private(set) var requestAuthorizationCallCount = 0
     private(set) var startCaptureCallCount = 0
     private(set) var stopCaptureCallCount = 0
     private(set) var cancelCaptureCallCount = 0
 
     func requestAuthorization() async -> VoiceCaptureAuthorizationStatus {
-        authorizationStatus
+        requestAuthorizationCallCount += 1
+        if authorizationDelayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: authorizationDelayNanoseconds)
+        }
+        return authorizationStatus
     }
 
-    func startCapture() throws {
+    func startCapture() async throws {
+        if startCaptureDelayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: startCaptureDelayNanoseconds)
+        }
         startCaptureCallCount += 1
         if let startError {
             throw startError
@@ -188,7 +299,7 @@ private final class MockVoiceCaptureService: VoiceCaptureService {
         }
     }
 
-    func cancelCapture() {
+    func cancelCapture() async {
         cancelCaptureCallCount += 1
     }
 }
