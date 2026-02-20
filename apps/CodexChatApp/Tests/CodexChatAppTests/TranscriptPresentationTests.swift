@@ -431,6 +431,27 @@ final class TranscriptPresentationTests: XCTestCase {
         })
     }
 
+    func testActionOnlyTimelineStaysVisibleInChatMode() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .actionCard(action(
+                threadID: threadID,
+                method: "computer_action/execute",
+                title: "Calendar check completed",
+                detail: "Calendar check completed with 2 event(s)."
+            )),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        XCTAssertEqual(rows.turnSummaryCount, 1)
+        XCTAssertTrue(rows.actionMethods.isEmpty)
+    }
+
     func testCompactRowsUseUniqueRowIdentifiers() {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [

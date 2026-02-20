@@ -397,14 +397,13 @@ enum TranscriptPresentationBuilder {
         hiddenActions: [ActionCard],
         detailLevel: TranscriptDetailLevel
     ) -> TurnSummaryPresentation? {
-        guard bucket.userMessage != nil else {
-            return nil
-        }
-
         guard !bucket.actions.isEmpty else {
             return nil
         }
 
+        // Action-only buckets can exist for local/native automations that do not
+        // currently emit a user message. Keep a compact summary visible so chat
+        // mode never renders as an empty timeline.
         if detailLevel == .chat, hiddenActions.isEmpty {
             return nil
         }
