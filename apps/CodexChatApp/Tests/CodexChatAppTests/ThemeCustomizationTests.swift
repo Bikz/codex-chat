@@ -137,6 +137,41 @@ final class ThemeCustomizationTests: XCTestCase {
         XCTAssertEqual(model.userThemeCustomization, expected)
     }
 
+    func testRestoreUserThemeCustomizationPreservesSavedValuesWhenDisabled() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-theme-restore-disabled-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        let expected = AppModel.UserThemeCustomization(
+            isEnabled: false,
+            accentHex: "#88CCFF",
+            sidebarHex: "#0E1A2B",
+            backgroundHex: "#101826",
+            panelHex: "#18243A",
+            sidebarGradientHex: "#2E4B68",
+            chatGradientHex: "#3A5A78",
+            gradientStrength: 0.52,
+            transparencyMode: .glass
+        )
+
+        let encoded = try JSONEncoder().encode(expected)
+        try await repositories.preferenceRepository.setPreference(
+            key: .userThemeCustomizationV1,
+            value: String(data: encoded, encoding: .utf8) ?? "{}"
+        )
+
+        await model.restoreUserThemeCustomizationIfNeeded()
+        XCTAssertEqual(model.userThemeCustomization, expected)
+        XCTAssertFalse(model.userThemeCustomization.isEnabled)
+        XCTAssertFalse(model.isTransparentThemeMode)
+    }
+
     func testRestoreUserThemeCustomizationMigratesLegacyDefaultOverrideToSystemDefault() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-theme-legacy-\(UUID().uuidString)", isDirectory: true)
