@@ -386,11 +386,12 @@ extension AppModel {
     private func handleApprovalRequest(_ request: RuntimeApprovalRequest) {
         approvalStatusMessage = nil
 
-        let localThreadID = resolveLocalThreadID(
+        let resolvedLocalThreadID = resolveLocalThreadID(
             runtimeThreadID: request.threadID,
             itemID: request.itemID,
             runtimeTurnID: request.turnID
         )
+        let localThreadID = resolvedLocalThreadID ?? fallbackLocalThreadIDForUnscopedApproval(request)
 
         if shouldAutoApproveTrustedHarnessCommand(request) {
             autoApproveTrustedHarnessCommand(request, localThreadID: localThreadID)
@@ -518,11 +519,13 @@ extension AppModel {
         unresolved.reserveCapacity(unscopedApprovalRequests.count)
 
         for request in unscopedApprovalRequests {
-            guard let localThreadID = resolveLocalThreadID(
+            let localThreadID = resolveLocalThreadID(
                 runtimeThreadID: request.threadID,
                 itemID: request.itemID,
                 runtimeTurnID: request.turnID
-            ) else {
+            ) ?? fallbackLocalThreadIDForUnscopedApproval(request)
+
+            guard let localThreadID else {
                 unresolved.append(request)
                 continue
             }
@@ -563,11 +566,26 @@ extension AppModel {
             }
         }
 
-        if activeTurnContextsByThreadID.count == 1 {
+        if runtimeThreadID == nil,
+           itemID == nil,
+           runtimeTurnID == nil,
+           activeTurnContextsByThreadID.count == 1
+        {
             return activeTurnContextsByThreadID.first?.key
         }
 
         return nil
+    }
+
+    private func fallbackLocalThreadIDForUnscopedApproval(_ request: RuntimeApprovalRequest) -> UUID? {
+        guard request.threadID == nil,
+              request.turnID == nil,
+              request.itemID == nil,
+              activeTurnContextsByThreadID.count == 1
+        else {
+            return nil
+        }
+        return activeTurnContextsByThreadID.first?.key
     }
 
     private func isFailureCompletion(_ completion: RuntimeTurnCompletion) -> Bool {

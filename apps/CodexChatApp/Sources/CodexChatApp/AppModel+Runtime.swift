@@ -901,7 +901,11 @@ extension AppModel {
             }
         }
 
-        if activeTurnContextsByThreadID.count == 1 {
+        if request?.threadID == nil,
+           request?.turnID == nil,
+           request?.itemID == nil,
+           activeTurnContextsByThreadID.count == 1
+        {
             return activeTurnContextsByThreadID.first?.key
         }
 
