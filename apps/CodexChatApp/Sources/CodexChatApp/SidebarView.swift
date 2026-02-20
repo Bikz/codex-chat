@@ -431,7 +431,6 @@ struct SidebarView: View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
         let rowSpacing = isGeneralThread ? 0 : SidebarLayoutSpec.iconTextGap
-        let isAwaitingInput = model.hasPendingApproval(for: thread.id)
 
         return ZStack(alignment: .trailing) {
             Button {
@@ -473,19 +472,43 @@ struct SidebarView: View {
             ZStack(alignment: .trailing) {
                 Group {
                     HStack(spacing: SidebarLayoutSpec.threadControlSlotSpacing) {
-                        if thread.isPinned {
-                            Image(systemName: "star.fill")
-                                .font(sidebarMetaIconFont)
-                                .foregroundStyle(pinnedStarColor)
-                                .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
-                        }
-
-                        if isAwaitingInput {
-                            Text("Pending")
-                                .font(sidebarMetaFont.weight(.medium))
+                        if model.hasPendingApproval(for: thread.id) {
+                            Text("Input")
+                                .font(.system(size: 10.5, weight: .semibold))
                                 .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.2))
+                                )
+                                .overlay(
+                                    Capsule(style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                                )
+                                .accessibilityLabel("Awaiting input")
                                 .lineLimit(1)
+                        } else if model.isThreadWorking(thread.id) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.72)
+                                .tint(Color.primary.opacity(0.45))
+                                .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
+                                .accessibilityLabel("Working")
+                        } else if model.isThreadUnread(thread.id) {
+                            Circle()
+                                .fill(.blue.opacity(0.9))
+                                .frame(width: 8, height: 8)
+                                .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
+                                .accessibilityLabel("Unread updates")
                         } else {
+                            if thread.isPinned {
+                                Image(systemName: "star.fill")
+                                    .font(sidebarMetaIconFont)
+                                    .foregroundStyle(pinnedStarColor)
+                                    .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
+                            }
+
                             Text(compactRelativeAge(from: thread.updatedAt))
                                 .font(sidebarMetaFont)
                                 .monospacedDigit()
