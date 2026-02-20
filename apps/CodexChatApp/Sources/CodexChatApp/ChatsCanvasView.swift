@@ -80,7 +80,9 @@ struct ChatsCanvasView: View {
                 }
                 .accessibilityLabel("Toggle sidebar")
                 .help("Toggle sidebar")
+            }
 
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     model.openReviewChanges()
                 } label: {
