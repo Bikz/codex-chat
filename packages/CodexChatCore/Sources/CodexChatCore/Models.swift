@@ -356,6 +356,7 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case workerTraceCacheByTurn = "runtime.worker_trace_cache_by_turn"
     case transcriptDetailLevel = "transcript_detail_level"
     case threadTitleIndexBackfillV1 = "thread_title_index_backfill_v1"
+    case userThemeCustomizationV1 = "theme.user_customization_v1"
 }
 
 public enum ExtensionInstallScope: String, CaseIterable, Hashable, Sendable, Codable {

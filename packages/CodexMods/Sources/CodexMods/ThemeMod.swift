@@ -43,11 +43,18 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
         public var accentHex: String?
         public var backgroundHex: String?
         public var panelHex: String?
+        public var sidebarHex: String?
 
-        public init(accentHex: String? = nil, backgroundHex: String? = nil, panelHex: String? = nil) {
+        public init(
+            accentHex: String? = nil,
+            backgroundHex: String? = nil,
+            panelHex: String? = nil,
+            sidebarHex: String? = nil
+        ) {
             self.accentHex = accentHex
             self.backgroundHex = backgroundHex
             self.panelHex = panelHex
+            self.sidebarHex = sidebarHex
         }
     }
 
@@ -85,6 +92,7 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
     public var accentHex: String?
     public var backgroundHex: String?
     public var panelHex: String?
+    public var sidebarHex: String?
 
     public var typography: Typography?
     public var spacing: Spacing?
@@ -98,6 +106,7 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
         accentHex: String? = nil,
         backgroundHex: String? = nil,
         panelHex: String? = nil,
+        sidebarHex: String? = nil,
         typography: Typography? = nil,
         spacing: Spacing? = nil,
         radius: Radius? = nil,
@@ -109,6 +118,7 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
         self.accentHex = accentHex
         self.backgroundHex = backgroundHex
         self.panelHex = panelHex
+        self.sidebarHex = sidebarHex
         self.typography = typography
         self.spacing = spacing
         self.radius = radius
@@ -123,6 +133,7 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
             accentHex: other.accentHex ?? accentHex,
             backgroundHex: other.backgroundHex ?? backgroundHex,
             panelHex: other.panelHex ?? panelHex,
+            sidebarHex: other.sidebarHex ?? sidebarHex,
             typography: merged(typography, other.typography) { base, overlay in
                 Typography(
                     titleSize: overlay.titleSize ?? base.titleSize,
@@ -149,7 +160,8 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
                 Palette(
                     accentHex: overlay.accentHex ?? base.accentHex,
                     backgroundHex: overlay.backgroundHex ?? base.backgroundHex,
-                    panelHex: overlay.panelHex ?? base.panelHex
+                    panelHex: overlay.panelHex ?? base.panelHex,
+                    sidebarHex: overlay.sidebarHex ?? base.sidebarHex
                 )
             },
             materials: merged(materials, other.materials) { base, overlay in
@@ -202,6 +214,10 @@ public struct ModThemeOverride: Hashable, Codable, Sendable {
 
     public var resolvedPalettePanelHex: String? {
         palette?.panelHex ?? panelHex
+    }
+
+    public var resolvedPaletteSidebarHex: String? {
+        palette?.sidebarHex ?? sidebarHex
     }
 
     private func merged<T>(

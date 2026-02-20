@@ -95,6 +95,9 @@ extension AppModel {
         await restoreWorkerTraceCacheIfNeeded()
         try ensureCurrentStartupGeneration(generation)
 
+        await restoreUserThemeCustomizationIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
         await restoreModsBarVisibility()
         try ensureCurrentStartupGeneration(generation)
 

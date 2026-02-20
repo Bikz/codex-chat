@@ -3,6 +3,7 @@ import SwiftUI
 
 enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     case account
+    case appearance
     case runtime
     case generalProject
     case safetyDefaults
@@ -20,6 +21,8 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .account:
             "Account"
+        case .appearance:
+            "Appearance"
         case .runtime:
             "Runtime"
         case .generalProject:
@@ -39,6 +42,8 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .account:
             "person.crop.circle"
+        case .appearance:
+            "paintpalette"
         case .runtime:
             "cpu"
         case .generalProject:

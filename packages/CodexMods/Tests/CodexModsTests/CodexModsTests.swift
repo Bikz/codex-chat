@@ -9,13 +9,13 @@ final class CodexModsTests: XCTestCase {
     func testThemeOverrideMergePrefersOverlayValues() {
         let base = ModThemeOverride(
             typography: .init(titleSize: 18, bodySize: 13, captionSize: 11),
-            palette: .init(accentHex: "#111111", backgroundHex: "#222222", panelHex: "#333333"),
+            palette: .init(accentHex: "#111111", backgroundHex: "#222222", panelHex: "#333333", sidebarHex: "#444444"),
             materials: .init(panelMaterial: "thin", cardMaterial: "regular")
         )
 
         let overlay = ModThemeOverride(
             typography: .init(titleSize: nil, bodySize: 15, captionSize: nil),
-            palette: .init(accentHex: "#FF5500", backgroundHex: nil, panelHex: "#000000"),
+            palette: .init(accentHex: "#FF5500", backgroundHex: nil, panelHex: "#000000", sidebarHex: "#777777"),
             materials: .init(panelMaterial: nil, cardMaterial: "thick")
         )
 
@@ -23,6 +23,7 @@ final class CodexModsTests: XCTestCase {
         XCTAssertEqual(merged.palette?.accentHex, "#FF5500")
         XCTAssertEqual(merged.palette?.backgroundHex, "#222222")
         XCTAssertEqual(merged.palette?.panelHex, "#000000")
+        XCTAssertEqual(merged.palette?.sidebarHex, "#777777")
         XCTAssertEqual(merged.typography?.titleSize, 18)
         XCTAssertEqual(merged.typography?.bodySize, 15)
         XCTAssertEqual(merged.materials?.panelMaterial, "thin")
@@ -75,10 +76,11 @@ final class CodexModsTests: XCTestCase {
             accentHex: "#AA0000",
             backgroundHex: "#BB0000",
             panelHex: "#CC0000",
+            sidebarHex: "#DD0000",
             typography: .init(titleSize: 20, bodySize: 15, captionSize: 12),
             spacing: .init(xSmall: 5, small: 9, medium: 14, large: 22),
             radius: .init(small: 7, medium: 12, large: 18),
-            palette: .init(accentHex: "#DD0000", backgroundHex: "#EE0000", panelHex: "#FF0000"),
+            palette: .init(accentHex: "#DD0000", backgroundHex: "#EE0000", panelHex: "#FF0000", sidebarHex: "#111111"),
             materials: .init(panelMaterial: "thin", cardMaterial: "regular"),
             bubbles: .init(style: "glass", userBackgroundHex: "#101010", assistantBackgroundHex: "#202020"),
             iconography: .init(style: "sf-symbols")
@@ -88,6 +90,7 @@ final class CodexModsTests: XCTestCase {
         XCTAssertNil(stripped.accentHex)
         XCTAssertNil(stripped.backgroundHex)
         XCTAssertNil(stripped.panelHex)
+        XCTAssertNil(stripped.sidebarHex)
         XCTAssertNil(stripped.palette)
         XCTAssertEqual(stripped.bubbles?.style, "glass")
         XCTAssertNil(stripped.bubbles?.userBackgroundHex)

@@ -14,7 +14,7 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
         } detail: {
             detailSurface
-                .background(Color(hex: tokens.palette.backgroundHex))
+                .background(detailBackground)
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .navigationTitle("")
@@ -115,5 +115,23 @@ struct ContentView: View {
 
     private func syncSplitViewVisibility(isOnboardingActive: Bool) {
         splitViewVisibility = isOnboardingActive ? .detailOnly : .all
+    }
+
+    @ViewBuilder
+    private var detailBackground: some View {
+        let chatHex = tokens.palette.backgroundHex
+        if model.userThemeCustomization.isEnabled {
+            ZStack {
+                Color(hex: chatHex)
+                LinearGradient(
+                    colors: [Color(hex: chatHex), Color(hex: model.userThemeCustomization.chatGradientHex)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .opacity(model.userThemeCustomization.gradientStrength)
+            }
+        } else {
+            Color(hex: chatHex)
+        }
     }
 }

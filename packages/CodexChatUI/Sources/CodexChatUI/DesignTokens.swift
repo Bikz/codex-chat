@@ -177,7 +177,9 @@ public struct DesignTokens: Hashable, Sendable {
         if let panelHex = override.resolvedPalettePanelHex {
             copy.palette.panelHex = panelHex
         }
-        // sidebarHex is not overridden by mods — intentional
+        if let sidebarHex = override.resolvedPaletteSidebarHex {
+            copy.palette.sidebarHex = sidebarHex
+        }
 
         if let panel = override.materials?.panelMaterial,
            let material = DesignMaterial(rawValue: panel)

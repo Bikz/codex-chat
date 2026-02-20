@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatCore
 import CodexChatUI
 import SwiftUI
@@ -39,7 +40,7 @@ struct SettingsView: View {
             sidebar
                 .padding(tokens.spacing.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color(hex: tokens.palette.sidebarHex))
+                .background(settingsSidebarBackground)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
             ScrollView {
@@ -50,7 +51,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(tokens.spacing.medium)
             }
-            .background(Color(hex: tokens.palette.backgroundHex))
+            .background(settingsDetailBackground)
         }
         .navigationSplitViewStyle(.balanced)
         .toolbarBackground(.hidden, for: .windowToolbar)
@@ -184,6 +185,8 @@ struct SettingsView: View {
         switch selectedSection {
         case .account:
             accountCard
+        case .appearance:
+            appearanceCard
         case .runtime:
             runtimeContent
         case .generalProject:
@@ -203,6 +206,42 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             runtimeDefaultsCard
             runtimeConfigCard
+        }
+    }
+
+    @ViewBuilder
+    private var settingsSidebarBackground: some View {
+        let sidebarHex = tokens.palette.sidebarHex
+        if model.userThemeCustomization.isEnabled {
+            ZStack {
+                Color(hex: sidebarHex)
+                LinearGradient(
+                    colors: [Color(hex: sidebarHex), Color(hex: model.userThemeCustomization.sidebarGradientHex)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .opacity(model.userThemeCustomization.gradientStrength)
+            }
+        } else {
+            Color(hex: sidebarHex)
+        }
+    }
+
+    @ViewBuilder
+    private var settingsDetailBackground: some View {
+        let chatHex = tokens.palette.backgroundHex
+        if model.userThemeCustomization.isEnabled {
+            ZStack {
+                Color(hex: chatHex)
+                LinearGradient(
+                    colors: [Color(hex: chatHex), Color(hex: model.userThemeCustomization.chatGradientHex)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .opacity(model.userThemeCustomization.gradientStrength)
+            }
+        } else {
+            Color(hex: chatHex)
         }
     }
 
@@ -307,6 +346,60 @@ struct SettingsView: View {
                 Text("API keys are stored in macOS Keychain. Per-project secret references are tracked in local metadata.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var appearanceCard: some View {
+        SettingsSectionCard(
+            title: "Theme Studio",
+            subtitle: "Customize accent, sidebar, and chat surfaces. Changes apply instantly."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Enable custom theme", isOn: userThemeEnabledBinding)
+
+                Text("Use color pickers to personalize the app, including Arc-style gradient overlays.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                themeColorPickerRow("Primary accent", keyPath: \.accentHex)
+                themeColorPickerRow("Sidebar", keyPath: \.sidebarHex)
+                themeColorPickerRow("Main chat panel", keyPath: \.backgroundHex)
+                themeColorPickerRow("Card / input panel", keyPath: \.panelHex)
+
+                Divider()
+
+                themeColorPickerRow("Sidebar gradient", keyPath: \.sidebarGradientHex)
+                themeColorPickerRow("Chat gradient", keyPath: \.chatGradientHex)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Gradient intensity")
+                            .font(.subheadline)
+                        Spacer(minLength: 0)
+                        Text("\(Int((model.userThemeCustomization.gradientStrength * 100).rounded()))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Slider(value: userThemeGradientStrengthBinding, in: 0 ... 1)
+                        .accessibilityLabel("Gradient intensity")
+                }
+
+                HStack(spacing: 8) {
+                    Button("Apply Navy Pastel Preset") {
+                        model.setUserThemeCustomization(.navyPastel)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Reset to Default") {
+                        model.resetUserThemeCustomization()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.userThemeCustomization == .default)
+                }
+
+                ThemeStudioPreview(customization: model.userThemeCustomization, tokens: tokens)
             }
         }
     }
@@ -788,6 +881,65 @@ struct SettingsView: View {
         }
     }
 
+    private var userThemeEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { model.userThemeCustomization.isEnabled },
+            set: { isEnabled in
+                updateUserThemeCustomization { customization in
+                    customization.isEnabled = isEnabled
+                }
+            }
+        )
+    }
+
+    private var userThemeGradientStrengthBinding: Binding<Double> {
+        Binding(
+            get: { model.userThemeCustomization.gradientStrength },
+            set: { value in
+                updateUserThemeCustomization { customization in
+                    customization.gradientStrength = AppModel.UserThemeCustomization.clampedGradientStrength(value)
+                    customization.isEnabled = true
+                }
+            }
+        )
+    }
+
+    private func themeColorPickerRow(
+        _ label: String,
+        keyPath: WritableKeyPath<AppModel.UserThemeCustomization, String>
+    ) -> some View {
+        SettingsFieldRow(label: label) {
+            HStack(spacing: 8) {
+                ColorPicker(
+                    label,
+                    selection: Binding(
+                        get: { Color(hex: model.userThemeCustomization[keyPath: keyPath]) },
+                        set: { color in
+                            guard let hex = color.codexHexString() else { return }
+                            updateUserThemeCustomization { customization in
+                                customization[keyPath: keyPath] = hex
+                                customization.isEnabled = true
+                            }
+                        }
+                    ),
+                    supportsOpacity: false
+                )
+                .labelsHidden()
+
+                Text(model.userThemeCustomization[keyPath: keyPath])
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 84, alignment: .trailing)
+            }
+        }
+    }
+
+    private func updateUserThemeCustomization(_ mutate: (inout AppModel.UserThemeCustomization) -> Void) {
+        var next = model.userThemeCustomization
+        mutate(&next)
+        model.setUserThemeCustomization(next)
+    }
+
     private enum AccountStatusTone {
         case info
         case success
@@ -881,5 +1033,99 @@ struct SettingsView: View {
         generalMemoryEmbeddingsEnabled = project.memoryEmbeddingsEnabled
         lastSyncedGeneralProject = project
         isSyncingGeneralProject = false
+    }
+}
+
+private struct ThemeStudioPreview: View {
+    let customization: AppModel.UserThemeCustomization
+    let tokens: DesignTokens
+
+    private var accentHex: String {
+        customization.isEnabled ? customization.accentHex : tokens.palette.accentHex
+    }
+
+    private var sidebarHex: String {
+        customization.isEnabled ? customization.sidebarHex : tokens.palette.sidebarHex
+    }
+
+    private var chatHex: String {
+        customization.isEnabled ? customization.backgroundHex : tokens.palette.backgroundHex
+    }
+
+    private var panelHex: String {
+        customization.isEnabled ? customization.panelHex : tokens.palette.panelHex
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ZStack {
+                Color(hex: sidebarHex)
+                if customization.isEnabled {
+                    LinearGradient(
+                        colors: [Color(hex: sidebarHex), Color(hex: customization.sidebarGradientHex)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .opacity(customization.gradientStrength)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.white.opacity(0.18))
+                        .frame(height: 8)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 8)
+                    Spacer(minLength: 0)
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color(hex: accentHex).opacity(0.9))
+                        .frame(height: 10)
+                }
+                .padding(8)
+            }
+            .frame(width: 76)
+
+            ZStack {
+                Color(hex: chatHex)
+                if customization.isEnabled {
+                    LinearGradient(
+                        colors: [Color(hex: chatHex), Color(hex: customization.chatGradientHex)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .opacity(customization.gradientStrength)
+                }
+
+                VStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color(hex: panelHex).opacity(0.95))
+                        .frame(height: 20)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color(hex: accentHex).opacity(0.22))
+                        .frame(height: 16)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color(hex: panelHex).opacity(0.8))
+                        .frame(height: 14)
+                }
+                .padding(10)
+            }
+        }
+        .frame(height: 92)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12))
+        )
+        .accessibilityHidden(true)
+    }
+}
+
+private extension Color {
+    func codexHexString() -> String? {
+        guard let converted = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        let red = Int(round(converted.redComponent * 255))
+        let green = Int(round(converted.greenComponent * 255))
+        let blue = Int(round(converted.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", red, green, blue)
     }
 }

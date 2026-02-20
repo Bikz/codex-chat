@@ -63,6 +63,100 @@ final class AppModel: ObservableObject {
         var selectedProjectModPath: String?
     }
 
+    struct UserThemeCustomization: Hashable, Codable, Sendable {
+        var isEnabled: Bool
+        var accentHex: String
+        var sidebarHex: String
+        var backgroundHex: String
+        var panelHex: String
+        var sidebarGradientHex: String
+        var chatGradientHex: String
+        var gradientStrength: Double
+
+        init(
+            isEnabled: Bool = false,
+            accentHex: String = "#10A37F",
+            sidebarHex: String = "#F5F5F5",
+            backgroundHex: String = "#F9F9F9",
+            panelHex: String = "#FFFFFF",
+            sidebarGradientHex: String = "#8AA2B2",
+            chatGradientHex: String = "#B9C6D0",
+            gradientStrength: Double = 0.35
+        ) {
+            self.isEnabled = isEnabled
+            self.accentHex = accentHex
+            self.sidebarHex = sidebarHex
+            self.backgroundHex = backgroundHex
+            self.panelHex = panelHex
+            self.sidebarGradientHex = sidebarGradientHex
+            self.chatGradientHex = chatGradientHex
+            self.gradientStrength = Self.clampedGradientStrength(gradientStrength)
+        }
+
+        static func clampedGradientStrength(_ value: Double) -> Double {
+            min(max(value, 0), 1)
+        }
+
+        var lightOverride: ModThemeOverride {
+            guard isEnabled else { return .init() }
+            return ModThemeOverride(
+                palette: .init(
+                    accentHex: accentHex,
+                    backgroundHex: backgroundHex,
+                    panelHex: panelHex,
+                    sidebarHex: sidebarHex
+                )
+            )
+        }
+
+        var darkOverride: ModThemeOverride {
+            lightOverride
+        }
+
+        static let `default` = UserThemeCustomization()
+
+        static let navyPastel = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#7FA7CC",
+            sidebarHex: "#111B2B",
+            backgroundHex: "#0F1725",
+            panelHex: "#152238",
+            sidebarGradientHex: "#4E6883",
+            chatGradientHex: "#6A7F9B",
+            gradientStrength: 0.55
+        )
+    }
+
+    struct PromptBookEntry: Identifiable, Hashable, Sendable {
+        var id: String
+        var title: String
+        var text: String
+    }
+
+    struct ModsBarQuickSwitchOption: Identifiable, Hashable, Sendable {
+        enum Scope: String, Hashable, Sendable {
+            case global
+            case project
+
+            var label: String {
+                switch self {
+                case .global:
+                    "Global"
+                case .project:
+                    "Project"
+                }
+            }
+        }
+
+        var id: String {
+            "\(scope.rawValue):\(mod.directoryPath)"
+        }
+
+        let scope: Scope
+        let mod: DiscoveredUIMod
+        let isSelected: Bool
+    }
+
     struct PendingModReview: Identifiable, Hashable {
         let id: UUID
         let threadID: UUID
@@ -372,6 +466,7 @@ final class AppModel: ObservableObject {
     @Published var workerTraceByThreadID: [UUID: [WorkerTraceEntry]] = [:]
     @Published var activeWorkerTraceEntry: WorkerTraceEntry?
     @Published var areAdvancedExecutableModsUnlocked = false
+    @Published var userThemeCustomization: UserThemeCustomization = .default
     @Published var isPlanRunnerSheetVisible = false
     @Published var planRunnerSourcePath = ""
     @Published var planRunnerDraftText = ""
@@ -453,6 +548,7 @@ final class AppModel: ObservableObject {
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
     var voiceAutoStopTask: Task<Void, Never>?
     var voiceElapsedTickerTask: Task<Void, Never>?
+    var userThemePersistenceTask: Task<Void, Never>?
     var voiceCaptureSessionID: UInt64 = 0
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
     let voiceElapsedClock = ContinuousClock()
@@ -562,6 +658,7 @@ final class AppModel: ObservableObject {
         secondarySurfaceRefreshTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
+        userThemePersistenceTask?.cancel()
         conversationUpdateScheduler.invalidate()
         globalModsWatcher?.stop()
         globalModsWatcher = nil
@@ -610,6 +707,7 @@ final class AppModel: ObservableObject {
         secondarySurfaceRefreshTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
+        userThemePersistenceTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
 
@@ -814,6 +912,14 @@ final class AppModel: ObservableObject {
     var selectedExtensionModsBarState: ExtensionModsBarState? {
         guard let selectedThreadID else { return extensionGlobalModsBarState }
         return extensionModsBarByThreadID[selectedThreadID] ?? extensionGlobalModsBarState
+    }
+
+    var resolvedLightThemeOverride: ModThemeOverride {
+        effectiveThemeOverride.merged(with: userThemeCustomization.lightOverride)
+    }
+
+    var resolvedDarkThemeOverride: ModThemeOverride {
+        effectiveDarkThemeOverride.merged(with: userThemeCustomization.darkOverride)
     }
 
     var isModsBarVisibleForSelectedThread: Bool {

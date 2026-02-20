@@ -13,6 +13,22 @@ extension AppModel {
         static let legacyEmptyStateMarkdown = "_No notes yet. Use Add or Edit to save thread-specific notes._"
     }
 
+    private enum PromptBookModsBarConstants {
+        static let modID = "codexchat.prompt-book"
+        static let actionHookID = "prompt-book-action"
+        static let maxPrompts = 12
+    }
+
+    private struct PromptBookStatePayload: Decodable {
+        struct Prompt: Decodable {
+            let id: String?
+            let title: String?
+            let text: String?
+        }
+
+        let prompts: [Prompt]
+    }
+
     func toggleModsBar() {
         guard let selectedThreadID else { return }
         let next = !(extensionModsBarVisibilityByThreadID[selectedThreadID] ?? false)
@@ -144,6 +160,12 @@ extension AppModel {
             && (activeModsBarSlot?.enabled ?? false)
     }
 
+    var isPromptBookModsBarActiveForSelectedThread: Bool {
+        selectedThreadID != nil
+            && activeModsBarModID == PromptBookModsBarConstants.modID
+            && (activeModsBarSlot?.enabled ?? false)
+    }
+
     func personalNotesEditorText(from markdown: String?) -> String {
         guard let markdown else { return "" }
         let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -174,6 +196,93 @@ extension AppModel {
             payload["operation"] = "upsert"
             payload["input"] = text
         }
+
+        emitExtensionEvent(
+            .modsBarAction,
+            projectID: context.projectID,
+            projectPath: context.projectPath,
+            threadID: selectedThreadID,
+            payload: payload
+        )
+    }
+
+    func promptBookEntriesFromState() -> [PromptBookEntry] {
+        guard isPromptBookModsBarActiveForSelectedThread,
+              let stateURL = promptBookStateFileURL()
+        else {
+            return []
+        }
+
+        guard FileManager.default.fileExists(atPath: stateURL.path) else {
+            return promptBookDefaultEntries()
+        }
+
+        do {
+            let data = try Data(contentsOf: stateURL)
+            let decoded = try JSONDecoder().decode(PromptBookStatePayload.self, from: data)
+            let normalized = normalizedPromptBookEntries(decoded.prompts.map { prompt in
+                PromptBookEntry(
+                    id: prompt.id ?? UUID().uuidString.lowercased(),
+                    title: prompt.title ?? "",
+                    text: prompt.text ?? ""
+                )
+            })
+            return normalized.isEmpty ? promptBookDefaultEntries() : normalized
+        } catch {
+            appendLog(.warning, "Failed reading Prompt Book state: \(error.localizedDescription)")
+            return promptBookDefaultEntries()
+        }
+    }
+
+    func upsertPromptBookEntryInline(index: Int?, title: String, text: String) {
+        guard isPromptBookModsBarActiveForSelectedThread,
+              let selectedThreadID,
+              let context = extensionProjectContext(forThreadID: selectedThreadID)
+        else {
+            return
+        }
+
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            extensionStatusMessage = "Prompt text cannot be empty."
+            return
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let encodedInput = trimmedTitle.isEmpty ? trimmedText : "\(trimmedTitle) :: \(trimmedText)"
+        var payload: [String: String] = [
+            "targetHookID": PromptBookModsBarConstants.actionHookID,
+            "targetModID": PromptBookModsBarConstants.modID,
+            "operation": index == nil ? "add" : "edit",
+            "input": encodedInput,
+        ]
+        if let index {
+            payload["index"] = String(index)
+        }
+
+        emitExtensionEvent(
+            .modsBarAction,
+            projectID: context.projectID,
+            projectPath: context.projectPath,
+            threadID: selectedThreadID,
+            payload: payload
+        )
+    }
+
+    func deletePromptBookEntryInline(index: Int) {
+        guard isPromptBookModsBarActiveForSelectedThread,
+              let selectedThreadID,
+              let context = extensionProjectContext(forThreadID: selectedThreadID)
+        else {
+            return
+        }
+
+        let payload: [String: String] = [
+            "targetHookID": PromptBookModsBarConstants.actionHookID,
+            "targetModID": PromptBookModsBarConstants.modID,
+            "operation": "delete",
+            "index": String(index),
+        ]
 
         emitExtensionEvent(
             .modsBarAction,
@@ -901,6 +1010,57 @@ extension AppModel {
         }
         let delta = Int(second.timeIntervalSince(first))
         return min(max(60, delta), 86400)
+    }
+
+    private func promptBookStateFileURL() -> URL? {
+        guard let modDirectoryPath = promptBookModDirectoryPath() else { return nil }
+        return URL(fileURLWithPath: modDirectoryPath, isDirectory: true)
+            .appendingPathComponent(".codexchat/state/prompt-book.json", isDirectory: false)
+    }
+
+    private func promptBookModDirectoryPath() -> String? {
+        if activeModsBarModID == PromptBookModsBarConstants.modID,
+           let activeModsBarModDirectoryPath
+        {
+            return activeModsBarModDirectoryPath
+        }
+        return activeExtensionHooks.first(where: { $0.modID == PromptBookModsBarConstants.modID })?.modDirectoryPath
+    }
+
+    private func promptBookDefaultEntries() -> [PromptBookEntry] {
+        normalizedPromptBookEntries([
+            PromptBookEntry(
+                id: "ship-checklist",
+                title: "Ship Checklist",
+                text: "Run our ship checklist for this branch: tests, docs, release notes, and rollout risks."
+            ),
+            PromptBookEntry(
+                id: "risk-scan",
+                title: "Risk Scan",
+                text: "Review this diff for regressions, edge cases, and missing tests. Prioritize high-severity risks first."
+            ),
+        ])
+    }
+
+    private func normalizedPromptBookEntries(_ prompts: [PromptBookEntry]) -> [PromptBookEntry] {
+        var normalized: [PromptBookEntry] = []
+        for prompt in prompts {
+            let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let titleCandidate = prompt.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedTitle = titleCandidate.isEmpty ? String(text.prefix(28)) : titleCandidate
+            normalized.append(
+                PromptBookEntry(
+                    id: prompt.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString.lowercased() : prompt.id,
+                    title: resolvedTitle,
+                    text: text
+                )
+            )
+            if normalized.count >= PromptBookModsBarConstants.maxPrompts {
+                break
+            }
+        }
+        return normalized
     }
 
     private func ensureBackgroundAutomationPermissionIfNeeded() async -> Bool {

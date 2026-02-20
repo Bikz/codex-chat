@@ -50,8 +50,22 @@ struct SidebarView: View {
         .system(size: SidebarLayoutSpec.controlIconFontSize, weight: .semibold)
     }
 
-    private var sidebarBackgroundColor: Color {
-        Color(hex: tokens.palette.sidebarHex)
+    @ViewBuilder
+    private var sidebarBackground: some View {
+        let sidebarHex = tokens.palette.sidebarHex
+        if model.userThemeCustomization.isEnabled {
+            ZStack {
+                Color(hex: sidebarHex)
+                LinearGradient(
+                    colors: [Color(hex: sidebarHex), Color(hex: model.userThemeCustomization.sidebarGradientHex)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .opacity(model.userThemeCustomization.gradientStrength)
+            }
+        } else {
+            Color(hex: sidebarHex)
+        }
     }
 
     private var sidebarBodyIconColor: Color {
@@ -165,7 +179,7 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .environment(\.defaultMinListHeaderHeight, 18)
         .scrollContentBackground(.hidden)
-        .background(sidebarBackgroundColor)
+        .background(sidebarBackground)
         .listRowInsets(EdgeInsets(
             top: 0,
             leading: SidebarLayoutSpec.listHorizontalInset,
@@ -699,7 +713,7 @@ struct SidebarView: View {
             .accessibilityLabel("Account and settings")
             .accessibilityHint("Opens global CodexChat settings and General project controls")
         }
-        .background(sidebarBackgroundColor)
+        .background(sidebarBackground)
     }
 
     private func openSettingsWindow() {

@@ -241,11 +241,96 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertFalse(written.contains("\"input\""))
     }
 
+    func testPromptBookEntriesFromStateReturnsDefaultsWhenMissingStateFile() throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let modRoot = try makeTempDirectory(prefix: "modsbar-promptbook-defaults")
+
+        model.selectedThreadID = UUID()
+        model.activeModsBarModID = "codexchat.prompt-book"
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book")
+        model.activeModsBarModDirectoryPath = modRoot.path
+
+        let entries = model.promptBookEntriesFromState()
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertEqual(entries[0].title, "Ship Checklist")
+        XCTAssertEqual(entries[1].title, "Risk Scan")
+    }
+
+    func testPromptBookEntriesFromStateReadsSavedPromptBodies() throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let modRoot = try makeTempDirectory(prefix: "modsbar-promptbook-state")
+        let stateDirectory = modRoot.appendingPathComponent(".codexchat/state", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
+        let stateFile = stateDirectory.appendingPathComponent("prompt-book.json", isDirectory: false)
+
+        let payload = """
+        {
+          "prompts": [
+            {
+              "id": "deep-review",
+              "title": "Deep Review",
+              "text": "Perform a deep architectural review, include reliability, edge-case handling, and migration strategy notes."
+            }
+          ]
+        }
+        """
+        try payload.write(to: stateFile, atomically: true, encoding: .utf8)
+
+        model.selectedThreadID = UUID()
+        model.activeModsBarModID = "codexchat.prompt-book"
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book")
+        model.activeModsBarModDirectoryPath = modRoot.path
+
+        let entries = model.promptBookEntriesFromState()
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].title, "Deep Review")
+        XCTAssertEqual(
+            entries[0].text,
+            "Perform a deep architectural review, include reliability, edge-case handling, and migration strategy notes."
+        )
+    }
+
+    func testModsBarQuickSwitchOptionsIncludeProjectAndGlobalChoices() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectMod = makeModsBarMod(id: "acme.project", name: "Project Prompt Book", scope: .project, directorySuffix: "project")
+        let globalMod = makeModsBarMod(id: "acme.global", name: "Global Notes", scope: .global, directorySuffix: "global")
+
+        model.modsState = .loaded(
+            AppModel.ModsSurfaceModel(
+                globalMods: [globalMod],
+                projectMods: [projectMod],
+                selectedGlobalModPath: globalMod.directoryPath,
+                selectedProjectModPath: nil
+            )
+        )
+
+        let options = model.modsBarQuickSwitchOptions
+        XCTAssertEqual(options.count, 2)
+        XCTAssertEqual(options[0].scope, .project)
+        XCTAssertEqual(options[1].scope, .global)
+        XCTAssertTrue(options[1].isSelected)
+        XCTAssertTrue(model.hasModsBarQuickSwitchChoices)
+    }
+
     private func makeTempDirectory(prefix: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func makeModsBarMod(id: String, name: String, scope: ModScope, directorySuffix: String) -> DiscoveredUIMod {
+        DiscoveredUIMod(
+            scope: scope,
+            directoryPath: "/tmp/\(directorySuffix)-\(UUID().uuidString)",
+            definitionPath: "/tmp/\(directorySuffix)-ui.mod.json",
+            definition: UIModDefinition(
+                manifest: .init(id: id, name: name, version: "1.0.0"),
+                theme: .init(),
+                uiSlots: .init(modsBar: .init(enabled: true, title: name))
+            ),
+            computedChecksum: nil
+        )
     }
 
     private func makeRepositories(prefix: String) throws -> MetadataRepositories {

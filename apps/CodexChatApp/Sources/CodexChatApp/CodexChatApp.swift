@@ -68,7 +68,7 @@ private struct MainAppRoot: View {
 
     private var resolvedTokens: DesignTokens {
         let baseline: DesignTokens = colorScheme == .dark ? .systemDark : .systemLight
-        let override = colorScheme == .dark ? model.effectiveDarkThemeOverride : model.effectiveThemeOverride
+        let override = colorScheme == .dark ? model.resolvedDarkThemeOverride : model.resolvedLightThemeOverride
         return baseline.applying(override: override)
     }
 }
@@ -132,7 +132,7 @@ private struct SettingsRoot: View {
 
     private var resolvedTokens: DesignTokens {
         let baseline: DesignTokens = colorScheme == .dark ? .systemDark : .systemLight
-        let override = colorScheme == .dark ? model.effectiveDarkThemeOverride : model.effectiveThemeOverride
+        let override = colorScheme == .dark ? model.resolvedDarkThemeOverride : model.resolvedLightThemeOverride
         return baseline.applying(override: override)
     }
 }

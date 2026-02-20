@@ -8,7 +8,8 @@ final class CodexChatUITests: XCTestCase {
         let override = ModThemeOverride(
             accentHex: "#FF5500",
             backgroundHex: "#000000",
-            panelHex: "#101010"
+            panelHex: "#101010",
+            sidebarHex: "#080808"
         )
 
         let injected = baseline.applying(override: override)
@@ -16,6 +17,7 @@ final class CodexChatUITests: XCTestCase {
         XCTAssertEqual(injected.palette.accentHex, "#FF5500")
         XCTAssertEqual(injected.palette.backgroundHex, "#000000")
         XCTAssertEqual(injected.palette.panelHex, "#101010")
+        XCTAssertEqual(injected.palette.sidebarHex, "#080808")
     }
 
     @MainActor

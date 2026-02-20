@@ -7,6 +7,7 @@ final class SettingsSectionTests: XCTestCase {
             SettingsSection.allCases,
             [
                 .account,
+                .appearance,
                 .runtime,
                 .generalProject,
                 .safetyDefaults,
@@ -20,11 +21,11 @@ final class SettingsSectionTests: XCTestCase {
     func testSettingsSectionIdentifiersAndTitlesAreStable() {
         XCTAssertEqual(
             SettingsSection.allCases.map(\.id),
-            ["account", "runtime", "generalProject", "safetyDefaults", "experimental", "diagnostics", "storage"]
+            ["account", "appearance", "runtime", "generalProject", "safetyDefaults", "experimental", "diagnostics", "storage"]
         )
         XCTAssertEqual(
             SettingsSection.allCases.map(\.title),
-            ["Account", "Runtime", "General Project", "Safety Defaults", "Experimental", "Diagnostics", "Storage"]
+            ["Account", "Appearance", "Runtime", "General Project", "Safety Defaults", "Experimental", "Diagnostics", "Storage"]
         )
     }
 
