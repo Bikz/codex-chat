@@ -388,7 +388,9 @@ extension AppModel {
         )
 
         guard let localThreadID else {
-            unscopedApprovalRequest = request
+            if !unscopedApprovalRequests.contains(where: { $0.id == request.id }) {
+                unscopedApprovalRequests.append(request)
+            }
             syncApprovalPresentationState()
             appendLog(.warning, "Approval request arrived without local thread mapping")
             return
@@ -436,14 +438,20 @@ extension AppModel {
             return mapped
         }
 
+        if let runtimeTurnID,
+           let mappedContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeTurnID == runtimeTurnID })
+        {
+            return mappedContext.localThreadID
+        }
+
         if let runtimeThreadID {
             if let mapped = localThreadIDByRuntimeThreadID[runtimeThreadID] {
                 return mapped
             }
-        }
 
-        if activeTurnContextsByThreadID.count == 1 {
-            return activeTurnContextsByThreadID.first?.key
+            if let mappedContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeThreadID == runtimeThreadID }) {
+                return mappedContext.localThreadID
+            }
         }
 
         return nil

@@ -638,6 +638,34 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testUnscopedApprovalsQueueWithoutOverwritingEarlierRequest() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let first = makeUnscopedApprovalRequest(id: 301)
+        let second = makeUnscopedApprovalRequest(id: 302)
+
+        model.handleRuntimeEvent(.approvalRequested(first))
+        model.handleRuntimeEvent(.approvalRequested(second))
+
+        XCTAssertEqual(model.unscopedApprovalRequests.map(\.id), [301, 302])
+        XCTAssertEqual(model.activeApprovalRequest?.id, 301)
+    }
+
+    @MainActor
+    func testUnscopedApprovalQueuePromotesNextRequestAfterResolution() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let first = makeUnscopedApprovalRequest(id: 401)
+        let second = makeUnscopedApprovalRequest(id: 402)
+
+        model.handleRuntimeEvent(.approvalRequested(first))
+        model.handleRuntimeEvent(.approvalRequested(second))
+        model.unscopedApprovalRequests.removeAll(where: { $0.id == first.id })
+        model.syncApprovalPresentationState()
+
+        XCTAssertEqual(model.unscopedApprovalRequests.map(\.id), [402])
+        XCTAssertEqual(model.activeApprovalRequest?.id, 402)
+    }
+
+    @MainActor
     func testRuntimeTerminationResetsPendingApprovalWithExplicitMessage() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let threadID = UUID()
@@ -2432,6 +2460,23 @@ final class CodexChatAppTests: XCTestCase {
             threadID: "thr_1",
             turnID: "turn_1",
             itemID: "item_\(id)",
+            reason: "test",
+            risk: nil,
+            cwd: "/tmp",
+            command: ["echo", "hello"],
+            changes: [],
+            detail: "{}"
+        )
+    }
+
+    private func makeUnscopedApprovalRequest(id: Int) -> RuntimeApprovalRequest {
+        RuntimeApprovalRequest(
+            id: id,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: nil,
+            turnID: nil,
+            itemID: nil,
             reason: "test",
             risk: nil,
             cwd: "/tmp",

@@ -766,15 +766,15 @@ extension AppModel {
     }
 
     private func reconcileStaleApprovalState(reason: String) {
-        let pendingRequest = unscopedApprovalRequest ?? approvalStateMachine.firstPendingRequest
+        let pendingRequest = unscopedApprovalRequests.first ?? approvalStateMachine.firstPendingRequest
         let pendingThreadID = approvalStateMachine.pendingThreadIDs.first
         let hadPendingApprovals = approvalStateMachine.hasPendingApprovals
-            || unscopedApprovalRequest != nil
+            || !unscopedApprovalRequests.isEmpty
             || isApprovalDecisionInProgress
 
         approvalStateMachine.clear()
         approvalDecisionInFlightRequestIDs.removeAll()
-        unscopedApprovalRequest = nil
+        unscopedApprovalRequests.removeAll(keepingCapacity: false)
         isApprovalDecisionInProgress = false
         syncApprovalPresentationState()
 
@@ -818,10 +818,6 @@ extension AppModel {
             if let mappedContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeThreadID == runtimeThreadID }) {
                 return mappedContext.localThreadID
             }
-        }
-
-        if activeTurnContextsByThreadID.count == 1 {
-            return activeTurnContextsByThreadID.first?.key
         }
 
         return nil

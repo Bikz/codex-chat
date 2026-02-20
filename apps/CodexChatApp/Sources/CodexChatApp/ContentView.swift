@@ -1,5 +1,6 @@
 import AppKit
 import CodexChatUI
+import CodexKit
 import SwiftUI
 
 struct ContentView: View {
@@ -65,9 +66,7 @@ struct ContentView: View {
             ModChangesReviewSheet(model: model, review: review)
                 .interactiveDismissDisabled(true)
         }
-        .sheet(item: Binding(get: {
-            model.unscopedApprovalRequest
-        }, set: { _ in })) { request in
+        .sheet(item: unscopedApprovalSheetBinding) { request in
             ApprovalRequestSheet(model: model, request: request)
                 .interactiveDismissDisabled(model.isApprovalDecisionInProgress)
         }
@@ -131,6 +130,13 @@ struct ContentView: View {
 
     private func syncSplitViewVisibility(isOnboardingActive: Bool) {
         splitViewVisibility = isOnboardingActive ? .detailOnly : .all
+    }
+
+    private var unscopedApprovalSheetBinding: Binding<RuntimeApprovalRequest?> {
+        Binding(
+            get: { model.unscopedApprovalRequests.first },
+            set: { _ in }
+        )
     }
 
     private func toggleSidebar() {

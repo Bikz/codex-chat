@@ -16,7 +16,7 @@ extension AppModel {
 
     private func submitApprovalDecision(_ decision: RuntimeApprovalDecision) {
         guard let request = pendingApprovalForSelectedThread
-            ?? unscopedApprovalRequest
+            ?? unscopedApprovalRequests.first
             ?? approvalStateMachine.firstPendingRequest,
             let runtimePool
         else {
@@ -36,9 +36,7 @@ extension AppModel {
             do {
                 try await runtimePool.respondToApproval(requestID: request.id, decision: decision)
                 _ = approvalStateMachine.resolve(id: request.id)
-                if unscopedApprovalRequest?.id == request.id {
-                    unscopedApprovalRequest = nil
-                }
+                unscopedApprovalRequests.removeAll(where: { $0.id == request.id })
                 syncApprovalPresentationState()
                 approvalStatusMessage = "Sent decision: \(approvalDecisionLabel(decision))."
                 appendLog(.info, "Approval decision sent for request \(request.id): \(approvalDecisionLabel(decision))")

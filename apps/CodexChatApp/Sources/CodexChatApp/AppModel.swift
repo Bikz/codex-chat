@@ -572,7 +572,7 @@ final class AppModel: ObservableObject {
     @Published var isAPIKeyPromptVisible = false
     @Published var pendingAPIKey = ""
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
-    @Published var unscopedApprovalRequest: RuntimeApprovalRequest?
+    @Published var unscopedApprovalRequests: [RuntimeApprovalRequest] = []
     @Published var pendingApprovalThreadIDs: Set<UUID> = []
     @Published var pendingModReview: PendingModReview?
     @Published var isModReviewDecisionInProgress = false
@@ -1586,7 +1586,7 @@ final class AppModel: ObservableObject {
         if let selectedThreadRequest = pendingApprovalForSelectedThread {
             activeApprovalRequest = selectedThreadRequest
         } else {
-            activeApprovalRequest = unscopedApprovalRequest
+            activeApprovalRequest = unscopedApprovalRequests.first
         }
     }
 }
