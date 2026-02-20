@@ -1,13 +1,33 @@
 import Foundation
 
 extension AppModel {
-    var composerStarterPrompts: [String] {
+    struct ComposerStarterPrompt: Hashable {
+        let label: String
+        let prompt: String
+    }
+
+    var composerStarterPrompts: [ComposerStarterPrompt] {
         [
-            "What's on my calendar today? $macos-calendar-assistant",
-            "Organize my desktop files safely. $macos-desktop-cleanup",
-            "Help me send a message. $macos-send-message",
-            "Review this repository for risky code paths and suggest fixes.",
-            "Help me plan the next steps for this project.",
+            ComposerStarterPrompt(
+                label: "Calendar today",
+                prompt: "Show what's on my calendar today and call out any conflicts. $macos-calendar-assistant"
+            ),
+            ComposerStarterPrompt(
+                label: "Desktop cleanup",
+                prompt: "Organize my desktop files safely with a preview and undo manifest. $macos-desktop-cleanup"
+            ),
+            ComposerStarterPrompt(
+                label: "Send a message",
+                prompt: "Help me send a message safely: gather recipient and message text, then preview before sending. $macos-send-message"
+            ),
+            ComposerStarterPrompt(
+                label: "Risk review",
+                prompt: "Review this repository for risky code paths and suggest concrete fixes with file references."
+            ),
+            ComposerStarterPrompt(
+                label: "Plan next steps",
+                prompt: "Help me plan the next steps for this project with a short prioritized checklist."
+            ),
         ]
     }
 

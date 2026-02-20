@@ -408,9 +408,9 @@ struct ChatsCanvasView: View {
         .help(attachment.path)
     }
 
-    private func composerStarterPromptChip(_ prompt: String) -> some View {
-        Button(prompt) {
-            model.insertStarterPrompt(prompt)
+    private func composerStarterPromptChip(_ starterPrompt: AppModel.ComposerStarterPrompt) -> some View {
+        Button(starterPrompt.label) {
+            model.insertStarterPrompt(starterPrompt.prompt)
             isComposerFocused = true
         }
         .buttonStyle(.plain)

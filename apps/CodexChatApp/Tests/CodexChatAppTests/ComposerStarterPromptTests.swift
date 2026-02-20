@@ -10,10 +10,14 @@ final class ComposerStarterPromptTests: XCTestCase {
         let prompts = model.composerStarterPrompts
 
         XCTAssertEqual(prompts.count, 5)
-        XCTAssertFalse(prompts.contains(where: { $0.localizedCaseInsensitiveContains("alex") }))
-        XCTAssertTrue(prompts.contains(where: { $0.contains("$macos-calendar-assistant") }))
-        XCTAssertTrue(prompts.contains(where: { $0.contains("$macos-desktop-cleanup") }))
-        XCTAssertTrue(prompts.contains(where: { $0.contains("$macos-send-message") }))
+        XCTAssertTrue(prompts.allSatisfy { !$0.label.contains("$") })
+        XCTAssertFalse(prompts.contains(where: {
+            $0.label.localizedCaseInsensitiveContains("alex")
+                || $0.prompt.localizedCaseInsensitiveContains("alex")
+        }))
+        XCTAssertTrue(prompts.contains(where: { $0.prompt.contains("$macos-calendar-assistant") }))
+        XCTAssertTrue(prompts.contains(where: { $0.prompt.contains("$macos-desktop-cleanup") }))
+        XCTAssertTrue(prompts.contains(where: { $0.prompt.contains("$macos-send-message") }))
     }
 
     func testStarterPromptsVisibleOnlyWhenComposerIsEmpty() {
@@ -172,7 +176,7 @@ final class ComposerStarterPromptTests: XCTestCase {
 
     func testInsertStarterPromptSendsImmediately() {
         let model = makeReadyModel()
-        let prompt = "What's on my calendar today?"
+        let prompt = model.composerStarterPrompts.first?.prompt ?? "Fallback prompt"
         model.insertStarterPrompt(prompt)
 
         XCTAssertEqual(model.composerText, "")
