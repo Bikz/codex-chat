@@ -17,10 +17,20 @@ actor RuntimePool {
         let rawRequestID: Int
     }
 
+    private struct WorkerHealth: Sendable {
+        var state: RuntimePoolWorkerHealthState = .idle
+        var failureCount: Int = 0
+        var restartCount: Int = 0
+        var lastStartAt: Date?
+        var lastFailureAt: Date?
+    }
+
     private let configuredWorkerCount: Int
     private let shouldScopeRuntimeIDs: Bool
     private var workersByID: [RuntimePoolWorkerID: CodexRuntimeWorker]
     private var eventPumpTasksByWorkerID: [RuntimePoolWorkerID: Task<Void, Never>] = [:]
+    private var restartTasksByWorkerID: [RuntimePoolWorkerID: Task<Void, Never>] = [:]
+    private var healthByWorkerID: [RuntimePoolWorkerID: WorkerHealth] = [:]
     private var routeBySyntheticApprovalID: [Int: ApprovalRoute] = [:]
     private var nextSyntheticApprovalID: Int = 1
     private var pinnedWorkerIDByLocalThreadID: [UUID: RuntimePoolWorkerID] = [:]
@@ -37,6 +47,7 @@ actor RuntimePool {
                 runtime: primaryRuntime
             ),
         ]
+        healthByWorkerID[Constants.primaryWorkerID] = WorkerHealth(state: .idle)
 
         var continuation: AsyncStream<CodexRuntimeEvent>.Continuation?
         unifiedEventStream = AsyncStream<CodexRuntimeEvent>(bufferingPolicy: .unbounded) {
@@ -47,6 +58,9 @@ actor RuntimePool {
 
     deinit {
         for task in eventPumpTasksByWorkerID.values {
+            task.cancel()
+        }
+        for task in restartTasksByWorkerID.values {
             task.cancel()
         }
         unifiedEventContinuation.finish()
@@ -83,6 +97,7 @@ actor RuntimePool {
         for workerID in workersByID.keys.sorted() {
             guard let worker = workersByID[workerID] else { continue }
             try await worker.start()
+            markWorkerStarted(workerID)
             startEventPumpIfNeeded(for: workerID)
         }
     }
@@ -93,6 +108,7 @@ actor RuntimePool {
         for workerID in workersByID.keys.sorted() {
             guard let worker = workersByID[workerID] else { continue }
             try await worker.restart()
+            markWorkerStarted(workerID)
             startEventPumpIfNeeded(for: workerID)
         }
     }
@@ -102,12 +118,20 @@ actor RuntimePool {
             task.cancel()
         }
         eventPumpTasksByWorkerID.removeAll(keepingCapacity: false)
+        for task in restartTasksByWorkerID.values {
+            task.cancel()
+        }
+        restartTasksByWorkerID.removeAll(keepingCapacity: false)
 
         for worker in workersByID.values {
             await worker.stop()
         }
 
         routeBySyntheticApprovalID.removeAll(keepingCapacity: false)
+        pinnedWorkerIDByLocalThreadID.removeAll(keepingCapacity: false)
+        for workerID in healthByWorkerID.keys {
+            healthByWorkerID[workerID]?.state = .stopped
+        }
     }
 
     func capabilities() async -> RuntimeCapabilities {
@@ -210,9 +234,14 @@ actor RuntimePool {
     func snapshot() -> RuntimePoolSnapshot {
         let workerIDs = workersByID.keys.sorted()
         let metrics = workerIDs.map {
-            RuntimePoolWorkerMetrics(
+            let health = healthByWorkerID[$0] ?? WorkerHealth()
+            return RuntimePoolWorkerMetrics(
                 workerID: $0,
-                health: .healthy
+                health: health.state,
+                failureCount: health.failureCount,
+                restartCount: health.restartCount,
+                lastStartAt: health.lastStartAt,
+                lastFailureAt: health.lastFailureAt
             )
         }
 
@@ -243,6 +272,7 @@ actor RuntimePool {
 
             let siblingRuntime = await primaryWorker.makeSiblingRuntime()
             workersByID[workerID] = CodexRuntimeWorker(workerID: workerID, runtime: siblingRuntime)
+            healthByWorkerID[workerID] = WorkerHealth(state: .idle)
         }
     }
 
@@ -303,8 +333,99 @@ actor RuntimePool {
 
     private func emit(_ envelope: RuntimePoolWorkerEvent) {
         let workerID = envelope.workerID
+
+        if shouldSuppressEventAndScheduleRecoveryIfNeeded(envelope.event, workerID: workerID) {
+            return
+        }
+
         let transformed = transformEvent(envelope.event, workerID: workerID)
         unifiedEventContinuation.yield(transformed)
+    }
+
+    private func shouldSuppressEventAndScheduleRecoveryIfNeeded(
+        _ event: CodexRuntimeEvent,
+        workerID: RuntimePoolWorkerID
+    ) -> Bool {
+        guard shouldScopeRuntimeIDs,
+              workerID != Constants.primaryWorkerID
+        else {
+            return false
+        }
+
+        guard case let .action(action) = event,
+              action.method == "runtime/terminated"
+        else {
+            return false
+        }
+
+        markWorkerFailed(workerID)
+        scheduleWorkerRestart(
+            workerID: workerID,
+            detail: action.detail
+        )
+        return true
+    }
+
+    private func markWorkerStarted(_ workerID: RuntimePoolWorkerID) {
+        var health = healthByWorkerID[workerID] ?? WorkerHealth()
+        health.state = .healthy
+        health.lastStartAt = Date()
+        healthByWorkerID[workerID] = health
+    }
+
+    private func markWorkerFailed(_ workerID: RuntimePoolWorkerID) {
+        var health = healthByWorkerID[workerID] ?? WorkerHealth()
+        health.state = .degraded
+        health.failureCount += 1
+        health.lastFailureAt = Date()
+        healthByWorkerID[workerID] = health
+    }
+
+    private func scheduleWorkerRestart(workerID: RuntimePoolWorkerID, detail: String) {
+        guard restartTasksByWorkerID[workerID] == nil else {
+            return
+        }
+
+        let failureCount = max(1, healthByWorkerID[workerID]?.failureCount ?? 1)
+        let backoffExponent = min(3, failureCount - 1)
+        let backoffSeconds = UInt64(1 << backoffExponent)
+
+        var health = healthByWorkerID[workerID] ?? WorkerHealth()
+        health.state = .restarting
+        healthByWorkerID[workerID] = health
+
+        restartTasksByWorkerID[workerID] = Task { [weak self] in
+            guard let self else { return }
+
+            if backoffSeconds > 0 {
+                try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
+            }
+
+            await restartWorker(workerID: workerID, previousTerminationDetail: detail)
+        }
+    }
+
+    private func restartWorker(workerID: RuntimePoolWorkerID, previousTerminationDetail: String) async {
+        restartTasksByWorkerID.removeValue(forKey: workerID)
+
+        guard let worker = workersByID[workerID] else {
+            return
+        }
+
+        do {
+            try await worker.restart()
+            var health = healthByWorkerID[workerID] ?? WorkerHealth()
+            health.state = .healthy
+            health.restartCount += 1
+            health.lastStartAt = Date()
+            healthByWorkerID[workerID] = health
+        } catch {
+            markWorkerFailed(workerID)
+            scheduleWorkerRestart(
+                workerID: workerID,
+                detail: "\(previousTerminationDetail) | restart failed: \(error.localizedDescription)"
+            )
+        }
     }
 
     private func transformEvent(
