@@ -210,16 +210,22 @@ struct SettingsView: View {
     }
 
     private var settingsSidebarBackground: some View {
-        themedBackground(
-            baseHex: themeColorForDisplay(\.sidebarHex, fallback: tokens.palette.sidebarHex),
-            gradientHex: model.userThemeCustomization.sidebarGradientHex
+        let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
+        return themedBackground(
+            baseHex: isCustomThemeEnabled
+                ? themeColorForDisplay(\.sidebarHex, fallback: tokens.palette.sidebarHex)
+                : tokens.palette.sidebarHex,
+            gradientHex: isCustomThemeEnabled ? model.userThemeCustomization.sidebarGradientHex : nil
         )
     }
 
     private var settingsDetailBackground: some View {
-        themedBackground(
-            baseHex: themeColorForDisplay(\.backgroundHex, fallback: tokens.palette.backgroundHex),
-            gradientHex: model.userThemeCustomization.chatGradientHex
+        let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
+        return themedBackground(
+            baseHex: isCustomThemeEnabled
+                ? themeColorForDisplay(\.backgroundHex, fallback: tokens.palette.backgroundHex)
+                : tokens.palette.backgroundHex,
+            gradientHex: isCustomThemeEnabled ? model.userThemeCustomization.chatGradientHex : nil
         )
     }
 

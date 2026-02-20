@@ -119,8 +119,11 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailBackground: some View {
-        let chatHex = model.userThemeCustomization.backgroundHex ?? tokens.palette.backgroundHex
-        if model.userThemeCustomization.isEnabled {
+        let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
+        let chatHex = isCustomThemeEnabled
+            ? (model.userThemeCustomization.backgroundHex ?? tokens.palette.backgroundHex)
+            : tokens.palette.backgroundHex
+        if isCustomThemeEnabled {
             ZStack {
                 Color(hex: chatHex)
                     .opacity(model.isTransparentThemeMode ? 0.58 : 1)

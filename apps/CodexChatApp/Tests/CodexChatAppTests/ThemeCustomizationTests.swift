@@ -52,6 +52,32 @@ final class ThemeCustomizationTests: XCTestCase {
         XCTAssertEqual(resolved.resolvedPalettePanelHex, "#FFFFFF")
     }
 
+    func testResolvedThemeOverrideKeepsSystemDefaultsWhenCustomizationDisabledEvenWithSavedValues() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.userThemeCustomization = .init(
+            isEnabled: false,
+            accentHex: "#3366FF",
+            sidebarHex: "#112233",
+            backgroundHex: "#0D1117",
+            panelHex: "#161B22",
+            sidebarGradientHex: "#224466",
+            chatGradientHex: "#335577",
+            gradientStrength: 0.6
+        )
+
+        let resolvedLight = model.resolvedLightThemeOverride
+        XCTAssertNil(resolvedLight.resolvedPaletteAccentHex)
+        XCTAssertNil(resolvedLight.resolvedPaletteSidebarHex)
+        XCTAssertNil(resolvedLight.resolvedPaletteBackgroundHex)
+        XCTAssertNil(resolvedLight.resolvedPalettePanelHex)
+
+        let resolvedDark = model.resolvedDarkThemeOverride
+        XCTAssertNil(resolvedDark.resolvedPaletteAccentHex)
+        XCTAssertNil(resolvedDark.resolvedPaletteSidebarHex)
+        XCTAssertNil(resolvedDark.resolvedPaletteBackgroundHex)
+        XCTAssertNil(resolvedDark.resolvedPalettePanelHex)
+    }
+
     func testResolvedThemeOverrideKeepsSystemDefaultsWhenEnabledWithoutOverrides() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.effectiveDarkThemeOverride = ModThemeOverride(
@@ -64,6 +90,19 @@ final class ThemeCustomizationTests: XCTestCase {
         XCTAssertEqual(resolved.resolvedPaletteSidebarHex, "#0A0A0A")
         XCTAssertEqual(resolved.resolvedPaletteBackgroundHex, "#000000")
         XCTAssertEqual(resolved.resolvedPalettePanelHex, "#121212")
+    }
+
+    func testTransparentThemeModeRequiresEnabledCustomizationAndGlassMode() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        model.userThemeCustomization = .init(isEnabled: false, transparencyMode: .glass)
+        XCTAssertFalse(model.isTransparentThemeMode)
+
+        model.userThemeCustomization = .init(isEnabled: true, transparencyMode: .solid)
+        XCTAssertFalse(model.isTransparentThemeMode)
+
+        model.userThemeCustomization = .init(isEnabled: true, transparencyMode: .glass)
+        XCTAssertTrue(model.isTransparentThemeMode)
     }
 
     func testRestoreUserThemeCustomizationReadsPreference() async throws {
