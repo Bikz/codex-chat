@@ -354,65 +354,218 @@ struct TurnSummaryRow: View {
     let summary: TurnSummaryPresentation
     let detailLevel: TranscriptDetailLevel
     let model: AppModel
-    var onHide: (() -> Void)?
+    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Circle()
-                    .fill(summary.isFailure ? .red : .secondary.opacity(0.8))
-                    .frame(width: 6, height: 6)
+                    .fill(summaryTint.opacity(0.9))
+                    .frame(width: 5, height: 5)
+                    .accessibilityHidden(true)
 
                 Text(summaryLine)
-                    .font(.caption)
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
-                if let onHide {
-                    Button("Hide traces") {
-                        onHide()
+                Spacer(minLength: 8)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isExpanded.toggle()
                     }
-                    .buttonStyle(.plain)
-                    .font(.caption.weight(.semibold))
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(isExpanded ? "Hide details" : "Show details")
+                            .font(.caption2.weight(.semibold))
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                    }
                     .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Turn activity")
+                .accessibilityValue(summaryLine)
+                .accessibilityHint(isExpanded ? "Collapses details" : "Expands details")
             }
 
-            InlineActionDetailsList(actions: summary.actions, model: model)
+            if isExpanded {
+                TurnSummaryDetailsList(actions: summary.actions, model: model)
+            }
         }
     }
 
     private var summaryLine: String {
-        var segments: [String] = []
-
-        if summary.actionCount == 1 {
-            segments.append("1 action")
-        } else {
-            segments.append("\(summary.actionCount) actions")
+        if let explorationSummaryLine {
+            return explorationSummaryLine
         }
 
-        if summary.hiddenActionCount > 0 {
-            segments.append("\(summary.hiddenActionCount) compacted")
+        let base = summary.actionCount == 1 ? "1 step" : "\(summary.actionCount) steps"
+        if detailLevel == .balanced, summary.hiddenActionCount > 0 {
+            return "\(base) • \(summary.hiddenActionCount) compacted"
+        }
+        return base
+    }
+
+    private var summaryTint: Color {
+        summary.isFailure ? .red : .secondary
+    }
+
+    private var explorationSummaryLine: String? {
+        var fileCount = 0
+        var searchCount = 0
+
+        for action in summary.actions where !isLifecycle(action) {
+            let text = "\(action.title) \(action.method) \(action.detail)".lowercased()
+
+            if text.contains("search") {
+                searchCount += 1
+                continue
+            }
+
+            if text.contains("read")
+                || text.contains(".swift")
+                || text.contains(".md")
+                || text.contains(".json")
+                || text.contains(".yaml")
+                || text.contains(".yml")
+                || text.contains(".toml")
+            {
+                fileCount += 1
+            }
         }
 
-        if detailLevel == .balanced {
-            if summary.milestoneCounts.reasoning > 0 {
-                segments.append("\(summary.milestoneCounts.reasoning) reasoning")
-            }
-            if summary.milestoneCounts.commandExecution > 0 {
-                segments.append("\(summary.milestoneCounts.commandExecution) commands")
-            }
-            if summary.milestoneCounts.warnings > 0 {
-                segments.append("\(summary.milestoneCounts.warnings) warnings")
-            }
-            if summary.milestoneCounts.errors > 0 {
-                segments.append("\(summary.milestoneCounts.errors) errors")
-            }
+        guard fileCount > 0 || searchCount > 0 else {
+            return nil
         }
 
-        return segments.joined(separator: " • ")
+        var parts: [String] = []
+        if fileCount > 0 {
+            parts.append("\(fileCount) \(fileCount == 1 ? "file" : "files")")
+        }
+        if searchCount > 0 {
+            parts.append("\(searchCount) \(searchCount == 1 ? "search" : "searches")")
+        }
+        return "Explored " + parts.joined(separator: ", ")
+    }
+
+    private func isLifecycle(_ action: ActionCard) -> Bool {
+        let method = action.method.lowercased()
+        return [
+            "item/started",
+            "item/completed",
+            "turn/started",
+            "turn/completed",
+        ].contains(method)
+    }
+}
+
+private struct TurnSummaryDetailsList: View {
+    let actions: [ActionCard]
+    let model: AppModel
+
+    @State private var selectedWorkerTrace: AppModel.WorkerTraceEntry?
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                ForEach(visibleActions) { action in
+                    HStack(alignment: .center, spacing: 8) {
+                        Circle()
+                            .fill(tint(for: action))
+                            .frame(width: 4, height: 4)
+                            .accessibilityHidden(true)
+
+                        Text(primaryLine(for: action))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if model.workerTraceEntry(for: action) != nil {
+                            Button {
+                                selectedWorkerTrace = model.workerTraceEntry(for: action)
+                            } label: {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                    .font(.caption2.weight(.semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Open worker trace for \(primaryLine(for: action))")
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+        .frame(maxHeight: 96)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08))
+        )
+        .sheet(item: $selectedWorkerTrace) { entry in
+            WorkerTraceDetailsSheet(model: model, entry: entry)
+        }
+    }
+
+    private var visibleActions: [ActionCard] {
+        let filtered = actions.filter { action in
+            let method = action.method.lowercased()
+            return ![
+                "item/started",
+                "item/completed",
+                "turn/started",
+                "turn/completed",
+            ].contains(method)
+        }
+        return filtered.isEmpty ? actions : filtered
+    }
+
+    private func primaryLine(for action: ActionCard) -> String {
+        let title = compactWhitespace(action.title)
+        if !title.isEmpty {
+            return title
+        }
+
+        let detail = compactWhitespace(action.detail)
+        if !detail.isEmpty {
+            return detail
+        }
+
+        return action.method
+    }
+
+    private func tint(for action: ActionCard) -> Color {
+        let method = action.method.lowercased()
+        if method.contains("error")
+            || method.contains("failed")
+            || method.contains("stderr")
+            || method.contains("terminated")
+        {
+            return .red
+        }
+        if method.contains("approval") {
+            return .orange
+        }
+        if method.contains("search") {
+            return .blue
+        }
+        return .secondary.opacity(0.9)
+    }
+
+    private func compactWhitespace(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

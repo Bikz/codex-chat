@@ -13,7 +13,7 @@ struct CodexMonochromeMark: View {
             let xOffset = (proxy.size.width - side) / 2
             let yOffset = (proxy.size.height - side) / 2
 
-            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            let point: (CGFloat, CGFloat) -> CGPoint = { x, y in
                 CGPoint(x: xOffset + side * x, y: yOffset + side * y)
             }
 

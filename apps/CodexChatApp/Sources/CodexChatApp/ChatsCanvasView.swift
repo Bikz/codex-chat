@@ -10,7 +10,6 @@ struct ChatsCanvasView: View {
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isComposerFocused: Bool
     @State private var isComposerDropTargeted = false
-    @State private var revealedTraceTurnIDs: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,7 +26,11 @@ struct ChatsCanvasView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 FollowUpQueueView(model: model)
-                composerSurface
+                if let request = model.pendingApprovalForSelectedThread {
+                    InlineApprovalRequestView(model: model, request: request)
+                } else {
+                    composerSurface
+                }
 
                 if let followUpStatus = model.followUpStatusMessage {
                     Text(followUpStatus)
@@ -56,7 +59,6 @@ struct ChatsCanvasView: View {
             }
         }
         .onChange(of: model.selectedThreadID) { _, _ in
-            revealedTraceTurnIDs.removeAll()
             Task {
                 await model.refreshModsBarForSelectedThread()
             }
@@ -220,6 +222,10 @@ struct ChatsCanvasView: View {
                 .help("Send")
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(!model.canSubmitComposerInput)
+            }
+
+            if model.isComposerSkillAutocompleteActive {
+                composerSkillAutocompleteList
             }
 
             if let voiceStatus = model.voiceCaptureStatusMessage {
@@ -422,6 +428,83 @@ struct ChatsCanvasView: View {
         )
     }
 
+    @ViewBuilder
+    private var composerSkillAutocompleteList: some View {
+        let suggestions = model.composerSkillAutocompleteSuggestions
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Skills")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if suggestions.isEmpty {
+                Text("No matching skills")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(suggestions) { item in
+                            composerSkillSuggestionRow(item)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(maxHeight: 180)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+        )
+    }
+
+    private func composerSkillSuggestionRow(_ item: AppModel.SkillListItem) -> some View {
+        Button {
+            model.applyComposerSkillAutocompleteSuggestion(item)
+            isComposerFocused = true
+        } label: {
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("$\(item.skill.name)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text(item.skill.description)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                if !item.isEnabledForSelectedProject {
+                    Text("Disabled")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 0.8))
+                        )
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Insert skill \(item.skill.name)")
+    }
+
     private func handleComposerFileDrop(providers: [NSItemProvider]) -> Bool {
         guard !providers.isEmpty else {
             return false
@@ -536,39 +619,14 @@ struct ChatsCanvasView: View {
                     let indexedRows = Array(presentationRows.enumerated())
 
                     ScrollViewReader { proxy in
-                        List(indexedRows, id: \.element.id) { index, row in
+                        List(indexedRows, id: \.element.id) { _, row in
                             switch row {
                             case let .message(message):
-                                Group {
-                                    if let traceTurnID = traceTurnIDForAssistantMessage(
-                                        at: index,
-                                        rows: presentationRows,
-                                        message: message
-                                    ) {
-                                        MessageRow(
-                                            message: message,
-                                            tokens: tokens,
-                                            allowsExternalMarkdownContent: model.isSelectedProjectTrusted
-                                        )
-                                        .contextMenu {
-                                            if revealedTraceTurnIDs.contains(traceTurnID) {
-                                                Button("Hide traces") {
-                                                    revealedTraceTurnIDs.remove(traceTurnID)
-                                                }
-                                            } else {
-                                                Button("Show traces") {
-                                                    revealedTraceTurnIDs.insert(traceTurnID)
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        MessageRow(
-                                            message: message,
-                                            tokens: tokens,
-                                            allowsExternalMarkdownContent: model.isSelectedProjectTrusted
-                                        )
-                                    }
-                                }
+                                MessageRow(
+                                    message: message,
+                                    tokens: tokens,
+                                    allowsExternalMarkdownContent: model.isSelectedProjectTrusted
+                                )
                                 .padding(.vertical, tokens.spacing.xSmall)
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
@@ -628,27 +686,22 @@ struct ChatsCanvasView: View {
                                     )
                                 )
                             case let .turnSummary(summary):
-                                if revealedTraceTurnIDs.contains(summary.id) {
-                                    TurnSummaryRow(
-                                        summary: summary,
-                                        detailLevel: model.transcriptDetailLevel,
-                                        model: model,
-                                        onHide: {
-                                            revealedTraceTurnIDs.remove(summary.id)
-                                        }
+                                TurnSummaryRow(
+                                    summary: summary,
+                                    detailLevel: model.transcriptDetailLevel,
+                                    model: model
+                                )
+                                .padding(.vertical, tokens.spacing.xSmall)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: 0,
+                                        leading: tokens.spacing.medium,
+                                        bottom: 0,
+                                        trailing: tokens.spacing.medium
                                     )
-                                    .padding(.vertical, tokens.spacing.xSmall)
-                                    .listRowSeparator(.hidden)
-                                    .listRowBackground(Color.clear)
-                                    .listRowInsets(
-                                        EdgeInsets(
-                                            top: 0,
-                                            leading: tokens.spacing.medium,
-                                            bottom: 0,
-                                            trailing: tokens.spacing.medium
-                                        )
-                                    )
-                                }
+                                )
                             }
                         }
                         .listStyle(.plain)
@@ -701,33 +754,6 @@ struct ChatsCanvasView: View {
                 proxy.scrollTo(lastID, anchor: .bottom)
             }
         }
-    }
-
-    private func traceTurnIDForAssistantMessage(
-        at index: Int,
-        rows: [TranscriptPresentationRow],
-        message: ChatMessage
-    ) -> UUID? {
-        guard message.role == .assistant else {
-            return nil
-        }
-
-        var cursor = index + 1
-        while cursor < rows.count {
-            switch rows[cursor] {
-            case let .turnSummary(summary):
-                return summary.id
-            case let .message(nextMessage):
-                if nextMessage.role == .user {
-                    return nil
-                }
-            case .action, .liveActivity:
-                break
-            }
-            cursor += 1
-        }
-
-        return nil
     }
 }
 

@@ -3,6 +3,25 @@ import CodexSkills
 import Foundation
 
 extension AppModel {
+    var isComposerSkillAutocompleteActive: Bool {
+        composerSkillTokenMatch(in: composerText) != nil
+    }
+
+    var composerSkillAutocompleteSuggestions: [SkillListItem] {
+        guard let tokenMatch = composerSkillTokenMatch(in: composerText) else {
+            return []
+        }
+
+        let sortedSkills = sortedComposerSkillSuggestions(skills)
+        guard !tokenMatch.query.isEmpty else {
+            return sortedSkills
+        }
+
+        return sortedSkills.filter { skill in
+            composerSkill(skill, matches: tokenMatch.query)
+        }
+    }
+
     func refreshSkillsSurface() {
         Task {
             do {
@@ -183,6 +202,24 @@ extension AppModel {
         selectedSkillIDForComposer = nil
     }
 
+    func applyComposerSkillAutocompleteSuggestion(_ item: SkillListItem) {
+        let trigger = "$\(item.skill.name)"
+        if let tokenMatch = composerSkillTokenMatch(in: composerText) {
+            composerText.replaceSubrange(tokenMatch.range, with: "\(trigger) ")
+        } else {
+            let needsSeparator = !composerText.isEmpty && !composerText.hasSuffix(" ") && !composerText.hasSuffix("\n")
+            composerText += needsSeparator ? " \(trigger) " : "\(trigger) "
+        }
+
+        if item.isEnabledForSelectedProject {
+            selectedSkillIDForComposer = item.id
+            skillStatusMessage = nil
+        } else {
+            selectedSkillIDForComposer = nil
+            skillStatusMessage = "Enable \(item.skill.name) for this context in Skills & Mods to use it directly."
+        }
+    }
+
     private func mapSkillScope(_ scope: SkillInstallScope) -> SkillScope {
         switch scope {
         case .project:
@@ -190,5 +227,53 @@ extension AppModel {
         case .global:
             .global
         }
+    }
+
+    private func composerSkillTokenMatch(in text: String) -> ComposerSkillTokenMatch? {
+        guard !text.isEmpty else {
+            return nil
+        }
+
+        let tokenStart = text.lastIndex(where: \.isWhitespace).map { text.index(after: $0) } ?? text.startIndex
+        guard tokenStart < text.endIndex, text[tokenStart] == "$" else {
+            return nil
+        }
+
+        let queryStart = text.index(after: tokenStart)
+        let query = String(text[queryStart..<text.endIndex])
+        guard query.allSatisfy(\.isComposerSkillTokenCharacter) else {
+            return nil
+        }
+
+        return ComposerSkillTokenMatch(range: tokenStart ..< text.endIndex, query: query)
+    }
+
+    private func sortedComposerSkillSuggestions(_ items: [SkillListItem]) -> [SkillListItem] {
+        items.sorted { lhs, rhs in
+            if lhs.isEnabledForSelectedProject != rhs.isEnabledForSelectedProject {
+                return lhs.isEnabledForSelectedProject
+            }
+            return lhs.skill.name.localizedCaseInsensitiveCompare(rhs.skill.name) == .orderedAscending
+        }
+    }
+
+    private func composerSkill(_ item: SkillListItem, matches query: String) -> Bool {
+        item.skill.name.localizedStandardContains(query)
+            || item.skill.description.localizedStandardContains(query)
+            || item.skill.scope.rawValue.localizedStandardContains(query)
+            || item.skill.name
+            .replacingOccurrences(of: " ", with: "-")
+            .localizedStandardContains(query)
+    }
+}
+
+private struct ComposerSkillTokenMatch {
+    let range: Range<String.Index>
+    let query: String
+}
+
+private extension Character {
+    var isComposerSkillTokenCharacter: Bool {
+        isLetter || isNumber || self == "-" || self == "_"
     }
 }
