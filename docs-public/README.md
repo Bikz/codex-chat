@@ -34,3 +34,4 @@ This folder contains contributor-facing documentation tracked in git.
 - Preferred onboarding command is `bash scripts/bootstrap.sh`.
 - Preferred OSS smoke command is `make oss-smoke`.
 - Shell workspace UI favors minimal chrome: icon-only multi-shell rail on the left, near full-bleed terminal space on the right, and monochrome shell surfaces (white/light, black/dark).
+- Live activity traces use compact one-word status labels by default and only expand into a trace box when rich trace details are available.

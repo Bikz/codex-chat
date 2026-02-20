@@ -257,7 +257,7 @@ struct LiveTurnActivityRow: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text(activity.latestActionTitle.isEmpty ? "Thinking…" : activity.latestActionTitle)
+                Text("\(presentation.statusLabel)…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -265,94 +265,66 @@ struct LiveTurnActivityRow: View {
                 Spacer(minLength: 8)
             }
 
-            if detailLevel == .balanced, activity.milestoneCounts.hasAny {
+            if presentation.showTraceBox, detailLevel == .balanced, activity.milestoneCounts.hasAny {
                 TranscriptMilestoneChips(counts: activity.milestoneCounts)
             }
 
-            Group {
-                if traceLines.isEmpty {
-                    Text("Waiting for trace events…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 6) {
-                                ForEach(traceLines) { line in
-                                    Text(line.text)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .id(line.id)
+            if presentation.showTraceBox {
+                Group {
+                    if presentation.lines.isEmpty {
+                        Text("Waiting for trace events…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 6) {
+                                    ForEach(presentation.lines) { line in
+                                        Text(line.text)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .id(line.id)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .onAppear {
+                                if let lastID = presentation.lines.last?.id {
+                                    proxy.scrollTo(lastID, anchor: .bottom)
                                 }
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .onAppear {
-                            if let lastID = traceLines.last?.id {
-                                proxy.scrollTo(lastID, anchor: .bottom)
-                            }
-                        }
-                        .onChange(of: traceLines.count) { _, _ in
-                            guard let lastID = traceLines.last?.id else { return }
-                            DispatchQueue.main.async {
-                                proxy.scrollTo(lastID, anchor: .bottom)
+                            .onChange(of: presentation.lines.count) { _, _ in
+                                guard let lastID = presentation.lines.last?.id else { return }
+                                DispatchQueue.main.async {
+                                    proxy.scrollTo(lastID, anchor: .bottom)
+                                }
                             }
                         }
                     }
                 }
+                .frame(minHeight: 52, idealHeight: 86, maxHeight: 120)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.15), in: RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                )
             }
-            .frame(minHeight: 52, idealHeight: 86, maxHeight: 120)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.15), in: RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
-            )
         }
         .padding(10)
         .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
         .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
     }
 
-    private struct TraceLine: Identifiable {
-        let id: UUID
-        let text: String
-    }
-
-    private var traceLines: [TraceLine] {
-        activity.actions.map { action in
-            let baseTitle = action.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let title = baseTitle.isEmpty ? action.method : baseTitle
-            let method = action.method.lowercased()
-            let detail = compactDetail(action.detail)
-            let text: String = if method.contains("stderr")
-                || method.contains("error")
-                || method.contains("failed")
-                || method.contains("terminated")
-            {
-                detail.isEmpty ? title : "\(title): \(detail)"
-            } else {
-                title
-            }
-
-            return TraceLine(id: action.id, text: text)
-        }
-    }
-
-    private func compactDetail(_ value: String) -> String {
-        let flattened = value
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !flattened.isEmpty else {
-            return ""
-        }
-        if flattened.count <= 140 {
-            return flattened
-        }
-        return String(flattened.prefix(140)) + "…"
+    private var presentation: LiveActivityTraceFormatter.Presentation {
+        LiveActivityTraceFormatter.buildPresentation(
+            actions: activity.actions,
+            fallbackTitle: activity.latestActionTitle,
+            detailLevel: detailLevel
+        )
     }
 }
 
