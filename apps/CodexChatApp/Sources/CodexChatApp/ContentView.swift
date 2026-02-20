@@ -30,6 +30,64 @@ struct ContentView: View {
                 .accessibilityLabel("Toggle sidebar")
                 .help("Toggle sidebar")
             }
+
+            if !model.isOnboardingActive, model.detailDestination != .skillsAndMods {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        model.openReviewChanges()
+                    } label: {
+                        Label("Review Changes", systemImage: "doc.text.magnifyingglass")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Review pending changes")
+                    .help("Review changes")
+                    .disabled(!model.canReviewChanges)
+
+                    Button {
+                        model.revealSelectedThreadArchiveInFinder()
+                    } label: {
+                        Label("Reveal Chat File", systemImage: "doc.text")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Reveal thread transcript file in Finder")
+                    .help("Reveal thread transcript file")
+                    .disabled(model.selectedThreadID == nil)
+
+                    Button {
+                        model.toggleShellWorkspace()
+                    } label: {
+                        Label("Shell Workspace", systemImage: "terminal")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Toggle shell workspace")
+                    .help("Toggle shell workspace")
+
+                    Button {
+                        model.openPlanRunnerSheet()
+                    } label: {
+                        Label("Plan Runner", systemImage: "list.number")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Open plan runner")
+                    .help("Open plan runner")
+                    .disabled(model.selectedThreadID == nil || model.selectedProjectID == nil)
+
+                    if model.canToggleModsBarForSelectedThread {
+                        Button {
+                            model.toggleModsBar()
+                        } label: {
+                            Label("Mods bar", systemImage: "sidebar.right")
+                                .labelStyle(.iconOnly)
+                        }
+                        .accessibilityLabel("Toggle mods bar")
+                        .help(
+                            SkillsModsPresentation.modsBarHelpText(
+                                hasActiveModsBarSource: model.isModsBarAvailableForSelectedThread
+                            )
+                        )
+                    }
+                }
+            }
         }
         .toolbar(removing: .sidebarToggle)
         .navigationTitle("")
