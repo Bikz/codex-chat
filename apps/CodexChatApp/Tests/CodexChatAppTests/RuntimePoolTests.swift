@@ -1,4 +1,5 @@
 @testable import CodexChatShared
+import CodexKit
 import XCTest
 
 final class RuntimePoolTests: XCTestCase {
@@ -85,5 +86,29 @@ final class RuntimePoolTests: XCTestCase {
         XCTAssertNotEqual(selected, hashed)
         XCTAssertGreaterThanOrEqual(selected.rawValue, 0)
         XCTAssertLessThan(selected.rawValue, 4)
+    }
+
+    func testStartTurnRejectsOutOfRangeScopedWorkerID() async throws {
+        let runtime = CodexRuntime(executableResolver: { nil })
+        let pool = RuntimePool(primaryRuntime: runtime, configuredWorkerCount: 4)
+
+        do {
+            _ = try await pool.startTurn(
+                scopedThreadID: "w999|thr_1",
+                text: "hello",
+                safetyConfiguration: nil,
+                skillInputs: [],
+                inputItems: [],
+                turnOptions: nil
+            )
+            XCTFail("Expected invalidResponse for out-of-range scoped worker ID")
+        } catch let error as CodexRuntimeError {
+            switch error {
+            case let .invalidResponse(message):
+                XCTAssertTrue(message.contains("Invalid scoped runtime worker id"))
+            default:
+                XCTFail("Expected invalidResponse, got \(error)")
+            }
+        }
     }
 }
