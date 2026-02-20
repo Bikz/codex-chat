@@ -28,5 +28,11 @@
     <string>CodexChat uses speech recognition to transcribe your voice into text.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>CodexChat uses your microphone to convert speech into chat input.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>CodexChat uses your calendar to show upcoming events when you ask.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>CodexChat uses your calendar to show upcoming events when you ask.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>CodexChat uses Apple Events to send messages in Messages only after you confirm.</string>
 </dict>
 </plist>
