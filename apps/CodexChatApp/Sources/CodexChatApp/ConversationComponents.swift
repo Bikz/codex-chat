@@ -249,8 +249,6 @@ struct LiveTurnActivityRow: View {
     let detailLevel: TranscriptDetailLevel
 
     @Environment(\.designTokens) private var tokens
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var compactStatusPulse = false
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
@@ -264,8 +262,6 @@ struct LiveTurnActivityRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .opacity(compactStatusOpacity)
-                    .scaleEffect(compactStatusScale)
                 Spacer(minLength: 8)
             }
 
@@ -321,15 +317,6 @@ struct LiveTurnActivityRow: View {
         .padding(10)
         .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
         .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
-        .onAppear {
-            updateCompactStatusPulse()
-        }
-        .onChange(of: presentation.showTraceBox) { _, _ in
-            updateCompactStatusPulse()
-        }
-        .onChange(of: reduceMotion) { _, _ in
-            updateCompactStatusPulse()
-        }
     }
 
     private var presentation: LiveActivityTraceFormatter.Presentation {
@@ -338,30 +325,6 @@ struct LiveTurnActivityRow: View {
             fallbackTitle: activity.latestActionTitle,
             detailLevel: detailLevel
         )
-    }
-
-    private var compactStatusOpacity: Double {
-        guard !presentation.showTraceBox else { return 1 }
-        guard !reduceMotion else { return 1 }
-        return compactStatusPulse ? 0.72 : 1
-    }
-
-    private var compactStatusScale: CGFloat {
-        guard !presentation.showTraceBox else { return 1 }
-        guard !reduceMotion else { return 1 }
-        return compactStatusPulse ? 0.99 : 1
-    }
-
-    private func updateCompactStatusPulse() {
-        guard !presentation.showTraceBox, !reduceMotion else {
-            compactStatusPulse = false
-            return
-        }
-
-        compactStatusPulse = false
-        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-            compactStatusPulse = true
-        }
     }
 }
 
