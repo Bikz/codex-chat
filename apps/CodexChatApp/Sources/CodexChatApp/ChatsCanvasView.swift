@@ -484,18 +484,6 @@ struct ChatsCanvasView: View {
                 }
 
                 Spacer(minLength: 0)
-
-                if !item.isEnabledForSelectedProject {
-                    Text("Disabled")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 0.8))
-                        )
-                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)

@@ -152,24 +152,15 @@ extension AppModel {
             return
         }
 
-        let target = selectedSkillEnablementTarget(for: item)
-        let targetProjectID: UUID?
-        switch target {
-        case .global, .general:
-            targetProjectID = nil
-        case .project:
-            guard let selectedProjectID else {
-                skillStatusMessage = "Select a project before enabling project-target skills."
-                return
-            }
-            targetProjectID = selectedProjectID
+        guard let request = skillEnablementRequest(for: item) else {
+            return
         }
 
         Task {
             do {
                 try await projectSkillEnablementRepository.setSkillEnabled(
-                    target: target,
-                    projectID: targetProjectID,
+                    target: request.target,
+                    projectID: request.projectID,
                     skillPath: item.skill.skillPath,
                     enabled: enabled
                 )
@@ -211,12 +202,69 @@ extension AppModel {
             composerText += needsSeparator ? " \(trigger) " : "\(trigger) "
         }
 
-        if item.isEnabledForSelectedProject {
-            selectedSkillIDForComposer = item.id
-            skillStatusMessage = nil
-        } else {
-            selectedSkillIDForComposer = nil
-            skillStatusMessage = "Enable \(item.skill.name) for this context in Skills & Mods to use it directly."
+        var enablementRequest: SkillEnablementRequest?
+        if !item.isEnabledForSelectedProject {
+            guard let request = skillEnablementRequest(for: item) else {
+                selectedSkillIDForComposer = nil
+                return
+            }
+            enablementRequest = request
+            optimisticallyEnableSkillForSelectedContext(skillID: item.id, target: request.target)
+        }
+
+        selectedSkillIDForComposer = item.id
+        skillStatusMessage = nil
+
+        guard let enablementRequest,
+              let projectSkillEnablementRepository
+        else {
+            return
+        }
+
+        Task {
+            do {
+                try await projectSkillEnablementRepository.setSkillEnabled(
+                    target: enablementRequest.target,
+                    projectID: enablementRequest.projectID,
+                    skillPath: item.skill.skillPath,
+                    enabled: true
+                )
+                try await refreshSkills()
+            } catch {
+                skillStatusMessage = "Failed to auto-enable skill \(item.skill.name): \(error.localizedDescription)"
+                appendLog(.error, "Skill auto-enable failed for \(item.skill.name): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func optimisticallyEnableSkillForSelectedContext(skillID: String, target: SkillEnablementTarget) {
+        guard case var .loaded(items) = skillsState,
+              let index = items.firstIndex(where: { $0.id == skillID })
+        else {
+            return
+        }
+
+        items[index].enabledTargets.insert(target)
+        items[index].isEnabledForSelectedProject = true
+        skillsState = .loaded(items)
+    }
+
+    private struct SkillEnablementRequest {
+        let target: SkillEnablementTarget
+        let projectID: UUID?
+    }
+
+    private func skillEnablementRequest(for item: SkillListItem) -> SkillEnablementRequest? {
+        let target = selectedSkillEnablementTarget(for: item)
+        switch target {
+        case .global, .general:
+            return SkillEnablementRequest(target: target, projectID: nil)
+        case .project:
+            guard let selectedProjectID else {
+                skillStatusMessage = "Select a project before enabling project-target skills."
+                return nil
+            }
+            return SkillEnablementRequest(target: .project, projectID: selectedProjectID)
         }
     }
 
