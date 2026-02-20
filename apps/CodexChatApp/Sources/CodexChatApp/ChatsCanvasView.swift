@@ -755,11 +755,6 @@ private struct ThreadEmptyStateView: View {
 
             Text("Start a conversation")
                 .font(.headline)
-
-            Text("Send your first message using the composer below.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
