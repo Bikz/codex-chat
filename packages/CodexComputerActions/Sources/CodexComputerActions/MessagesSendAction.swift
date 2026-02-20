@@ -86,9 +86,30 @@ public final class AppleScriptMessagesSender: MessagesSender {
             set targetHandle to item 1 of argv
             set messageText to item 2 of argv
             tell application "Messages"
-                set targetService to first service whose service type = iMessage
-                set targetBuddy to buddy targetHandle of targetService
-                send messageText to targetBuddy
+                set targetService to missing value
+
+                try
+                    set targetService to first service whose service type = iMessage
+                on error
+                    try
+                        set targetService to first service whose service type = SMS
+                    on error
+                        error "No compatible Messages service is available."
+                    end try
+                end try
+
+                set targetRecipient to missing value
+                try
+                    set targetRecipient to buddy targetHandle of targetService
+                on error
+                    try
+                        set targetRecipient to participant targetHandle of targetService
+                    on error
+                        error "Could not resolve recipient '" & targetHandle & "' in Messages."
+                    end try
+                end try
+
+                send messageText to targetRecipient
             end tell
             return "ok"
         end run
@@ -175,11 +196,9 @@ public final class MessagesSendAction: ComputerActionProvider {
         do {
             try await sender.send(message: message, to: recipient)
         } catch let error as ComputerActionError {
-            throw error
+            throw normalizeMessagesExecutionError(error)
         } catch {
-            throw ComputerActionError.permissionDenied(
-                "Messages send failed. Check Messages permissions in System Settings > Privacy & Security > Automation."
-            )
+            throw normalizeMessagesExecutionError(.executionFailed(error.localizedDescription))
         }
 
         return ComputerActionExecutionResult(
@@ -192,5 +211,37 @@ public final class MessagesSendAction: ComputerActionProvider {
                 "sent": "true",
             ]
         )
+    }
+
+    private func normalizeMessagesExecutionError(_ error: ComputerActionError) -> ComputerActionError {
+        switch error {
+        case let .executionFailed(message):
+            if Self.looksLikePermissionDenied(message: message) {
+                return .permissionDenied(
+                    "Messages send failed. Check Messages permissions in System Settings > Privacy & Security > Automation."
+                )
+            }
+            return error
+        default:
+            return error
+        }
+    }
+
+    private static func looksLikePermissionDenied(message: String) -> Bool {
+        let normalized = message.lowercased()
+        let indicators = [
+            "not authorized",
+            "not permitted",
+            "permission",
+            "privacy",
+            "automation",
+            "apple events",
+            "erraeeventnotpermitted",
+            "-1743",
+            "-10004",
+            "access is denied",
+        ]
+
+        return indicators.contains(where: { normalized.contains($0) })
     }
 }
