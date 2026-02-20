@@ -117,7 +117,7 @@ extension AppModel {
         voiceCaptureState = .idle
         debugVoiceCapture("Cancelled voice capture; invalidated session=\(invalidatedSession)")
 
-        Task { [voiceCaptureService] in
+        Task { @MainActor [voiceCaptureService] in
             await voiceCaptureService.cancelCapture()
         }
     }

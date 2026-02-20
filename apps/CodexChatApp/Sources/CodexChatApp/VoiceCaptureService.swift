@@ -110,16 +110,18 @@ final class AppleSpeechVoiceCaptureService: NSObject, VoiceCaptureService, @unch
 
         await captureState.attachPipeline(request: request, task: task)
 
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            request.append(buffer)
-        }
-
-        audioEngine.prepare()
         do {
-            try audioEngine.start()
+            try await MainActor.run {
+                let inputNode = audioEngine.inputNode
+                let recordingFormat = inputNode.outputFormat(forBus: 0)
+                inputNode.removeTap(onBus: 0)
+                inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+                    request.append(buffer)
+                }
+
+                audioEngine.prepare()
+                try audioEngine.start()
+            }
             Self.debugLog("Capture started")
         } catch {
             await captureState.rollbackStartFailure()
@@ -131,8 +133,10 @@ final class AppleSpeechVoiceCaptureService: NSObject, VoiceCaptureService, @unch
         Self.debugLog("Stop capture requested")
         try await captureState.markStoppingAndEndAudio()
 
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        await MainActor.run {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
 
         do {
             let result = try await captureState.awaitStopResult(timeoutNanoseconds: Self.stopTimeoutNanoseconds)
@@ -146,8 +150,10 @@ final class AppleSpeechVoiceCaptureService: NSObject, VoiceCaptureService, @unch
 
     func cancelCapture() async {
         Self.debugLog("Cancel capture requested")
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        await MainActor.run {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
         await captureState.cancelCapture()
     }
 
