@@ -159,13 +159,13 @@ final class ComposerStarterPromptTests: XCTestCase {
         XCTAssertEqual(model.composerAttachments.first?.kind, .mentionFile)
     }
 
-    func testInsertStarterPromptPopulatesComposerAndHidesStarterPrompts() {
+    func testInsertStarterPromptSendsImmediately() {
         let model = makeReadyModel()
         let prompt = "What's on my calendar today?"
         model.insertStarterPrompt(prompt)
 
-        XCTAssertEqual(model.composerText, prompt)
-        XCTAssertFalse(model.shouldShowComposerStarterPrompts)
+        XCTAssertEqual(model.composerText, "")
+        XCTAssertFalse(model.hasComposerDraftContent)
     }
 
     func testHandleVoiceTranscriptionResultPreservesExistingComposerText() {

@@ -69,7 +69,13 @@ extension AppModel {
     }
 
     func insertStarterPrompt(_ prompt: String) {
-        composerText = prompt
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+
+        composerText = trimmed
+        sendMessage()
     }
 
     func toggleVoiceCapture() {
