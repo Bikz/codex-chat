@@ -76,6 +76,34 @@ public extension FollowUpQueueRepository {
 
         return excludingThreadIDs.contains(candidate.threadID) ? nil : candidate
     }
+
+    func listNextAutoCandidates(
+        preferredThreadID: UUID?,
+        excludingThreadIDs: Set<UUID>,
+        limit: Int
+    ) async throws -> [FollowUpQueueItemRecord] {
+        guard limit > 0 else {
+            return []
+        }
+
+        var results: [FollowUpQueueItemRecord] = []
+        results.reserveCapacity(limit)
+
+        var excludedThreadIDs = excludingThreadIDs
+        while results.count < limit {
+            guard let candidate = try await listNextAutoCandidate(
+                preferredThreadID: preferredThreadID,
+                excludingThreadIDs: excludedThreadIDs
+            ) else {
+                break
+            }
+
+            results.append(candidate)
+            excludedThreadIDs.insert(candidate.threadID)
+        }
+
+        return results
+    }
 }
 
 public protocol ProjectSecretRepository: Sendable {

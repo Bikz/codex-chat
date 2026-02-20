@@ -396,35 +396,72 @@ extension AppModel {
     }
 
     private func drainAutoFollowUpsUntilBusy(reason: String) async {
+        guard let followUpQueueRepository else {
+            return
+        }
+
         while canDispatchNowForQueue {
-            let dispatched = await drainOneAutoFollowUp(reason: reason)
-            if !dispatched {
-                break
+            let blockedThreadIDs = activeTurnThreadIDs
+            let availableCapacity = max(0, AppModel.defaultMaxConcurrentTurns - blockedThreadIDs.count)
+            guard availableCapacity > 0 else {
+                return
+            }
+
+            let candidates: [FollowUpQueueItemRecord]
+            do {
+                candidates = try await followUpQueueRepository.listNextAutoCandidates(
+                    preferredThreadID: autoDrainPreferredThreadID,
+                    excludingThreadIDs: blockedThreadIDs,
+                    limit: availableCapacity
+                )
+            } catch {
+                followUpStatusMessage = "Queued follow-up query failed: \(error.localizedDescription)"
+                appendLog(.error, "Auto-drain candidate query failed: \(error.localizedDescription)")
+                return
+            }
+
+            guard !candidates.isEmpty else {
+                return
+            }
+
+            for candidate in candidates {
+                markTurnStartPending(threadID: candidate.threadID)
+            }
+
+            let dispatchedAny = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
+                for candidate in candidates {
+                    group.addTask { [weak self] in
+                        guard let self else { return false }
+                        return await dispatchAutoFollowUpCandidate(candidate, reason: reason)
+                    }
+                }
+
+                var didDispatchAny = false
+                for await didDispatch in group {
+                    didDispatchAny = didDispatchAny || didDispatch
+                }
+
+                return didDispatchAny
+            }
+
+            if !dispatchedAny {
+                return
             }
         }
     }
 
     @discardableResult
-    private func drainOneAutoFollowUp(reason: String) async -> Bool {
-        guard canDispatchNowForQueue else {
-            return false
-        }
-
+    private func dispatchAutoFollowUpCandidate(_ candidate: FollowUpQueueItemRecord, reason: String) async -> Bool {
         guard let followUpQueueRepository else {
+            clearTurnStartPending(threadID: candidate.threadID)
             return false
         }
 
-        var activeCandidate: FollowUpQueueItemRecord?
-        do {
-            let blockedThreadIDs = activeTurnThreadIDs
-            guard let candidate = try await followUpQueueRepository.listNextAutoCandidate(
-                preferredThreadID: autoDrainPreferredThreadID,
-                excludingThreadIDs: blockedThreadIDs
-            ) else {
-                return false
-            }
-            activeCandidate = candidate
+        defer {
+            clearTurnStartPending(threadID: candidate.threadID)
+        }
 
+        do {
             let (_, project) = try await resolveProjectAndThread(for: candidate.threadID)
             autoDrainPreferredThreadID = candidate.threadID
             try await dispatchNow(
@@ -439,10 +476,8 @@ extension AppModel {
             return true
         } catch {
             do {
-                if let candidate = activeCandidate {
-                    try await followUpQueueRepository.markFailed(id: candidate.id, error: error.localizedDescription)
-                    try await refreshFollowUpQueue(threadID: candidate.threadID)
-                }
+                try await followUpQueueRepository.markFailed(id: candidate.id, error: error.localizedDescription)
+                try await refreshFollowUpQueue(threadID: candidate.threadID)
             } catch {
                 appendLog(.warning, "Failed to persist follow-up queue failure: \(error.localizedDescription)")
             }
