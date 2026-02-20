@@ -215,9 +215,7 @@ extension AppModel {
     }
 
     private func restorePreferredModelFromPreferenceIfNeeded() async {
-        guard configuredModelOverride() == nil,
-              let preferenceRepository
-        else {
+        guard let preferenceRepository else {
             return
         }
 
@@ -232,9 +230,16 @@ extension AppModel {
                 return
             }
 
+            let configuredModel = configuredModelOverride()?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if configuredModel?.caseInsensitiveCompare(preferredModel) == .orderedSame {
+                return
+            }
+
             var document = codexConfigDocument
             document.setValue(.string(preferredModel), at: [.key("model")])
             codexConfigDocument = document
+            appendLog(.debug, "Applied preferred model override from app preferences.")
         } catch {
             appendLog(.warning, "Failed restoring preferred model from preferences: \(error.localizedDescription)")
         }

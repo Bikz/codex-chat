@@ -65,6 +65,36 @@ final class RuntimeModelPreferenceFallbackTests: XCTestCase {
         XCTAssertNil(model.runtimeTurnOptions().model)
     }
 
+    func testLoadCodexConfigPreferredModelOverridesStaleConfiguredModel() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-model-pref-stale-config-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let storagePaths = CodexChatStoragePaths(rootURL: root)
+        try storagePaths.ensureRootStructure()
+        try """
+        model = "gpt-4o"
+        """.write(to: storagePaths.codexConfigURL, atomically: true, encoding: .utf8)
+
+        let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        try await repositories.preferenceRepository.setPreference(key: .runtimeConfigMigrationV1, value: "1")
+        try await repositories.preferenceRepository.setPreference(key: .runtimeDefaultModel, value: "gpt-5.3-codex")
+
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            storagePaths: storagePaths
+        )
+
+        try await model.loadCodexConfig()
+
+        XCTAssertEqual(model.defaultModel, "gpt-5.3-codex")
+        XCTAssertEqual(model.configuredModelOverride(), "gpt-5.3-codex")
+        XCTAssertEqual(model.runtimeTurnOptions().model, "gpt-5.3-codex")
+    }
+
     private func waitForPreference(
         key: AppPreferenceKey,
         expectedValue: String,
