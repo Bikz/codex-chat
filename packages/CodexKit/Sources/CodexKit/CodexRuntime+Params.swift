@@ -174,18 +174,6 @@ extension CodexRuntime {
         ])
     }
 
-    static func makeLegacyTurnSteerParams(
-        threadID: String,
-        text: String,
-        turnID: String
-    ) -> JSONValue {
-        .object([
-            "threadId": .string(threadID),
-            "turnId": .string(turnID),
-            "text": .string(text),
-        ])
-    }
-
     static func shouldRetryWithoutWebSearch(error: CodexRuntimeError) -> Bool {
         guard case let .rpcError(_, message) = error else {
             return false
@@ -248,33 +236,6 @@ extension CodexRuntime {
         return lowered.contains("unknown field")
             || lowered.contains("missing field")
             || lowered.contains("invalid type")
-    }
-
-    static func shouldRetryWithLegacyTurnSteerPayload(error: CodexRuntimeError) -> Bool {
-        guard case let .rpcError(code, message) = error else {
-            return false
-        }
-        if code == -32601 {
-            return false
-        }
-
-        let lowered = message.lowercased()
-        let indicatesSchemaMismatch = lowered.contains("invalid request")
-            || lowered.contains("unknown field")
-            || lowered.contains("missing field")
-            || lowered.contains("invalid type")
-        guard indicatesSchemaMismatch else {
-            return false
-        }
-
-        let mentionsPayloadFields = lowered.contains("expectedturnid")
-            || lowered.contains("turnid")
-            || lowered.contains("input")
-            || lowered.contains("text")
-        let mentionsActiveTurnIssue = lowered.contains("no active turn")
-            || lowered.contains("does not match")
-            || lowered.contains("did not match")
-        return mentionsPayloadFields && !mentionsActiveTurnIssue
     }
 
     static func makeThreadSandboxMode(_ sandboxMode: RuntimeSandboxMode) -> String {

@@ -559,22 +559,4 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(firstInput?.value(at: ["type"])?.stringValue, "text")
         XCTAssertEqual(firstInput?.value(at: ["text"])?.stringValue, "Continue with tests")
     }
-
-    func testShouldRetryWithLegacyTurnSteerPayloadSkipsActiveTurnMismatchWordings() {
-        let error = CodexRuntimeError.rpcError(
-            code: -32600,
-            message: "invalid request: expectedTurnId did not match active turn"
-        )
-
-        XCTAssertFalse(CodexRuntime.shouldRetryWithLegacyTurnSteerPayload(error: error))
-    }
-
-    func testShouldRetryWithLegacyTurnSteerPayloadOnSchemaMismatch() {
-        let error = CodexRuntimeError.rpcError(
-            code: -32600,
-            message: "invalid request: unknown field expectedTurnId"
-        )
-
-        XCTAssertTrue(CodexRuntime.shouldRetryWithLegacyTurnSteerPayload(error: error))
-    }
 }

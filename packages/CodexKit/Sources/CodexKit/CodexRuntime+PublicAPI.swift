@@ -146,16 +146,7 @@ public extension CodexRuntime {
             text: text,
             expectedTurnID: normalizedTurnID
         )
-        do {
-            _ = try await sendRequest(method: "turn/steer", params: params)
-        } catch let error as CodexRuntimeError where Self.shouldRetryWithLegacyTurnSteerPayload(error: error) {
-            let legacyParams = Self.makeLegacyTurnSteerParams(
-                threadID: threadID,
-                text: text,
-                turnID: normalizedTurnID
-            )
-            _ = try await sendRequest(method: "turn/steer", params: legacyParams)
-        }
+        _ = try await sendRequest(method: "turn/steer", params: params)
     }
 
     func readAccount(refreshToken: Bool = false) async throws -> RuntimeAccountState {
