@@ -24,4 +24,14 @@ final class RuntimePoolTests: XCTestCase {
         XCTAssertEqual(route.workerID, RuntimePoolWorkerID(0))
         XCTAssertEqual(route.threadID, "thr_legacy")
     }
+
+    func testConsistentWorkerIDIsDeterministicAndBounded() throws {
+        let threadID = try XCTUnwrap(UUID(uuidString: "D4E2DE84-8428-4933-8D2E-E73E8205A3F7"))
+        let first = RuntimePool.consistentWorkerID(for: threadID, workerCount: 6)
+        let second = RuntimePool.consistentWorkerID(for: threadID, workerCount: 6)
+
+        XCTAssertEqual(first, second)
+        XCTAssertGreaterThanOrEqual(first.rawValue, 0)
+        XCTAssertLessThan(first.rawValue, 6)
+    }
 }

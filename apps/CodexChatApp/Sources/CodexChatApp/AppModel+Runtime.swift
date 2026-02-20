@@ -387,6 +387,9 @@ extension AppModel {
 
         do {
             if let cached = runtimeThreadIDByLocalThreadID[localThreadID] {
+                if let runtimePool {
+                    await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: cached)
+                }
                 await PerformanceTracer.shared.end(
                     span,
                     extraMetadata: ["result": "cache"]
@@ -403,6 +406,9 @@ extension AppModel {
                     localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
                 }
                 localThreadIDByRuntimeThreadID[persisted] = localThreadID
+                if let runtimePool {
+                    await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: persisted)
+                }
                 appendLog(.debug, "Loaded persisted runtime thread mapping for local thread \(localThreadID.uuidString)")
                 await PerformanceTracer.shared.end(
                     span,
@@ -436,6 +442,9 @@ extension AppModel {
                 localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
             }
             localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
+            if let runtimePool {
+                await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+            }
             appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
             await PerformanceTracer.shared.end(
                 span,
@@ -488,6 +497,7 @@ extension AppModel {
         )
         runtimeThreadIDByLocalThreadID[localThreadID] = runtimeThreadID
         localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
+        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
 
         appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
         return runtimeThreadID
@@ -495,6 +505,9 @@ extension AppModel {
 
     private func invalidateRuntimeThreadID(for localThreadID: UUID) async {
         await runtimeThreadResolutionCoordinator.cancel(localThreadID: localThreadID)
+        if let runtimePool {
+            await runtimePool.unpin(localThreadID: localThreadID)
+        }
 
         guard let staleRuntimeThreadID = runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID) else {
             return
@@ -649,8 +662,10 @@ extension AppModel {
         cancelRuntimeThreadPrewarm()
 
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
+        let runtimePool = runtimePool
         Task {
             await threadResolutionCoordinator.cancelAll()
+            await runtimePool?.resetPins()
         }
 
         runtimeThreadIDByLocalThreadID.removeAll()

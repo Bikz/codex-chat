@@ -23,6 +23,7 @@ actor RuntimePool {
     private var eventPumpTasksByWorkerID: [RuntimePoolWorkerID: Task<Void, Never>] = [:]
     private var routeBySyntheticApprovalID: [Int: ApprovalRoute] = [:]
     private var nextSyntheticApprovalID: Int = 1
+    private var pinnedWorkerIDByLocalThreadID: [UUID: RuntimePoolWorkerID] = [:]
 
     private let unifiedEventStream: AsyncStream<CodexRuntimeEvent>
     private let unifiedEventContinuation: AsyncStream<CodexRuntimeEvent>.Continuation
@@ -53,6 +54,23 @@ actor RuntimePool {
 
     func configuredSize() -> Int {
         configuredWorkerCount
+    }
+
+    func pin(localThreadID: UUID, runtimeThreadID: String) {
+        if let (workerID, _) = Self.parseScopedID(runtimeThreadID) {
+            pinnedWorkerIDByLocalThreadID[localThreadID] = workerID
+            return
+        }
+
+        pinnedWorkerIDByLocalThreadID[localThreadID] = Constants.primaryWorkerID
+    }
+
+    func unpin(localThreadID: UUID) {
+        pinnedWorkerIDByLocalThreadID.removeValue(forKey: localThreadID)
+    }
+
+    func resetPins() {
+        pinnedWorkerIDByLocalThreadID.removeAll(keepingCapacity: false)
     }
 
     func events() -> AsyncStream<CodexRuntimeEvent> {
@@ -201,7 +219,7 @@ actor RuntimePool {
         return RuntimePoolSnapshot(
             configuredWorkerCount: configuredWorkerCount,
             activeWorkerCount: workersByID.count,
-            pinnedThreadCount: 0,
+            pinnedThreadCount: pinnedWorkerIDByLocalThreadID.count,
             totalQueuedTurns: 0,
             totalInFlightTurns: 0,
             workers: metrics
@@ -244,15 +262,21 @@ actor RuntimePool {
     }
 
     private func workerID(for localThreadID: UUID) -> RuntimePoolWorkerID {
-        guard configuredWorkerCount > 1 else {
-            return Constants.primaryWorkerID
+        if let pinnedWorkerID = pinnedWorkerIDByLocalThreadID[localThreadID],
+           workersByID[pinnedWorkerID] != nil
+        {
+            return pinnedWorkerID
         }
 
-        var hasher = Hasher()
-        hasher.combine(localThreadID)
-        let hashValue = hasher.finalize()
-        let slot = (hashValue & Int.max) % configuredWorkerCount
-        return RuntimePoolWorkerID(slot)
+        let selectedWorkerID = Self.consistentWorkerID(
+            for: localThreadID,
+            workerCount: configuredWorkerCount
+        )
+        let resolvedWorkerID = workersByID[selectedWorkerID] == nil
+            ? Constants.primaryWorkerID
+            : selectedWorkerID
+        pinnedWorkerIDByLocalThreadID[localThreadID] = resolvedWorkerID
+        return resolvedWorkerID
     }
 
     private func startEventPumpIfNeeded(for workerID: RuntimePoolWorkerID) {
@@ -437,6 +461,19 @@ actor RuntimePool {
         "\(workerID.description)\(Constants.scopedDelimiter)\(rawID)"
     }
 
+    static func consistentWorkerID(
+        for localThreadID: UUID,
+        workerCount: Int
+    ) -> RuntimePoolWorkerID {
+        guard workerCount > 1 else {
+            return Constants.primaryWorkerID
+        }
+
+        let hash = deterministicHash(for: localThreadID)
+        let slot = Int(hash % UInt64(workerCount))
+        return RuntimePoolWorkerID(slot)
+    }
+
     static func unscopedID(_ possiblyScopedID: String) -> String {
         if let (_, rawID) = parseScopedID(possiblyScopedID) {
             return rawID
@@ -449,5 +486,19 @@ actor RuntimePool {
             return id
         }
         return Self.scope(id: id, workerID: workerID)
+    }
+
+    private static func deterministicHash(for localThreadID: UUID) -> UInt64 {
+        let bytes = withUnsafeBytes(of: localThreadID.uuid) { buffer in
+            Array(buffer)
+        }
+
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        let prime: UInt64 = 1_099_511_628_211
+        for byte in bytes {
+            hash ^= UInt64(byte)
+            hash = hash &* prime
+        }
+        return hash
     }
 }
