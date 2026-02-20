@@ -59,19 +59,6 @@ extension AppModel {
             featured.append(match)
         }
 
-        if featured.count < 4 {
-            for preset in presets {
-                let normalizedPreset = preset.lowercased()
-                guard seen.insert(normalizedPreset).inserted else {
-                    continue
-                }
-                featured.append(preset)
-                if featured.count == 4 {
-                    break
-                }
-            }
-        }
-
         return featured
     }
 
@@ -158,15 +145,11 @@ extension AppModel {
         }
 
         if isAPIKeyOnlyModel(trimmedID) {
-            return "\(trimmedID) (api key only)"
+            let displayName = modelDisplayName(for: trimmedID)
+            return "\(displayName) (api key only)"
         }
 
-        let displayName = modelDisplayName(for: trimmedID)
-        if displayName.caseInsensitiveCompare(trimmedID) == .orderedSame {
-            return trimmedID
-        }
-
-        return "\(displayName) (\(trimmedID))"
+        return modelDisplayName(for: trimmedID)
     }
 
     func setDefaultModel(_ model: String) {

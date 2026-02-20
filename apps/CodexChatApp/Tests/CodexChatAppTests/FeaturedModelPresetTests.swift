@@ -21,7 +21,7 @@ final class FeaturedModelPresetTests: XCTestCase {
         XCTAssertEqual(model.overflowModelPresets, ["gpt-5.1-codex-max", "gpt-5.2"])
     }
 
-    func testFeaturedModelPresetsFillRemainingSlotsFromRuntimeCatalog() {
+    func testFeaturedModelPresetsDoNotBackfillWithNonFeaturedModels() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.runtimeModelCatalog = [
             RuntimeModelInfo(id: "o3", model: "o3", displayName: "o3"),
@@ -29,7 +29,7 @@ final class FeaturedModelPresetTests: XCTestCase {
             RuntimeModelInfo(id: "o4-mini", model: "o4-mini", displayName: "o4-mini"),
         ]
 
-        XCTAssertEqual(model.featuredModelPresets, ["gpt-4o", "o3", "gpt-5-mini", "o4-mini"])
-        XCTAssertTrue(model.overflowModelPresets.isEmpty)
+        XCTAssertEqual(model.featuredModelPresets, ["gpt-4o"])
+        XCTAssertEqual(model.overflowModelPresets, ["o3", "gpt-5-mini", "o4-mini"])
     }
 }

@@ -4,6 +4,19 @@ import XCTest
 
 @MainActor
 final class ModelSelectionAuthGateTests: XCTestCase {
+    func testModelMenuLabelUsesDisplayNameWithoutModelIDSuffix() {
+        let model = makeModel()
+        model.runtimeModelCatalog = [
+            RuntimeModelInfo(
+                id: "gpt-5.3-codex",
+                model: "gpt-5.3-codex",
+                displayName: "GPT-5.3-Codex"
+            ),
+        ]
+
+        XCTAssertEqual(model.modelMenuLabel(for: "gpt-5.3-codex"), "GPT-5.3-Codex")
+    }
+
     func testModelMenuLabelMarksGPT4oAsAPIKeyOnly() {
         let model = makeModel()
 
