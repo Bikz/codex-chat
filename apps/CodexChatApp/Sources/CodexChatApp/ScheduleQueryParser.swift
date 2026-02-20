@@ -45,13 +45,20 @@ enum ScheduleQueryParser {
         }
 
         let lowered = trimmed.lowercased()
+        let explicitDomain = detectDomain(in: lowered)
+        let hasPreferredDomain = preferredDomain != nil
         let temporal = temporalDescriptor(in: lowered, now: now)
 
-        guard isLikelyScheduleQuery(lowered, temporal: temporal) else {
+        guard isLikelyScheduleQuery(
+            lowered,
+            temporal: temporal,
+            hasExplicitDomain: explicitDomain != nil,
+            hasPreferredDomain: hasPreferredDomain
+        ) else {
             return nil
         }
 
-        let domain = detectDomain(in: lowered) ?? preferredDomain
+        let domain = explicitDomain ?? preferredDomain
         guard let domain else {
             return nil
         }
@@ -84,23 +91,32 @@ enum ScheduleQueryParser {
         return nil
     }
 
-    private static func isLikelyScheduleQuery(_ lowered: String, temporal: Int?) -> Bool {
-        if temporal != nil {
-            return true
-        }
-
-        if parseRangeHours(in: lowered) != nil || parseRangeDays(in: lowered) != nil {
-            return true
-        }
-
-        if lowered.contains("?") {
-            return true
-        }
-
-        if lowered.range(
-            of: #"\b(show|check|list|see|what|whats|what's|have|agenda|schedule)\b"#,
+    private static func isLikelyScheduleQuery(
+        _ lowered: String,
+        temporal: Int?,
+        hasExplicitDomain: Bool,
+        hasPreferredDomain: Bool
+    ) -> Bool {
+        let hasRangeSignal = parseRangeHours(in: lowered) != nil || parseRangeDays(in: lowered) != nil
+        let hasWindowSignal = lowered.contains("next week")
+            || lowered.contains("this week")
+            || lowered.contains("weekly")
+        let hasQuestion = lowered.contains("?")
+        let hasRequestPhrase = lowered.range(
+            of: #"\b(show|check|list|see|tell me|what|whats|what's|do i have|what do i have|can you|could you|would you|have any|any events|any reminders)\b"#,
             options: .regularExpression
-        ) != nil {
+        ) != nil
+        let hasTemporalSignal = temporal != nil
+
+        if hasExplicitDomain, hasRequestPhrase {
+            return true
+        }
+
+        if hasExplicitDomain, hasQuestion, hasTemporalSignal || hasRangeSignal || hasWindowSignal {
+            return true
+        }
+
+        if hasPreferredDomain, !hasExplicitDomain, hasQuestion || hasRangeSignal || hasWindowSignal {
             return true
         }
 

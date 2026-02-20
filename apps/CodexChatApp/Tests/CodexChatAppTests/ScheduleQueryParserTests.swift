@@ -58,4 +58,24 @@ final class ScheduleQueryParserTests: XCTestCase {
         XCTAssertEqual(arguments["anchor"], "dayStart")
         XCTAssertEqual(arguments["queryText"], "tomorrow?")
     }
+
+    func testRejectsConversationalCalendarMentionsWithoutExplicitRequest() {
+        XCTAssertNil(
+            ScheduleQueryParser.parse(text: "my calendar tomorrow is packed")
+        )
+        XCTAssertNil(
+            ScheduleQueryParser.parse(text: "calendar? i'm not ready")
+        )
+    }
+
+    func testParsesExplicitCalendarRequestWithTemporalContext() {
+        let result = ScheduleQueryParser.parse(
+            text: "check my calendar tomorrow"
+        )
+
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.domain, .calendar)
+        XCTAssertEqual(result?.dayOffset, 1)
+        XCTAssertEqual(result?.rangeHours, 24)
+    }
 }
