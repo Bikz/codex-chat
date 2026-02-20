@@ -102,6 +102,8 @@ Current first-party native actions:
 
 Native actions still execute through CodexChat safety rules (preview + confirmation for sensitive actions).
 
+For explicit Codex-led workflows (instead of direct native action dispatch), first-party `personal-actions-playbook` provides `composer.insert` playbooks that keep clarify/preview/confirm steps visible in chat.
+
 ## Advanced Executable Mods Unlock
 
 Executable mod behavior (hooks/automations) for non-vetted mods is gated by an advanced unlock in Settings.

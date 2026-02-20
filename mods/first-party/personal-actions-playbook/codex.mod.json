@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "codexchat.personal-actions-playbook",
+  "name": "Personal Actions Playbook",
+  "version": "1.0.0",
+  "description": "Explicit Codex-driven playbooks for personal actions with clarify-preview-confirm steps.",
+  "author": "CodexChat",
+  "license": "MIT",
+  "repository": "https://github.com/bikz/codexchat",
+  "entrypoints": {
+    "uiMod": "ui.mod.json"
+  },
+  "permissions": [],
+  "compatibility": {
+    "platforms": ["macos"],
+    "minCodexChatVersion": "0.1.0"
+  }
+}

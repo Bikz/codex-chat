@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "id": "codexchat.personal-actions-playbook",
+    "name": "Personal Actions Playbook",
+    "version": "1.0.0",
+    "description": "Explicit Codex-driven playbooks for personal actions with clarify-preview-confirm steps.",
+    "author": "CodexChat",
+    "license": "MIT",
+    "repository": "https://github.com/bikz/codexchat"
+  },
+  "theme": {},
+  "hooks": [
+    {
+      "id": "personal-actions-playbook-refresh",
+      "event": "thread.started",
+      "handler": {
+        "command": ["sh", "scripts/personal_actions_playbook.sh"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    },
+    {
+      "id": "personal-actions-playbook-turn-refresh",
+      "event": "turn.completed",
+      "handler": {
+        "command": ["sh", "scripts/personal_actions_playbook.sh"],
+        "cwd": "."
+      },
+      "permissions": {},
+      "timeoutMs": 5000,
+      "debounceMs": 0
+    }
+  ],
+  "automations": [],
+  "uiSlots": {
+    "modsBar": {
+      "enabled": true,
+      "title": "Personal Actions Playbook",
+      "source": {
+        "type": "handlerOutput"
+      }
+    }
+  }
+}

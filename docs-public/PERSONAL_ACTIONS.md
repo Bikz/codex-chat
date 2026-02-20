@@ -10,13 +10,9 @@ CodexChat includes native personal actions so everyday users can ask for practic
 
 ## Adaptive Intent Routing
 
-Composer text is routed locally for common intent patterns, including:
+Automatic phrase-based composer interception is disabled by default.
 
-- "clean up desktop"
-- "what's on my calendar today"
-- "send message to <recipient>: <body>"
-
-Routing runs inside the existing two-pane experience (inline cards + sheets) with no persistent third pane.
+CodexChat now prefers explicit user intent through normal chat and optional playbook prompts from Mods bar.
 
 ## Safety Contract
 
@@ -51,8 +47,9 @@ Routing runs inside the existing two-pane experience (inline cards + sheets) wit
 - `desktop-cleanup`
 - `calendar-assistant`
 - `messages-assistant`
+- `personal-actions-playbook`
 
-These packs expose native actions from Mods bar while preserving native safety checks.
+`personal-actions-playbook` inserts explicit Codex prompts (clarify -> preview -> confirm) instead of directly invoking native actions.
 
 ## Privacy
 

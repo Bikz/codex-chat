@@ -22,3 +22,10 @@ This folder contains first-party exemplar mods for CodexChat.
   - `ui.mod.json` (`schemaVersion: 1`)
 - `uiSlots.modsBar` is the only supported Mods bar slot key.
 - Legacy `uiSlots.rightInspector` is unsupported.
+
+Current first-party personal-action exemplars:
+
+- `desktop-cleanup`
+- `calendar-assistant`
+- `messages-assistant`
+- `personal-actions-playbook`

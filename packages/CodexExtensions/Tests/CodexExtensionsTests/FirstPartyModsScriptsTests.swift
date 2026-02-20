@@ -134,6 +134,36 @@ final class FirstPartyModsScriptsTests: XCTestCase {
         XCTAssertEqual(deleted.modsBar?.actions?.last?.id, "delete-10")
     }
 
+    func testPersonalActionsPlaybookScriptProvidesExplicitComposerPlaybooks() async throws {
+        let modDirectory = try copyFirstPartyModFixture(relativePath: "mods/first-party/personal-actions-playbook")
+        let threadID = UUID().uuidString
+
+        let output = try await runModScript(
+            modDirectory: modDirectory,
+            event: .threadStarted,
+            threadID: threadID
+        )
+
+        XCTAssertEqual(output.modsBar?.scope, .thread)
+        XCTAssertEqual(output.modsBar?.actions?.count, 3)
+        XCTAssertTrue(output.modsBar?.markdown.contains("insert transparent prompts") == true)
+
+        let actionIDs = Set(output.modsBar?.actions?.map(\.id) ?? [])
+        XCTAssertEqual(
+            actionIDs,
+            Set([
+                "playbook-message",
+                "playbook-calendar",
+                "playbook-desktop",
+            ])
+        )
+
+        for action in output.modsBar?.actions ?? [] {
+            XCTAssertEqual(action.kind, .composerInsert)
+            XCTAssertFalse((action.payload["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
     private func runModScript(
         modDirectory: URL,
         event: ExtensionEventName,
@@ -167,6 +197,8 @@ final class FirstPartyModsScriptsTests: XCTestCase {
             "scripts/summary.sh"
         case "prompt-book":
             "scripts/prompt_book.sh"
+        case "personal-actions-playbook":
+            "scripts/personal_actions_playbook.sh"
         default:
             "scripts/hook.sh"
         }
