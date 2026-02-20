@@ -113,6 +113,8 @@ private struct WindowAccessor: NSViewRepresentable {
 }
 
 private struct SettingsWindowAccessor: NSViewRepresentable {
+    let isTransparent: Bool
+
     func makeNSView(context _: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
@@ -132,11 +134,16 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
 
         window.styleMask.insert(.fullSizeContentView)
         window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
+        window.titlebarAppearsTransparent = isTransparent
         window.toolbarStyle = .unifiedCompact
         window.toolbar?.showsBaselineSeparator = false
-        window.isOpaque = false
-        window.backgroundColor = .clear
+        if isTransparent {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        } else {
+            window.isOpaque = true
+            window.backgroundColor = NSColor.windowBackgroundColor
+        }
     }
 }
 
@@ -147,7 +154,7 @@ private struct SettingsRoot: View {
     var body: some View {
         SettingsView(model: model)
             .designTokens(resolvedTokens)
-            .background(SettingsWindowAccessor())
+            .background(SettingsWindowAccessor(isTransparent: model.isTransparentThemeMode))
     }
 
     private var resolvedTokens: DesignTokens {

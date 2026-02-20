@@ -12,6 +12,7 @@ private struct TokenCardModifier: ViewModifier {
     let shadowRadius: CGFloat
 
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
         let resolvedRadius = radius ?? tokens.radius.medium
@@ -22,9 +23,20 @@ private struct TokenCardModifier: ViewModifier {
         case .card:
             tokens.materials.cardMaterial.material
         }
+        let materialOverlayOpacity = switch style {
+        case .panel:
+            colorScheme == .dark ? 0.18 : 0.10
+        case .card:
+            colorScheme == .dark ? 0.24 : 0.14
+        }
 
         content
-            .background(material, in: shape)
+            .background(
+                ZStack {
+                    shape.fill(Color(hex: tokens.palette.panelHex))
+                    shape.fill(material).opacity(materialOverlayOpacity)
+                }
+            )
             .overlay(shape.strokeBorder(Color.primary.opacity(strokeOpacity)))
             .clipShape(shape)
             .shadow(color: .black.opacity(shadowRadius > 0 ? 0.04 : 0), radius: shadowRadius, y: shadowRadius > 0 ? 2 : 0)

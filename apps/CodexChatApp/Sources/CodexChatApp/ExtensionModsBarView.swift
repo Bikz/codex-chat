@@ -128,7 +128,14 @@ struct ExtensionModsBarView: View {
                 }
             }
         }
-        .background(tokens.materials.panelMaterial.material)
+        .background(
+            ZStack {
+                Color(hex: tokens.palette.panelHex)
+                Rectangle()
+                    .fill(tokens.materials.panelMaterial.material)
+                    .opacity(model.isTransparentThemeMode ? 0.36 : 0.14)
+            }
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Extension modsBar")
     }
