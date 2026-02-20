@@ -1,6 +1,20 @@
 import CodexChatCore
 import Foundation
 
+public enum OsaScriptLanguage: String, CaseIterable, Sendable {
+    case applescript
+    case jxa
+
+    var osascriptLanguageName: String {
+        switch self {
+        case .applescript:
+            "AppleScript"
+        case .jxa:
+            "JavaScript"
+        }
+    }
+}
+
 public protocol MessagesSender: Sendable {
     func send(message: String, to recipient: String) async throws
 }
@@ -9,17 +23,38 @@ public protocol OsaScriptRunning: Sendable {
     func run(script: String, arguments: [String]) async throws -> String
 }
 
-public struct ProcessOsaScriptRunner: OsaScriptRunning {
+public protocol OsaScriptCommandRunning: Sendable {
+    func run(
+        language: OsaScriptLanguage,
+        script: String,
+        arguments: [String]
+    ) async throws -> String
+}
+
+public struct ProcessOsaScriptRunner: OsaScriptRunning, OsaScriptCommandRunning {
     public init() {}
 
     public func run(script: String, arguments: [String]) async throws -> String {
+        try await run(language: .applescript, script: script, arguments: arguments)
+    }
+
+    public func run(
+        language: OsaScriptLanguage,
+        script: String,
+        arguments: [String]
+    ) async throws -> String {
         try await Task.detached(priority: .userInitiated) {
             let process = Process()
             let outputPipe = Pipe()
             let errorPipe = Pipe()
 
             process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript", isDirectory: false)
-            process.arguments = ["-l", "AppleScript", "-e", script] + arguments
+            var processArguments = ["-l", language.osascriptLanguageName, "-e", script]
+            if !arguments.isEmpty {
+                processArguments.append("--")
+                processArguments.append(contentsOf: arguments)
+            }
+            process.arguments = processArguments
             process.standardOutput = outputPipe
             process.standardError = errorPipe
 

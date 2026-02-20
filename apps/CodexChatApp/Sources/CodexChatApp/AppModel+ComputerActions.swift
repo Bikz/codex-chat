@@ -8,6 +8,8 @@ extension AppModel {
     enum PermissionRecoveryTarget: Equatable {
         case automation
         case calendars
+        case reminders
+        case genericAutomation
 
         var deepLinkCandidates: [String] {
             switch self {
@@ -21,6 +23,16 @@ extension AppModel {
                     "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
                     "x-apple.systempreferences:com.apple.preference.security",
                 ]
+            case .reminders:
+                [
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders",
+                    "x-apple.systempreferences:com.apple.preference.security",
+                ]
+            case .genericAutomation:
+                [
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+                    "x-apple.systempreferences:com.apple.preference.security",
+                ]
             }
         }
 
@@ -30,6 +42,39 @@ extension AppModel {
                 "Automation permission needed"
             case .calendars:
                 "Calendar permission needed"
+            case .reminders:
+                "Reminders permission needed"
+            case .genericAutomation:
+                "Permissions needed to run this automation"
+            }
+        }
+
+        var remediationSteps: [String] {
+            switch self {
+            case .automation:
+                [
+                    "Open System Settings > Privacy & Security > Automation.",
+                    "Enable automation access for CodexChat.",
+                    "Retry the action in CodexChat.",
+                ]
+            case .calendars:
+                [
+                    "Open System Settings > Privacy & Security > Calendars.",
+                    "Enable calendar access for CodexChat.",
+                    "Retry the action in CodexChat.",
+                ]
+            case .reminders:
+                [
+                    "Open System Settings > Privacy & Security > Reminders.",
+                    "Enable reminders access for CodexChat.",
+                    "Retry the action in CodexChat.",
+                ]
+            case .genericAutomation:
+                [
+                    "Open System Settings > Privacy & Security and check relevant app permissions.",
+                    "Enable CodexChat for Automation and any required data category (Calendars/Reminders).",
+                    "Retry the action in CodexChat.",
+                ]
             }
         }
     }
@@ -45,6 +90,8 @@ extension AppModel {
                 "Native computer actions are disabled by config (features.native_computer_actions = false)."
             )
         }
+
+        permissionRecoveryNotice = nil
 
         guard let provider = computerActionRegistry.provider(for: actionID) else {
             throw ComputerActionError.unsupported("Unknown computer action: \(actionID)")
@@ -71,7 +118,11 @@ extension AppModel {
         do {
             preview = try await provider.preview(request: request)
         } catch {
-            presentPermissionRecoveryPromptIfNeeded(actionID: provider.actionID, error: error)
+            presentPermissionRecoveryNoticeIfNeeded(
+                actionID: provider.actionID,
+                arguments: request.arguments,
+                error: error
+            )
             throw error
         }
         let previewStatus: ComputerActionRunStatus = requiresExplicitConfirmation(for: provider)
@@ -244,7 +295,11 @@ extension AppModel {
         do {
             result = try await provider.execute(request: previewState.request, preview: previewState.artifact)
         } catch {
-            presentPermissionRecoveryPromptIfNeeded(actionID: provider.actionID, error: error)
+            presentPermissionRecoveryNoticeIfNeeded(
+                actionID: provider.actionID,
+                arguments: previewState.request.arguments,
+                error: error
+            )
             throw error
         }
         let resultMetadata = encodeDictionary(result.metadata)
@@ -275,6 +330,7 @@ extension AppModel {
         )
 
         computerActionStatusMessage = result.summary
+        permissionRecoveryNotice = nil
         pendingComputerActionPreview = nil
     }
 
@@ -292,6 +348,13 @@ extension AppModel {
             return true
         }
 
+        if requiresPerRunComputerActionPermissionPrompt(actionID: actionID) {
+            return promptForComputerActionPermission(
+                displayName: displayName,
+                safetyLevel: safetyLevel
+            )
+        }
+
         guard let permissionRepository = computerActionPermissionRepository else {
             return true
         }
@@ -305,19 +368,33 @@ extension AppModel {
             safetyLevel: safetyLevel
         )
 
-        _ = try await permissionRepository.set(
-            actionID: actionID,
-            projectID: projectID,
-            decision: granted ? .granted : .denied,
-            decidedAt: Date()
-        )
+        if shouldPersistComputerActionPermissionDecision(actionID: actionID) {
+            _ = try await permissionRepository.set(
+                actionID: actionID,
+                projectID: projectID,
+                decision: granted ? .granted : .denied,
+                decidedAt: Date()
+            )
+        }
         return granted
+    }
+
+    func requiresPerRunComputerActionPermissionPrompt(actionID: String) -> Bool {
+        actionID == "apple.script.run"
+    }
+
+    func shouldPersistComputerActionPermissionDecision(actionID: String) -> Bool {
+        !requiresPerRunComputerActionPermissionPrompt(actionID: actionID)
     }
 
     private func promptForComputerActionPermission(
         displayName: String,
         safetyLevel: ComputerActionSafetyLevel
     ) -> Bool {
+        if let computerActionPermissionPromptHandler {
+            return computerActionPermissionPromptHandler(displayName, safetyLevel)
+        }
+
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Allow \(displayName)?"
@@ -336,7 +413,8 @@ extension AppModel {
 
     func permissionRecoveryTargetForComputerAction(
         actionID: String,
-        error: ComputerActionError
+        error: ComputerActionError,
+        arguments: [String: String] = [:]
     ) -> PermissionRecoveryTarget? {
         guard case let .permissionDenied(message) = error else {
             return nil
@@ -347,6 +425,7 @@ extension AppModel {
         case "messages.send":
             guard normalizedMessage.contains("automation")
                 || normalizedMessage.contains("messages permissions")
+                || normalizedMessage.contains("apple events")
             else {
                 return nil
             }
@@ -358,31 +437,136 @@ extension AppModel {
             }
             return .calendars
 
+        case "reminders.today":
+            guard normalizedMessage.contains("reminder") else {
+                return nil
+            }
+            return .reminders
+
+        case "apple.script.run":
+            guard isLikelySystemPermissionFailureMessage(normalizedMessage) else {
+                return nil
+            }
+
+            if let hintedTarget = permissionRecoveryTarget(fromTargetHint: arguments["targetHint"]) {
+                return hintedTarget
+            }
+
+            if normalizedMessage.contains("calendar") {
+                return .calendars
+            }
+            if normalizedMessage.contains("reminder") {
+                return .reminders
+            }
+            if normalizedMessage.contains("automation")
+                || normalizedMessage.contains("apple event")
+            {
+                return .automation
+            }
+            return .genericAutomation
+
         default:
             return nil
         }
     }
 
-    private func presentPermissionRecoveryPromptIfNeeded(actionID: String, error: Error) {
+    private func presentPermissionRecoveryNoticeIfNeeded(
+        actionID: String,
+        arguments: [String: String],
+        error: Error
+    ) {
         guard let computerActionError = error as? ComputerActionError,
               let target = permissionRecoveryTargetForComputerAction(
                   actionID: actionID,
-                  error: computerActionError
+                  error: computerActionError,
+                  arguments: arguments
               )
         else {
             return
         }
 
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = target.title
-        alert.informativeText = "\(computerActionError.localizedDescription)\n\nOpen System Settings to grant access?"
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Not now")
+        permissionRecoveryNotice = PermissionRecoveryNotice(
+            actionID: actionID,
+            target: target,
+            title: target.title,
+            message: computerActionError.localizedDescription,
+            remediationSteps: target.remediationSteps
+        )
+    }
 
-        if alert.runModal() == .alertFirstButtonReturn {
-            openSystemSettings(for: target)
+    private func permissionRecoveryTarget(fromTargetHint hint: String?) -> PermissionRecoveryTarget? {
+        guard let hint else {
+            return nil
         }
+
+        let normalized = hint.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            return nil
+        }
+
+        if normalized.contains("calendar") {
+            return .calendars
+        }
+        if normalized.contains("reminder") {
+            return .reminders
+        }
+        if normalized.contains("message")
+            || normalized.contains("imessage")
+            || normalized.contains("automation")
+            || normalized.contains("appleevent")
+            || normalized.contains("apple-event")
+        {
+            return .automation
+        }
+
+        if normalized.contains("script") || normalized.contains("generic") {
+            return .genericAutomation
+        }
+
+        return nil
+    }
+
+    private func isLikelySystemPermissionFailureMessage(_ message: String) -> Bool {
+        if message.contains("permission denied for"),
+           !message.contains("system settings"),
+           !message.contains("automation"),
+           !message.contains("calendar"),
+           !message.contains("reminder"),
+           !message.contains("apple event")
+        {
+            return false
+        }
+
+        let indicators = [
+            "automation",
+            "calendar",
+            "reminder",
+            "apple event",
+            "not authorized",
+            "not permitted",
+            "privacy",
+            "enable",
+            "access is denied",
+            "-1743",
+            "erraeeventnotpermitted",
+        ]
+
+        return indicators.contains(where: { message.contains($0) })
+    }
+
+    func dismissPermissionRecoveryNotice() {
+        permissionRecoveryNotice = nil
+    }
+
+    func openPermissionRecoverySettingsFromNotice() {
+        guard let notice = permissionRecoveryNotice else {
+            return
+        }
+        openSystemSettings(for: notice.target)
+    }
+
+    func openPermissionRecoverySettings(for target: PermissionRecoveryTarget) {
+        openSystemSettings(for: target)
     }
 
     private func openSystemSettings(for target: PermissionRecoveryTarget) {

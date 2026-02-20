@@ -10,6 +10,7 @@ struct ChatsCanvasView: View {
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isComposerFocused: Bool
     @State private var isComposerDropTargeted = false
+    @State private var permissionRecoveryDetailsNotice: AppModel.PermissionRecoveryNotice?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,8 +33,22 @@ struct ChatsCanvasView: View {
                     composerSurface
                 }
 
+                if let notice = model.permissionRecoveryNotice {
+                    permissionRecoveryInlineBanner(notice)
+                        .padding(.horizontal, tokens.spacing.medium)
+                }
+
                 if let followUpStatus = model.followUpStatusMessage {
                     Text(followUpStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, tokens.spacing.medium)
+                }
+
+                if let computerActionStatus = model.computerActionStatusMessage,
+                   !computerActionStatus.isEmpty
+                {
+                    Text(computerActionStatus)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, tokens.spacing.medium)
@@ -119,6 +134,14 @@ struct ChatsCanvasView: View {
                     )
                 }
             }
+        }
+        .sheet(item: $permissionRecoveryDetailsNotice) { notice in
+            PermissionRecoveryDetailsSheet(
+                notice: notice,
+                onOpenSettings: {
+                    model.openPermissionRecoverySettings(for: notice.target)
+                }
+            )
         }
     }
 
@@ -292,6 +315,60 @@ struct ChatsCanvasView: View {
         )
         .padding(.horizontal, tokens.spacing.medium)
         .padding(.vertical, tokens.spacing.small)
+    }
+
+    private func permissionRecoveryInlineBanner(_ notice: AppModel.PermissionRecoveryNotice) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(notice.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(notice.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                Button("Open Settings") {
+                    model.openPermissionRecoverySettingsFromNotice()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button("Details") {
+                    permissionRecoveryDetailsNotice = notice
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button("Dismiss") {
+                    model.dismissPermissionRecoveryNotice()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+            }
+            .font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(colorScheme == .dark ? 0.16 : 0.1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.45))
+        )
     }
 
     private var voiceButtonForegroundColor: Color {
@@ -1084,5 +1161,54 @@ private struct CustomModelSheet: View {
         }
         .padding(20)
         .frame(minWidth: 420)
+    }
+}
+
+private struct PermissionRecoveryDetailsSheet: View {
+    let notice: AppModel.PermissionRecoveryNotice
+    let onOpenSettings: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(notice.message)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+
+                    Divider()
+
+                    Text("How to fix")
+                        .font(.headline)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(notice.remediationSteps.enumerated()), id: \.offset) { index, step in
+                            Text("\(index + 1). \(step)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle(notice.title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Open Settings") {
+                        onOpenSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .frame(minWidth: 480, minHeight: 320)
     }
 }

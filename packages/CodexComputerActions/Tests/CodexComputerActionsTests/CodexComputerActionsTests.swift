@@ -126,6 +126,162 @@ final class CodexComputerActionsTests: XCTestCase {
         }
     }
 
+    func testAppleScriptRunPreviewValidation() async throws {
+        let action = AppleScriptRunAction(runner: MockOsaScriptRunner(output: "ok"))
+
+        do {
+            _ = try await action.preview(
+                request: ComputerActionRequest(
+                    runContextID: "script-1",
+                    arguments: ["language": "applescript", "script": "   "]
+                )
+            )
+            XCTFail("Expected missing script validation failure")
+        } catch let error as ComputerActionError {
+            guard case .invalidArguments = error else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+        }
+
+        let oversizedScript = String(repeating: "a", count: 20001)
+        do {
+            _ = try await action.preview(
+                request: ComputerActionRequest(
+                    runContextID: "script-2",
+                    arguments: ["language": "applescript", "script": oversizedScript]
+                )
+            )
+            XCTFail("Expected script size validation failure")
+        } catch let error as ComputerActionError {
+            guard case .invalidArguments = error else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+        }
+
+        do {
+            _ = try await action.preview(
+                request: ComputerActionRequest(
+                    runContextID: "script-3",
+                    arguments: [
+                        "language": "applescript",
+                        "script": "return \"ok\"",
+                        "argumentsJson": "{\"bad\":true}",
+                    ]
+                )
+            )
+            XCTFail("Expected argumentsJson validation failure")
+        } catch let error as ComputerActionError {
+            guard case .invalidArguments = error else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+        }
+    }
+
+    func testAppleScriptRunExecuteSuccessForAppleScriptAndJXA() async throws {
+        let runner = MockOsaScriptRunner(output: "done")
+        let action = AppleScriptRunAction(runner: runner)
+
+        let appleScriptRequest = ComputerActionRequest(
+            runContextID: "script-apple",
+            arguments: [
+                "language": "applescript",
+                "script": "on run argv\nreturn \"ok\"\nend run",
+                "argumentsJson": "[\"first\"]",
+            ]
+        )
+        let appleScriptPreview = try await action.preview(request: appleScriptRequest)
+        _ = try await action.execute(request: appleScriptRequest, preview: appleScriptPreview)
+
+        let jxaRequest = ComputerActionRequest(
+            runContextID: "script-jxa",
+            arguments: [
+                "language": "jxa",
+                "script": "function run(argv) { return \"ok\"; }",
+                "argumentsJson": "[\"second\"]",
+            ]
+        )
+        let jxaPreview = try await action.preview(request: jxaRequest)
+        _ = try await action.execute(request: jxaRequest, preview: jxaPreview)
+
+        let calls = await runner.calls()
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls[0].language, .applescript)
+        XCTAssertEqual(calls[1].language, .jxa)
+    }
+
+    func testAppleScriptRunNormalizesPermissionDeniedErrors() async throws {
+        let runner = MockOsaScriptRunner(
+            output: "",
+            error: ComputerActionError.executionFailed(
+                "Not authorized to send Apple events to Calendar. (-1743)"
+            )
+        )
+        let action = AppleScriptRunAction(runner: runner)
+        let request = ComputerActionRequest(
+            runContextID: "script-permission",
+            arguments: [
+                "language": "applescript",
+                "script": "on run argv\nreturn \"ok\"\nend run",
+                "targetHint": "calendar",
+            ]
+        )
+
+        let preview = try await action.preview(request: request)
+        do {
+            _ = try await action.execute(request: request, preview: preview)
+            XCTFail("Expected permission denied normalization")
+        } catch let error as ComputerActionError {
+            guard case let .permissionDenied(message) = error else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+            XCTAssertTrue(message.lowercased().contains("calendar"))
+        }
+    }
+
+    func testRemindersTodayPreviewExecuteAndPermissionErrorMapping() async throws {
+        let now = Date(timeIntervalSince1970: 1_735_660_800)
+        let reminder = ReminderItem(
+            id: "rem_1",
+            title: "Pay rent",
+            listName: "Personal",
+            dueAt: now.addingTimeInterval(3600)
+        )
+
+        let source = MockReminderSource(reminders: [reminder], error: nil)
+        let action = RemindersTodayAction(reminderSource: source, nowProvider: { now })
+        let request = ComputerActionRequest(runContextID: "reminders-run", arguments: ["rangeHours": "24"])
+
+        let preview = try await action.preview(request: request)
+        XCTAssertEqual(preview.actionID, "reminders.today")
+        XCTAssertTrue(preview.summary.contains("Found 1"))
+        XCTAssertTrue(preview.detailsMarkdown.contains("Pay rent"))
+
+        let execution = try await action.execute(request: request, preview: preview)
+        XCTAssertTrue(execution.summary.contains("1 reminder"))
+
+        let deniedAction = RemindersTodayAction(
+            reminderSource: MockReminderSource(
+                reminders: [],
+                error: ComputerActionError.permissionDenied("Reminders access is denied.")
+            ),
+            nowProvider: { now }
+        )
+
+        do {
+            _ = try await deniedAction.preview(request: request)
+            XCTFail("Expected permission denied")
+        } catch let error as ComputerActionError {
+            guard case .permissionDenied = error else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+        }
+    }
+
     private func makeTempDirectory(prefix: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
@@ -146,6 +302,18 @@ private struct MockCalendarSource: CalendarEventSource {
     }
 }
 
+private struct MockReminderSource: ReminderItemSource {
+    let reminders: [ReminderItem]
+    let error: Error?
+
+    func reminders(from _: Date, to _: Date) async throws -> [ReminderItem] {
+        if let error {
+            throw error
+        }
+        return reminders
+    }
+}
+
 private actor MockMessagesSender: MessagesSender {
     struct Call: Hashable {
         let message: String
@@ -160,5 +328,38 @@ private actor MockMessagesSender: MessagesSender {
 
     func calls() -> [Call] {
         sent
+    }
+}
+
+private actor MockOsaScriptRunner: OsaScriptCommandRunning {
+    struct Call: Hashable {
+        let language: OsaScriptLanguage
+        let script: String
+        let arguments: [String]
+    }
+
+    private let output: String
+    private let error: ComputerActionError?
+    private var recordedCalls: [Call] = []
+
+    init(output: String, error: ComputerActionError? = nil) {
+        self.output = output
+        self.error = error
+    }
+
+    func run(
+        language: OsaScriptLanguage,
+        script: String,
+        arguments: [String]
+    ) async throws -> String {
+        recordedCalls.append(Call(language: language, script: script, arguments: arguments))
+        if let error {
+            throw error
+        }
+        return output
+    }
+
+    func calls() -> [Call] {
+        recordedCalls
     }
 }

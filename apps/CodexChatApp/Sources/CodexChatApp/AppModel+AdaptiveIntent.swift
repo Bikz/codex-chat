@@ -6,6 +6,7 @@ extension AppModel {
     enum AdaptiveIntent: Hashable {
         case desktopCleanup
         case calendarToday(rangeHours: Int)
+        case remindersToday(rangeHours: Int)
         case messagesSend(recipient: String, body: String)
         case planRun(planPath: String?)
         case agentRoleSetup
@@ -40,7 +41,7 @@ extension AppModel {
         }
 
         switch intent {
-        case .desktopCleanup, .calendarToday, .messagesSend:
+        case .desktopCleanup, .calendarToday, .remindersToday, .messagesSend:
             return true
         case .planRun, .agentRoleSetup:
             return false
@@ -81,6 +82,22 @@ extension AppModel {
             }
         }
 
+        if lowered.contains("reminder") {
+            let hasTodayStyleCue = lowered.contains("today")
+                || lowered.contains("what reminders")
+                || lowered.contains("what's on")
+                || lowered.contains("whats on")
+                || lowered.contains("check my reminders")
+                || lowered.contains("check reminders")
+                || lowered.contains("show my reminders")
+                || lowered.contains("show reminders")
+                || lowered.contains("look at my reminders")
+
+            if hasTodayStyleCue {
+                return .remindersToday(rangeHours: parseRangeHours(text: text) ?? 24)
+            }
+        }
+
         if let messageIntent = parseMessagesIntent(text: text) {
             return messageIntent
         }
@@ -113,6 +130,14 @@ extension AppModel {
             case let .calendarToday(rangeHours):
                 try await runNativeComputerAction(
                     actionID: "calendar.today",
+                    arguments: ["rangeHours": String(rangeHours)],
+                    threadID: threadID,
+                    projectID: project.id
+                )
+
+            case let .remindersToday(rangeHours):
+                try await runNativeComputerAction(
+                    actionID: "reminders.today",
                     arguments: ["rangeHours": String(rangeHours)],
                     threadID: threadID,
                     projectID: project.id
@@ -237,6 +262,8 @@ extension AppModel {
             "Clean up desktop"
         case .calendarToday:
             "What's on my calendar today?"
+        case .remindersToday:
+            "What reminders do I have today?"
         case let .messagesSend(recipient, body):
             "Send message to \(recipient): \(body)"
         case let .planRun(planPath):

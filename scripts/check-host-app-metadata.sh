@@ -22,6 +22,22 @@ if [[ "$min_os" != "14.0" ]]; then
   exit 1
 fi
 
+required_privacy_keys=(
+  NSCalendarsUsageDescription
+  NSCalendarsFullAccessUsageDescription
+  NSAppleEventsUsageDescription
+  NSRemindersUsageDescription
+  NSRemindersFullAccessUsageDescription
+)
+
+for key in "${required_privacy_keys[@]}"; do
+  value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$INFO_PLIST" 2>/dev/null || true)
+  if [[ -z "${value//[[:space:]]/}" ]]; then
+    echo "error: host app Info.plist must include non-empty $key" >&2
+    exit 1
+  fi
+done
+
 for required in Contents.json icon_16x16.png icon_16x16@2x.png icon_32x32.png icon_32x32@2x.png icon_128x128.png icon_128x128@2x.png icon_256x256.png icon_256x256@2x.png icon_512x512.png icon_512x512@2x.png; do
   [[ -f "$ICONSET_DIR/$required" ]] || { echo "error: missing icon asset $required" >&2; exit 1; }
 done
