@@ -2,6 +2,28 @@
 import XCTest
 
 final class ChatTitleGeneratorTests: XCTestCase {
+    func testRequestPayloadUsesProvidedModel() {
+        let payload = ChatTitleGenerator.requestPayload(
+            userText: "Summarize this",
+            model: "gpt-5-codex",
+            reasoningEffort: nil
+        )
+
+        XCTAssertEqual(payload["model"] as? String, "gpt-5-codex")
+        XCTAssertNil(payload["reasoning"])
+    }
+
+    func testRequestPayloadIncludesReasoningWhenProvided() {
+        let payload = ChatTitleGenerator.requestPayload(
+            userText: "Summarize this",
+            model: "gpt-5-codex",
+            reasoningEffort: " low "
+        )
+
+        let reasoning = payload["reasoning"] as? [String: String]
+        XCTAssertEqual(reasoning?["effort"], "low")
+    }
+
     func testNormalizedTitleRemovesFormattingAndTrailingPunctuation() {
         let title = ChatTitleGenerator.normalizedTitle("  \"Plan CI migration today!!!\"  ")
 

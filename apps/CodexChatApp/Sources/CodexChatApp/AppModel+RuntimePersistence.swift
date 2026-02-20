@@ -158,7 +158,20 @@ extension AppModel {
             guard let apiKey = try keychainStore.readSecret(account: APIKeychainStore.runtimeAPIKeyAccount) else {
                 return nil
             }
-            return try await ChatTitleGenerator.generateTitle(userText: userText, apiKey: apiKey)
+            let selectedModelID = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !selectedModelID.isEmpty else {
+                return nil
+            }
+
+            let clampedReasoning = clampedReasoningLevel(.low, forModelID: selectedModelID)
+            let reasoningEffort = clampedReasoning == .none ? nil : clampedReasoning.rawValue
+
+            return try await ChatTitleGenerator.generateTitle(
+                userText: userText,
+                apiKey: apiKey,
+                model: selectedModelID,
+                reasoningEffort: reasoningEffort
+            )
         } catch {
             appendLog(.debug, "Skipping model title generation: \(error.localizedDescription)")
             return nil

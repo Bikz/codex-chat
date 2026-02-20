@@ -1,13 +1,18 @@
 import Foundation
 
 enum ChatTitleGenerator {
-    static let model = "gpt-4o-mini"
     static let endpoint = URL(string: "https://api.openai.com/v1/responses")!
 
-    static func generateTitle(userText: String, apiKey: String) async throws -> String? {
+    static func generateTitle(
+        userText: String,
+        apiKey: String,
+        model: String,
+        reasoningEffort: String?
+    ) async throws -> String? {
         let trimmedUserText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedUserText.isEmpty, !trimmedAPIKey.isEmpty else {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedUserText.isEmpty, !trimmedAPIKey.isEmpty, !trimmedModel.isEmpty else {
             return nil
         }
 
@@ -17,22 +22,11 @@ enum ChatTitleGenerator {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(trimmedAPIKey)", forHTTPHeaderField: "Authorization")
 
-        let prompt = """
-        Write a concise chat title for this user request.
-        Rules:
-        - 2 to 5 words.
-        - Plain text only.
-        - No quotes.
-        - No trailing punctuation.
-        User request:
-        \(trimmedUserText)
-        """
-
-        let payload: [String: Any] = [
-            "model": model,
-            "input": prompt,
-            "max_output_tokens": 20,
-        ]
+        let payload = requestPayload(
+            userText: trimmedUserText,
+            model: trimmedModel,
+            reasoningEffort: reasoningEffort
+        )
         request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -49,6 +43,38 @@ enum ChatTitleGenerator {
         }
 
         return normalizedTitle(rawTitle)
+    }
+
+    static func requestPayload(
+        userText: String,
+        model: String,
+        reasoningEffort: String?
+    ) -> [String: Any] {
+        let prompt = """
+        Write a concise chat title for this user request.
+        Rules:
+        - 2 to 5 words.
+        - Plain text only.
+        - No quotes.
+        - No trailing punctuation.
+        User request:
+        \(userText)
+        """
+
+        var payload: [String: Any] = [
+            "model": model,
+            "input": prompt,
+            "max_output_tokens": 20,
+        ]
+
+        if let reasoningEffort {
+            let trimmedEffort = reasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedEffort.isEmpty {
+                payload["reasoning"] = ["effort": trimmedEffort]
+            }
+        }
+
+        return payload
     }
 
     static func extractRawTitle(from response: [String: Any]) -> String? {
