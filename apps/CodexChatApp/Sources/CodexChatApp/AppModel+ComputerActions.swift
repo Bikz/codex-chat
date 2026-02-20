@@ -67,7 +67,13 @@ extension AppModel {
                 .path
         )
 
-        let preview = try await provider.preview(request: request)
+        let preview: ComputerActionPreviewArtifact
+        do {
+            preview = try await provider.preview(request: request)
+        } catch {
+            presentPermissionRecoveryPromptIfNeeded(actionID: provider.actionID, error: error)
+            throw error
+        }
         let previewStatus: ComputerActionRunStatus = requiresExplicitConfirmation(for: provider)
             ? .awaitingConfirmation
             : .previewReady
