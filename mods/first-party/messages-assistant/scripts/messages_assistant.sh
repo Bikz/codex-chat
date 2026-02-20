@@ -154,7 +154,7 @@ function renderActions(state) {
       prompt: {
         title: "Message Draft",
         message: "Enter `Recipient :: Message`",
-        placeholder: "Alex :: Running 10 minutes late.",
+        placeholder: "Contact Name :: Message text",
         submitLabel: "Save Draft",
       },
     },
