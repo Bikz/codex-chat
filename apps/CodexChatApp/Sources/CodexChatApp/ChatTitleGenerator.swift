@@ -103,18 +103,20 @@ enum ChatTitleGenerator {
         }
 
         let trimmedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedModel: String? = if let trimmedModel, !trimmedModel.isEmpty {
-            trimmedModel
-        } else {
-            nil
-        }
+        let resolvedModel: String? = {
+            guard let trimmedModel, !trimmedModel.isEmpty else {
+                return nil
+            }
+            return trimmedModel
+        }()
 
         let trimmedEffort = reasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedEffort: String? = if let trimmedEffort, !trimmedEffort.isEmpty {
-            trimmedEffort
-        } else {
-            nil
-        }
+        let resolvedEffort: String? = {
+            guard let trimmedEffort, !trimmedEffort.isEmpty else {
+                return nil
+            }
+            return trimmedEffort
+        }()
 
         let runtime = CodexRuntime()
         do {
