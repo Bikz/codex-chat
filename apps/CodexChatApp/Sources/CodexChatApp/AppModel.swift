@@ -664,6 +664,16 @@ final class AppModel: ObservableObject {
         await persistCompletedTurn(context: job.context, completion: job.completion)
     }
 
+    lazy var persistenceBatcher = PersistenceBatcher { [weak self] jobs in
+        guard let self else { return }
+        for job in jobs {
+            await turnPersistenceScheduler.enqueue(
+                context: job.context,
+                completion: job.completion
+            )
+        }
+    }
+
     lazy var runtimeEventDispatchBridge = RuntimeEventDispatchBridge { [weak self] events in
         self?.handleRuntimeEventBatch(events)
     }
@@ -844,9 +854,11 @@ final class AppModel: ObservableObject {
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
         let turnScheduler = turnConcurrencyScheduler
         let persistenceScheduler = turnPersistenceScheduler
+        let persistenceBatcher = persistenceBatcher
         let eventBridge = runtimeEventDispatchBridge
         Task {
             await threadResolutionCoordinator.cancelAll()
+            await persistenceBatcher.shutdown()
             await turnScheduler.cancelAll()
             await persistenceScheduler.cancelQueuedJobs()
             await eventBridge.stop()

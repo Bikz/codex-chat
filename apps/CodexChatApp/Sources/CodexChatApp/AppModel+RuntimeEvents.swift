@@ -166,9 +166,14 @@ extension AppModel {
                 )
                 markThreadUnreadIfNeeded(context.localThreadID)
 
+                let durability: PersistenceBatcher.Durability = isFailureCompletion(completion) ? .immediate : .batched
                 Task {
                     await turnConcurrencyScheduler.release(threadID: context.localThreadID)
-                    await turnPersistenceScheduler.enqueue(context: context, completion: completion)
+                    await persistenceBatcher.enqueue(
+                        context: context,
+                        completion: completion,
+                        durability: durability
+                    )
                 }
             } else {
                 appendLog(.debug, "Turn completed without active context: \(completion.status)")

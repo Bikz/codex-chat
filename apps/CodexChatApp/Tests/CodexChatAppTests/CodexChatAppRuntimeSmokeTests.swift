@@ -37,10 +37,23 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
             .getRuntimeThreadID(localThreadID: harness.thread.id)
         XCTAssertEqual(mappedRuntimeThreadID, "thr_test")
 
-        let archiveURL = try await eventuallyValue(timeoutSeconds: 3.0) {
-            ChatArchiveStore.latestArchiveURL(projectPath: harness.project.path, threadID: harness.thread.id)
+        let archiveContent: String = try await eventuallyValue(timeoutSeconds: 3.0) {
+            guard let archiveURL = ChatArchiveStore.latestArchiveURL(
+                projectPath: harness.project.path,
+                threadID: harness.thread.id
+            ) else {
+                return nil
+            }
+
+            guard let content = try? String(contentsOf: archiveURL, encoding: .utf8),
+                  content.contains("Hello"),
+                  content.contains("Hello from fake runtime.")
+            else {
+                return nil
+            }
+
+            return content
         }
-        let archiveContent = try String(contentsOf: archiveURL, encoding: .utf8)
         XCTAssertTrue(archiveContent.contains("Hello"))
         XCTAssertTrue(archiveContent.contains("Hello from fake runtime."))
     }
