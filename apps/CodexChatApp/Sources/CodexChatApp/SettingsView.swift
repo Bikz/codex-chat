@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
+    @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
 
     @State private var selectedSection: SettingsSection = .defaultSelection
 
@@ -238,6 +239,18 @@ struct SettingsView: View {
                     Text(model.accountState.authMode.rawValue)
                         .foregroundStyle(.secondary)
                 }
+
+                SettingsFieldRow(label: "Name") {
+                    TextField("Shown in sidebar", text: $preferredAccountDisplayName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 280)
+                        .accessibilityLabel("Display name")
+                }
+
+                Text("Your name appears in the bottom-left account label. Leave empty to use your account email or auth title.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
 
                 if let message = model.accountStatusMessage {
                     Text(message)

@@ -8,6 +8,7 @@ struct SidebarView: View {
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openSettings) private var openSettings
+    @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
     @FocusState private var isSearchFocused: Bool
 
     @State private var hoveredProjectID: UUID?
@@ -55,6 +56,13 @@ struct SidebarView: View {
             return Color.primary.opacity(0.90)
         }
         return Color.primary.opacity(0.76)
+    }
+
+    private var sidebarAccountDisplayName: String {
+        AccountDisplayNamePreference.resolvedDisplayName(
+            preferredName: preferredAccountDisplayName,
+            fallback: model.accountDisplayName
+        )
     }
 
     var body: some View {
@@ -606,9 +614,9 @@ struct SidebarView: View {
                 openSettingsWindow()
             } label: {
                 HStack(spacing: 10) {
-                    UserInitialCircle(model.accountDisplayName, size: 28)
+                    UserInitialCircle(sidebarAccountDisplayName, size: 28)
 
-                    Text(model.accountDisplayName)
+                    Text(sidebarAccountDisplayName)
                         .font(sidebarBodyFont.weight(.medium))
                         .lineLimit(1)
 
