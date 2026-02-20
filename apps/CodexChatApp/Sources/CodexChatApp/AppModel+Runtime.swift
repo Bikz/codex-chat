@@ -245,6 +245,7 @@ extension AppModel {
             return
         }
 
+        startRuntimePoolMetricsLoopIfNeeded()
         await startRuntimeEventLoopIfNeeded()
         cancelAutomaticRuntimeRecovery()
 
@@ -259,6 +260,7 @@ extension AppModel {
 
     func restartRuntimeSession() async {
         guard runtimePool != nil else { return }
+        startRuntimePoolMetricsLoopIfNeeded()
         cancelAutomaticRuntimeRecovery()
 
         runtimeStatus = .starting
@@ -307,6 +309,7 @@ extension AppModel {
         runtimeIssue = nil
         runtimeSetupMessage = nil
         runtimeCapabilities = await runtimePool.capabilities()
+        await refreshRuntimePoolSnapshot()
         reconcileStaleApprovalState(
             reason: restarting ? "the runtime restarted" : "the runtime reconnected"
         )

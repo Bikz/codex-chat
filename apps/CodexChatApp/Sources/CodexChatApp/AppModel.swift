@@ -593,6 +593,8 @@ final class AppModel: ObservableObject {
     @Published var unreadThreadIDs: Set<UUID> = []
     @Published var followUpStatusMessage: String?
     @Published var runtimeCapabilities: RuntimeCapabilities = .none
+    @Published var runtimePoolSnapshot: RuntimePoolSnapshot = .empty
+    @Published var adaptiveTurnConcurrencyLimit: Int = AppModel.defaultMaxConcurrentTurns
     @Published var runtimeModelCatalog: [RuntimeModelInfo] = []
     @Published var isNodeSkillInstallerAvailable = false
     @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
@@ -715,6 +717,7 @@ final class AppModel: ObservableObject {
     var workerTracePersistenceTask: Task<Void, Never>?
     var secondarySurfaceRefreshTask: Task<Void, Never>?
     var adaptiveConcurrencyRefreshTask: Task<Void, Never>?
+    var runtimePoolMetricsTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
     var pendingFollowUpAutoDrainReason: String?
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
@@ -836,6 +839,7 @@ final class AppModel: ObservableObject {
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
         adaptiveConcurrencyRefreshTask?.cancel()
+        stopRuntimePoolMetricsLoop()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
@@ -897,6 +901,7 @@ final class AppModel: ObservableObject {
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
         adaptiveConcurrencyRefreshTask?.cancel()
+        runtimePoolMetricsTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()

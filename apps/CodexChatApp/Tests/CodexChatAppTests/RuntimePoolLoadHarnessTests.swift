@@ -137,6 +137,12 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
             _ = await eventTask.result
 
             let result = await collector.result()
+            let settledSnapshot = await runtimePool.snapshot()
+            XCTAssertEqual(
+                settledSnapshot.totalInFlightTurns,
+                0,
+                "Runtime pool leaked in-flight counters: \(settledSnapshot)"
+            )
             await runtimePool.stop()
             await runtime.stop()
             return result

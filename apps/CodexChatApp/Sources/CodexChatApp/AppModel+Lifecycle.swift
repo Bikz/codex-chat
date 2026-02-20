@@ -2,6 +2,7 @@ import Foundation
 
 extension AppModel {
     func onAppear() {
+        startRuntimePoolMetricsLoopIfNeeded()
         Task {
             await loadInitialData()
         }

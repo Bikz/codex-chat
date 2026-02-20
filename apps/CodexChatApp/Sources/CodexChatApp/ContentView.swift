@@ -21,6 +21,8 @@ struct ContentView: View {
         .sheet(isPresented: $model.isDiagnosticsVisible) {
             DiagnosticsView(
                 runtimeStatus: model.runtimeStatus,
+                runtimePoolSnapshot: model.runtimePoolSnapshot,
+                adaptiveTurnConcurrencyLimit: model.adaptiveTurnConcurrencyLimit,
                 logs: model.logs,
                 onClose: model.closeDiagnostics
             )

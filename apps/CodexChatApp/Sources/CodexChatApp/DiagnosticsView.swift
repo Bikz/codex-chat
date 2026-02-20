@@ -3,6 +3,8 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     let runtimeStatus: RuntimeStatus
+    let runtimePoolSnapshot: RuntimePoolSnapshot
+    let adaptiveTurnConcurrencyLimit: Int
     let logs: [LogEntry]
     let onClose: () -> Void
     @State private var performanceSnapshot = PerformanceSnapshot(
@@ -23,11 +25,64 @@ struct DiagnosticsView: View {
             }
 
             GroupBox("Runtime") {
-                HStack {
-                    Text("Status")
-                    Spacer()
-                    Text(runtimeStatus.rawValue.capitalized)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text(runtimeStatus.rawValue.capitalized)
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("Adaptive turn limit")
+                        Spacer()
+                        Text("\(adaptiveTurnConcurrencyLimit)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            GroupBox("Runtime Pool") {
+                if runtimePoolSnapshot.configuredWorkerCount == 0 {
+                    Text("Runtime pool unavailable")
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Workers")
+                            Spacer()
+                            Text("\(runtimePoolSnapshot.activeWorkerCount)/\(runtimePoolSnapshot.configuredWorkerCount)")
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("Pinned threads")
+                            Spacer()
+                            Text("\(runtimePoolSnapshot.pinnedThreadCount)")
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("In-flight turns")
+                            Spacer()
+                            Text("\(runtimePoolSnapshot.totalInFlightTurns)")
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(runtimePoolSnapshot.workers, id: \.workerID) { worker in
+                            HStack {
+                                Text("\(worker.workerID.description)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(worker.health.rawValue.capitalized)
+                                    .font(.caption)
+                                Spacer()
+                                Text("inFlight \(worker.inFlightTurns)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text("failures \(worker.failureCount)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
             }
 

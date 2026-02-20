@@ -31,6 +31,7 @@ actor RuntimePool {
     private var eventPumpTasksByWorkerID: [RuntimePoolWorkerID: Task<Void, Never>] = [:]
     private var restartTasksByWorkerID: [RuntimePoolWorkerID: Task<Void, Never>] = [:]
     private var healthByWorkerID: [RuntimePoolWorkerID: WorkerHealth] = [:]
+    private var inFlightTurnsByWorkerID: [RuntimePoolWorkerID: Int] = [:]
     private var routeBySyntheticApprovalID: [Int: ApprovalRoute] = [:]
     private var nextSyntheticApprovalID: Int = 1
     private var pinnedWorkerIDByLocalThreadID: [UUID: RuntimePoolWorkerID] = [:]
@@ -48,6 +49,7 @@ actor RuntimePool {
             ),
         ]
         healthByWorkerID[Constants.primaryWorkerID] = WorkerHealth(state: .idle)
+        inFlightTurnsByWorkerID[Constants.primaryWorkerID] = 0
 
         var continuation: AsyncStream<CodexRuntimeEvent>.Continuation?
         unifiedEventStream = AsyncStream<CodexRuntimeEvent>(bufferingPolicy: .unbounded) {
@@ -131,6 +133,7 @@ actor RuntimePool {
         pinnedWorkerIDByLocalThreadID.removeAll(keepingCapacity: false)
         for workerID in healthByWorkerID.keys {
             healthByWorkerID[workerID]?.state = .stopped
+            inFlightTurnsByWorkerID[workerID] = 0
         }
     }
 
@@ -189,14 +192,21 @@ actor RuntimePool {
     ) async throws -> String {
         let route = Self.resolveRoute(fromPossiblyScopedThreadID: scopedThreadID)
         let worker = try await worker(for: route.workerID)
-        let rawTurnID = try await worker.startTurn(
-            threadID: route.threadID,
-            text: text,
-            safetyConfiguration: safetyConfiguration,
-            skillInputs: skillInputs,
-            inputItems: inputItems,
-            turnOptions: turnOptions
-        )
+        incrementInFlightTurns(for: route.workerID)
+        let rawTurnID: String
+        do {
+            rawTurnID = try await worker.startTurn(
+                threadID: route.threadID,
+                text: text,
+                safetyConfiguration: safetyConfiguration,
+                skillInputs: skillInputs,
+                inputItems: inputItems,
+                turnOptions: turnOptions
+            )
+        } catch {
+            decrementInFlightTurns(for: route.workerID)
+            throw error
+        }
         return scopeIfNeeded(id: rawTurnID, workerID: route.workerID)
     }
 
@@ -238,6 +248,8 @@ actor RuntimePool {
             return RuntimePoolWorkerMetrics(
                 workerID: $0,
                 health: health.state,
+                queueDepth: 0,
+                inFlightTurns: inFlightTurnsByWorkerID[$0, default: 0],
                 failureCount: health.failureCount,
                 restartCount: health.restartCount,
                 lastStartAt: health.lastStartAt,
@@ -250,7 +262,7 @@ actor RuntimePool {
             activeWorkerCount: workersByID.count,
             pinnedThreadCount: pinnedWorkerIDByLocalThreadID.count,
             totalQueuedTurns: 0,
-            totalInFlightTurns: 0,
+            totalInFlightTurns: metrics.reduce(0) { $0 + $1.inFlightTurns },
             workers: metrics
         )
     }
@@ -273,6 +285,7 @@ actor RuntimePool {
             let siblingRuntime = await primaryWorker.makeSiblingRuntime()
             workersByID[workerID] = CodexRuntimeWorker(workerID: workerID, runtime: siblingRuntime)
             healthByWorkerID[workerID] = WorkerHealth(state: .idle)
+            inFlightTurnsByWorkerID[workerID] = 0
         }
     }
 
@@ -359,6 +372,7 @@ actor RuntimePool {
         }
 
         markWorkerFailed(workerID)
+        inFlightTurnsByWorkerID[workerID] = 0
         scheduleWorkerRestart(
             workerID: workerID,
             detail: action.detail
@@ -525,6 +539,7 @@ actor RuntimePool {
             )
 
         case let .turnCompleted(completion):
+            decrementInFlightTurns(for: workerID)
             return .turnCompleted(
                 RuntimeTurnCompletion(
                     threadID: completion.threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
@@ -621,5 +636,14 @@ actor RuntimePool {
             hash = hash &* prime
         }
         return hash
+    }
+
+    private func incrementInFlightTurns(for workerID: RuntimePoolWorkerID) {
+        inFlightTurnsByWorkerID[workerID, default: 0] += 1
+    }
+
+    private func decrementInFlightTurns(for workerID: RuntimePoolWorkerID) {
+        let current = inFlightTurnsByWorkerID[workerID, default: 0]
+        inFlightTurnsByWorkerID[workerID] = max(0, current - 1)
     }
 }
