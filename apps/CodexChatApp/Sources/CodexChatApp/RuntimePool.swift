@@ -617,7 +617,9 @@ actor RuntimePool {
 
         let workerPart = String(scopedID[..<delimiterRange.lowerBound])
         let rawPart = String(scopedID[delimiterRange.upperBound...])
-        guard let parsedWorker = Int(workerPart.dropFirst()) else {
+        guard let parsedWorker = Int(workerPart.dropFirst()),
+              parsedWorker >= 0
+        else {
             return nil
         }
 

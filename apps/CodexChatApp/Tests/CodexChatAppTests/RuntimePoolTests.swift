@@ -15,6 +15,10 @@ final class RuntimePoolTests: XCTestCase {
         XCTAssertThrowsError(try RuntimePool.resolveRoute(fromScopedThreadID: "not-scoped"))
     }
 
+    func testParseScopedIDRejectsNegativeWorkerID() {
+        XCTAssertNil(RuntimePool.parseScopedID("w-1|thr_123"))
+    }
+
     func testResolveScopedRuntimeIDRejectsMalformedID() {
         XCTAssertThrowsError(
             try RuntimePool.resolveScopedRuntimeID(
