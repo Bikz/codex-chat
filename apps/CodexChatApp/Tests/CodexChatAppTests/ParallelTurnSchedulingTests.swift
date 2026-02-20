@@ -164,6 +164,30 @@ final class ParallelTurnSchedulingTests: XCTestCase {
         }
     }
 
+    func testTurnConcurrencySchedulerPromotesWaiterAfterLimitIncrease() async throws {
+        let scheduler = TurnConcurrencyScheduler(maxConcurrentTurns: 1)
+        let firstThreadID = UUID()
+        let secondThreadID = UUID()
+        let order = EventOrderRecorder()
+
+        try await scheduler.reserve(threadID: firstThreadID, priority: .manual)
+        let waiter = Task {
+            try await scheduler.reserve(threadID: secondThreadID, priority: .manual)
+            await order.append(secondThreadID)
+        }
+
+        try await Task.sleep(nanoseconds: 40_000_000)
+        await scheduler.updateMaxConcurrentTurns(2)
+
+        try await eventually(timeoutSeconds: 1.0) {
+            await order.values() == [secondThreadID]
+        }
+
+        await scheduler.release(threadID: secondThreadID)
+        await scheduler.release(threadID: firstThreadID)
+        _ = try await waiter.value
+    }
+
     private func eventually(timeoutSeconds: TimeInterval, condition: @escaping () async -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {

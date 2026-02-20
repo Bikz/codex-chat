@@ -318,6 +318,7 @@ extension AppModel {
         await refreshRuntimeModelCatalog()
         refreshConversationState()
         requestAutoDrain(reason: "runtime connected")
+        scheduleAdaptiveConcurrencyRefresh(reason: "runtime connected")
         scheduleRuntimeThreadPrewarm(
             primaryThreadID: selectedThreadID,
             reason: restarting ? "runtime reconnect" : "runtime connect"

@@ -15,7 +15,7 @@ actor TurnConcurrencyScheduler {
         let continuation: CheckedContinuation<Void, Never>
     }
 
-    private let maxConcurrentTurns: Int
+    private var maxConcurrentTurns: Int
     private var activeThreadIDs: Set<UUID> = []
     private var waiters: [Waiter] = []
     private var sequenceCounter: UInt64 = 0
@@ -30,6 +30,16 @@ actor TurnConcurrencyScheduler {
 
     var activeCount: Int {
         activeThreadIDs.count
+    }
+
+    func updateMaxConcurrentTurns(_ limit: Int) {
+        let normalized = max(1, limit)
+        guard normalized != maxConcurrentTurns else {
+            return
+        }
+
+        maxConcurrentTurns = normalized
+        promoteWaitersIfPossible()
     }
 
     func reserve(threadID: UUID, priority: Priority) async throws {

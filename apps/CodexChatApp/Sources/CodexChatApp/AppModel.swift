@@ -658,6 +658,7 @@ final class AppModel: ObservableObject {
     let extensionEventBus = ExtensionEventBus()
     let runtimeThreadResolutionCoordinator = RuntimeThreadResolutionCoordinator()
     let turnConcurrencyScheduler = TurnConcurrencyScheduler(maxConcurrentTurns: AppModel.defaultMaxConcurrentTurns)
+    let adaptiveConcurrencyController = AdaptiveConcurrencyController(hardMaximumLimit: AppModel.defaultMaxConcurrentTurns)
     lazy var turnPersistenceScheduler = TurnPersistenceScheduler(maxConcurrentJobs: 4) { [weak self] job in
         guard let self else { return }
         await persistCompletedTurn(context: job.context, completion: job.completion)
@@ -703,6 +704,7 @@ final class AppModel: ObservableObject {
     var planRunnerTask: Task<Void, Never>?
     var workerTracePersistenceTask: Task<Void, Never>?
     var secondarySurfaceRefreshTask: Task<Void, Never>?
+    var adaptiveConcurrencyRefreshTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
     var pendingFollowUpAutoDrainReason: String?
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
@@ -823,6 +825,7 @@ final class AppModel: ObservableObject {
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
+        adaptiveConcurrencyRefreshTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
@@ -881,6 +884,7 @@ final class AppModel: ObservableObject {
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
+        adaptiveConcurrencyRefreshTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
@@ -1546,6 +1550,8 @@ final class AppModel: ObservableObject {
         if isTurnInProgress != nextInProgress {
             isTurnInProgress = nextInProgress
         }
+
+        scheduleAdaptiveConcurrencyRefresh(reason: "active turn state changed")
     }
 
     func isThreadUnread(_ threadID: UUID) -> Bool {

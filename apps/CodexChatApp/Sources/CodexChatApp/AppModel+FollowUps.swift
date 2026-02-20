@@ -196,11 +196,13 @@ extension AppModel {
     func refreshFollowUpQueue(threadID: UUID) async throws {
         guard let followUpQueueRepository else {
             followUpQueueByThreadID[threadID] = []
+            scheduleAdaptiveConcurrencyRefresh(reason: "follow-up queue unavailable")
             return
         }
 
         let items = try await followUpQueueRepository.list(threadID: threadID)
         followUpQueueByThreadID[threadID] = items
+        scheduleAdaptiveConcurrencyRefresh(reason: "follow-up queue refreshed")
     }
 
     func handleFollowUpSuggestions(_ batch: RuntimeFollowUpSuggestionBatch) {
