@@ -44,15 +44,6 @@ struct ChatsCanvasView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, tokens.spacing.medium)
                 }
-
-                if let computerActionStatus = model.computerActionStatusMessage,
-                   !computerActionStatus.isEmpty
-                {
-                    Text(computerActionStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, tokens.spacing.medium)
-                }
             }
 
             if model.isShellWorkspaceVisible {

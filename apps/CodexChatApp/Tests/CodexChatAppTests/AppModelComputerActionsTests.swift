@@ -268,6 +268,144 @@ final class AppModelComputerActionsTests: XCTestCase {
         XCTAssertFalse(model.shouldPersistComputerActionPermissionDecision(actionID: "apple.script.run"))
     }
 
+    func testCalendarActionAppendsVisibleTranscriptEntries() async throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(1800)
+        let event = CalendarEvent(
+            id: "event-1",
+            title: "Standup",
+            calendarName: "Work",
+            startAt: start,
+            endAt: end,
+            isAllDay: false
+        )
+
+        let calendarAction = CalendarTodayAction(
+            eventSource: FixedCalendarEventSource(events: [event]),
+            nowProvider: { start }
+        )
+        let registry = ComputerActionRegistry(calendarToday: calendarAction)
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            computerActionRegistry: registry
+        )
+
+        let threadID = UUID()
+        try await model.runNativeComputerAction(
+            actionID: "calendar.today",
+            arguments: ["rangeHours": "24"],
+            threadID: threadID,
+            projectID: UUID()
+        )
+
+        guard let entries = model.transcriptStore[threadID] else {
+            XCTFail("Expected transcript entries for calendar action")
+            return
+        }
+
+        XCTAssertEqual(entries.count, 3)
+
+        guard case let .message(userMessage) = entries[0] else {
+            XCTFail("Expected user message as first transcript entry")
+            return
+        }
+        XCTAssertEqual(userMessage.role, .user)
+        XCTAssertEqual(userMessage.text, "What's on my calendar today?")
+
+        guard case let .actionCard(actionCard) = entries[1] else {
+            XCTFail("Expected action card as second transcript entry")
+            return
+        }
+        XCTAssertEqual(actionCard.method, "computer_action/execute")
+
+        guard case let .message(assistantMessage) = entries[2] else {
+            XCTFail("Expected assistant message as third transcript entry")
+            return
+        }
+        XCTAssertEqual(assistantMessage.role, .assistant)
+        XCTAssertTrue(assistantMessage.text.contains("Standup"))
+    }
+
+    func testCalendarActionPersistsTranscriptForRehydration() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-calendar-persistence-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(1800)
+        let event = CalendarEvent(
+            id: "event-2",
+            title: "Planning",
+            calendarName: "Work",
+            startAt: start,
+            endAt: end,
+            isAllDay: false
+        )
+        let calendarAction = CalendarTodayAction(
+            eventSource: FixedCalendarEventSource(events: [event]),
+            nowProvider: { start }
+        )
+        let registry = ComputerActionRegistry(calendarToday: calendarAction)
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            computerActionRegistry: registry
+        )
+
+        let projectURL = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Calendar Test",
+            path: projectURL.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let thread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Calendar thread"
+        )
+
+        try await model.runNativeComputerAction(
+            actionID: "calendar.today",
+            arguments: ["rangeHours": "24"],
+            threadID: thread.id,
+            projectID: project.id
+        )
+
+        model.transcriptStore[thread.id] = []
+        await model.rehydrateThreadTranscript(threadID: thread.id)
+
+        guard let entries = model.transcriptStore[thread.id] else {
+            XCTFail("Expected rehydrated entries for calendar action")
+            return
+        }
+
+        XCTAssertGreaterThanOrEqual(entries.count, 3)
+        let userMessages = entries.compactMap { entry -> ChatMessage? in
+            guard case let .message(message) = entry, message.role == .user else {
+                return nil
+            }
+            return message
+        }
+        let assistantMessages = entries.compactMap { entry -> ChatMessage? in
+            guard case let .message(message) = entry, message.role == .assistant else {
+                return nil
+            }
+            return message
+        }
+
+        XCTAssertTrue(userMessages.contains(where: { $0.text.contains("calendar") }))
+        XCTAssertTrue(assistantMessages.contains(where: { $0.text.contains("Planning") }))
+    }
+
     private func eventually(
         timeoutSeconds: TimeInterval,
         condition: @escaping () -> Bool
@@ -288,6 +426,14 @@ private struct PermissionDeniedCalendarSource: CalendarEventSource {
         throw ComputerActionError.permissionDenied(
             "Calendar access is denied. Enable Calendar permissions in System Settings > Privacy & Security > Calendars."
         )
+    }
+}
+
+private struct FixedCalendarEventSource: CalendarEventSource {
+    let events: [CalendarEvent]
+
+    func events(from _: Date, to _: Date) async throws -> [CalendarEvent] {
+        events
     }
 }
 

@@ -321,21 +321,192 @@ extension AppModel {
             )
         )
 
-        appendEntry(
-            .actionCard(
-                ActionCard(
-                    threadID: previewState.threadID,
-                    method: "computer_action/execute",
-                    title: "\(provider.displayName) completed",
-                    detail: result.detailsMarkdown
-                )
-            ),
-            to: previewState.threadID
+        let actionCard = ActionCard(
+            threadID: previewState.threadID,
+            method: "computer_action/execute",
+            title: "\(provider.displayName) completed",
+            detail: result.detailsMarkdown
+        )
+        await appendAndPersistComputerActionTranscriptTurn(
+            actionCard: actionCard,
+            previewState: previewState,
+            provider: provider,
+            result: result
         )
 
         computerActionStatusMessage = result.summary
         permissionRecoveryNotice = nil
         pendingComputerActionPreview = nil
+    }
+
+    private func appendAndPersistComputerActionTranscriptTurn(
+        actionCard: ActionCard,
+        previewState: PendingComputerActionPreview,
+        provider: any ComputerActionProvider,
+        result: ComputerActionExecutionResult
+    ) async {
+        let userText = computerActionUserPrompt(
+            actionID: provider.actionID,
+            displayName: provider.displayName,
+            arguments: previewState.request.arguments
+        )
+        let assistantText = computerActionAssistantText(result: result)
+
+        appendEntry(
+            .message(
+                ChatMessage(
+                    threadId: previewState.threadID,
+                    role: .user,
+                    text: userText,
+                    createdAt: actionCard.createdAt
+                )
+            ),
+            to: previewState.threadID
+        )
+        appendEntry(.actionCard(actionCard), to: previewState.threadID)
+
+        if !assistantText.isEmpty {
+            appendEntry(
+                .message(
+                    ChatMessage(
+                        threadId: previewState.threadID,
+                        role: .assistant,
+                        text: assistantText,
+                        createdAt: actionCard.createdAt
+                    )
+                ),
+                to: previewState.threadID
+            )
+        }
+
+        await persistComputerActionTranscriptTurn(
+            threadID: previewState.threadID,
+            projectID: previewState.projectID,
+            timestamp: actionCard.createdAt,
+            userText: userText,
+            assistantText: assistantText,
+            actionCard: actionCard
+        )
+
+        await applyInitialThreadTitleIfNeeded(
+            threadID: previewState.threadID,
+            projectID: previewState.projectID,
+            userText: userText,
+            assistantText: assistantText
+        )
+    }
+
+    private func computerActionUserPrompt(
+        actionID: String,
+        displayName: String,
+        arguments: [String: String]
+    ) -> String {
+        switch actionID {
+        case "calendar.today":
+            if let hoursRaw = arguments["rangeHours"],
+               let hours = Int(hoursRaw),
+               hours > 0
+            {
+                if hours == 24 {
+                    return "What's on my calendar today?"
+                }
+                return "Show my calendar for the next \(hours) hours."
+            }
+            return "What's on my calendar today?"
+        case "reminders.today":
+            if let hoursRaw = arguments["rangeHours"],
+               let hours = Int(hoursRaw),
+               hours > 0
+            {
+                if hours == 24 {
+                    return "What reminders do I have today?"
+                }
+                return "Show my reminders for the next \(hours) hours."
+            }
+            return "What reminders do I have today?"
+        case "desktop.cleanup":
+            return "Organize my desktop files safely."
+        case "messages.send":
+            if let recipient = arguments["recipient"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !recipient.isEmpty
+            {
+                return "Send a message to \(recipient)."
+            }
+            return "Send a message."
+        case "apple.script.run":
+            return "Run an AppleScript automation."
+        default:
+            return "Run \(displayName)."
+        }
+    }
+
+    private func computerActionAssistantText(result: ComputerActionExecutionResult) -> String {
+        let summary = result.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let details = result.detailsMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if details.isEmpty {
+            return summary
+        }
+        if summary.isEmpty {
+            return details
+        }
+        if details.caseInsensitiveCompare(summary) == .orderedSame {
+            return details
+        }
+        return "\(summary)\n\n\(details)"
+    }
+
+    private func persistComputerActionTranscriptTurn(
+        threadID: UUID,
+        projectID: UUID,
+        timestamp: Date,
+        userText: String,
+        assistantText: String,
+        actionCard: ActionCard
+    ) async {
+        guard let projectRepository else {
+            return
+        }
+
+        do {
+            guard let project = try await projectRepository.getProject(id: projectID) else {
+                return
+            }
+
+            let summary = ArchivedTurnSummary(
+                timestamp: timestamp,
+                status: .completed,
+                userText: userText,
+                assistantText: assistantText,
+                actions: [actionCard]
+            )
+
+            _ = try await TurnPersistenceWorker.shared.persistArchive(
+                projectPath: project.path,
+                threadID: threadID,
+                summary: summary,
+                turnStatus: .completed
+            )
+
+            _ = try await threadRepository?.touchThread(id: threadID)
+            try await chatSearchRepository?.indexMessageExcerpt(
+                threadID: threadID,
+                projectID: projectID,
+                text: userText
+            )
+            if !assistantText.isEmpty {
+                try await chatSearchRepository?.indexMessageExcerpt(
+                    threadID: threadID,
+                    projectID: projectID,
+                    text: assistantText
+                )
+            }
+        } catch {
+            appendLog(
+                .warning,
+                "Failed to persist computer action transcript turn: \(error.localizedDescription)"
+            )
+        }
     }
 
     private func requiresExplicitConfirmation(for provider: any ComputerActionProvider) -> Bool {
