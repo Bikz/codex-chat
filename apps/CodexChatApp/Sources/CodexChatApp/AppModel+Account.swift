@@ -7,6 +7,10 @@ extension AppModel {
         prepareForTeardown()
     }
 
+    var isSignedInWithChatGPT: Bool {
+        isChatGPTSignedIn(accountState)
+    }
+
     func signInWithChatGPT() {
         if case .installCodex? = runtimeIssue {
             accountStatusMessage = "Install Codex and restart runtime to complete ChatGPT sign-in."

@@ -251,11 +251,26 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                if model.isSignedInWithChatGPT {
+                    Label("Signed in with ChatGPT.", systemImage: "checkmark.seal.fill")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                                .fill(.green.opacity(0.12))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                                .strokeBorder(.green.opacity(0.24))
+                        )
+                        .accessibilityLabel("Signed in with ChatGPT")
+                }
 
                 if let message = model.accountStatusMessage {
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    accountStatusBanner(message)
                 }
 
                 HStack(spacing: 10) {
@@ -771,6 +786,75 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private enum AccountStatusTone {
+        case info
+        case success
+        case error
+
+        var symbolName: String {
+            switch self {
+            case .info:
+                "info.circle.fill"
+            case .success:
+                "checkmark.circle.fill"
+            case .error:
+                "exclamationmark.triangle.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .info:
+                .blue
+            case .success:
+                .green
+            case .error:
+                .red
+            }
+        }
+    }
+
+    private func accountStatusBanner(_ message: String) -> some View {
+        let tone = accountStatusTone(for: message)
+
+        return Label(message, systemImage: tone.symbolName)
+            .font(.callout)
+            .foregroundStyle(tone.tint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                    .fill(tone.tint.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+                    .strokeBorder(tone.tint.opacity(0.24))
+            )
+            .accessibilityLabel("Account status: \(message)")
+    }
+
+    private func accountStatusTone(for message: String) -> AccountStatusTone {
+        let normalized = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if normalized.contains("failed")
+            || normalized.contains("unable")
+            || normalized.contains("did not confirm")
+            || normalized.contains("empty")
+        {
+            return .error
+        }
+
+        if normalized.contains("signed in")
+            || normalized.contains("completed")
+            || normalized.contains("restored")
+        {
+            return .success
+        }
+
+        return .info
     }
 
     private func syncSafetyDefaultsFromModel() {
