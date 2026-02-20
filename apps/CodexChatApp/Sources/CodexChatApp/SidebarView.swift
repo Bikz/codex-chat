@@ -678,10 +678,7 @@ struct SidebarView: View {
     }
 
     private func projectLeadingIconName(isExpanded: Bool, isHovered: Bool) -> String {
-        if isExpanded || isHovered {
-            return isExpanded ? "chevron.down" : "chevron.right"
-        }
-        return "folder"
+        SidebarProjectIconResolver.leadingSymbolName(isExpanded: isExpanded, isHovered: isHovered)
     }
 }
 
