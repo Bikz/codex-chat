@@ -154,6 +154,7 @@ Repository policy for this cycle:
 
 - first-party exemplar mods live under `mods/first-party` in the CodexChat repo
 - first-party personal-action packs include `desktop-cleanup`, `calendar-assistant`, `messages-assistant`, and `personal-actions-playbook`
+- first-party personal-action skills live under `skills/first-party` (`macos-send-message`, `macos-calendar-assistant`, `macos-desktop-cleanup`)
 - third-party mods should stay in external GitHub repositories (or local folders)
 - no hosted catalog onboarding in this cycle
 

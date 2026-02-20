@@ -14,6 +14,25 @@ Automatic phrase-based composer interception is disabled by default.
 
 CodexChat now prefers explicit user intent through normal chat and optional playbook prompts from Mods bar.
 
+## Companion Skills (First-Party)
+
+CodexChat ships tracked first-party skill templates for explicit personal-action workflows:
+
+- `skills/first-party/macos-send-message/SKILL.md`
+- `skills/first-party/macos-calendar-assistant/SKILL.md`
+- `skills/first-party/macos-desktop-cleanup/SKILL.md`
+
+These skills are designed to avoid accidental interception by:
+
+- requiring clear intent/disambiguation when phrasing is ambiguous
+- enforcing clarify -> preview -> confirm before sensitive operations
+- requiring explicit confirmation for sends and filesystem changes
+
+Typical usage patterns:
+
+- select the skill from the composer skill picker, then prompt naturally
+- use `personal-actions-playbook` mod actions, which insert prompts that call these skills when available
+
 ## Safety Contract
 
 - Sensitive actions require preview artifacts before execution.

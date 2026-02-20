@@ -30,6 +30,7 @@ Core differentiators:
 - `apps/CodexChatHost`: canonical GUI app target (`com.codexchat.app`) and release source.
 - `apps/CodexChatApp`: shared app/runtime module (`CodexChatShared`) and `CodexChatCLI`.
 - `packages/*`: modular Swift packages (`Core`, `Infra`, `UI`, `CodexKit`, `Skills`, `Memory`, `Mods`, `Extensions`).
+- `skills/first-party`: tracked first-party skill templates (including personal-action playbooks for macOS workflows).
 - `tests/fixtures`: shared fake runtime fixtures used by smoke/integration paths.
 
 ## Requirements

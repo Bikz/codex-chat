@@ -162,6 +162,12 @@ final class FirstPartyModsScriptsTests: XCTestCase {
             XCTAssertEqual(action.kind, .composerInsert)
             XCTAssertFalse((action.payload["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+
+        let actionsByID = Dictionary(uniqueKeysWithValues: (output.modsBar?.actions ?? []).map { ($0.id, $0) })
+        XCTAssertTrue(actionsByID["playbook-message"]?.payload["text"]?.contains("$macos-send-message") == true)
+        XCTAssertTrue(actionsByID["playbook-message"]?.payload["text"]?.contains("If intent is ambiguous") == true)
+        XCTAssertTrue(actionsByID["playbook-calendar"]?.payload["text"]?.contains("$macos-calendar-assistant") == true)
+        XCTAssertTrue(actionsByID["playbook-desktop"]?.payload["text"]?.contains("$macos-desktop-cleanup") == true)
     }
 
     private func runModScript(
