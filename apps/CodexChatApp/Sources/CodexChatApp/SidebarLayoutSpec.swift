@@ -15,6 +15,8 @@ enum SidebarLayoutSpec {
     static let controlButtonSize: CGFloat = 24
     static let controlIconFontSize: CGFloat = 13
     static let controlSlotSpacing: CGFloat = 6
+    static let projectControlSlotSpacing: CGFloat = 4
+    static let projectTextControlGap: CGFloat = 2
     static let threadControlSlotSpacing: CGFloat = 2
 
     static let threadMetaColumnWidth: CGFloat = (controlButtonSize * 2) + threadControlSlotSpacing
@@ -32,6 +34,6 @@ enum SidebarLayoutSpec {
     static let footerHorizontalInset: CGFloat = listHorizontalInset
     static let footerVerticalInset: CGFloat = 4
 
-    static let projectTrailingWidth: CGFloat = (controlButtonSize * 2) + controlSlotSpacing
+    static let projectTrailingWidth: CGFloat = (controlButtonSize * 2) + projectControlSlotSpacing
     static let threadTrailingWidth: CGFloat = (controlButtonSize * 2) + threadControlSlotSpacing
 }

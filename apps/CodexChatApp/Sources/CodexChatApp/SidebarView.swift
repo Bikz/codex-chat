@@ -315,7 +315,7 @@ struct SidebarView: View {
                         .lineLimit(1)
                         .foregroundStyle(.primary)
 
-                    Spacer(minLength: SidebarLayoutSpec.controlSlotSpacing)
+                    Spacer(minLength: SidebarLayoutSpec.projectTextControlGap)
 
                     Color.clear
                         .frame(width: SidebarLayoutSpec.projectTrailingWidth)
@@ -335,7 +335,7 @@ struct SidebarView: View {
             .accessibilityHint("Expands or collapses this project's thread list.")
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
-            HStack(spacing: SidebarLayoutSpec.controlSlotSpacing) {
+            HStack(spacing: SidebarLayoutSpec.projectControlSlotSpacing) {
                 Button {
                     if model.selectedProjectID != project.id {
                         model.selectProject(project.id)
