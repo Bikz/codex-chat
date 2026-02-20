@@ -62,7 +62,7 @@ struct SidebarView: View {
             Section {
                 searchField
 
-                if isSearchFocused || !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     searchSurface
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -177,15 +177,9 @@ struct SidebarView: View {
             .textFieldStyle(.plain)
             .font(sidebarBodyFont)
             .focused($isSearchFocused)
+            .focusEffectDisabled()
             .accessibilityLabel("Search")
             .accessibilityHint("Searches thread titles and message history")
-            .onChange(of: isSearchFocused) { _, focused in
-                #if DEBUG
-                    if focused {
-                        NSLog("Sidebar search focused")
-                    }
-                #endif
-            }
 
             if !model.searchQuery.isEmpty {
                 Button {
@@ -569,11 +563,7 @@ struct SidebarView: View {
     private var searchSurface: some View {
         switch model.searchState {
         case .idle:
-            EmptyStateView(
-                title: "Search ready",
-                message: "Results appear as you type.",
-                systemImage: "magnifyingglass"
-            )
+            EmptyView()
         case .loading:
             LoadingStateView(title: "Searching…")
         case let .failed(message):
@@ -660,16 +650,16 @@ struct SidebarView: View {
 
     private var searchFieldFillColor: Color {
         if colorScheme == .dark {
-            return Color.white.opacity(0.10)
+            return Color.white.opacity(0.07)
         }
-        return Color.black.opacity(0.04)
+        return Color.black.opacity(0.03)
     }
 
     private var searchFieldBorderColor: Color {
         if colorScheme == .dark {
-            return Color.white.opacity(0.12)
+            return Color.white.opacity(0.09)
         }
-        return Color.black.opacity(0.07)
+        return Color.black.opacity(0.05)
     }
 
     private var pinnedStarColor: Color {
