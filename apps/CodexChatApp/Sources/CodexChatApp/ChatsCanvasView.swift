@@ -749,9 +749,8 @@ private struct ThreadEmptyStateView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.6))
                     .frame(width: 66, height: 66)
-                Image(systemName: "triangle.fill")
-                    .font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(Color(hex: tokens.palette.accentHex).opacity(0.88))
+                CodexMonochromeMark()
+                    .frame(width: 31, height: 31)
             }
 
             Text("Start a conversation")
@@ -776,6 +775,7 @@ private struct ComposerControlBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
+                let selectedModelID = model.defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
                 Menu {
                     if model.runtimeDefaultModelID != nil {
                         Button {
@@ -788,19 +788,40 @@ private struct ComposerControlBar: View {
                             )
                         }
 
-                        if !model.modelPresets.isEmpty {
+                        if !model.featuredModelPresets.isEmpty || !model.overflowModelPresets.isEmpty {
                             Divider()
                         }
                     }
 
-                    ForEach(model.modelPresets, id: \.self) { preset in
+                    ForEach(model.featuredModelPresets, id: \.self) { preset in
                         Button {
                             model.setDefaultModel(preset)
                         } label: {
                             menuOptionLabel(
                                 title: model.modelMenuLabel(for: preset),
-                                isSelected: model.defaultModel.trimmingCharacters(in: .whitespacesAndNewlines) == preset.trimmingCharacters(in: .whitespacesAndNewlines)
+                                isSelected: selectedModelID.caseInsensitiveCompare(
+                                    preset.trimmingCharacters(in: .whitespacesAndNewlines)
+                                ) == .orderedSame
                             )
+                        }
+                    }
+
+                    if !model.overflowModelPresets.isEmpty {
+                        Divider()
+
+                        Menu("More…") {
+                            ForEach(model.overflowModelPresets, id: \.self) { preset in
+                                Button {
+                                    model.setDefaultModel(preset)
+                                } label: {
+                                    menuOptionLabel(
+                                        title: model.modelMenuLabel(for: preset),
+                                        isSelected: selectedModelID.caseInsensitiveCompare(
+                                            preset.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        ) == .orderedSame
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -813,7 +834,7 @@ private struct ComposerControlBar: View {
                 } label: {
                     controlChip(
                         value: model.defaultModelDisplayName,
-                        systemImage: "cpu",
+                        systemImage: nil,
                         tint: Color.primary.opacity(0.78),
                         minWidth: 148
                     )
@@ -835,7 +856,7 @@ private struct ComposerControlBar: View {
                     } label: {
                         controlChip(
                             value: model.defaultReasoning.title,
-                            systemImage: "brain.head.profile",
+                            systemImage: nil,
                             tint: Color.primary.opacity(0.72),
                             minWidth: 118
                         )
@@ -915,15 +936,17 @@ private struct ComposerControlBar: View {
 
     private func controlChip(
         value: String,
-        systemImage: String,
+        systemImage: String?,
         tint: Color,
         minWidth: CGFloat
     ) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 14, height: 14)
-                .foregroundStyle(tint)
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 14, height: 14)
+                    .foregroundStyle(tint)
+            }
 
             Text(value)
                 .font(.system(size: 14, weight: .semibold))

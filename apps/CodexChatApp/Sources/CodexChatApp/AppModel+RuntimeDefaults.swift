@@ -3,6 +3,13 @@ import CodexKit
 import Foundation
 
 extension AppModel {
+    private static let featuredModelIDs: [String] = [
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.2-codex",
+        "gpt-4o",
+    ]
+
     struct GlobalSafetyApplySummary {
         let updated: Int
         let skipped: Int
@@ -29,6 +36,48 @@ extension AppModel {
         }
 
         return normalizeModelPresetIDs([])
+    }
+
+    var featuredModelPresets: [String] {
+        let presets = modelPresets
+        guard !presets.isEmpty else {
+            return []
+        }
+
+        var featured: [String] = []
+        var seen: Set<String> = []
+
+        for featuredID in Self.featuredModelIDs {
+            guard let match = matchingModelPreset(featuredID, in: presets) else {
+                continue
+            }
+
+            let normalizedMatch = match.lowercased()
+            guard seen.insert(normalizedMatch).inserted else {
+                continue
+            }
+            featured.append(match)
+        }
+
+        if featured.count < 4 {
+            for preset in presets {
+                let normalizedPreset = preset.lowercased()
+                guard seen.insert(normalizedPreset).inserted else {
+                    continue
+                }
+                featured.append(preset)
+                if featured.count == 4 {
+                    break
+                }
+            }
+        }
+
+        return featured
+    }
+
+    var overflowModelPresets: [String] {
+        let featured = Set(featuredModelPresets.map { $0.lowercased() })
+        return modelPresets.filter { !featured.contains($0.lowercased()) }
     }
 
     var runtimeDefaultModelID: String? {
@@ -357,6 +406,12 @@ extension AppModel {
         }
 
         return normalized
+    }
+
+    private func matchingModelPreset(_ modelID: String, in presets: [String]) -> String? {
+        presets.first { preset in
+            preset.caseInsensitiveCompare(modelID) == .orderedSame
+        }
     }
 
     private func supportedWebSearchModes(forModelID modelID: String?) -> [ProjectWebSearchMode] {
