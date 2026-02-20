@@ -60,6 +60,7 @@ private struct MainAppRoot: View {
     var body: some View {
         ContentView(model: model)
             .designTokens(resolvedTokens)
+            .glassSurfacesEnabled(model.isTransparentThemeMode)
             .background(WindowAccessor(isTransparent: model.isTransparentThemeMode))
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                 model.cancelPendingChatGPTLoginForTeardown()
@@ -154,6 +155,7 @@ private struct SettingsRoot: View {
     var body: some View {
         SettingsView(model: model)
             .designTokens(resolvedTokens)
+            .glassSurfacesEnabled(model.isTransparentThemeMode)
             .background(SettingsWindowAccessor(isTransparent: model.isTransparentThemeMode))
     }
 

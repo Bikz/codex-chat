@@ -13,6 +13,7 @@ private struct TokenCardModifier: ViewModifier {
 
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.glassSurfacesEnabled) private var glassSurfacesEnabled
 
     func body(content: Content) -> some View {
         let resolvedRadius = radius ?? tokens.radius.medium
@@ -23,11 +24,15 @@ private struct TokenCardModifier: ViewModifier {
         case .card:
             tokens.materials.cardMaterial.material
         }
-        let materialOverlayOpacity = switch style {
-        case .panel:
-            colorScheme == .dark ? 0.18 : 0.10
-        case .card:
-            colorScheme == .dark ? 0.24 : 0.14
+        let materialOverlayOpacity: Double = if glassSurfacesEnabled {
+            switch style {
+            case .panel:
+                colorScheme == .dark ? 0.18 : 0.10
+            case .card:
+                colorScheme == .dark ? 0.24 : 0.14
+            }
+        } else {
+            0
         }
 
         content

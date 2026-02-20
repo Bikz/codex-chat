@@ -304,11 +304,16 @@ public final class ThemeProvider: ObservableObject {
 
 public extension EnvironmentValues {
     @Entry var designTokens: DesignTokens = .default
+    @Entry var glassSurfacesEnabled: Bool = false
 }
 
 public extension View {
     func designTokens(_ tokens: DesignTokens) -> some View {
         environment(\.designTokens, tokens)
+    }
+
+    func glassSurfacesEnabled(_ isEnabled: Bool) -> some View {
+        environment(\.glassSurfacesEnabled, isEnabled)
     }
 }
 
