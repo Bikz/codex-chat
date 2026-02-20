@@ -46,11 +46,12 @@ extension AppModel {
 
         do {
             try storagePaths.ensureRootStructure()
-            let destinationURL = storagePaths.uniqueProjectDirectoryURL(requestedName: requestedName)
+            let projectName = CodexChatStoragePaths.defaultedProjectName(requestedName)
+            let destinationURL = storagePaths.uniqueUserNamedProjectDirectoryURL(requestedName: projectName)
             try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
 
             let project = try await projectRepository.createProject(
-                named: destinationURL.lastPathComponent,
+                named: projectName,
                 path: destinationURL.path,
                 trustState: .trusted,
                 isGeneralProject: false

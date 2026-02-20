@@ -132,6 +132,35 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         }
     }
 
+    func uniqueUserNamedProjectDirectoryURL(
+        requestedName: String,
+        fileManager: FileManager = .default
+    ) -> URL {
+        let baseName = Self.defaultedProjectName(requestedName)
+        var candidate = projectsURL.appendingPathComponent(baseName, isDirectory: true)
+        if !fileManager.fileExists(atPath: candidate.path) {
+            return candidate
+        }
+
+        var suffix = 2
+        while true {
+            let nextName = "\(baseName) \(suffix)"
+            candidate = projectsURL.appendingPathComponent(nextName, isDirectory: true)
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    static func defaultedProjectName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "New Project"
+        }
+        return raw
+    }
+
     static func sanitizedProjectName(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {

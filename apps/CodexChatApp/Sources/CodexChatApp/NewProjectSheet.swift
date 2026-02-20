@@ -113,7 +113,7 @@ struct NewProjectSheet: View {
     }
 
     private var previewPath: String {
-        let destination = model.storagePaths.uniqueProjectDirectoryURL(requestedName: projectName)
+        let destination = model.storagePaths.uniqueUserNamedProjectDirectoryURL(requestedName: projectName)
         return destination.path
     }
 
