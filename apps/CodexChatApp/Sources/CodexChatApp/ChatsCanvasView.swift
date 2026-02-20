@@ -146,16 +146,6 @@ struct ChatsCanvasView: View {
                     .padding(.vertical, 10)
                     .frame(minHeight: 34)
                     .focused($isComposerFocused)
-                    .onTapGesture {
-                        isComposerFocused = true
-                    }
-                    .onChange(of: isComposerFocused) { _, focused in
-                        #if DEBUG
-                            if focused {
-                                NSLog("Composer focused")
-                            }
-                        #endif
-                    }
                     .onSubmit {
                         model.submitComposerWithQueuePolicy()
                     }
@@ -180,7 +170,10 @@ struct ChatsCanvasView: View {
                 }
 
                 Button {
-                    model.toggleVoiceCapture()
+                    // Defer state mutation until after the current AppKit layout cycle.
+                    DispatchQueue.main.async {
+                        model.toggleVoiceCapture()
+                    }
                 } label: {
                     Group {
                         if model.isVoiceCaptureRecording {
