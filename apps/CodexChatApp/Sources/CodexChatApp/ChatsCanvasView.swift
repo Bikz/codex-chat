@@ -184,7 +184,7 @@ struct ChatsCanvasView: View {
                                 .progressViewStyle(.circular)
                                 .controlSize(.mini)
                         } else {
-                            Image(systemName: "waveform")
+                            Image(systemName: "mic.fill")
                                 .font(.system(size: 14, weight: .semibold))
                         }
                     }
