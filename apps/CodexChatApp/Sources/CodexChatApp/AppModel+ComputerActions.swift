@@ -5,6 +5,35 @@ import CodexKit
 import Foundation
 
 extension AppModel {
+    enum PermissionRecoveryTarget: Equatable {
+        case automation
+        case calendars
+
+        var deepLinkCandidates: [String] {
+            switch self {
+            case .automation:
+                [
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+                    "x-apple.systempreferences:com.apple.preference.security",
+                ]
+            case .calendars:
+                [
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
+                    "x-apple.systempreferences:com.apple.preference.security",
+                ]
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .automation:
+                "Automation permission needed"
+            case .calendars:
+                "Calendar permission needed"
+            }
+        }
+    }
+
     func runNativeComputerAction(
         actionID: String,
         arguments: [String: String],
@@ -205,7 +234,13 @@ extension AppModel {
             throw ComputerActionError.permissionDenied("Permission denied for \(provider.displayName).")
         }
 
-        let result = try await provider.execute(request: previewState.request, preview: previewState.artifact)
+        let result: ComputerActionExecutionResult
+        do {
+            result = try await provider.execute(request: previewState.request, preview: previewState.artifact)
+        } catch {
+            presentPermissionRecoveryPromptIfNeeded(actionID: provider.actionID, error: error)
+            throw error
+        }
         let resultMetadata = encodeDictionary(result.metadata)
 
         try await persistComputerActionRun(
@@ -291,6 +326,72 @@ extension AppModel {
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Deny")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    func permissionRecoveryTargetForComputerAction(
+        actionID: String,
+        error: ComputerActionError
+    ) -> PermissionRecoveryTarget? {
+        guard case let .permissionDenied(message) = error else {
+            return nil
+        }
+
+        let normalizedMessage = message.lowercased()
+        switch actionID {
+        case "messages.send":
+            guard normalizedMessage.contains("automation")
+                || normalizedMessage.contains("messages permissions")
+            else {
+                return nil
+            }
+            return .automation
+
+        case "calendar.today":
+            guard normalizedMessage.contains("calendar") else {
+                return nil
+            }
+            return .calendars
+
+        default:
+            return nil
+        }
+    }
+
+    private func presentPermissionRecoveryPromptIfNeeded(actionID: String, error: Error) {
+        guard let computerActionError = error as? ComputerActionError,
+              let target = permissionRecoveryTargetForComputerAction(
+                  actionID: actionID,
+                  error: computerActionError
+              )
+        else {
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = target.title
+        alert.informativeText = "\(computerActionError.localizedDescription)\n\nOpen System Settings to grant access?"
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Not now")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            openSystemSettings(for: target)
+        }
+    }
+
+    private func openSystemSettings(for target: PermissionRecoveryTarget) {
+        for candidate in target.deepLinkCandidates {
+            guard let url = URL(string: candidate) else {
+                continue
+            }
+
+            if NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+
+        let fallback = URL(fileURLWithPath: "/System/Applications/System Settings.app", isDirectory: true)
+        NSWorkspace.shared.open(fallback)
     }
 
     private func persistComputerActionRun(_ record: ComputerActionRunRecord) async throws {

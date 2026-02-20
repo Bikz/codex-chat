@@ -68,6 +68,43 @@ final class AppModelComputerActionsTests: XCTestCase {
         )
     }
 
+    func testPermissionRecoveryTargetMapsMessagesAutomationErrors() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let target = model.permissionRecoveryTargetForComputerAction(
+            actionID: "messages.send",
+            error: .permissionDenied(
+                "Messages send failed. Check Messages permissions in System Settings > Privacy & Security > Automation."
+            )
+        )
+
+        XCTAssertEqual(target, .automation)
+    }
+
+    func testPermissionRecoveryTargetMapsCalendarErrors() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let target = model.permissionRecoveryTargetForComputerAction(
+            actionID: "calendar.today",
+            error: .permissionDenied(
+                "Calendar access is denied. Enable Calendar permissions in System Settings > Privacy & Security > Calendars."
+            )
+        )
+
+        XCTAssertEqual(target, .calendars)
+    }
+
+    func testPermissionRecoveryTargetIgnoresAppLevelDeny() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let target = model.permissionRecoveryTargetForComputerAction(
+            actionID: "messages.send",
+            error: .permissionDenied("Permission denied for Messages Send.")
+        )
+
+        XCTAssertNil(target)
+    }
+
     private func eventually(
         timeoutSeconds: TimeInterval,
         condition: @escaping () -> Bool
