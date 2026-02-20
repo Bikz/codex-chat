@@ -69,6 +69,44 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(rows.actionMethods, ["turn/started", "item/started", "turn/completed"])
     }
 
+    func testChatModePlacesTurnSummaryBetweenUserAndAssistantMessages() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "what's a good voice ai stack?")),
+            .actionCard(action(threadID: threadID, method: "turn/started", title: "Turn started")),
+            .actionCard(action(threadID: threadID, method: "item/started", title: "Started reasoning")),
+            .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "Here is a strong default stack...")),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        guard
+            let userIndex = rows.firstIndex(where: { row in
+                guard case let .message(message) = row else { return false }
+                return message.role == .user
+            }),
+            let summaryIndex = rows.firstIndex(where: { row in
+                if case .turnSummary = row { return true }
+                return false
+            }),
+            let assistantIndex = rows.firstIndex(where: { row in
+                guard case let .message(message) = row else { return false }
+                return message.role == .assistant
+            })
+        else {
+            XCTFail("Expected user message, turn summary, and assistant message rows")
+            return
+        }
+
+        XCTAssertLessThan(userIndex, summaryIndex)
+        XCTAssertLessThan(summaryIndex, assistantIndex)
+    }
+
     func testCriticalActionsRemainInlineInChatMode() {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [

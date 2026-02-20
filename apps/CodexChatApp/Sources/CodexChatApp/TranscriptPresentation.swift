@@ -222,12 +222,6 @@ enum TranscriptPresentationBuilder {
             }
 
             let isActiveBucket = bucket.id == activeBucketID
-            if !isActiveBucket {
-                for assistant in bucket.assistantMessages {
-                    rows.append(.message(assistant))
-                }
-            }
-
             if isActiveBucket {
                 continue
             }
@@ -246,6 +240,10 @@ enum TranscriptPresentationBuilder {
                 detailLevel: detailLevel
             ) {
                 rows.append(.turnSummary(summary))
+            }
+
+            for assistant in bucket.assistantMessages {
+                rows.append(.message(assistant))
             }
         }
 

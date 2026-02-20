@@ -52,7 +52,7 @@ extension AppModel {
             let project = try await projectRepository.createProject(
                 named: destinationURL.lastPathComponent,
                 path: destinationURL.path,
-                trustState: .untrusted,
+                trustState: .trusted,
                 isGeneralProject: false
             )
             try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
