@@ -128,7 +128,22 @@ final class ComposerStarterPromptTests: XCTestCase {
 
     func testSubmitComposerWithAttachmentsWhileBusyKeepsDraftAndShowsMessage() {
         let model = makeReadyModel()
-        model.isTurnInProgress = true
+        let selectedThreadID = model.selectedThreadID ?? UUID()
+        let selectedProjectID = model.selectedProjectID ?? UUID()
+        model.upsertActiveTurnContext(
+            AppModel.ActiveTurnContext(
+                localTurnID: UUID(),
+                localThreadID: selectedThreadID,
+                projectID: selectedProjectID,
+                projectPath: "/tmp",
+                runtimeThreadID: "thr_busy",
+                memoryWriteMode: .off,
+                userText: "Busy turn",
+                assistantText: "",
+                actions: [],
+                startedAt: Date()
+            )
+        )
         model.composerAttachments = [
             AppModel.ComposerAttachment(
                 path: "/tmp/context.png",

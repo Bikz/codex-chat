@@ -320,6 +320,10 @@ extension AppModel {
         await refreshRuntimeModelCatalog()
         refreshConversationState()
         requestAutoDrain(reason: "runtime connected")
+        scheduleRuntimeThreadPrewarm(
+            primaryThreadID: selectedThreadID,
+            reason: restarting ? "runtime reconnect" : "runtime connect"
+        )
     }
 
     private func cancelAutomaticRuntimeRecovery() {
@@ -450,6 +454,19 @@ extension AppModel {
             )
             throw error
         }
+    }
+
+    func ensureRuntimeThreadIDForPrewarm(
+        for localThreadID: UUID,
+        projectPath: String,
+        safetyConfiguration: RuntimeSafetyConfiguration
+    ) async throws -> String {
+        try await ensureRuntimeThreadID(
+            for: localThreadID,
+            projectPath: projectPath,
+            safetyConfiguration: safetyConfiguration,
+            source: .prewarm
+        )
     }
 
     private func createAndPersistRuntimeThreadID(
@@ -626,6 +643,8 @@ extension AppModel {
     }
 
     private func resetRuntimeThreadCaches() {
+        cancelRuntimeThreadPrewarm()
+
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
         Task {
             await threadResolutionCoordinator.cancelAll()

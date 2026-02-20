@@ -640,6 +640,8 @@ final class AppModel: ObservableObject {
     var modsDebounceTask: Task<Void, Never>?
     var startupBackgroundTask: Task<Void, Never>?
     var startupLoadGeneration: UInt64 = 0
+    var runtimeThreadPrewarmTask: Task<Void, Never>?
+    var runtimeThreadPrewarmGeneration: UInt64 = 0
     var selectedThreadHydrationTask: Task<Void, Never>?
     var selectedThreadHydrationGeneration: UInt64 = 0
     var planRunnerTask: Task<Void, Never>?
@@ -756,6 +758,9 @@ final class AppModel: ObservableObject {
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
         startupBackgroundTask?.cancel()
+        runtimeThreadPrewarmGeneration = runtimeThreadPrewarmGeneration &+ 1
+        runtimeThreadPrewarmTask?.cancel()
+        runtimeThreadPrewarmTask = nil
         selectedThreadHydrationTask?.cancel()
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()
@@ -811,6 +816,9 @@ final class AppModel: ObservableObject {
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
         startupBackgroundTask?.cancel()
+        runtimeThreadPrewarmGeneration = runtimeThreadPrewarmGeneration &+ 1
+        runtimeThreadPrewarmTask?.cancel()
+        runtimeThreadPrewarmTask = nil
         selectedThreadHydrationTask?.cancel()
         planRunnerTask?.cancel()
         workerTracePersistenceTask?.cancel()

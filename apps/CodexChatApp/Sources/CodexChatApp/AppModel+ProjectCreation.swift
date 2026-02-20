@@ -190,6 +190,10 @@ extension AppModel {
         }
         guard isCurrentSelectionTransition(transitionGeneration) else { return }
         refreshConversationStateIfSelectedThreadChanged(hydratedThreadID)
+        scheduleRuntimeThreadPrewarm(
+            primaryThreadID: hydratedThreadID,
+            reason: "activateProject"
+        )
         scheduleProjectSecondarySurfaceRefresh(
             transitionGeneration: transitionGeneration,
             targetProjectID: project.id,

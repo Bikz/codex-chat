@@ -68,6 +68,74 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         }
     }
 
+    func testRuntimeStartupPrewarmCreatesSelectedThreadMappingWithoutSend() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+
+        try await eventuallyAsync(timeoutSeconds: 12.0) {
+            let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
+                .getRuntimeThreadID(localThreadID: harness.thread.id)
+            return mappedRuntimeThreadID != nil
+        }
+    }
+
+    func testRuntimeStartupPrewarmScopesToSelectedPlusThreeSiblings() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        _ = try await harness.repositories.threadRepository.createThread(
+            projectID: harness.project.id,
+            title: "Sibling One"
+        )
+        _ = try await harness.repositories.threadRepository.createThread(
+            projectID: harness.project.id,
+            title: "Sibling Two"
+        )
+        _ = try await harness.repositories.threadRepository.createThread(
+            projectID: harness.project.id,
+            title: "Sibling Three"
+        )
+        _ = try await harness.repositories.threadRepository.createThread(
+            projectID: harness.project.id,
+            title: "Sibling Four"
+        )
+
+        await PerformanceTracer.shared.reset()
+        await harness.model.loadInitialData()
+        let targetThreadIDs = harness.model.runtimeThreadPrewarmTargetThreadIDs(primaryThreadID: harness.thread.id)
+        XCTAssertEqual(targetThreadIDs.count, 4)
+        XCTAssertEqual(targetThreadIDs.first, harness.thread.id)
+
+        try await eventuallyAsync(timeoutSeconds: 12.0) {
+            let snapshot = await PerformanceTracer.shared.snapshot(maxRecent: 200)
+            return snapshot.recent.contains(where: { sample in
+                sample.name == "runtime.prewarm.batch"
+                    && sample.metadata["targetCount"] == "4"
+            })
+        }
+
+        let snapshot = await PerformanceTracer.shared.snapshot(maxRecent: 500)
+        let prewarmedThreadIDs = Set<UUID>(
+            snapshot.recent
+                .filter { $0.name == "runtime.prewarm.thread" }
+                .compactMap { sample in
+                    guard let rawThreadID = sample.metadata["threadID"] else {
+                        return nil
+                    }
+                    return UUID(uuidString: rawThreadID)
+                }
+        )
+        XCTAssertEqual(prewarmedThreadIDs.intersection(Set(targetThreadIDs)).count, 4)
+
+        try await eventuallyAsync(timeoutSeconds: 12.0) {
+            let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
+                .getRuntimeThreadID(localThreadID: harness.thread.id)
+            return mappedRuntimeThreadID != nil
+        }
+    }
+
     func testStaleRuntimeThreadMappingIsOverriddenOnFirstUse() async throws {
         let harness = try await Harness.make(trustState: .trusted)
         defer { harness.cleanup() }
@@ -420,6 +488,20 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             if condition() {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        throw XCTestError(.failureWhileWaiting)
+    }
+
+    private func eventuallyAsync(
+        timeoutSeconds: TimeInterval,
+        condition: @escaping () async throws -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if try await condition() {
                 return
             }
             try await Task.sleep(nanoseconds: 50_000_000)

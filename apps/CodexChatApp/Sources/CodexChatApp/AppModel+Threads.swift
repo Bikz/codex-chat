@@ -66,6 +66,10 @@ extension AppModel {
                 }
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationStateIfSelectedThreadChanged(hydratedThreadID)
+                scheduleRuntimeThreadPrewarm(
+                    primaryThreadID: hydratedThreadID,
+                    reason: "selectProject"
+                )
                 scheduleProjectSecondarySurfaceRefresh(
                     transitionGeneration: transitionGeneration,
                     targetProjectID: projectID,
@@ -225,6 +229,10 @@ extension AppModel {
                 }
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
                 refreshConversationStateIfSelectedThreadChanged(threadID)
+                scheduleRuntimeThreadPrewarm(
+                    primaryThreadID: threadID,
+                    reason: "selectThread"
+                )
                 requestAutoDrain(reason: "thread selection changed")
             } catch {
                 conversationState = .failed(error.localizedDescription)
@@ -399,6 +407,10 @@ extension AppModel {
             threadID: thread.id,
             projectID: selectedProjectID,
             isGeneralProject: isGeneralProject
+        )
+        scheduleRuntimeThreadPrewarm(
+            primaryThreadID: thread.id,
+            reason: "materializeDraftThread"
         )
         appendLog(.info, "Created thread from draft chat \(thread.id.uuidString)")
         return thread.id
