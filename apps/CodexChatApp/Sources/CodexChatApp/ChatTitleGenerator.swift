@@ -1,3 +1,4 @@
+import CodexKit
 import Foundation
 
 enum ChatTitleGenerator {
@@ -77,6 +78,110 @@ enum ChatTitleGenerator {
         return payload
     }
 
+    static func titlePrompt(userText: String) -> String {
+        """
+        Write a concise chat title for this user request.
+        Rules:
+        - 2 to 5 words.
+        - Plain text only.
+        - No quotes.
+        - No trailing punctuation.
+        User request:
+        \(userText)
+        """
+    }
+
+    static func generateTitleWithEphemeralRuntime(
+        userText: String,
+        model: String?,
+        reasoningEffort: String?,
+        timeoutSeconds: TimeInterval = 8
+    ) async -> String? {
+        let trimmedUserText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedUserText.isEmpty else {
+            return nil
+        }
+
+        let trimmedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedModel: String? = if let trimmedModel, !trimmedModel.isEmpty {
+            trimmedModel
+        } else {
+            nil
+        }
+
+        let trimmedEffort = reasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedEffort: String? = if let trimmedEffort, !trimmedEffort.isEmpty {
+            trimmedEffort
+        } else {
+            nil
+        }
+
+        let runtime = CodexRuntime()
+        do {
+            try await runtime.start()
+
+            let safety = RuntimeSafetyConfiguration(
+                sandboxMode: .readOnly,
+                approvalPolicy: .never,
+                networkAccess: false,
+                webSearch: .disabled,
+                writableRoots: []
+            )
+
+            let threadID = try await runtime.startThread(safetyConfiguration: safety)
+            let turnOptions = RuntimeTurnOptions(
+                model: resolvedModel,
+                effort: resolvedEffort,
+                experimental: [:]
+            )
+            _ = try await runtime.startTurn(
+                threadID: threadID,
+                text: titlePrompt(userText: trimmedUserText),
+                safetyConfiguration: safety,
+                turnOptions: turnOptions
+            )
+
+            let stream = await runtime.events()
+            let result = await withTaskGroup(of: String?.self) { group in
+                group.addTask {
+                    var assistantText = ""
+                    for await event in stream {
+                        switch event {
+                        case let .assistantMessageDelta(_, delta):
+                            assistantText += delta
+                        case let .turnCompleted(completion):
+                            guard !isFailureStatus(completion) else {
+                                return nil
+                            }
+                            return normalizedTitle(assistantText)
+                        default:
+                            continue
+                        }
+                    }
+                    return normalizedTitle(assistantText)
+                }
+
+                group.addTask {
+                    let timeoutNanoseconds = UInt64(max(timeoutSeconds, 0) * 1_000_000_000)
+                    if timeoutNanoseconds > 0 {
+                        try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    }
+                    return nil
+                }
+
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
+
+            await runtime.stop()
+            return result
+        } catch {
+            await runtime.stop()
+            return nil
+        }
+    }
+
     static func extractRawTitle(from response: [String: Any]) -> String? {
         if let outputText = response["output_text"] as? String,
            !outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -152,5 +257,15 @@ enum ChatTitleGenerator {
 
         let joined = words.joined(separator: " ")
         return joined.isEmpty ? nil : joined
+    }
+
+    private static func isFailureStatus(_ completion: RuntimeTurnCompletion) -> Bool {
+        if completion.errorMessage != nil {
+            return true
+        }
+        let normalized = completion.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.contains("fail")
+            || normalized.contains("error")
+            || normalized.contains("cancel")
     }
 }

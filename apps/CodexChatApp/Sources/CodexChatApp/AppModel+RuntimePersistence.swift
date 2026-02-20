@@ -128,14 +128,99 @@ extension AppModel {
         }
 
         let fallbackTitle = Self.autoTitleFromFirstTurn(userText: userText, assistantText: assistantText)
-        let generatedTitle = await generatedInitialThreadTitle(userText: userText)
-        let title = generatedTitle ?? fallbackTitle
-        guard !title.isEmpty else {
+        guard !fallbackTitle.isEmpty else {
+            return
+        }
+
+        await persistThreadTitle(
+            threadRepository: threadRepository,
+            threadID: threadID,
+            projectID: projectID,
+            title: fallbackTitle
+        )
+
+        let selectedModelID = {
+            let trimmed = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }()
+        let reasoningModelID = selectedModelID ?? runtimeDefaultModelID
+        let clampedReasoning = clampedReasoningLevel(.low, forModelID: reasoningModelID)
+        let reasoningEffort = clampedReasoning == .none ? nil : clampedReasoning.rawValue
+
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+
+            guard let generatedTitle = await ChatTitleGenerator.generateTitleWithEphemeralRuntime(
+                userText: userText,
+                model: selectedModelID,
+                reasoningEffort: reasoningEffort
+            ) else {
+                return
+            }
+
+            await applyGeneratedThreadTitleIfEligible(
+                threadID: threadID,
+                projectID: projectID,
+                generatedTitle: generatedTitle,
+                fallbackTitle: fallbackTitle
+            )
+        }
+    }
+
+    private func applyGeneratedThreadTitleIfEligible(
+        threadID: UUID,
+        projectID: UUID,
+        generatedTitle: String,
+        fallbackTitle: String
+    ) async {
+        guard let threadRepository else {
+            return
+        }
+
+        let trimmedGenerated = generatedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedGenerated.isEmpty,
+              trimmedGenerated.caseInsensitiveCompare(fallbackTitle) != .orderedSame
+        else {
             return
         }
 
         do {
-            let updated = try await threadRepository.updateThreadTitle(id: threadID, title: title)
+            guard let existingThread = try await threadRepository.getThread(id: threadID) else {
+                return
+            }
+
+            let existingTitle = existingThread.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shouldReplace = existingTitle.caseInsensitiveCompare(fallbackTitle) == .orderedSame
+                || existingTitle.caseInsensitiveCompare("New chat") == .orderedSame
+            guard shouldReplace else {
+                return
+            }
+        } catch {
+            appendLog(.debug, "Skipping generated thread title update: \(error.localizedDescription)")
+            return
+        }
+
+        await persistThreadTitle(
+            threadRepository: threadRepository,
+            threadID: threadID,
+            projectID: projectID,
+            title: trimmedGenerated
+        )
+    }
+
+    private func persistThreadTitle(
+        threadRepository: any ThreadRepository,
+        threadID: UUID,
+        projectID: UUID,
+        title: String
+    ) async {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            return
+        }
+
+        do {
+            let updated = try await threadRepository.updateThreadTitle(id: threadID, title: trimmedTitle)
             try await chatSearchRepository?.indexThreadTitle(
                 threadID: threadID,
                 projectID: projectID,
@@ -150,31 +235,6 @@ extension AppModel {
             }
         } catch {
             appendLog(.error, "Failed to auto-title thread: \(error.localizedDescription)")
-        }
-    }
-
-    private func generatedInitialThreadTitle(userText: String) async -> String? {
-        do {
-            guard let apiKey = try keychainStore.readSecret(account: APIKeychainStore.runtimeAPIKeyAccount) else {
-                return nil
-            }
-            let selectedModelID = defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !selectedModelID.isEmpty else {
-                return nil
-            }
-
-            let clampedReasoning = clampedReasoningLevel(.low, forModelID: selectedModelID)
-            let reasoningEffort = clampedReasoning == .none ? nil : clampedReasoning.rawValue
-
-            return try await ChatTitleGenerator.generateTitle(
-                userText: userText,
-                apiKey: apiKey,
-                model: selectedModelID,
-                reasoningEffort: reasoningEffort
-            )
-        } catch {
-            appendLog(.debug, "Skipping model title generation: \(error.localizedDescription)")
-            return nil
         }
     }
 
