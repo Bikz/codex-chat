@@ -52,7 +52,6 @@ struct ComputerActionPreviewSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(preview.requiresConfirmation ? "Confirm Run" : "Run") {
                         model.confirmPendingComputerActionPreview()
-                        dismiss()
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.isComputerActionExecutionInProgress)

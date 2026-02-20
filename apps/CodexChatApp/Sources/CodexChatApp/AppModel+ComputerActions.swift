@@ -92,12 +92,15 @@ extension AppModel {
             return
         }
 
+        // Clear sheet state up front so execution (and any permission prompts) happen
+        // after the preview UI starts dismissing.
+        pendingComputerActionPreview = nil
         isComputerActionExecutionInProgress = true
         Task {
             defer { isComputerActionExecutionInProgress = false }
+            await Task.yield()
             do {
                 try await executeComputerAction(preview)
-                pendingComputerActionPreview = nil
             } catch {
                 computerActionStatusMessage = "Computer action failed: \(error.localizedDescription)"
                 appendLog(.error, "Computer action execute failed: \(error.localizedDescription)")

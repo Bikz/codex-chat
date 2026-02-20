@@ -13,26 +13,28 @@ public struct ProcessOsaScriptRunner: OsaScriptRunning {
     public init() {}
 
     public func run(script: String, arguments: [String]) async throws -> String {
-        let process = Process()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
+        try await Task.detached(priority: .userInitiated) {
+            let process = Process()
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
 
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript", isDirectory: false)
-        process.arguments = ["-l", "AppleScript", "-e", script] + arguments
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript", isDirectory: false)
+            process.arguments = ["-l", "AppleScript", "-e", script] + arguments
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
 
-        try process.run()
-        process.waitUntilExit()
+            try process.run()
+            process.waitUntilExit()
 
-        let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let error = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let error = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 
-        guard process.terminationStatus == 0 else {
-            throw ComputerActionError.executionFailed(error.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
+            guard process.terminationStatus == 0 else {
+                throw ComputerActionError.executionFailed(error.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
 
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.value
     }
 }
 
