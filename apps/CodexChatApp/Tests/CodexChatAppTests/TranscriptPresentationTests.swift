@@ -107,6 +107,59 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertLessThan(summaryIndex, assistantIndex)
     }
 
+    func testChatModeCompactsIntermediaryAssistantUpdatesIntoFinalMessage() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "Review this repo for risky code paths.")),
+            .actionCard(action(threadID: threadID, method: "turn/started", title: "Turn started")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "I'll start with a quick scan.")),
+            .actionCard(action(threadID: threadID, method: "item/started", title: "Started reasoning")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "I'm mapping critical sinks now.")),
+            .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "Findings (by severity) ...")),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        let assistantMessages = rows.compactMap { row -> ChatMessage? in
+            guard case let .message(message) = row, message.role == .assistant else {
+                return nil
+            }
+            return message
+        }
+
+        XCTAssertEqual(assistantMessages.count, 1)
+        XCTAssertEqual(assistantMessages.first?.text, "Findings (by severity) ...")
+    }
+
+    func testChatModeKeepsMultipleAssistantMessagesWithoutActionTrace() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "hello")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "Part 1")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "Part 2")),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
+        )
+
+        let assistantMessages = rows.compactMap { row -> ChatMessage? in
+            guard case let .message(message) = row, message.role == .assistant else {
+                return nil
+            }
+            return message
+        }
+
+        XCTAssertEqual(assistantMessages.map(\.text), ["Part 1", "Part 2"])
+    }
+
     func testCriticalActionsRemainInlineInChatMode() {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [

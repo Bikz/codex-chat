@@ -242,7 +242,7 @@ enum TranscriptPresentationBuilder {
                 rows.append(.turnSummary(summary))
             }
 
-            for assistant in bucket.assistantMessages {
+            for assistant in assistantMessagesForDisplay(in: bucket, detailLevel: detailLevel) {
                 rows.append(.message(assistant))
             }
         }
@@ -302,6 +302,26 @@ enum TranscriptPresentationBuilder {
         }
 
         return buckets.last?.id
+    }
+
+    private static func assistantMessagesForDisplay(
+        in bucket: TurnBucket,
+        detailLevel: TranscriptDetailLevel
+    ) -> [ChatMessage] {
+        guard detailLevel != .detailed else {
+            return bucket.assistantMessages
+        }
+
+        // Compact intermediary assistant updates into the turn summary
+        // when runtime actions are present, and keep only the final answer visible.
+        guard !bucket.actions.isEmpty,
+              bucket.assistantMessages.count > 1,
+              let finalMessage = bucket.assistantMessages.last
+        else {
+            return bucket.assistantMessages
+        }
+
+        return [finalMessage]
     }
 
     private static func inlineActions(for actions: [ActionCard]) -> [ActionCard] {
