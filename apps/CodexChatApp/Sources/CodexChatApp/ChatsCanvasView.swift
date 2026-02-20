@@ -25,8 +25,6 @@ struct ChatsCanvasView: View {
 
             runtimeAwareConversationSurface
 
-            Divider()
-
             VStack(alignment: .leading, spacing: 8) {
                 FollowUpQueueView(model: model)
                 composerSurface
