@@ -30,12 +30,20 @@ struct SidebarView: View {
         .system(size: 12, weight: .regular)
     }
 
+    private var sidebarActionFont: Font {
+        .system(size: 13.5, weight: .regular)
+    }
+
     private var sidebarSectionFont: Font {
         .system(size: 11.5, weight: .semibold)
     }
 
     private var sidebarBodyIconFont: Font {
         .system(size: 14, weight: .medium)
+    }
+
+    private var sidebarActionIconFont: Font {
+        .system(size: 13.5, weight: .regular)
     }
 
     private var sidebarMetaIconFont: Font {
@@ -85,8 +93,8 @@ struct SidebarView: View {
                     horizontalPadding: SidebarLayoutSpec.rowHorizontalPadding,
                     verticalPadding: SidebarLayoutSpec.rowVerticalPadding,
                     minimumHeight: SidebarLayoutSpec.rowMinHeight,
-                    bodyFont: sidebarBodyFont,
-                    iconFont: sidebarBodyIconFont,
+                    bodyFont: sidebarActionFont,
+                    iconFont: sidebarActionIconFont,
                     cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius,
                     horizontalInset: SidebarLayoutSpec.selectedRowInset,
                     action: model.createGlobalNewChat
@@ -100,8 +108,8 @@ struct SidebarView: View {
                     horizontalPadding: SidebarLayoutSpec.rowHorizontalPadding,
                     verticalPadding: SidebarLayoutSpec.rowVerticalPadding,
                     minimumHeight: SidebarLayoutSpec.rowMinHeight,
-                    bodyFont: sidebarBodyFont,
-                    iconFont: sidebarBodyIconFont,
+                    bodyFont: sidebarActionFont,
+                    iconFont: sidebarActionIconFont,
                     cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius,
                     horizontalInset: SidebarLayoutSpec.selectedRowInset,
                     isActive: model.detailDestination == .skillsAndMods,
