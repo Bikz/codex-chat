@@ -489,10 +489,7 @@ struct SidebarView: View {
                                 .accessibilityLabel("Awaiting input")
                                 .lineLimit(1)
                         } else if model.isThreadWorking(thread.id) {
-                            ProgressView()
-                                .controlSize(.small)
-                                .scaleEffect(0.72)
-                                .tint(Color.primary.opacity(0.45))
+                            SidebarWorkingSpinner()
                                 .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                                 .accessibilityLabel("Working")
                         } else if model.isThreadUnread(thread.id) {
@@ -780,6 +777,40 @@ struct SidebarView: View {
                     expandedProjectThreadsByProjectID[projectID] = []
                 }
             }
+        }
+    }
+}
+
+private struct SidebarWorkingSpinner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isAnimating = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1.5)
+
+            Circle()
+                .trim(from: 0.10, to: 0.78)
+                .stroke(
+                    Color.primary.opacity(0.45),
+                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round)
+                )
+                .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                .animation(
+                    reduceMotion
+                        ? nil
+                        : .linear(duration: 0.9).repeatForever(autoreverses: false),
+                    value: isAnimating
+                )
+        }
+        .frame(width: 11, height: 11)
+        .onAppear {
+            guard !reduceMotion else { return }
+            isAnimating = true
+        }
+        .onChange(of: reduceMotion) { _, newValue in
+            isAnimating = !newValue
         }
     }
 }
