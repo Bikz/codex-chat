@@ -108,15 +108,53 @@ struct SkillRow: View {
     }
 
     private var targetPicker: some View {
-        Picker("Enable target", selection: Binding(
-            get: { selectedEnablementTarget },
-            set: { onEnablementTargetChanged($0) }
-        )) {
-            Text("Global").tag(SkillEnablementTarget.global)
-            Text("General").tag(SkillEnablementTarget.general)
-            Text("Project").tag(SkillEnablementTarget.project).disabled(!hasSelectedProject)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Enable target")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                targetButton(.global, title: "Global")
+                targetButton(.general, title: "General")
+                targetButton(.project, title: "Project", isDisabled: !hasSelectedProject)
+            }
         }
-        .pickerStyle(.segmented)
+    }
+
+    private func targetButton(
+        _ target: SkillEnablementTarget,
+        title: String,
+        isDisabled: Bool = false
+    ) -> some View {
+        let isSelected = selectedEnablementTarget == target
+
+        return Button(title) {
+            onEnablementTargetChanged(target)
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    isSelected
+                        ? Color.accentColor.opacity(0.18)
+                        : Color.primary.opacity(0.06)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(
+                    isSelected
+                        ? Color.accentColor.opacity(0.55)
+                        : Color.primary.opacity(0.12)
+                )
+        )
+        .opacity(isDisabled ? 0.55 : 1)
+        .disabled(isDisabled)
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
     private var enabledSummary: some View {
