@@ -248,17 +248,12 @@ struct LiveTurnActivityRow: View {
     let activity: LiveTurnActivityPresentation
     let detailLevel: TranscriptDetailLevel
 
-    @Environment(\.designTokens) private var tokens
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var compactStatusPulse = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
-
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
                 Text("\(presentation.statusLabel)…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -309,18 +304,8 @@ struct LiveTurnActivityRow: View {
                     }
                 }
                 .frame(minHeight: 52, idealHeight: 86, maxHeight: 120)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.15), in: RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
-                )
             }
         }
-        .padding(10)
-        .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity)))
         .onAppear {
             updateCompactStatusPulse()
         }
