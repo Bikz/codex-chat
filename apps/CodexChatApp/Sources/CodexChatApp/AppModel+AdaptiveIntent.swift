@@ -15,6 +15,10 @@ extension AppModel {
         text: String,
         attachments: [ComposerAttachment]
     ) -> Bool {
+        guard isAdaptiveIntentRoutingEnabled else {
+            return false
+        }
+
         guard attachments.isEmpty else {
             return false
         }
@@ -31,6 +35,10 @@ extension AppModel {
         }
 
         return true
+    }
+
+    private var isAdaptiveIntentRoutingEnabled: Bool {
+        false
     }
 
     func triggerAdaptiveIntent(_ intent: AdaptiveIntent, originalText: String? = nil) {
