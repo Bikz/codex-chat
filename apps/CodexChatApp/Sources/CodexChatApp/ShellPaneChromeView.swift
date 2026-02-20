@@ -11,7 +11,7 @@ struct ShellPaneChromeView<Content: View>: View {
     let onClose: () -> Void
     private let content: () -> Content
 
-    @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         pane: ShellPaneState,
@@ -34,72 +34,70 @@ struct ShellPaneChromeView<Content: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            chromeHeader
-
-            Divider()
-                .opacity(tokens.surfaces.hairlineOpacity)
-
+        ZStack(alignment: .topTrailing) {
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            controlsOverlay
+                .padding(6)
         }
-        .background(tokens.materials.panelMaterial.material)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onFocus)
+        .background(shellSurfaceColor)
         .overlay(
-            RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(
-                    isActive ? Color(hex: tokens.palette.accentHex).opacity(0.6) : Color.primary.opacity(0.08),
-                    lineWidth: isActive ? 1 : 0.8
+                    isActive ? activeBorderColor : inactiveBorderColor,
+                    lineWidth: isActive ? 1 : 0.7
                 )
         )
-        .clipShape(RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
-    private var chromeHeader: some View {
-        HStack(spacing: 6) {
-            Button(action: onFocus) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(pane.processStatus == .running ? Color(hex: tokens.palette.accentHex) : Color.orange)
-                        .frame(width: 6, height: 6)
-
-                    Text(pane.title)
-                        .font(.caption2.weight(.semibold))
-                        .lineLimit(1)
-
-                    Text(ShellPathPresentation.leafName(for: pane.cwd))
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(ShellPathPresentation.compactPath(pane.cwd))
-            .accessibilityLabel("Focus shell pane \(pane.title)")
-            .accessibilityHint("Sets this pane as active")
-
+    private var controlsOverlay: some View {
+        HStack(spacing: 3) {
             if pane.processStatus == .exited {
-                headerButton(symbol: "arrow.clockwise", label: "Restart shell", action: onRestart)
+                controlButton(symbol: "arrow.clockwise", label: "Restart shell", action: onRestart)
             }
-
-            headerButton(symbol: "rectangle.split.2x1", label: "Split horizontally", action: onSplitHorizontal)
-            headerButton(symbol: "rectangle.split.1x2", label: "Split vertically", action: onSplitVertical)
-            headerButton(symbol: "xmark", label: "Close pane", action: onClose)
+            controlButton(symbol: "rectangle.split.2x1", label: "Split horizontally", action: onSplitHorizontal)
+            controlButton(symbol: "rectangle.split.1x2", label: "Split vertically", action: onSplitVertical)
+            controlButton(symbol: "xmark", label: "Close pane", action: onClose)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(Color.primary.opacity(isActive ? tokens.surfaces.activeOpacity * 0.8 : tokens.surfaces.baseOpacity * 0.7))
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .background(controlGroupBackgroundColor, in: Capsule(style: .continuous))
     }
 
-    private func headerButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+    private func controlButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 17, height: 17)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 15, height: 15)
+                .foregroundStyle(controlIconColor)
         }
-        .buttonStyle(.borderless)
         .accessibilityLabel(label)
-        .help(label)
+        .accessibilityHint(ShellPathPresentation.compactPath(pane.cwd))
+        .help("\(label) (\(ShellPathPresentation.compactPath(pane.cwd)))")
+        .buttonStyle(.borderless)
+    }
+
+    private var shellSurfaceColor: Color {
+        colorScheme == .dark ? .black : .white
+    }
+
+    private var controlGroupBackgroundColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.06)
+    }
+
+    private var controlIconColor: Color {
+        colorScheme == .dark ? .white : .black
+    }
+
+    private var activeBorderColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.18)
+    }
+
+    private var inactiveBorderColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)
     }
 }

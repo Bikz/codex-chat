@@ -14,7 +14,7 @@ struct ShellSplitContainerView: View {
             activePaneID: session.activePaneID,
             node: session.rootNode
         )
-        .padding(2)
+        .padding(0)
     }
 }
 
