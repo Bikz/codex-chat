@@ -165,7 +165,7 @@ private struct CLIError: LocalizedError {
 }
 
 private struct ModInspectPayload: Encodable {
-    struct UI: Encodable {
+    struct UISummary: Encodable {
         let hookCount: Int
         let automationCount: Int
         let hasModsBarSlot: Bool
@@ -180,7 +180,7 @@ private struct ModInspectPayload: Encodable {
     let requestedPermissions: [String]
     let warnings: [String]
     let compatibility: ModCompatibility?
-    let ui: UI
+    let ui: UISummary
 
     init(preview: ModInstallPreview) {
         source = preview.source
@@ -192,7 +192,7 @@ private struct ModInspectPayload: Encodable {
         requestedPermissions = preview.requestedPermissions.map(\.rawValue).sorted()
         warnings = preview.warnings
         compatibility = preview.packageManifest.compatibility
-        ui = UI(
+        ui = UISummary(
             hookCount: preview.definition.hooks.count,
             automationCount: preview.definition.automations.count,
             hasModsBarSlot: preview.definition.uiSlots?.modsBar?.enabled == true
