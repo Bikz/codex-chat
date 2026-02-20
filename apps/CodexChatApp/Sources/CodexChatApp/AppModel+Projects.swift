@@ -544,21 +544,6 @@ extension AppModel {
             expandedProjectIDs.remove(projectID)
         } else {
             expandedProjectIDs.insert(projectID)
-            // Load threads for this project if not already selected.
-            if selectedProjectID != projectID {
-                Task {
-                    do {
-                        selectedProjectID = projectID
-                        await Task.yield()
-                        try await refreshThreads()
-                        try await refreshSkills()
-                        refreshModsSurface()
-                        refreshConversationState()
-                    } catch {
-                        appendLog(.error, "Failed to load threads for expanded project: \(error.localizedDescription)")
-                    }
-                }
-            }
         }
     }
 

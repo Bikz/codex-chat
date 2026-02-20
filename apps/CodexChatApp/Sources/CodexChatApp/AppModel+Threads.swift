@@ -98,6 +98,13 @@ extension AppModel {
         createGeneralThread()
     }
 
+    func listThreadsForProject(_ projectID: UUID) async throws -> [ThreadRecord] {
+        guard let threadRepository else {
+            return []
+        }
+        return try await threadRepository.listThreads(projectID: projectID)
+    }
+
     func refreshArchivedThreads() async throws {
         guard let threadRepository else {
             archivedThreadsState = .failed("Thread repository is unavailable.")

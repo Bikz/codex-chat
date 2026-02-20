@@ -17,6 +17,8 @@ struct SidebarView: View {
     @State private var isSeeMoreHovered = false
     @State private var isThreadSelectionSuppressed = false
     @State private var threadSelectionSuppressionGeneration = 0
+    @State private var expandedProjectThreadsByProjectID: [UUID: [ThreadRecord]] = [:]
+    @State private var projectThreadLoadInFlightIDs: Set<UUID> = []
 
     private let projectsPreviewCount = 3
 
@@ -229,11 +231,8 @@ struct SidebarView: View {
         ForEach(visibleProjects) { project in
             projectRow(project)
 
-            if model.expandedProjectIDs.contains(project.id), model.selectedProjectID == project.id {
-                let projectThreads = model.threads.filter { $0.projectId == project.id }
-                ForEach(projectThreads) { thread in
-                    threadRow(thread, isGeneralThread: false)
-                }
+            if model.expandedProjectIDs.contains(project.id) {
+                projectThreadRows(for: project)
             }
         }
 
@@ -279,9 +278,16 @@ struct SidebarView: View {
 
         return ZStack(alignment: .trailing) {
             Button {
+                let wasExpanded = isExpanded
                 flashedProjectID = project.id
                 withAnimation(.easeInOut(duration: tokens.motion.transitionDuration)) {
                     model.toggleProjectExpanded(project.id)
+                }
+                if wasExpanded {
+                    expandedProjectThreadsByProjectID.removeValue(forKey: project.id)
+                    projectThreadLoadInFlightIDs.remove(project.id)
+                } else {
+                    loadExpandedProjectThreads(projectID: project.id)
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
                     if flashedProjectID == project.id {
@@ -317,7 +323,7 @@ struct SidebarView: View {
             ))
             .contentShape(RoundedRectangle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius, style: .continuous))
             .accessibilityLabel(project.name)
-            .accessibilityHint("Selects this project and toggles its thread list.")
+            .accessibilityHint("Expands or collapses this project's thread list.")
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
             HStack(spacing: SidebarLayoutSpec.controlSlotSpacing) {
@@ -368,6 +374,35 @@ struct SidebarView: View {
                 return
             }
             hoveredProjectID = nextHoveredID
+        }
+    }
+
+    @ViewBuilder
+    private func projectThreadRows(for project: ProjectRecord) -> some View {
+        if model.selectedProjectID == project.id {
+            let projectThreads = model.threads.filter { $0.projectId == project.id }
+            ForEach(projectThreads) { thread in
+                threadRow(thread, isGeneralThread: false)
+            }
+        } else if let cachedThreads = expandedProjectThreadsByProjectID[project.id] {
+            ForEach(cachedThreads) { thread in
+                threadRow(thread, isGeneralThread: false)
+            }
+        } else if projectThreadLoadInFlightIDs.contains(project.id) {
+            HStack(spacing: SidebarLayoutSpec.iconTextGap) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
+                Text("Loading…")
+                    .font(sidebarMetaFont)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, SidebarLayoutSpec.threadRowHorizontalPadding + SidebarLayoutSpec.selectedRowInset)
+            .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
+            .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
+        } else {
+            EmptyView()
         }
     }
 
@@ -679,6 +714,41 @@ struct SidebarView: View {
 
     private func projectLeadingIconName(isExpanded: Bool, isHovered: Bool) -> String {
         SidebarProjectIconResolver.leadingSymbolName(isExpanded: isExpanded, isHovered: isHovered)
+    }
+
+    private func loadExpandedProjectThreads(projectID: UUID) {
+        guard model.selectedProjectID != projectID else {
+            return
+        }
+        guard !projectThreadLoadInFlightIDs.contains(projectID) else {
+            return
+        }
+
+        projectThreadLoadInFlightIDs.insert(projectID)
+        Task {
+            do {
+                let threads = try await model.listThreadsForProject(projectID)
+                await MainActor.run {
+                    projectThreadLoadInFlightIDs.remove(projectID)
+                    guard model.expandedProjectIDs.contains(projectID),
+                          model.selectedProjectID != projectID
+                    else {
+                        return
+                    }
+                    expandedProjectThreadsByProjectID[projectID] = threads
+                }
+            } catch {
+                await MainActor.run {
+                    projectThreadLoadInFlightIDs.remove(projectID)
+                    guard model.expandedProjectIDs.contains(projectID),
+                          model.selectedProjectID != projectID
+                    else {
+                        return
+                    }
+                    expandedProjectThreadsByProjectID[projectID] = []
+                }
+            }
+        }
     }
 }
 
