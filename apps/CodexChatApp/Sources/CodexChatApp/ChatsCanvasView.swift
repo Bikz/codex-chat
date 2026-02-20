@@ -70,7 +70,7 @@ struct ChatsCanvasView: View {
             }
         }
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .navigation) {
                 Button {
                     model.openReviewChanges()
                 } label: {
