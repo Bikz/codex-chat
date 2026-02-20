@@ -1,4 +1,3 @@
-import AppKit
 import CodexChatUI
 import CodexKit
 import SwiftUI
@@ -20,17 +19,6 @@ struct ContentView: View {
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    toggleSidebar()
-                } label: {
-                    Label("Toggle Sidebar", systemImage: "sidebar.leading")
-                        .labelStyle(.iconOnly)
-                }
-                .accessibilityLabel("Toggle sidebar")
-                .help("Toggle sidebar")
-            }
-
             if !model.isOnboardingActive, model.detailDestination != .skillsAndMods {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
@@ -89,7 +77,6 @@ struct ContentView: View {
                 }
             }
         }
-        .toolbar(removing: .sidebarToggle)
         .navigationTitle("")
         .sheet(isPresented: $model.isDiagnosticsVisible) {
             DiagnosticsView(
@@ -195,10 +182,6 @@ struct ContentView: View {
             get: { model.unscopedApprovalRequests.first },
             set: { _ in }
         )
-    }
-
-    private func toggleSidebar() {
-        NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
     }
 
     @ViewBuilder
