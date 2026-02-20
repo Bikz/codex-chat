@@ -26,6 +26,22 @@ final class ParallelTurnSchedulingTests: XCTestCase {
         XCTAssertEqual(configuredLimit, 73)
     }
 
+    @MainActor
+    func testRuntimeEventTraceSampleRateHonorsEnvironmentOverride() {
+        let key = "CODEXCHAT_RUNTIME_EVENT_TRACE_SAMPLE_RATE"
+        let previousValue = ProcessInfo.processInfo.environment[key]
+        setenv(key, "9", 1)
+        defer {
+            if let previousValue {
+                setenv(key, previousValue, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+
+        XCTAssertEqual(AppModel.runtimeEventTraceSampleRate, 9)
+    }
+
     func testTurnConcurrencySchedulerPrioritizesSelectedThread() async throws {
         let scheduler = TurnConcurrencyScheduler(maxConcurrentTurns: 1)
         let firstThreadID = UUID()

@@ -41,6 +41,17 @@ final class AppModel: ObservableObject {
         return max(32, min(128, ProcessInfo.processInfo.activeProcessorCount * 8))
     }
 
+    static var runtimeEventTraceSampleRate: Int {
+        if let configured = ProcessInfo.processInfo.environment["CODEXCHAT_RUNTIME_EVENT_TRACE_SAMPLE_RATE"],
+           let parsed = Int(configured),
+           parsed > 0
+        {
+            return min(parsed, 512)
+        }
+
+        return 16
+    }
+
     struct SkillListItem: Identifiable, Hashable {
         let skill: DiscoveredSkill
         var enabledTargets: Set<SkillEnablementTarget>
@@ -664,6 +675,7 @@ final class AppModel: ObservableObject {
     var extensionAutomationScheduler = ExtensionAutomationScheduler()
     var runtimeRepairSuggestedThreadIDs: Set<UUID> = []
     var runtimeRepairPendingRuntimeThreadIDs: Set<String> = []
+    var runtimeEventTraceSampleCounter: UInt64 = 0
     var workerTraceByActionFingerprint: [String: WorkerTraceEntry] = [:]
     var computerActionPermissionPromptHandler: ((String, ComputerActionSafetyLevel) -> Bool)?
     var globalModsWatcher: DirectoryWatcher?

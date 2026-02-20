@@ -3,8 +3,9 @@ import Foundation
 
 actor RuntimeEventDispatchBridge {
     private enum Constants {
-        static let flushIntervalNanoseconds: UInt64 = 20_000_000
-        static let maxBatchSize = 64
+        static let flushIntervalNanoseconds: UInt64 = 12_000_000
+        static let maxBatchSize = 192
+        static let maxDeliveryChunkSize = 64
     }
 
     private let handler: @MainActor ([CodexRuntimeEvent]) async -> Void
@@ -17,6 +18,16 @@ actor RuntimeEventDispatchBridge {
     }
 
     func enqueue(_ event: CodexRuntimeEvent) async {
+        if coalescePendingEventIfPossible(event) {
+            if pendingEvents.count >= Constants.maxBatchSize {
+                await flushNow()
+                return
+            }
+
+            scheduleFlushIfNeeded()
+            return
+        }
+
         pendingEvents.append(event)
 
         if shouldFlushImmediately(event) || pendingEvents.count >= Constants.maxBatchSize {
@@ -37,7 +48,7 @@ actor RuntimeEventDispatchBridge {
 
         let batch = pendingEvents
         pendingEvents.removeAll(keepingCapacity: true)
-        await handler(batch)
+        await deliver(batch: batch)
     }
 
     func stop() async {
@@ -88,6 +99,58 @@ actor RuntimeEventDispatchBridge {
             false
         case .accountLoginCompleted:
             false
+        }
+    }
+
+    private func deliver(batch: [CodexRuntimeEvent]) async {
+        var index = 0
+        while index < batch.count {
+            let nextIndex = min(index + Constants.maxDeliveryChunkSize, batch.count)
+            await handler(Array(batch[index ..< nextIndex]))
+            index = nextIndex
+
+            if index < batch.count {
+                await Task.yield()
+            }
+        }
+    }
+
+    private func coalescePendingEventIfPossible(_ event: CodexRuntimeEvent) -> Bool {
+        guard let lastEvent = pendingEvents.last else {
+            return false
+        }
+
+        switch (lastEvent, event) {
+        case let (
+            .assistantMessageDelta(lastThreadID, lastTurnID, lastItemID, lastDelta),
+            .assistantMessageDelta(nextThreadID, nextTurnID, nextItemID, nextDelta)
+        ) where lastThreadID == nextThreadID
+            && lastTurnID == nextTurnID
+            && lastItemID == nextItemID:
+            pendingEvents[pendingEvents.count - 1] = .assistantMessageDelta(
+                threadID: lastThreadID,
+                turnID: lastTurnID,
+                itemID: lastItemID,
+                delta: lastDelta + nextDelta
+            )
+            return true
+
+        case let (.commandOutputDelta(lastDelta), .commandOutputDelta(nextDelta))
+            where lastDelta.itemID == nextDelta.itemID
+            && lastDelta.threadID == nextDelta.threadID
+            && lastDelta.turnID == nextDelta.turnID:
+            pendingEvents[pendingEvents.count - 1] = .commandOutputDelta(
+                RuntimeCommandOutputDelta(
+                    itemID: lastDelta.itemID,
+                    threadID: lastDelta.threadID,
+                    turnID: lastDelta.turnID,
+                    delta: lastDelta.delta + nextDelta.delta
+                )
+            )
+            return true
+
+        default:
+            return false
         }
     }
 }

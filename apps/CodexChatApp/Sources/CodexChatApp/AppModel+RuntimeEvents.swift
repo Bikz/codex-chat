@@ -15,17 +15,20 @@ extension AppModel {
     }
 
     func handleRuntimeEvent(_ event: CodexRuntimeEvent) {
+        let shouldTrace = shouldTraceRuntimeEventPerformance(event)
         let clock = ContinuousClock()
-        let startedAt = clock.now
+        let startedAt = shouldTrace ? clock.now : nil
         defer {
-            let duration = clock.now - startedAt
-            let components = duration.components
-            let durationMS = (Double(components.seconds) + (Double(components.attoseconds) / 1_000_000_000_000_000_000)) * 1000
-            Task {
-                await PerformanceTracer.shared.record(
-                    name: "runtime.event.\(event.performanceName)",
-                    durationMS: durationMS
-                )
+            if let startedAt {
+                let duration = clock.now - startedAt
+                let components = duration.components
+                let durationMS = (Double(components.seconds) + (Double(components.attoseconds) / 1_000_000_000_000_000_000)) * 1000
+                Task {
+                    await PerformanceTracer.shared.record(
+                        name: "runtime.event.\(event.performanceName)",
+                        durationMS: durationMS
+                    )
+                }
             }
         }
 
@@ -200,6 +203,17 @@ extension AppModel {
                 try? await refreshAccountState()
                 await refreshRuntimeModelCatalog()
             }
+        }
+    }
+
+    private func shouldTraceRuntimeEventPerformance(_ event: CodexRuntimeEvent) -> Bool {
+        switch event {
+        case .assistantMessageDelta, .commandOutputDelta:
+            runtimeEventTraceSampleCounter = runtimeEventTraceSampleCounter &+ 1
+            let sampleRate = max(1, Self.runtimeEventTraceSampleRate)
+            return runtimeEventTraceSampleCounter % UInt64(sampleRate) == 0
+        default:
+            return true
         }
     }
 
