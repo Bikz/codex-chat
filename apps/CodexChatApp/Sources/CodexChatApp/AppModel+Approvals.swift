@@ -15,22 +15,31 @@ extension AppModel {
     }
 
     private func submitApprovalDecision(_ decision: RuntimeApprovalDecision) {
-        guard let request = activeApprovalRequest,
-              let runtime
+        guard let request = pendingApprovalForSelectedThread
+            ?? unscopedApprovalRequest
+            ?? approvalStateMachine.firstPendingRequest,
+            let runtime
         else {
             return
         }
 
+        approvalDecisionInFlightRequestIDs.insert(request.id)
         isApprovalDecisionInProgress = true
         approvalStatusMessage = nil
 
         Task {
-            defer { isApprovalDecisionInProgress = false }
+            defer {
+                approvalDecisionInFlightRequestIDs.remove(request.id)
+                isApprovalDecisionInProgress = !approvalDecisionInFlightRequestIDs.isEmpty
+            }
 
             do {
                 try await runtime.respondToApproval(requestID: request.id, decision: decision)
                 _ = approvalStateMachine.resolve(id: request.id)
-                activeApprovalRequest = approvalStateMachine.activeRequest
+                if unscopedApprovalRequest?.id == request.id {
+                    unscopedApprovalRequest = nil
+                }
+                syncApprovalPresentationState()
                 approvalStatusMessage = "Sent decision: \(approvalDecisionLabel(decision))."
                 appendLog(.info, "Approval decision sent for request \(request.id): \(approvalDecisionLabel(decision))")
                 requestAutoDrain(reason: "approval resolved")

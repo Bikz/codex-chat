@@ -7,6 +7,49 @@ struct ApprovalRequestSheet: View {
     let request: RuntimeApprovalRequest
 
     var body: some View {
+        ApprovalRequestDialogContent(model: model, request: request, isInline: false)
+            .padding(18)
+            .frame(minWidth: 620, minHeight: 360)
+    }
+}
+
+struct InlineApprovalRequestView: View {
+    @ObservedObject var model: AppModel
+    let request: RuntimeApprovalRequest
+
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        ApprovalRequestDialogContent(model: model, request: request, isInline: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                Color.primary.opacity(tokens.surfaces.baseOpacity),
+                in: RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+            )
+    }
+}
+
+private struct ApprovalRequestDialogContent: View {
+    @ObservedObject var model: AppModel
+    let request: RuntimeApprovalRequest
+    let isInline: Bool
+
+    @Environment(\.designTokens) private var tokens
+
+    private var commandText: String {
+        request.command.joined(separator: " ")
+    }
+
+    private var decisionInProgress: Bool {
+        model.isSelectedThreadApprovalInProgress || model.isApprovalDecisionInProgress
+    }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Approval Required")
                 .font(.title3.weight(.semibold))
@@ -22,36 +65,36 @@ struct ApprovalRequestSheet: View {
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             }
 
-            LabeledContent("Type") {
-                Text(request.kind.rawValue)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Reason")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                Text(primaryReasonText)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let reason = request.reason, !reason.isEmpty {
-                LabeledContent("Reason") {
-                    Text(reason)
-                        .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 14) {
+                labeledMeta("Type", request.kind.rawValue)
+                if let cwd = request.cwd, !cwd.isEmpty {
+                    labeledMeta("Working dir", cwd, monospaced: true)
                 }
             }
 
-            if let cwd = request.cwd, !cwd.isEmpty {
-                LabeledContent("Working dir") {
-                    Text(cwd)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            }
-
-            if !request.command.isEmpty {
+            if !commandText.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Command")
                         .font(.subheadline.weight(.semibold))
-                    Text(request.command.joined(separator: " "))
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .tokenCard(style: .panel, radius: 8, strokeOpacity: 0.06)
+                    ScrollView(.horizontal) {
+                        Text(commandText)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .tokenCard(style: .panel, radius: 8, strokeOpacity: 0.06)
                 }
             }
 
@@ -59,9 +102,15 @@ struct ApprovalRequestSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("File changes")
                         .font(.subheadline.weight(.semibold))
-                    ForEach(request.changes, id: \.path) { change in
+                    ForEach(request.changes.prefix(6), id: \.path) { change in
                         Text("\(change.kind): \(change.path)")
                             .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    if request.changes.count > 6 {
+                        Text("+\(request.changes.count - 6) more")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -73,7 +122,7 @@ struct ApprovalRequestSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
+            HStack(spacing: 10) {
                 Button("Decline") {
                     model.declinePendingApproval()
                 }
@@ -89,9 +138,32 @@ struct ApprovalRequestSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
-            .disabled(model.isApprovalDecisionInProgress)
+            .disabled(decisionInProgress)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(18)
-        .frame(minWidth: 620, minHeight: 360)
+        .padding(isInline ? 0 : 4)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var primaryReasonText: String {
+        if let reason = request.reason?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty {
+            return reason
+        }
+        let detail = request.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        return detail.isEmpty ? "Codex requested permission before continuing." : detail
+    }
+
+    private func labeledMeta(_ label: String, _ value: String, monospaced: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(monospaced ? .system(.caption, design: .monospaced) : .callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+        }
     }
 }

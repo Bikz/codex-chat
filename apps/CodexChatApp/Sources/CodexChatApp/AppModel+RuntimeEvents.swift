@@ -326,8 +326,6 @@ extension AppModel {
     }
 
     private func handleApprovalRequest(_ request: RuntimeApprovalRequest) {
-        approvalStateMachine.enqueue(request)
-        activeApprovalRequest = approvalStateMachine.activeRequest
         approvalStatusMessage = nil
 
         let localThreadID = resolveLocalThreadID(
@@ -336,9 +334,14 @@ extension AppModel {
         ) ?? activeTurnContext?.localThreadID
 
         guard let localThreadID else {
+            unscopedApprovalRequest = request
+            syncApprovalPresentationState()
             appendLog(.warning, "Approval request arrived without local thread mapping")
             return
         }
+
+        approvalStateMachine.enqueue(request, threadID: localThreadID)
+        syncApprovalPresentationState()
 
         let summary = approvalSummary(for: request)
         appendEntry(

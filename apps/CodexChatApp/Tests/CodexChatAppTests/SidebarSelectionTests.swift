@@ -41,6 +41,32 @@ final class SidebarSelectionTests: XCTestCase {
         XCTAssertFalse(model.expandedProjectIDs.contains(projectID))
     }
 
+    func testPendingApprovalThreadIsTrackedForSidebarLabel() {
+        let model = makeModel()
+        let waitingThreadID = UUID()
+        let otherThreadID = UUID()
+
+        model.approvalStateMachine.enqueue(makeApprovalRequest(id: 901), threadID: waitingThreadID)
+        model.syncApprovalPresentationState()
+
+        XCTAssertTrue(model.pendingApprovalThreadIDs.contains(waitingThreadID))
+        XCTAssertTrue(model.hasPendingApproval(for: waitingThreadID))
+        XCTAssertFalse(model.hasPendingApproval(for: otherThreadID))
+    }
+
+    func testPendingApprovalForSelectedThreadBecomesActiveRequest() {
+        let model = makeModel()
+        let threadID = UUID()
+        let request = makeApprovalRequest(id: 902)
+        model.selectedThreadID = threadID
+
+        model.approvalStateMachine.enqueue(request, threadID: threadID)
+        model.syncApprovalPresentationState()
+
+        XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
+        XCTAssertTrue(model.hasPendingApprovalForSelectedThread)
+    }
+
     func testRemoveSelectedProjectDisconnectsItAndKeepsFilesOnDisk() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-remove-project-\(UUID().uuidString)", isDirectory: true)
@@ -94,6 +120,23 @@ final class SidebarSelectionTests: XCTestCase {
         model.runtimeStatus = .connected
         model.accountState = RuntimeAccountState(account: nil, authMode: .unknown, requiresOpenAIAuth: false)
         return model
+    }
+
+    private func makeApprovalRequest(id: Int) -> RuntimeApprovalRequest {
+        RuntimeApprovalRequest(
+            id: id,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: "thr_\(id)",
+            turnID: "turn_\(id)",
+            itemID: "item_\(id)",
+            reason: "approval",
+            risk: nil,
+            cwd: "/tmp",
+            command: ["echo", "test"],
+            changes: [],
+            detail: "{}"
+        )
     }
 
     private func waitUntil(

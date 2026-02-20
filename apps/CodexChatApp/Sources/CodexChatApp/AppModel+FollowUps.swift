@@ -243,13 +243,23 @@ extension AppModel {
 
     func requestAutoDrain(reason: String) {
         guard followUpDrainTask == nil else {
+            pendingFollowUpAutoDrainReason = reason
             return
         }
 
         followUpDrainTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { followUpDrainTask = nil }
-            await drainOneAutoFollowUp(reason: reason)
+            defer {
+                followUpDrainTask = nil
+                pendingFollowUpAutoDrainReason = nil
+            }
+
+            var nextReason: String? = reason
+            while let reasonToDrain = nextReason {
+                pendingFollowUpAutoDrainReason = nil
+                await drainOneAutoFollowUp(reason: reasonToDrain)
+                nextReason = pendingFollowUpAutoDrainReason
+            }
         }
     }
 
@@ -485,8 +495,6 @@ extension AppModel {
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && pendingModReview == nil
-            && activeApprovalRequest == nil
-            && !isApprovalDecisionInProgress
             && !isModReviewDecisionInProgress
             && !isTurnInProgress
             && isSignedInForRuntime
@@ -499,8 +507,8 @@ extension AppModel {
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && pendingModReview == nil
-            && activeApprovalRequest == nil
-            && !isApprovalDecisionInProgress
+            && !hasPendingApprovalForSelectedThread
+            && !isSelectedThreadApprovalInProgress
             && !isModReviewDecisionInProgress
             && !isTurnInProgress
             && isSignedInForRuntime
@@ -565,7 +573,7 @@ extension AppModel {
         if pendingModReview != nil {
             return "Resolve pending mod review before sending follow-ups."
         }
-        if activeApprovalRequest != nil || isApprovalDecisionInProgress {
+        if hasPendingApprovalForSelectedThread || isSelectedThreadApprovalInProgress {
             return "Resolve pending approval before sending follow-ups."
         }
         if isModReviewDecisionInProgress {

@@ -557,35 +557,84 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(model.activeTurnContextForSelectedThread?.localThreadID, selectedThreadID)
     }
 
-    func testApprovalStateMachineQueuesAndResolvesInOrder() {
+    func testApprovalStateMachineTracksPendingRequestsPerThread() {
         var state = ApprovalStateMachine()
+        let threadA = UUID()
+        let threadB = UUID()
         let first = makeApprovalRequest(id: 1)
         let second = makeApprovalRequest(id: 2)
+        let third = makeApprovalRequest(id: 3)
 
-        state.enqueue(first)
-        state.enqueue(second)
+        state.enqueue(first, threadID: threadA)
+        state.enqueue(second, threadID: threadA)
+        state.enqueue(third, threadID: threadB)
 
-        XCTAssertEqual(state.activeRequest?.id, 1)
-        XCTAssertEqual(state.queuedRequests.map(\.id), [2])
+        XCTAssertEqual(state.pendingRequest(for: threadA)?.id, 1)
+        XCTAssertEqual(state.pendingRequestCount(for: threadA), 2)
+        XCTAssertEqual(state.pendingRequest(for: threadB)?.id, 3)
+        XCTAssertEqual(state.pendingRequestCount(for: threadB), 1)
+        XCTAssertEqual(state.pendingThreadIDs, Set([threadA, threadB]))
 
         _ = state.resolve(id: 1)
-        XCTAssertEqual(state.activeRequest?.id, 2)
-        XCTAssertTrue(state.queuedRequests.isEmpty)
+        XCTAssertEqual(state.pendingRequest(for: threadA)?.id, 2)
+        XCTAssertEqual(state.pendingRequestCount(for: threadA), 1)
 
         _ = state.resolve(id: 2)
-        XCTAssertNil(state.activeRequest)
+        XCTAssertNil(state.pendingRequest(for: threadA))
+        XCTAssertTrue(state.hasPendingApprovals)
+        XCTAssertEqual(state.pendingThreadIDs, Set([threadB]))
+
+        _ = state.resolve(id: 3)
         XCTAssertFalse(state.hasPendingApprovals)
+        XCTAssertTrue(state.pendingThreadIDs.isEmpty)
     }
 
     func testApprovalStateMachineIgnoresDuplicateRequests() {
         var state = ApprovalStateMachine()
+        let threadID = UUID()
         let request = makeApprovalRequest(id: 42)
 
-        state.enqueue(request)
-        state.enqueue(request)
+        state.enqueue(request, threadID: threadID)
+        state.enqueue(request, threadID: threadID)
 
-        XCTAssertEqual(state.activeRequest?.id, 42)
-        XCTAssertTrue(state.queuedRequests.isEmpty)
+        XCTAssertEqual(state.pendingRequest(for: threadID)?.id, 42)
+        XCTAssertEqual(state.pendingRequestCount(for: threadID), 1)
+    }
+
+    @MainActor
+    func testPendingApprovalInOtherThreadDoesNotDisableSelectedThreadComposer() {
+        let model = makeConnectedModel()
+        let selectedThreadID = UUID()
+        let otherThreadID = UUID()
+
+        model.selectedProjectID = UUID()
+        model.selectedThreadID = selectedThreadID
+        model.composerText = "Run this next"
+
+        model.approvalStateMachine.enqueue(makeApprovalRequest(id: 201), threadID: otherThreadID)
+        model.syncApprovalPresentationState()
+
+        XCTAssertFalse(model.hasPendingApprovalForSelectedThread)
+        XCTAssertTrue(model.canSubmitComposer)
+        XCTAssertTrue(model.canSubmitComposerInput)
+        XCTAssertTrue(model.canSendMessages)
+    }
+
+    @MainActor
+    func testSelectedThreadPendingApprovalDisablesSendAndActivatesInlineRequest() {
+        let model = makeConnectedModel()
+        let selectedThreadID = UUID()
+        let request = makeApprovalRequest(id: 202)
+
+        model.selectedProjectID = UUID()
+        model.selectedThreadID = selectedThreadID
+        model.approvalStateMachine.enqueue(request, threadID: selectedThreadID)
+        model.syncApprovalPresentationState()
+
+        XCTAssertTrue(model.hasPendingApprovalForSelectedThread)
+        XCTAssertEqual(model.pendingApprovalForSelectedThread?.id, request.id)
+        XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
+        XCTAssertFalse(model.canSendMessages)
     }
 
     @MainActor
@@ -607,8 +656,8 @@ final class CodexChatAppTests: XCTestCase {
             actions: [],
             startedAt: Date()
         )
-        model.approvalStateMachine.enqueue(request)
-        model.activeApprovalRequest = model.approvalStateMachine.activeRequest
+        model.approvalStateMachine.enqueue(request, threadID: threadID)
+        model.syncApprovalPresentationState()
         model.isApprovalDecisionInProgress = true
 
         model.handleRuntimeTermination(detail: "Simulated runtime crash.")
@@ -2341,6 +2390,22 @@ final class CodexChatAppTests: XCTestCase {
         let encoded = UntrustedShellAcknowledgementsCodec.encode(values)
         let decoded = UntrustedShellAcknowledgementsCodec.decode(encoded)
         XCTAssertEqual(decoded, values)
+    }
+
+    @MainActor
+    private func makeConnectedModel() -> AppModel {
+        let model = AppModel(
+            repositories: nil,
+            runtime: CodexRuntime(executableResolver: { nil }),
+            bootError: nil
+        )
+        model.runtimeStatus = .connected
+        model.accountState = RuntimeAccountState(
+            account: nil,
+            authMode: .unknown,
+            requiresOpenAIAuth: false
+        )
+        return model
     }
 
     private func makeApprovalRequest(id: Int) -> RuntimeApprovalRequest {

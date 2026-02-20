@@ -303,14 +303,26 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
             harness.model.selectedThreadID == secondThread.id
         }
 
-        harness.model.approvePendingApprovalOnce()
+        XCTAssertNil(harness.model.activeApprovalRequest)
+        XCTAssertTrue(harness.model.canSubmitComposer)
 
+        harness.model.selectThread(firstThreadID)
         try await eventually(timeoutSeconds: 3.0) {
-            let entries = harness.model.transcriptStore[firstThreadID, default: []]
-            return entries.contains { entry in
-                guard case let .message(message) = entry else { return false }
-                return message.role == .user && message.text == "first-thread-queued"
-            }
+            harness.model.selectedThreadID == firstThreadID
+                && harness.model.activeApprovalRequest != nil
+        }
+        XCTAssertNotNil(harness.model.pendingApprovalForSelectedThread)
+
+        harness.model.approvePendingApprovalOnce()
+        XCTAssertTrue(
+            harness.model.isApprovalDecisionInProgress,
+            "Approval action did not start; pending selected request id=\(String(describing: harness.model.pendingApprovalForSelectedThread?.id))"
+        )
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.selectedThreadID == firstThreadID
+                && !harness.model.selectedFollowUpQueueItems.contains(where: { $0.text == "first-thread-queued" })
+                && harness.model.pendingApprovalForSelectedThread != nil
         }
     }
 

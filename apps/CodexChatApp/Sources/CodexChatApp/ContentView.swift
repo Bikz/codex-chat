@@ -50,7 +50,7 @@ struct ContentView: View {
                 .interactiveDismissDisabled(true)
         }
         .sheet(item: Binding(get: {
-            model.activeApprovalRequest
+            model.unscopedApprovalRequest
         }, set: { _ in })) { request in
             ApprovalRequestSheet(model: model, request: request)
                 .interactiveDismissDisabled(model.isApprovalDecisionInProgress)

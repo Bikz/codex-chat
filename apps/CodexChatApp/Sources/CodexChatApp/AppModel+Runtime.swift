@@ -3,6 +3,11 @@ import CodexChatCore
 import CodexKit
 import Foundation
 
+private enum RuntimeThreadEnsureSource: String, Sendable {
+    case dispatch
+    case prewarm
+}
+
 extension AppModel {
     func installCodexWithHomebrew() {
         do {
@@ -70,7 +75,8 @@ extension AppModel {
             var runtimeThreadID = try await ensureRuntimeThreadID(
                 for: threadID,
                 projectPath: projectPath,
-                safetyConfiguration: safetyConfiguration
+                safetyConfiguration: safetyConfiguration,
+                source: .dispatch
             )
             let startedAt = Date()
             let localTurnID = UUID()
@@ -134,7 +140,7 @@ extension AppModel {
                 }
 
                 appendLog(.warning, "Runtime thread \(runtimeThreadID) appears stale. Creating a new runtime thread and retrying.")
-                invalidateRuntimeThreadID(for: threadID)
+                await invalidateRuntimeThreadID(for: threadID)
                 runtimeThreadID = try await createAndPersistRuntimeThreadID(
                     for: threadID,
                     projectPath: projectPath,
@@ -353,26 +359,84 @@ extension AppModel {
     private func ensureRuntimeThreadID(
         for localThreadID: UUID,
         projectPath: String,
-        safetyConfiguration: RuntimeSafetyConfiguration
+        safetyConfiguration: RuntimeSafetyConfiguration,
+        source: RuntimeThreadEnsureSource
     ) async throws -> String {
-        if let cached = runtimeThreadIDByLocalThreadID[localThreadID] {
-            return cached
-        }
-
-        if let persisted = try await runtimeThreadMappingRepository?.getRuntimeThreadID(localThreadID: localThreadID),
-           !persisted.isEmpty
-        {
-            runtimeThreadIDByLocalThreadID[localThreadID] = persisted
-            localThreadIDByRuntimeThreadID[persisted] = localThreadID
-            appendLog(.debug, "Loaded persisted runtime thread mapping for local thread \(localThreadID.uuidString)")
-            return persisted
-        }
-
-        return try await createAndPersistRuntimeThreadID(
-            for: localThreadID,
-            projectPath: projectPath,
-            safetyConfiguration: safetyConfiguration
+        let span = await PerformanceTracer.shared.begin(
+            name: "runtime.threadMapping.ensure",
+            metadata: [
+                "source": source.rawValue,
+                "localThreadID": localThreadID.uuidString,
+            ]
         )
+
+        do {
+            if let cached = runtimeThreadIDByLocalThreadID[localThreadID] {
+                await PerformanceTracer.shared.end(
+                    span,
+                    extraMetadata: ["result": "cache"]
+                )
+                return cached
+            }
+
+            if let persisted = try await runtimeThreadMappingRepository?.getRuntimeThreadID(localThreadID: localThreadID),
+               !persisted.isEmpty
+            {
+                if let previous = runtimeThreadIDByLocalThreadID.updateValue(persisted, forKey: localThreadID),
+                   previous != persisted
+                {
+                    localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
+                }
+                localThreadIDByRuntimeThreadID[persisted] = localThreadID
+                appendLog(.debug, "Loaded persisted runtime thread mapping for local thread \(localThreadID.uuidString)")
+                await PerformanceTracer.shared.end(
+                    span,
+                    extraMetadata: ["result": "persisted"]
+                )
+                return persisted
+            }
+
+            let runtime = runtime
+            let runtimeThreadMappingRepository = runtimeThreadMappingRepository
+            let runtimeThreadID = try await runtimeThreadResolutionCoordinator.resolve(localThreadID: localThreadID) {
+                guard let runtime else {
+                    throw CodexRuntimeError.processNotRunning
+                }
+
+                let createdRuntimeThreadID = try await runtime.startThread(
+                    cwd: projectPath,
+                    safetyConfiguration: safetyConfiguration
+                )
+                try await runtimeThreadMappingRepository?.setRuntimeThreadID(
+                    localThreadID: localThreadID,
+                    runtimeThreadID: createdRuntimeThreadID
+                )
+                return createdRuntimeThreadID
+            }
+
+            if let previous = runtimeThreadIDByLocalThreadID.updateValue(runtimeThreadID, forKey: localThreadID),
+               previous != runtimeThreadID
+            {
+                localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
+            }
+            localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
+            appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
+            await PerformanceTracer.shared.end(
+                span,
+                extraMetadata: ["result": "created"]
+            )
+            return runtimeThreadID
+        } catch {
+            await PerformanceTracer.shared.end(
+                span,
+                status: "error",
+                extraMetadata: [
+                    "result": "error",
+                    "error": error.localizedDescription,
+                ]
+            )
+            throw error
+        }
     }
 
     private func createAndPersistRuntimeThreadID(
@@ -399,7 +463,9 @@ extension AppModel {
         return runtimeThreadID
     }
 
-    private func invalidateRuntimeThreadID(for localThreadID: UUID) {
+    private func invalidateRuntimeThreadID(for localThreadID: UUID) async {
+        await runtimeThreadResolutionCoordinator.cancel(localThreadID: localThreadID)
+
         guard let staleRuntimeThreadID = runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID) else {
             return
         }
@@ -549,6 +615,11 @@ extension AppModel {
     }
 
     private func resetRuntimeThreadCaches() {
+        let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
+        Task {
+            await threadResolutionCoordinator.cancelAll()
+        }
+
         runtimeThreadIDByLocalThreadID.removeAll()
         localThreadIDByRuntimeThreadID.removeAll()
         localThreadIDByCommandItemID.removeAll()
@@ -632,14 +703,17 @@ extension AppModel {
     }
 
     private func reconcileStaleApprovalState(reason: String) {
-        let pendingRequest = activeApprovalRequest ?? approvalStateMachine.activeRequest
+        let pendingRequest = unscopedApprovalRequest ?? approvalStateMachine.firstPendingRequest
+        let pendingThreadID = approvalStateMachine.pendingThreadIDs.first
         let hadPendingApprovals = approvalStateMachine.hasPendingApprovals
-            || activeApprovalRequest != nil
+            || unscopedApprovalRequest != nil
             || isApprovalDecisionInProgress
 
         approvalStateMachine.clear()
-        activeApprovalRequest = nil
+        approvalDecisionInFlightRequestIDs.removeAll()
+        unscopedApprovalRequest = nil
         isApprovalDecisionInProgress = false
+        syncApprovalPresentationState()
 
         guard hadPendingApprovals else {
             return
@@ -649,7 +723,7 @@ extension AppModel {
         approvalStatusMessage = message
         appendLog(.warning, message)
 
-        guard let localThreadID = localThreadIDForPendingApproval(pendingRequest) else {
+        guard let localThreadID = pendingThreadID ?? localThreadIDForPendingApproval(pendingRequest) else {
             return
         }
 

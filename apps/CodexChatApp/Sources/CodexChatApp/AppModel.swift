@@ -281,6 +281,7 @@ final class AppModel: ObservableObject {
     @Published var selectedThreadID: UUID? {
         didSet {
             clearUnreadMarker(for: selectedThreadID)
+            syncApprovalPresentationState()
         }
     }
 
@@ -342,6 +343,8 @@ final class AppModel: ObservableObject {
     @Published var isAPIKeyPromptVisible = false
     @Published var pendingAPIKey = ""
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
+    @Published var unscopedApprovalRequest: RuntimeApprovalRequest?
+    @Published var pendingApprovalThreadIDs: Set<UUID> = []
     @Published var pendingModReview: PendingModReview?
     @Published var isModReviewDecisionInProgress = false
     @Published var isTurnInProgress = false
@@ -412,6 +415,7 @@ final class AppModel: ObservableObject {
     let extensionWorkerRunner = ExtensionWorkerRunner()
     let extensionStateStore = ExtensionStateStore()
     let extensionEventBus = ExtensionEventBus()
+    let runtimeThreadResolutionCoordinator = RuntimeThreadResolutionCoordinator()
     lazy var conversationUpdateScheduler = ConversationUpdateScheduler { [weak self] batch in
         self?.applyCoalescedAssistantDeltaBatch(batch)
     }
@@ -425,6 +429,7 @@ final class AppModel: ObservableObject {
     var localThreadIDByRuntimeThreadID: [String: UUID] = [:]
     var localThreadIDByCommandItemID: [String: UUID] = [:]
     var approvalStateMachine = ApprovalStateMachine()
+    var approvalDecisionInFlightRequestIDs: Set<Int> = []
     var activeTurnContext: ActiveTurnContext?
     var activeModSnapshot: ModEditSafety.Snapshot?
     var runtimeEventTask: Task<Void, Never>?
@@ -444,6 +449,7 @@ final class AppModel: ObservableObject {
     var workerTracePersistenceTask: Task<Void, Never>?
     var secondarySurfaceRefreshTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
+    var pendingFollowUpAutoDrainReason: String?
     var pendingFirstTurnTitleThreadIDs: Set<UUID> = []
     var voiceAutoStopTask: Task<Void, Never>?
     var voiceElapsedTickerTask: Task<Void, Never>?
@@ -458,7 +464,6 @@ final class AppModel: ObservableObject {
     var runtimeRepairSuggestedThreadIDs: Set<UUID> = []
     var runtimeRepairPendingRuntimeThreadIDs: Set<String> = []
     var workerTraceByActionFingerprint: [String: WorkerTraceEntry] = [:]
-
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
     var watchedProjectModsRootPath: String?
@@ -569,6 +574,11 @@ final class AppModel: ObservableObject {
             }
         }
 
+        let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
+        Task {
+            await threadResolutionCoordinator.cancelAll()
+        }
+
         if !activeExtensionAutomations.isEmpty {
             let scheduler = extensionAutomationScheduler
             Task {
@@ -607,6 +617,11 @@ final class AppModel: ObservableObject {
             Task {
                 try? await runtimeForLoginCancellation.cancelChatGPTLogin(loginID: pendingLoginID)
             }
+        }
+
+        let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
+        Task {
+            await threadResolutionCoordinator.cancelAll()
         }
 
         if !activeExtensionAutomations.isEmpty {
@@ -665,13 +680,35 @@ final class AppModel: ObservableObject {
         return "Account"
     }
 
+    var pendingApprovalForSelectedThread: RuntimeApprovalRequest? {
+        guard let selectedThreadID else {
+            return nil
+        }
+        return approvalStateMachine.pendingRequest(for: selectedThreadID)
+    }
+
+    var hasPendingApprovalForSelectedThread: Bool {
+        pendingApprovalForSelectedThread != nil
+    }
+
+    var isSelectedThreadApprovalInProgress: Bool {
+        guard let request = pendingApprovalForSelectedThread else {
+            return false
+        }
+        return approvalDecisionInFlightRequestIDs.contains(request.id)
+    }
+
+    func hasPendingApproval(for threadID: UUID) -> Bool {
+        approvalStateMachine.pendingRequest(for: threadID) != nil
+    }
+
     var canSendMessages: Bool {
         selectedThreadID != nil
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && pendingModReview == nil
-            && activeApprovalRequest == nil
-            && !isApprovalDecisionInProgress
+            && !hasPendingApprovalForSelectedThread
+            && !isSelectedThreadApprovalInProgress
             && !isTurnInProgress
             && isSignedInForRuntime
     }
@@ -1074,5 +1111,14 @@ final class AppModel: ObservableObject {
             return
         }
         unreadThreadIDs.remove(threadID)
+    }
+
+    func syncApprovalPresentationState() {
+        pendingApprovalThreadIDs = approvalStateMachine.pendingThreadIDs
+        if let selectedThreadRequest = pendingApprovalForSelectedThread {
+            activeApprovalRequest = selectedThreadRequest
+        } else {
+            activeApprovalRequest = unscopedApprovalRequest
+        }
     }
 }
