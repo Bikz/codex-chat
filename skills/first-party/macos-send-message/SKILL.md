@@ -10,8 +10,8 @@ description: Use when the user explicitly wants to send a text or iMessage from 
 Use this skill for requests like:
 
 - "send a message"
-- "text Alex that I'm running late"
-- "iMessage Sarah"
+- "text someone that I'm running late"
+- "send an iMessage"
 
 This skill is designed for safety and clarity. Do not silently send.
 
@@ -36,6 +36,7 @@ If phrasing is ambiguous in a coding context (for example "send a message" while
 - Preferred channel if relevant (iMessage/SMS)
 
 If anything is missing, ask concise questions first.
+For generic one-click prompts with no details, ask for both recipient and message body in one turn.
 
 ## Execution Order
 
@@ -100,7 +101,7 @@ on run argv
     end tell
     return output
 end run
-APPLESCRIPT "Alex"
+APPLESCRIPT "Contact Name"
 ```
 
 ## Recent Contact Check (Best Effort)

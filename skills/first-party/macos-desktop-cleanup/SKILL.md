@@ -51,6 +51,7 @@ If user wants different scope/rules, confirm before preview.
   - operation count
   - sample moves
   - folder breakdown (Images, Documents, Code, Archives, Other)
+- For generic requests, proceed with this preview using default scope instead of asking extra setup questions first.
 
 3. Ask explicit confirmation
 - Require phrase: `apply cleanup`.

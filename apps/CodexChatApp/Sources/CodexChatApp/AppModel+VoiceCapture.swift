@@ -3,11 +3,11 @@ import Foundation
 extension AppModel {
     var composerStarterPrompts: [String] {
         [
-            "What's on my calendar today?",
-            "Clean up my desktop files.",
-            "Send message to Alex: Running 10 minutes late.",
-            "Set up OpenClaw on a VM using Google CLI.",
-            "Review this repo for risky code paths.",
+            "What's on my calendar today? $macos-calendar-assistant",
+            "Organize my desktop files safely. $macos-desktop-cleanup",
+            "Help me send a message. $macos-send-message",
+            "Review this repository for risky code paths and suggest fixes.",
+            "Help me plan the next steps for this project.",
         ]
     }
 

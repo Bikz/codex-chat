@@ -37,6 +37,7 @@ If calendar phrasing appears inside engineering discussion (for example "calenda
   - explicit date/time range
 - Optional calendar filter (all calendars vs specific)
 
+If the request already includes a clear window (for example "today"), fetch immediately.
 If window is missing, ask a concise follow-up.
 
 ## Execution Order

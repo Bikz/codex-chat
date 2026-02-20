@@ -5,6 +5,17 @@ import XCTest
 
 @MainActor
 final class ComposerStarterPromptTests: XCTestCase {
+    func testStarterPromptsAreGenericAndSkillGuided() {
+        let model = makeReadyModel()
+        let prompts = model.composerStarterPrompts
+
+        XCTAssertEqual(prompts.count, 5)
+        XCTAssertFalse(prompts.contains(where: { $0.localizedCaseInsensitiveContains("alex") }))
+        XCTAssertTrue(prompts.contains(where: { $0.contains("$macos-calendar-assistant") }))
+        XCTAssertTrue(prompts.contains(where: { $0.contains("$macos-desktop-cleanup") }))
+        XCTAssertTrue(prompts.contains(where: { $0.contains("$macos-send-message") }))
+    }
+
     func testStarterPromptsVisibleOnlyWhenComposerIsEmpty() {
         let model = makeReadyModel()
         XCTAssertTrue(model.shouldShowComposerStarterPrompts)
