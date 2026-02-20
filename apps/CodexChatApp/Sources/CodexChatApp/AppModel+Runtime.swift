@@ -788,7 +788,11 @@ extension AppModel {
             }
         }
 
-        return activeTurnContext?.localThreadID
+        if activeTurnContextsByThreadID.count == 1 {
+            return activeTurnContextsByThreadID.first?.key
+        }
+
+        return nil
     }
 
     private func protocolCompatibilityGuidance(for error: CodexRuntimeError) -> String? {

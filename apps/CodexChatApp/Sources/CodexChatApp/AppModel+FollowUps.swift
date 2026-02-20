@@ -260,7 +260,7 @@ extension AppModel {
             var nextReason: String? = reason
             while let reasonToDrain = nextReason {
                 pendingFollowUpAutoDrainReason = nil
-                await drainOneAutoFollowUp(reason: reasonToDrain)
+                await drainAutoFollowUpsUntilBusy(reason: reasonToDrain)
                 nextReason = pendingFollowUpAutoDrainReason
             }
         }
@@ -395,21 +395,33 @@ extension AppModel {
         }
     }
 
-    private func drainOneAutoFollowUp(reason: String) async {
+    private func drainAutoFollowUpsUntilBusy(reason: String) async {
+        while canDispatchNowForQueue {
+            let dispatched = await drainOneAutoFollowUp(reason: reason)
+            if !dispatched {
+                break
+            }
+        }
+    }
+
+    @discardableResult
+    private func drainOneAutoFollowUp(reason: String) async -> Bool {
         guard canDispatchNowForQueue else {
-            return
+            return false
         }
 
         guard let followUpQueueRepository else {
-            return
+            return false
         }
 
         var activeCandidate: FollowUpQueueItemRecord?
         do {
+            let blockedThreadIDs = activeTurnThreadIDs
             guard let candidate = try await followUpQueueRepository.listNextAutoCandidate(
-                preferredThreadID: autoDrainPreferredThreadID
+                preferredThreadID: autoDrainPreferredThreadID,
+                excludingThreadIDs: blockedThreadIDs
             ) else {
-                return
+                return false
             }
             activeCandidate = candidate
 
@@ -424,6 +436,7 @@ extension AppModel {
                 priority: candidate.threadID == selectedThreadID ? .selected : .queuedAuto
             )
             appendLog(.debug, "Auto-dispatched queued follow-up (\(reason))")
+            return true
         } catch {
             do {
                 if let candidate = activeCandidate {
@@ -436,6 +449,7 @@ extension AppModel {
 
             followUpStatusMessage = "Queued follow-up failed to start: \(error.localizedDescription)"
             appendLog(.error, "Auto-drain failed: \(error.localizedDescription)")
+            return false
         }
     }
 

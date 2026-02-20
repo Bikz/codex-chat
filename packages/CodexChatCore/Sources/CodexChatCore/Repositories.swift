@@ -52,6 +52,10 @@ public protocol RuntimeThreadMappingRepository: Sendable {
 public protocol FollowUpQueueRepository: Sendable {
     func list(threadID: UUID) async throws -> [FollowUpQueueItemRecord]
     func listNextAutoCandidate(preferredThreadID: UUID?) async throws -> FollowUpQueueItemRecord?
+    func listNextAutoCandidate(
+        preferredThreadID: UUID?,
+        excludingThreadIDs: Set<UUID>
+    ) async throws -> FollowUpQueueItemRecord?
     func enqueue(_ item: FollowUpQueueItemRecord) async throws
     func updateText(id: UUID, text: String) async throws -> FollowUpQueueItemRecord
     func move(id: UUID, threadID: UUID, toSortIndex: Int) async throws
@@ -59,6 +63,19 @@ public protocol FollowUpQueueRepository: Sendable {
     func markFailed(id: UUID, error: String) async throws
     func markPending(id: UUID) async throws
     func delete(id: UUID) async throws
+}
+
+public extension FollowUpQueueRepository {
+    func listNextAutoCandidate(
+        preferredThreadID: UUID?,
+        excludingThreadIDs: Set<UUID>
+    ) async throws -> FollowUpQueueItemRecord? {
+        guard let candidate = try await listNextAutoCandidate(preferredThreadID: preferredThreadID) else {
+            return nil
+        }
+
+        return excludingThreadIDs.contains(candidate.threadID) ? nil : candidate
+    }
 }
 
 public protocol ProjectSecretRepository: Sendable {

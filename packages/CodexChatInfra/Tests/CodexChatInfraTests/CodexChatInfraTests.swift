@@ -318,6 +318,10 @@ final class CodexChatInfraTests: XCTestCase {
             projectID: project.id,
             title: "Queue Thread"
         )
+        let siblingThread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Queue Sibling Thread"
+        )
 
         let first = FollowUpQueueItemRecord(
             threadID: thread.id,
@@ -334,9 +338,17 @@ final class CodexChatInfraTests: XCTestCase {
             sortIndex: 1,
             originSuggestionID: "s-1"
         )
+        let sibling = FollowUpQueueItemRecord(
+            threadID: siblingThread.id,
+            source: .userQueued,
+            dispatchMode: .auto,
+            text: "sibling",
+            sortIndex: 0
+        )
 
         try await repositories.followUpQueueRepository.enqueue(first)
         try await repositories.followUpQueueRepository.enqueue(second)
+        try await repositories.followUpQueueRepository.enqueue(sibling)
 
         var loaded = try await repositories.followUpQueueRepository.list(threadID: thread.id)
         XCTAssertEqual(loaded.map(\.text), ["first", "second"])
@@ -352,6 +364,11 @@ final class CodexChatInfraTests: XCTestCase {
 
         let preferred = try await repositories.followUpQueueRepository.listNextAutoCandidate(preferredThreadID: thread.id)
         XCTAssertEqual(preferred?.id, second.id)
+        let excludingPreferred = try await repositories.followUpQueueRepository.listNextAutoCandidate(
+            preferredThreadID: thread.id,
+            excludingThreadIDs: [thread.id]
+        )
+        XCTAssertEqual(excludingPreferred?.id, sibling.id)
 
         try await repositories.followUpQueueRepository.markFailed(id: second.id, error: "boom")
         let afterFailure = try await repositories.followUpQueueRepository.list(threadID: thread.id)

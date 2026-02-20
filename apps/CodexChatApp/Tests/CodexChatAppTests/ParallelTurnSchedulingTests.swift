@@ -3,6 +3,29 @@ import Foundation
 import XCTest
 
 final class ParallelTurnSchedulingTests: XCTestCase {
+    @MainActor
+    func testDefaultMaxConcurrentTurnsSupportsLargeParallelWorkloads() {
+        let defaultLimit = AppModel.defaultMaxConcurrentTurns
+        XCTAssertGreaterThanOrEqual(defaultLimit, 32)
+    }
+
+    @MainActor
+    func testDefaultMaxConcurrentTurnsHonorsEnvironmentOverride() {
+        let key = "CODEXCHAT_MAX_PARALLEL_TURNS"
+        let previousValue = ProcessInfo.processInfo.environment[key]
+        setenv(key, "73", 1)
+        defer {
+            if let previousValue {
+                setenv(key, previousValue, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+
+        let configuredLimit = AppModel.defaultMaxConcurrentTurns
+        XCTAssertEqual(configuredLimit, 73)
+    }
+
     func testTurnConcurrencySchedulerPrioritizesSelectedThread() async throws {
         let scheduler = TurnConcurrencyScheduler(maxConcurrentTurns: 1)
         let firstThreadID = UUID()

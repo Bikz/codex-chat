@@ -36,8 +36,9 @@ final class AppModel: ObservableObject {
         }
 
         // Apple Silicon machines can handle many simultaneous sessions. Keep this high
-        // but bounded so runaway workloads still have a hard ceiling.
-        return max(16, min(96, ProcessInfo.processInfo.activeProcessorCount * 6))
+        // enough for 50-thread workloads on baseline hardware, while still capping runaway
+        // workloads behind a hard ceiling.
+        return max(32, min(128, ProcessInfo.processInfo.activeProcessorCount * 8))
     }
 
     struct SkillListItem: Identifiable, Hashable {

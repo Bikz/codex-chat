@@ -65,25 +65,37 @@ public final class SQLiteFollowUpQueueRepository: FollowUpQueueRepository, @unch
     }
 
     public func listNextAutoCandidate(preferredThreadID: UUID?) async throws -> FollowUpQueueItemRecord? {
-        try await dbQueue.read { db in
+        try await listNextAutoCandidate(preferredThreadID: preferredThreadID, excludingThreadIDs: [])
+    }
+
+    public func listNextAutoCandidate(
+        preferredThreadID: UUID?,
+        excludingThreadIDs: Set<UUID>
+    ) async throws -> FollowUpQueueItemRecord? {
+        let excludedThreadIDValues = Set(excludingThreadIDs.map(\.uuidString))
+        return try await dbQueue.read { db -> FollowUpQueueItemRecord? in
             if let preferredThreadID {
-                let preferred = try Self.listEntities(db: db, threadID: preferredThreadID)
-                    .first(where: {
-                        $0.state == FollowUpState.pending.rawValue
-                            && $0.dispatchMode == FollowUpDispatchMode.auto.rawValue
-                    })
+                let preferred = try Self.listEntities(db: db, threadID: preferredThreadID).first(where: { entity in
+                    entity.state == FollowUpState.pending.rawValue
+                        && entity.dispatchMode == FollowUpDispatchMode.auto.rawValue
+                        && !excludedThreadIDValues.contains(entity.threadID)
+                })
                 if let preferred {
                     return preferred.record
                 }
             }
 
-            return try FollowUpQueueItemEntity
+            var request = FollowUpQueueItemEntity
                 .filter(Column("state") == FollowUpState.pending.rawValue)
                 .filter(Column("dispatchMode") == FollowUpDispatchMode.auto.rawValue)
                 .order(Column("createdAt").asc)
                 .order(Column("sortIndex").asc)
-                .fetchOne(db)?
-                .record
+
+            if !excludedThreadIDValues.isEmpty {
+                request = request.filter(!excludedThreadIDValues.contains(Column("threadID")))
+            }
+
+            return try request.fetchOne(db).map(\.record)
         }
     }
 
