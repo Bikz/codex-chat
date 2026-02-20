@@ -15,17 +15,14 @@ extension AppModel {
         text: String,
         attachments: [ComposerAttachment]
     ) -> Bool {
-        guard isAdaptiveIntentRoutingEnabled else {
-            return false
-        }
-
         guard attachments.isEmpty else {
             return false
         }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              let intent = adaptiveIntent(for: trimmed)
+              let intent = adaptiveIntent(for: trimmed),
+              shouldAutoRouteAdaptiveIntent(intent)
         else {
             return false
         }
@@ -37,8 +34,17 @@ extension AppModel {
         return true
     }
 
-    private var isAdaptiveIntentRoutingEnabled: Bool {
-        false
+    private func shouldAutoRouteAdaptiveIntent(_ intent: AdaptiveIntent) -> Bool {
+        guard areNativeComputerActionsEnabled else {
+            return false
+        }
+
+        switch intent {
+        case .desktopCleanup, .calendarToday, .messagesSend:
+            return true
+        case .planRun, .agentRoleSetup:
+            return false
+        }
     }
 
     func triggerAdaptiveIntent(_ intent: AdaptiveIntent, originalText: String? = nil) {
@@ -61,10 +67,18 @@ extension AppModel {
             return .desktopCleanup
         }
 
-        if lowered.contains("calendar"),
-           lowered.contains("today") || lowered.contains("what's on") || lowered.contains("whats on")
-        {
-            return .calendarToday(rangeHours: parseRangeHours(text: text) ?? 24)
+        if lowered.contains("calendar") {
+            let hasTodayStyleCue = lowered.contains("today")
+                || lowered.contains("what's on")
+                || lowered.contains("whats on")
+                || lowered.contains("check my calendar")
+                || lowered.contains("check calendar")
+                || lowered.contains("show my calendar")
+                || lowered.contains("look at my calendar")
+
+            if hasTodayStyleCue {
+                return .calendarToday(rangeHours: parseRangeHours(text: text) ?? 24)
+            }
         }
 
         if let messageIntent = parseMessagesIntent(text: text) {
@@ -265,10 +279,8 @@ extension AppModel {
     private func prepareAgentRoleBuilderIntent(threadID: UUID, originalText: String) async {
         let template = """
         Build a custom multi-agent role in `.codex/config.toml` and `.codex/agents/<role>.toml`.
-
         Requested intent:
         \(originalText)
-
         Include:
         1. `agents.<role>.description`
         2. `agents.<role>.config_file`

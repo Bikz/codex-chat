@@ -40,6 +40,34 @@ final class AppModelComputerActionsTests: XCTestCase {
         }
     }
 
+    func testAdaptiveIntentParsesCalendarCheckPhrases() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let first = model.adaptiveIntent(for: "Can you check my calendar today?")
+        XCTAssertEqual(first, .calendarToday(rangeHours: 24))
+
+        let second = model.adaptiveIntent(for: "show my calendar for the next 8 hours")
+        XCTAssertEqual(second, .calendarToday(rangeHours: 8))
+    }
+
+    func testMaybeHandleAdaptiveIntentRoutesNativeActionsOnly() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        XCTAssertTrue(
+            model.maybeHandleAdaptiveIntentFromComposer(
+                text: "check my calendar today",
+                attachments: []
+            )
+        )
+
+        XCTAssertFalse(
+            model.maybeHandleAdaptiveIntentFromComposer(
+                text: "run plan ./docs/plan.md",
+                attachments: []
+            )
+        )
+    }
+
     private func eventually(
         timeoutSeconds: TimeInterval,
         condition: @escaping () -> Bool
