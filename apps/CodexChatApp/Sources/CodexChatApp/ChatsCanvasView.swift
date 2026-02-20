@@ -938,13 +938,13 @@ private struct ComposerControlBar: View {
         HStack(spacing: 8) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
                     .frame(width: 14, height: 14)
                     .foregroundStyle(tint)
             }
 
             Text(value)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.primary.opacity(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -952,7 +952,7 @@ private struct ComposerControlBar: View {
             Spacer(minLength: 2)
 
             Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)

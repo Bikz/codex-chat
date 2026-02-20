@@ -127,7 +127,9 @@ extension AppModel {
             return
         }
 
-        let title = Self.autoTitleFromFirstTurn(userText: userText, assistantText: assistantText)
+        let fallbackTitle = Self.autoTitleFromFirstTurn(userText: userText, assistantText: assistantText)
+        let generatedTitle = await generatedInitialThreadTitle(userText: userText)
+        let title = generatedTitle ?? fallbackTitle
         guard !title.isEmpty else {
             return
         }
@@ -148,6 +150,18 @@ extension AppModel {
             }
         } catch {
             appendLog(.error, "Failed to auto-title thread: \(error.localizedDescription)")
+        }
+    }
+
+    private func generatedInitialThreadTitle(userText: String) async -> String? {
+        do {
+            guard let apiKey = try keychainStore.readSecret(account: APIKeychainStore.runtimeAPIKeyAccount) else {
+                return nil
+            }
+            return try await ChatTitleGenerator.generateTitle(userText: userText, apiKey: apiKey)
+        } catch {
+            appendLog(.debug, "Skipping model title generation: \(error.localizedDescription)")
+            return nil
         }
     }
 
