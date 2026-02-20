@@ -66,12 +66,19 @@ final class AppModel: ObservableObject {
 
     static var activeRuntimePoolSize: Int {
         let environment = ProcessInfo.processInfo.environment
-        if environment["CODEXCHAT_RUNTIME_POOL_ENABLE_SHARDING"] == "1" {
-            return defaultRuntimePoolSize
+
+        // Explicit operator override to force single-worker mode for troubleshooting.
+        if environment["CODEXCHAT_RUNTIME_POOL_DISABLE_SHARDING"] == "1" {
+            return 1
         }
 
-        // Compatibility-first default while RuntimePool rollout is in progress.
-        return 1
+        // Backward-compatible override for older rollout toggles.
+        if environment["CODEXCHAT_RUNTIME_POOL_ENABLE_SHARDING"] == "0" {
+            return 1
+        }
+
+        // Sharding is enabled by default for production parallel throughput.
+        return defaultRuntimePoolSize
     }
 
     static var runtimeEventTraceSampleRate: Int {
