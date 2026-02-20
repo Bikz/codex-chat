@@ -15,7 +15,7 @@ extension AppModel {
     }
 
     private var canRunRuntimeThreadPrewarm: Bool {
-        runtime != nil
+        runtimePool != nil
             && runtimeStatus == .connected
             && runtimeIssue == nil
             && isSignedInForRuntime

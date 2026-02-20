@@ -64,6 +64,16 @@ final class AppModel: ObservableObject {
         return max(2, min(ProcessInfo.processInfo.activeProcessorCount / 2, 4))
     }
 
+    static var activeRuntimePoolSize: Int {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["CODEXCHAT_RUNTIME_POOL_ENABLE_SHARDING"] == "1" {
+            return defaultRuntimePoolSize
+        }
+
+        // Compatibility-first default while RuntimePool rollout is in progress.
+        return 1
+    }
+
     static var runtimeEventTraceSampleRate: Int {
         if let configured = ProcessInfo.processInfo.environment["CODEXCHAT_RUNTIME_EVENT_TRACE_SAMPLE_RATE"],
            let parsed = Int(configured),
@@ -631,6 +641,7 @@ final class AppModel: ObservableObject {
     let planRunRepository: (any PlanRunRepository)?
     let planRunTaskRepository: (any PlanRunTaskRepository)?
     let runtime: CodexRuntime?
+    let runtimePool: RuntimePool?
     let computerActionRegistry: ComputerActionRegistry
     let skillCatalogService: SkillCatalogService
     let skillCatalogProvider: any SkillCatalogProvider
@@ -747,6 +758,7 @@ final class AppModel: ObservableObject {
         planRunRepository = repositories?.planRunRepository
         planRunTaskRepository = repositories?.planRunTaskRepository
         self.runtime = runtime
+        runtimePool = runtime.map { RuntimePool(primaryRuntime: $0, configuredWorkerCount: Self.activeRuntimePoolSize) }
         self.computerActionRegistry = computerActionRegistry
         self.skillCatalogService = skillCatalogService
         self.skillCatalogProvider = skillCatalogProvider
@@ -790,7 +802,7 @@ final class AppModel: ObservableObject {
         }
         didPrepareForTeardown = true
 
-        let runtimeForLoginCancellation = runtime
+        let runtimePoolForLoginCancellation = runtimePool
         let pendingLoginID = pendingChatGPTLoginID
         pendingChatGPTLoginID = nil
 
@@ -820,9 +832,9 @@ final class AppModel: ObservableObject {
         projectModsWatcher?.stop()
         projectModsWatcher = nil
 
-        if let runtimeForLoginCancellation, let pendingLoginID {
+        if let runtimePoolForLoginCancellation, let pendingLoginID {
             Task {
-                try? await runtimeForLoginCancellation.cancelChatGPTLogin(loginID: pendingLoginID)
+                try? await runtimePoolForLoginCancellation.cancelChatGPTLogin(loginID: pendingLoginID)
             }
         }
 
@@ -850,7 +862,7 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let runtimeForLoginCancellation = runtime
+        let runtimePoolForLoginCancellation = runtimePool
         let pendingLoginID = pendingChatGPTLoginID
 
         runtimeEventTask?.cancel()
@@ -875,9 +887,9 @@ final class AppModel: ObservableObject {
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
 
-        if let runtimeForLoginCancellation, let pendingLoginID {
+        if let runtimePoolForLoginCancellation, let pendingLoginID {
             Task {
-                try? await runtimeForLoginCancellation.cancelChatGPTLogin(loginID: pendingLoginID)
+                try? await runtimePoolForLoginCancellation.cancelChatGPTLogin(loginID: pendingLoginID)
             }
         }
 
@@ -980,7 +992,7 @@ final class AppModel: ObservableObject {
     var canSubmitComposer: Bool {
         selectedProjectID != nil
             && (selectedThreadID != nil || hasActiveDraftChatForSelectedProject)
-            && runtime != nil
+            && runtimePool != nil
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && isSignedInForRuntime
@@ -1110,13 +1122,13 @@ final class AppModel: ObservableObject {
     }
 
     func refreshAccountState(refreshToken: Bool = false) async throws {
-        guard let runtime else {
+        guard let runtimePool else {
             accountState = .signedOut
             completeOnboardingIfReady()
             return
         }
 
-        accountState = try await runtime.readAccount(refreshToken: refreshToken)
+        accountState = try await runtimePool.readAccount(refreshToken: refreshToken)
         completeOnboardingIfReady()
     }
 

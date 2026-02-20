@@ -264,8 +264,8 @@ extension AppModel {
             isStorageRepairInProgress = false
         }
 
-        if let runtime {
-            await runtime.stop()
+        if let runtimePool {
+            await runtimePool.stop()
             runtimeStatus = .starting
             appendLog(.info, "Stopped runtime for Codex Home repair.")
         }

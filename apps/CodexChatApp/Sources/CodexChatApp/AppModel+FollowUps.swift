@@ -320,7 +320,7 @@ extension AppModel {
 
         if let activeTurnContext = activeTurnContext(for: item.threadID) {
             guard runtimeCapabilities.supportsTurnSteer,
-                  let runtime
+                  let runtimePool
             else {
                 await fallbackSteerToQueuedAuto(item)
                 return
@@ -335,8 +335,8 @@ extension AppModel {
             }
 
             do {
-                try await runtime.steerTurn(
-                    threadID: activeTurnContext.runtimeThreadID,
+                try await runtimePool.steerTurn(
+                    scopedThreadID: activeTurnContext.runtimeThreadID,
                     text: item.text,
                     expectedTurnID: runtimeTurnID
                 )
@@ -543,7 +543,7 @@ extension AppModel {
     }
 
     private var canDispatchNowForQueue: Bool {
-        runtime != nil
+        runtimePool != nil
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && pendingModReview == nil
@@ -555,7 +555,7 @@ extension AppModel {
     private var canDispatchSelectedThreadImmediately: Bool {
         selectedThreadID != nil
             && selectedProjectID != nil
-            && runtime != nil
+            && runtimePool != nil
             && runtimeIssue == nil
             && runtimeStatus == .connected
             && pendingModReview == nil

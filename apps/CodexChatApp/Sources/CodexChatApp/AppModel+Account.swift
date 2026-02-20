@@ -17,7 +17,7 @@ extension AppModel {
             return
         }
 
-        guard let runtime else {
+        guard let runtimePool else {
             accountStatusMessage = "Runtime is unavailable. Restart Runtime and try again."
             return
         }
@@ -30,7 +30,7 @@ extension AppModel {
             defer { isAccountOperationInProgress = false }
 
             do {
-                let loginStart = try await runtime.startChatGPTLogin()
+                let loginStart = try await runtimePool.startChatGPTLogin()
                 pendingChatGPTLoginID = loginStart.loginID
                 NSWorkspace.shared.open(loginStart.authURL)
                 accountStatusMessage = "Complete sign-in in your browser. Waiting for runtime confirmation…"
@@ -85,13 +85,13 @@ extension AppModel {
                     return
                 }
 
-                guard let runtime else {
+                guard let runtimePool else {
                     accountStatusMessage = "API key saved in Keychain. Restart Runtime to finish sign-in."
                     appendLog(.info, "Stored API key while runtime is unavailable")
                     return
                 }
 
-                try await runtime.startAPIKeyLogin(apiKey: apiKey)
+                try await runtimePool.startAPIKeyLogin(apiKey: apiKey)
                 try await refreshAccountState()
                 await refreshRuntimeModelCatalog()
                 accountStatusMessage = "Signed in with API key."
@@ -120,11 +120,11 @@ extension AppModel {
             defer { isAccountOperationInProgress = false }
 
             do {
-                if let runtime {
-                    try await runtime.logoutAccount()
+                if let runtimePool {
+                    try await runtimePool.logoutAccount()
                 }
                 try keychainStore.deleteSecret(account: APIKeychainStore.runtimeAPIKeyAccount)
-                if runtime != nil {
+                if runtimePool != nil {
                     try await refreshAccountState()
                     await refreshRuntimeModelCatalog()
                 } else {
@@ -163,7 +163,7 @@ extension AppModel {
         }
 
         guard cancelRuntimeLogin,
-              let runtime,
+              let runtimePool,
               let loginID
         else {
             return
@@ -171,7 +171,7 @@ extension AppModel {
 
         Task {
             do {
-                try await runtime.cancelChatGPTLogin(loginID: loginID)
+                try await runtimePool.cancelChatGPTLogin(loginID: loginID)
                 appendLog(.debug, "Cancelled pending ChatGPT login session")
             } catch {
                 appendLog(.debug, "Unable to cancel pending ChatGPT login session: \(error.localizedDescription)")
@@ -182,7 +182,7 @@ extension AppModel {
     private func startChatGPTLoginPolling(loginID: String?) {
         chatGPTLoginPollingTask?.cancel()
 
-        guard let runtime else { return }
+        guard let runtimePool else { return }
 
         chatGPTLoginPollingTask = Task {
             defer {
@@ -195,7 +195,7 @@ extension AppModel {
                 }
 
                 do {
-                    let state = try await runtime.readAccount(refreshToken: true)
+                    let state = try await runtimePool.readAccount(refreshToken: true)
                     accountState = state
 
                     if isChatGPTSignedIn(state) {
@@ -215,7 +215,7 @@ extension AppModel {
 
             if let loginID {
                 do {
-                    try await runtime.cancelChatGPTLogin(loginID: loginID)
+                    try await runtimePool.cancelChatGPTLogin(loginID: loginID)
                 } catch {
                     appendLog(.debug, "Unable to cancel stale ChatGPT login \(loginID): \(error.localizedDescription)")
                 }

@@ -18,7 +18,7 @@ extension AppModel {
         guard let request = pendingApprovalForSelectedThread
             ?? unscopedApprovalRequest
             ?? approvalStateMachine.firstPendingRequest,
-            let runtime
+            let runtimePool
         else {
             return
         }
@@ -34,7 +34,7 @@ extension AppModel {
             }
 
             do {
-                try await runtime.respondToApproval(requestID: request.id, decision: decision)
+                try await runtimePool.respondToApproval(requestID: request.id, decision: decision)
                 _ = approvalStateMachine.resolve(id: request.id)
                 if unscopedApprovalRequest?.id == request.id {
                     unscopedApprovalRequest = nil

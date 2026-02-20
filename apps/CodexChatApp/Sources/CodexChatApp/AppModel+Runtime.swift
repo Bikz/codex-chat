@@ -40,7 +40,7 @@ extension AppModel {
         priority: TurnConcurrencyScheduler.Priority = .manual,
         composerAttachments: [ComposerAttachment] = []
     ) async throws {
-        guard let runtime else {
+        guard runtimePool != nil else {
             throw CodexRuntimeError.processNotRunning
         }
 
@@ -134,7 +134,6 @@ extension AppModel {
             let turnID: String
             do {
                 turnID = try await startTurnWithRuntimeFallback(
-                    runtime: runtime,
                     threadID: runtimeThreadID,
                     text: runtimeText,
                     safetyConfiguration: safetyConfiguration,
@@ -160,7 +159,6 @@ extension AppModel {
                 })
 
                 turnID = try await startTurnWithRuntimeFallback(
-                    runtime: runtime,
                     threadID: runtimeThreadID,
                     text: runtimeText,
                     safetyConfiguration: safetyConfiguration,
@@ -241,7 +239,7 @@ extension AppModel {
     }
 
     func startRuntimeSession() async {
-        guard runtime != nil else {
+        guard runtimePool != nil else {
             runtimeStatus = .error
             runtimeIssue = .recoverable("Runtime is unavailable.")
             return
@@ -260,7 +258,7 @@ extension AppModel {
     }
 
     func restartRuntimeSession() async {
-        guard runtime != nil else { return }
+        guard runtimePool != nil else { return }
         cancelAutomaticRuntimeRecovery()
 
         runtimeStatus = .starting
@@ -276,12 +274,12 @@ extension AppModel {
 
     private func startRuntimeEventLoopIfNeeded() async {
         guard runtimeEventTask == nil,
-              let runtime
+              let runtimePool
         else {
             return
         }
 
-        let stream = await runtime.events()
+        let stream = await runtimePool.events()
         let dispatchBridge = runtimeEventDispatchBridge
         runtimeEventTask = Task.detached {
             for await event in stream {
@@ -295,20 +293,20 @@ extension AppModel {
     }
 
     private func connectRuntime(restarting: Bool) async throws {
-        guard let runtime else {
+        guard let runtimePool else {
             throw CodexRuntimeError.processNotRunning
         }
 
         if restarting {
-            try await runtime.restart()
+            try await runtimePool.restart()
         } else {
-            try await runtime.start()
+            try await runtimePool.start()
         }
 
         runtimeStatus = .connected
         runtimeIssue = nil
         runtimeSetupMessage = nil
-        runtimeCapabilities = await runtime.capabilities()
+        runtimeCapabilities = await runtimePool.capabilities()
         reconcileStaleApprovalState(
             reason: restarting ? "the runtime restarted" : "the runtime reconnected"
         )
@@ -332,7 +330,7 @@ extension AppModel {
     }
 
     private func scheduleAutomaticRuntimeRecovery(afterTerminationDetail detail: String) {
-        guard runtime != nil else { return }
+        guard runtimePool != nil else { return }
         guard runtimeAutoRecoveryTask == nil else { return }
 
         let backoffSeconds: [UInt64] = [1, 2, 4, 8]
@@ -413,14 +411,15 @@ extension AppModel {
                 return persisted
             }
 
-            let runtime = runtime
+            let runtimePool = runtimePool
             let runtimeThreadMappingRepository = runtimeThreadMappingRepository
             let runtimeThreadID = try await runtimeThreadResolutionCoordinator.resolve(localThreadID: localThreadID) {
-                guard let runtime else {
+                guard let runtimePool else {
                     throw CodexRuntimeError.processNotRunning
                 }
 
-                let createdRuntimeThreadID = try await runtime.startThread(
+                let createdRuntimeThreadID = try await runtimePool.startThread(
+                    localThreadID: localThreadID,
                     cwd: projectPath,
                     safetyConfiguration: safetyConfiguration
                 )
@@ -474,11 +473,12 @@ extension AppModel {
         projectPath: String,
         safetyConfiguration: RuntimeSafetyConfiguration
     ) async throws -> String {
-        guard let runtime else {
+        guard let runtimePool else {
             throw CodexRuntimeError.processNotRunning
         }
 
-        let runtimeThreadID = try await runtime.startThread(
+        let runtimeThreadID = try await runtimePool.startThread(
+            localThreadID: localThreadID,
             cwd: projectPath,
             safetyConfiguration: safetyConfiguration
         )
@@ -534,7 +534,6 @@ extension AppModel {
     }
 
     private func startTurnWithRuntimeFallback(
-        runtime: CodexRuntime,
         threadID: String,
         text: String,
         safetyConfiguration: RuntimeSafetyConfiguration,
@@ -542,9 +541,13 @@ extension AppModel {
         inputItems: [RuntimeInputItem],
         turnOptions: RuntimeTurnOptions
     ) async throws -> String {
+        guard let runtimePool else {
+            throw CodexRuntimeError.processNotRunning
+        }
+
         do {
-            return try await runtime.startTurn(
-                threadID: threadID,
+            return try await runtimePool.startTurn(
+                scopedThreadID: threadID,
                 text: text,
                 safetyConfiguration: safetyConfiguration,
                 skillInputs: skillInputs,
@@ -558,8 +561,8 @@ extension AppModel {
 
             followUpStatusMessage = "Runtime rejected model/reasoning options. Retried with compatibility mode."
             appendLog(.warning, "Retrying turn/start without model/reasoning due to runtime compatibility.")
-            return try await runtime.startTurn(
-                threadID: threadID,
+            return try await runtimePool.startTurn(
+                scopedThreadID: threadID,
                 text: text,
                 safetyConfiguration: safetyConfiguration,
                 skillInputs: skillInputs,
@@ -695,7 +698,7 @@ extension AppModel {
     }
 
     private func restorePersistedAPIKeyIfNeeded() async throws {
-        guard let runtime else { return }
+        guard let runtimePool else { return }
 
         // If runtime already has a valid authenticated account (e.g., ChatGPT managed auth),
         // do not override it with an API key from Keychain.
@@ -710,18 +713,18 @@ extension AppModel {
         }
 
         appendLog(.info, "Restoring API key session from Keychain")
-        try await runtime.startAPIKeyLogin(apiKey: apiKey)
+        try await runtimePool.startAPIKeyLogin(apiKey: apiKey)
         try await refreshAccountState(refreshToken: true)
         accountStatusMessage = "Restored API key session from Keychain."
     }
 
     func refreshRuntimeModelCatalog() async {
-        guard let runtime else {
+        guard let runtimePool else {
             return
         }
 
         do {
-            let models = try await runtime.listAllModels()
+            let models = try await runtimePool.listAllModels()
             runtimeModelCatalog = models
             applyDerivedRuntimeDefaultsFromConfig()
             appendLog(.info, "Loaded \(models.count) models from runtime")

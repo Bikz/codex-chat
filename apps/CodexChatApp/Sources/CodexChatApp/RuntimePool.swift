@@ -18,6 +18,7 @@ actor RuntimePool {
     }
 
     private let configuredWorkerCount: Int
+    private let shouldScopeRuntimeIDs: Bool
     private var workersByID: [RuntimePoolWorkerID: CodexRuntimeWorker]
     private var eventPumpTasksByWorkerID: [RuntimePoolWorkerID: Task<Void, Never>] = [:]
     private var routeBySyntheticApprovalID: [Int: ApprovalRoute] = [:]
@@ -28,6 +29,7 @@ actor RuntimePool {
 
     init(primaryRuntime: CodexRuntime, configuredWorkerCount: Int) {
         self.configuredWorkerCount = max(1, configuredWorkerCount)
+        shouldScopeRuntimeIDs = self.configuredWorkerCount > 1
         workersByID = [
             Constants.primaryWorkerID: CodexRuntimeWorker(
                 workerID: Constants.primaryWorkerID,
@@ -132,7 +134,7 @@ actor RuntimePool {
             cwd: cwd,
             safetyConfiguration: safetyConfiguration
         )
-        return Self.scope(id: rawThreadID, workerID: workerID)
+        return scopeIfNeeded(id: rawThreadID, workerID: workerID)
     }
 
     func startTurn(
@@ -143,7 +145,7 @@ actor RuntimePool {
         inputItems: [RuntimeInputItem],
         turnOptions: RuntimeTurnOptions?
     ) async throws -> String {
-        let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
+        let route = Self.resolveRoute(fromPossiblyScopedThreadID: scopedThreadID)
         let worker = try await worker(for: route.workerID)
         let rawTurnID = try await worker.startTurn(
             threadID: route.threadID,
@@ -153,7 +155,7 @@ actor RuntimePool {
             inputItems: inputItems,
             turnOptions: turnOptions
         )
-        return Self.scope(id: rawTurnID, workerID: route.workerID)
+        return scopeIfNeeded(id: rawTurnID, workerID: route.workerID)
     }
 
     func steerTurn(
@@ -161,7 +163,7 @@ actor RuntimePool {
         text: String,
         expectedTurnID scopedTurnID: String
     ) async throws {
-        let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
+        let route = Self.resolveRoute(fromPossiblyScopedThreadID: scopedThreadID)
         let rawTurnID = Self.unscopedID(scopedTurnID)
         let worker = try await worker(for: route.workerID)
         try await worker.steerTurn(
@@ -175,6 +177,11 @@ actor RuntimePool {
         requestID: Int,
         decision: RuntimeApprovalDecision
     ) async throws {
+        if !shouldScopeRuntimeIDs {
+            try await primaryWorker().respondToApproval(requestID: requestID, decision: decision)
+            return
+        }
+
         guard let route = routeBySyntheticApprovalID.removeValue(forKey: requestID) else {
             throw CodexRuntimeError.invalidResponse("Unknown pooled approval request id: \(requestID)")
         }
@@ -282,28 +289,28 @@ actor RuntimePool {
     ) -> CodexRuntimeEvent {
         switch event {
         case let .threadStarted(threadID):
-            return .threadStarted(threadID: Self.scope(id: threadID, workerID: workerID))
+            return .threadStarted(threadID: scopeIfNeeded(id: threadID, workerID: workerID))
 
         case let .turnStarted(threadID, turnID):
             return .turnStarted(
-                threadID: threadID.map { Self.scope(id: $0, workerID: workerID) },
-                turnID: Self.scope(id: turnID, workerID: workerID)
+                threadID: threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                turnID: scopeIfNeeded(id: turnID, workerID: workerID)
             )
 
         case let .assistantMessageDelta(threadID, turnID, itemID, delta):
             return .assistantMessageDelta(
-                threadID: threadID.map { Self.scope(id: $0, workerID: workerID) },
-                turnID: turnID.map { Self.scope(id: $0, workerID: workerID) },
-                itemID: Self.scope(id: itemID, workerID: workerID),
+                threadID: threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                turnID: turnID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                itemID: scopeIfNeeded(id: itemID, workerID: workerID),
                 delta: delta
             )
 
         case let .commandOutputDelta(output):
             return .commandOutputDelta(
                 RuntimeCommandOutputDelta(
-                    itemID: Self.scope(id: output.itemID, workerID: workerID),
-                    threadID: output.threadID.map { Self.scope(id: $0, workerID: workerID) },
-                    turnID: output.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: scopeIfNeeded(id: output.itemID, workerID: workerID),
+                    threadID: output.threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    turnID: output.turnID.map { scopeIfNeeded(id: $0, workerID: workerID) },
                     delta: output.delta
                 )
             )
@@ -311,8 +318,8 @@ actor RuntimePool {
         case let .followUpSuggestions(batch):
             return .followUpSuggestions(
                 RuntimeFollowUpSuggestionBatch(
-                    threadID: batch.threadID.map { Self.scope(id: $0, workerID: workerID) },
-                    turnID: batch.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    threadID: batch.threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    turnID: batch.turnID.map { scopeIfNeeded(id: $0, workerID: workerID) },
                     suggestions: batch.suggestions
                 )
             )
@@ -320,29 +327,35 @@ actor RuntimePool {
         case let .fileChangesUpdated(update):
             return .fileChangesUpdated(
                 RuntimeFileChangeUpdate(
-                    itemID: update.itemID.map { Self.scope(id: $0, workerID: workerID) },
-                    threadID: update.threadID.map { Self.scope(id: $0, workerID: workerID) },
-                    turnID: update.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: update.itemID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    threadID: update.threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    turnID: update.turnID.map { scopeIfNeeded(id: $0, workerID: workerID) },
                     status: update.status,
                     changes: update.changes
                 )
             )
 
         case let .approvalRequested(request):
-            let syntheticID = nextSyntheticApprovalID
-            nextSyntheticApprovalID = nextSyntheticApprovalID &+ 1
-            routeBySyntheticApprovalID[syntheticID] = ApprovalRoute(
-                workerID: workerID,
-                rawRequestID: request.id
-            )
+            let requestID: Int
+            if shouldScopeRuntimeIDs {
+                let syntheticID = nextSyntheticApprovalID
+                nextSyntheticApprovalID = nextSyntheticApprovalID &+ 1
+                routeBySyntheticApprovalID[syntheticID] = ApprovalRoute(
+                    workerID: workerID,
+                    rawRequestID: request.id
+                )
+                requestID = syntheticID
+            } else {
+                requestID = request.id
+            }
             return .approvalRequested(
                 RuntimeApprovalRequest(
-                    id: syntheticID,
+                    id: requestID,
                     kind: request.kind,
                     method: request.method,
-                    threadID: request.threadID.map { Self.scope(id: $0, workerID: workerID) },
-                    turnID: request.turnID.map { Self.scope(id: $0, workerID: workerID) },
-                    itemID: request.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    threadID: request.threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    turnID: request.turnID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    itemID: request.itemID.map { scopeIfNeeded(id: $0, workerID: workerID) },
                     reason: request.reason,
                     risk: request.risk,
                     cwd: request.cwd,
@@ -356,10 +369,10 @@ actor RuntimePool {
             return .action(
                 RuntimeAction(
                     method: action.method,
-                    itemID: action.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: action.itemID.map { scopeIfNeeded(id: $0, workerID: workerID) },
                     itemType: action.itemType,
-                    threadID: action.threadID.map { Self.scope(id: $0, workerID: workerID) },
-                    turnID: action.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    threadID: action.threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    turnID: action.turnID.map { scopeIfNeeded(id: $0, workerID: workerID) },
                     title: action.title,
                     detail: action.detail,
                     workerTrace: action.workerTrace
@@ -369,8 +382,8 @@ actor RuntimePool {
         case let .turnCompleted(completion):
             return .turnCompleted(
                 RuntimeTurnCompletion(
-                    threadID: completion.threadID.map { Self.scope(id: $0, workerID: workerID) },
-                    turnID: completion.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    threadID: completion.threadID.map { scopeIfNeeded(id: $0, workerID: workerID) },
+                    turnID: completion.turnID.map { scopeIfNeeded(id: $0, workerID: workerID) },
                     status: completion.status,
                     errorMessage: completion.errorMessage
                 )
@@ -386,6 +399,19 @@ actor RuntimePool {
               !rawThreadID.isEmpty
         else {
             throw CodexRuntimeError.invalidResponse("Invalid scoped runtime thread id: \(scopedThreadID)")
+        }
+        return TurnRoute(workerID: workerID, threadID: rawThreadID)
+    }
+
+    static func resolveRoute(fromPossiblyScopedThreadID scopedThreadID: String) -> TurnRoute {
+        guard let (workerID, rawThreadID) = parseScopedID(scopedThreadID),
+              !rawThreadID.isEmpty
+        else {
+            // Backward compatibility with existing persisted mappings created pre-pool.
+            return TurnRoute(
+                workerID: Constants.primaryWorkerID,
+                threadID: scopedThreadID
+            )
         }
 
         return TurnRoute(workerID: workerID, threadID: rawThreadID)
@@ -416,5 +442,12 @@ actor RuntimePool {
             return rawID
         }
         return possiblyScopedID
+    }
+
+    private func scopeIfNeeded(id: String, workerID: RuntimePoolWorkerID) -> String {
+        guard shouldScopeRuntimeIDs else {
+            return id
+        }
+        return Self.scope(id: id, workerID: workerID)
     }
 }

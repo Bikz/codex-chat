@@ -58,6 +58,22 @@ final class ParallelTurnSchedulingTests: XCTestCase {
         XCTAssertEqual(AppModel.defaultRuntimePoolSize, 5)
     }
 
+    @MainActor
+    func testActiveRuntimePoolSizeDefaultsToSingleWorkerWithoutShardingFlag() {
+        let shardingKey = "CODEXCHAT_RUNTIME_POOL_ENABLE_SHARDING"
+        let previousSharding = ProcessInfo.processInfo.environment[shardingKey]
+        unsetenv(shardingKey)
+        defer {
+            if let previousSharding {
+                setenv(shardingKey, previousSharding, 1)
+            } else {
+                unsetenv(shardingKey)
+            }
+        }
+
+        XCTAssertEqual(AppModel.activeRuntimePoolSize, 1)
+    }
+
     func testTurnConcurrencySchedulerPrioritizesSelectedThread() async throws {
         let scheduler = TurnConcurrencyScheduler(maxConcurrentTurns: 1)
         let firstThreadID = UUID()
