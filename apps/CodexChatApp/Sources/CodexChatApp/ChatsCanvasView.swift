@@ -328,7 +328,7 @@ struct ChatsCanvasView: View {
         if model.runtimeStatus == .starting {
             return "Connecting to Codex runtime…"
         }
-        return "Ask anything"
+        return model.composerInputPlaceholder
     }
 
     private func composerLeadingButton(

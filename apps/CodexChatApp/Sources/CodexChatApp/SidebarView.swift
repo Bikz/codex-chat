@@ -287,16 +287,16 @@ struct SidebarView: View {
 
         return ZStack(alignment: .trailing) {
             Button {
-                let wasExpanded = isExpanded
+                var isExpandedAfterToggle = false
                 flashedProjectID = project.id
                 withAnimation(.easeInOut(duration: tokens.motion.transitionDuration)) {
-                    model.toggleProjectExpanded(project.id)
+                    isExpandedAfterToggle = model.activateProjectFromSidebar(project.id)
                 }
-                if wasExpanded {
+                if isExpandedAfterToggle {
+                    loadExpandedProjectThreads(projectID: project.id)
+                } else {
                     expandedProjectThreadsByProjectID.removeValue(forKey: project.id)
                     projectThreadLoadInFlightIDs.remove(project.id)
-                } else {
-                    loadExpandedProjectThreads(projectID: project.id)
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
                     if flashedProjectID == project.id {
@@ -332,7 +332,7 @@ struct SidebarView: View {
             ))
             .contentShape(RoundedRectangle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius, style: .continuous))
             .accessibilityLabel(project.name)
-            .accessibilityHint("Expands or collapses this project's thread list.")
+            .accessibilityHint("Starts a new draft chat and expands or collapses this project's thread list.")
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
             HStack(spacing: SidebarLayoutSpec.projectControlSlotSpacing) {

@@ -157,6 +157,7 @@ extension AppModel {
         let configuredModel = configuredModelOverride()
 
         if trimmed.isEmpty {
+            persistPreferredRuntimeModelPreference("")
             guard configuredModel != nil else {
                 return
             }
@@ -169,6 +170,7 @@ extension AppModel {
         }
 
         guard trimmed != configuredModel else {
+            persistPreferredRuntimeModelPreference(trimmed)
             return
         }
 
@@ -179,6 +181,7 @@ extension AppModel {
         }
 
         updateCodexConfigValue(path: [.key("model")], value: .string(trimmed))
+        persistPreferredRuntimeModelPreference(trimmed)
 
         Task {
             await saveCodexConfig(restartRuntime: false)
@@ -365,6 +368,24 @@ extension AppModel {
         }
 
         return account.type.caseInsensitiveCompare("chatgpt") == .orderedSame
+    }
+
+    private func persistPreferredRuntimeModelPreference(_ modelID: String) {
+        guard let preferenceRepository else {
+            return
+        }
+
+        let persistedModelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                try await preferenceRepository.setPreference(
+                    key: .runtimeDefaultModel,
+                    value: persistedModelID
+                )
+            } catch {
+                appendLog(.warning, "Failed to persist preferred model: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func normalizeModelPresetIDs(_ modelIDs: [String]) -> [String] {

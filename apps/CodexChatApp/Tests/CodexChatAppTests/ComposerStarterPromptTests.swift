@@ -211,6 +211,32 @@ final class ComposerStarterPromptTests: XCTestCase {
         XCTAssertEqual(model.voiceCaptureState, .idle)
     }
 
+    func testComposerPlaceholderUsesSelectedProjectNameDuringDraftChat() {
+        let model = makeReadyModel()
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Acme Platform", path: "/tmp/acme", trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+        model.draftChatProjectID = projectID
+
+        XCTAssertEqual(model.composerInputPlaceholder, "Message in Acme Platform")
+    }
+
+    func testComposerPlaceholderFallsBackWhenDraftIsNotActive() {
+        let model = makeReadyModel()
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Acme Platform", path: "/tmp/acme", trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = UUID()
+        model.draftChatProjectID = projectID
+
+        XCTAssertEqual(model.composerInputPlaceholder, "Ask anything")
+    }
+
     private func makeReadyModel() -> AppModel {
         let model = AppModel(
             repositories: nil,

@@ -547,6 +547,13 @@ extension AppModel {
         }
     }
 
+    @discardableResult
+    func activateProjectFromSidebar(_ projectID: UUID) -> Bool {
+        beginDraftChat(in: projectID)
+        toggleProjectExpanded(projectID)
+        return expandedProjectIDs.contains(projectID)
+    }
+
     func openSkillsAndMods() {
         detailDestination = .skillsAndMods
         selectedThreadID = nil

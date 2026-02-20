@@ -70,4 +70,31 @@ final class AppModelProjectExpansionSelectionTests: XCTestCase {
         XCTAssertEqual(model.selectedProjectID, selectedProject.id)
         XCTAssertEqual(model.selectedThreadID, selectedThread.id)
     }
+
+    func testActivateProjectFromSidebarStartsDraftAndTogglesExpandedState() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let previouslySelectedThreadID = UUID()
+
+        model.selectedProjectID = UUID()
+        model.selectedThreadID = previouslySelectedThreadID
+
+        let expandedAfterFirstTap = model.activateProjectFromSidebar(projectID)
+
+        XCTAssertTrue(expandedAfterFirstTap)
+        XCTAssertTrue(model.expandedProjectIDs.contains(projectID))
+        XCTAssertEqual(model.selectedProjectID, projectID)
+        XCTAssertNil(model.selectedThreadID)
+        XCTAssertEqual(model.draftChatProjectID, projectID)
+        XCTAssertEqual(model.detailDestination, .thread)
+
+        let expandedAfterSecondTap = model.activateProjectFromSidebar(projectID)
+
+        XCTAssertFalse(expandedAfterSecondTap)
+        XCTAssertFalse(model.expandedProjectIDs.contains(projectID))
+        XCTAssertEqual(model.selectedProjectID, projectID)
+        XCTAssertNil(model.selectedThreadID)
+        XCTAssertEqual(model.draftChatProjectID, projectID)
+        XCTAssertEqual(model.detailDestination, .thread)
+    }
 }

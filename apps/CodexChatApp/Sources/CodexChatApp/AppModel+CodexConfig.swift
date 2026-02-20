@@ -10,6 +10,7 @@ extension AppModel {
         codexConfigDocument = loadedDocument
 
         try await migrateLegacyRuntimePreferencesIntoConfigIfNeeded()
+        await restorePreferredModelFromPreferenceIfNeeded()
         applyDerivedRuntimeDefaultsFromConfig()
     }
 
@@ -211,6 +212,32 @@ extension AppModel {
         }
 
         try await preferenceRepository.setPreference(key: .runtimeConfigMigrationV1, value: "1")
+    }
+
+    private func restorePreferredModelFromPreferenceIfNeeded() async {
+        guard configuredModelOverride() == nil,
+              let preferenceRepository
+        else {
+            return
+        }
+
+        do {
+            let preferredModel = try await preferenceRepository
+                .getPreference(key: .runtimeDefaultModel)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard let preferredModel,
+                  !preferredModel.isEmpty
+            else {
+                return
+            }
+
+            var document = codexConfigDocument
+            document.setValue(.string(preferredModel), at: [.key("model")])
+            codexConfigDocument = document
+        } catch {
+            appendLog(.warning, "Failed restoring preferred model from preferences: \(error.localizedDescription)")
+        }
     }
 
     private func mapProjectSandboxMode(_ value: String) -> ProjectSandboxMode? {
