@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatUI
 import SwiftUI
 
@@ -17,6 +18,19 @@ struct ContentView: View {
                 .background(detailBackground)
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    toggleSidebar()
+                } label: {
+                    Label("Toggle Sidebar", systemImage: "sidebar.leading")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel("Toggle sidebar")
+                .help("Toggle sidebar")
+            }
+        }
+        .toolbar(removing: .sidebarToggle)
         .navigationTitle("")
         .sheet(isPresented: $model.isDiagnosticsVisible) {
             DiagnosticsView(
@@ -117,6 +131,10 @@ struct ContentView: View {
 
     private func syncSplitViewVisibility(isOnboardingActive: Bool) {
         splitViewVisibility = isOnboardingActive ? .detailOnly : .all
+    }
+
+    private func toggleSidebar() {
+        NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
     }
 
     @ViewBuilder
