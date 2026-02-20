@@ -64,24 +64,43 @@ final class AppModel: ObservableObject {
     }
 
     struct UserThemeCustomization: Hashable, Codable, Sendable {
+        enum TransparencyMode: String, CaseIterable, Hashable, Codable, Sendable {
+            case solid
+            case glass
+        }
+
         var isEnabled: Bool
-        var accentHex: String
-        var sidebarHex: String
-        var backgroundHex: String
-        var panelHex: String
-        var sidebarGradientHex: String
-        var chatGradientHex: String
+        var accentHex: String?
+        var sidebarHex: String?
+        var backgroundHex: String?
+        var panelHex: String?
+        var sidebarGradientHex: String?
+        var chatGradientHex: String?
         var gradientStrength: Double
+        var transparencyMode: TransparencyMode
+
+        private enum CodingKeys: String, CodingKey {
+            case isEnabled
+            case accentHex
+            case sidebarHex
+            case backgroundHex
+            case panelHex
+            case sidebarGradientHex
+            case chatGradientHex
+            case gradientStrength
+            case transparencyMode
+        }
 
         init(
             isEnabled: Bool = false,
-            accentHex: String = "#10A37F",
-            sidebarHex: String = "#F5F5F5",
-            backgroundHex: String = "#F9F9F9",
-            panelHex: String = "#FFFFFF",
-            sidebarGradientHex: String = "#8AA2B2",
-            chatGradientHex: String = "#B9C6D0",
-            gradientStrength: Double = 0.35
+            accentHex: String? = nil,
+            sidebarHex: String? = nil,
+            backgroundHex: String? = nil,
+            panelHex: String? = nil,
+            sidebarGradientHex: String? = nil,
+            chatGradientHex: String? = nil,
+            gradientStrength: Double = 0,
+            transparencyMode: TransparencyMode = .solid
         ) {
             self.isEnabled = isEnabled
             self.accentHex = accentHex
@@ -91,6 +110,32 @@ final class AppModel: ObservableObject {
             self.sidebarGradientHex = sidebarGradientHex
             self.chatGradientHex = chatGradientHex
             self.gradientStrength = Self.clampedGradientStrength(gradientStrength)
+            self.transparencyMode = transparencyMode
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+            let accentHex = try container.decodeIfPresent(String.self, forKey: .accentHex)
+            let sidebarHex = try container.decodeIfPresent(String.self, forKey: .sidebarHex)
+            let backgroundHex = try container.decodeIfPresent(String.self, forKey: .backgroundHex)
+            let panelHex = try container.decodeIfPresent(String.self, forKey: .panelHex)
+            let sidebarGradientHex = try container.decodeIfPresent(String.self, forKey: .sidebarGradientHex)
+            let chatGradientHex = try container.decodeIfPresent(String.self, forKey: .chatGradientHex)
+            let gradientStrength = try container.decodeIfPresent(Double.self, forKey: .gradientStrength) ?? 0
+            let transparencyMode = try container.decodeIfPresent(TransparencyMode.self, forKey: .transparencyMode) ?? .solid
+
+            self.init(
+                isEnabled: isEnabled,
+                accentHex: accentHex,
+                sidebarHex: sidebarHex,
+                backgroundHex: backgroundHex,
+                panelHex: panelHex,
+                sidebarGradientHex: sidebarGradientHex,
+                chatGradientHex: chatGradientHex,
+                gradientStrength: gradientStrength,
+                transparencyMode: transparencyMode
+            )
         }
 
         static func clampedGradientStrength(_ value: Double) -> Double {
@@ -113,6 +158,10 @@ final class AppModel: ObservableObject {
             lightOverride
         }
 
+        var isGlassEnabled: Bool {
+            isEnabled && transparencyMode == .glass
+        }
+
         static let `default` = UserThemeCustomization()
 
         static let navyPastel = UserThemeCustomization(
@@ -123,7 +172,8 @@ final class AppModel: ObservableObject {
             panelHex: "#152238",
             sidebarGradientHex: "#4E6883",
             chatGradientHex: "#6A7F9B",
-            gradientStrength: 0.55
+            gradientStrength: 0.55,
+            transparencyMode: .solid
         )
     }
 
@@ -920,6 +970,10 @@ final class AppModel: ObservableObject {
 
     var resolvedDarkThemeOverride: ModThemeOverride {
         effectiveDarkThemeOverride.merged(with: userThemeCustomization.darkOverride)
+    }
+
+    var isTransparentThemeMode: Bool {
+        userThemeCustomization.isGlassEnabled
     }
 
     var isModsBarVisibleForSelectedThread: Bool {

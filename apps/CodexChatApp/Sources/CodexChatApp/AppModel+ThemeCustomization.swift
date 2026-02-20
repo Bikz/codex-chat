@@ -2,6 +2,16 @@ import CodexChatCore
 import Foundation
 
 extension AppModel {
+    private enum LegacyThemeDefaults {
+        static let accentHex = "#10A37F"
+        static let sidebarHex = "#F5F5F5"
+        static let backgroundHex = "#F9F9F9"
+        static let panelHex = "#FFFFFF"
+        static let sidebarGradientHex = "#8AA2B2"
+        static let chatGradientHex = "#B9C6D0"
+        static let gradientStrength = 0.35
+    }
+
     func restoreUserThemeCustomizationIfNeeded() async {
         guard let preferenceRepository else { return }
 
@@ -69,6 +79,21 @@ extension AppModel {
     private func normalizedThemeCustomization(_ customization: UserThemeCustomization) -> UserThemeCustomization {
         var copy = customization
         copy.gradientStrength = UserThemeCustomization.clampedGradientStrength(copy.gradientStrength)
+        if isLegacyDefaultCustomization(copy) {
+            return .default
+        }
         return copy
+    }
+
+    private func isLegacyDefaultCustomization(_ customization: UserThemeCustomization) -> Bool {
+        guard customization.isEnabled else { return false }
+        guard customization.transparencyMode == .solid else { return false }
+        guard customization.accentHex == LegacyThemeDefaults.accentHex else { return false }
+        guard customization.sidebarHex == LegacyThemeDefaults.sidebarHex else { return false }
+        guard customization.backgroundHex == LegacyThemeDefaults.backgroundHex else { return false }
+        guard customization.panelHex == LegacyThemeDefaults.panelHex else { return false }
+        guard customization.sidebarGradientHex == LegacyThemeDefaults.sidebarGradientHex else { return false }
+        guard customization.chatGradientHex == LegacyThemeDefaults.chatGradientHex else { return false }
+        return abs(customization.gradientStrength - LegacyThemeDefaults.gradientStrength) < 0.0001
     }
 }

@@ -186,7 +186,12 @@ final class ModsBarActionTests: XCTestCase {
         model.upsertPersonalNotesInline("Remember to ship after make quick.")
 
         try await eventually(timeoutSeconds: 10) {
-            FileManager.default.fileExists(atPath: output.path)
+            guard FileManager.default.fileExists(atPath: output.path),
+                  let written = try? String(contentsOf: output)
+            else {
+                return false
+            }
+            return written.contains("\"event\":\"modsBar.action\"")
         }
 
         let written = try String(contentsOf: output)

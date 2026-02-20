@@ -60,7 +60,7 @@ private struct MainAppRoot: View {
     var body: some View {
         ContentView(model: model)
             .designTokens(resolvedTokens)
-            .background(WindowAccessor())
+            .background(WindowAccessor(isTransparent: model.isTransparentThemeMode))
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                 model.cancelPendingChatGPTLoginForTeardown()
             }
@@ -76,20 +76,40 @@ private struct MainAppRoot: View {
 // MARK: - Window accessor to ensure resizable style mask
 
 private struct WindowAccessor: NSViewRepresentable {
+    let isTransparent: Bool
+
     func makeNSView(context _: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
-            if let window = view.window {
-                window.styleMask.insert(.resizable)
-                window.minSize = NSSize(width: 600, height: 400)
-                // Don't cap maxSize — let the user go full-screen or any size
-                window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            }
+            configureWindow(for: view)
         }
         return view
     }
 
-    func updateNSView(_: NSView, context _: Context) {}
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        DispatchQueue.main.async {
+            configureWindow(for: nsView)
+        }
+    }
+
+    private func configureWindow(for view: NSView) {
+        guard let window = view.window else { return }
+        window.styleMask.insert(.resizable)
+        window.minSize = NSSize(width: 600, height: 400)
+        // Don't cap maxSize — let the user go full-screen or any size
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        if isTransparent {
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        } else {
+            window.styleMask.remove(.fullSizeContentView)
+            window.titlebarAppearsTransparent = false
+            window.isOpaque = true
+            window.backgroundColor = NSColor.windowBackgroundColor
+        }
+    }
 }
 
 private struct SettingsWindowAccessor: NSViewRepresentable {

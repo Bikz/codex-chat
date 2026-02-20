@@ -119,16 +119,21 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailBackground: some View {
-        let chatHex = tokens.palette.backgroundHex
+        let chatHex = model.userThemeCustomization.backgroundHex ?? tokens.palette.backgroundHex
         if model.userThemeCustomization.isEnabled {
             ZStack {
                 Color(hex: chatHex)
-                LinearGradient(
-                    colors: [Color(hex: chatHex), Color(hex: model.userThemeCustomization.chatGradientHex)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .opacity(model.userThemeCustomization.gradientStrength)
+                    .opacity(model.isTransparentThemeMode ? 0.58 : 1)
+                if let gradientHex = model.userThemeCustomization.chatGradientHex,
+                   model.userThemeCustomization.gradientStrength > 0
+                {
+                    LinearGradient(
+                        colors: [Color(hex: chatHex), Color(hex: gradientHex)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .opacity(model.userThemeCustomization.gradientStrength)
+                }
             }
         } else {
             Color(hex: chatHex)

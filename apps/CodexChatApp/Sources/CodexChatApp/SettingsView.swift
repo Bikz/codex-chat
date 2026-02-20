@@ -209,40 +209,18 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
     private var settingsSidebarBackground: some View {
-        let sidebarHex = tokens.palette.sidebarHex
-        if model.userThemeCustomization.isEnabled {
-            ZStack {
-                Color(hex: sidebarHex)
-                LinearGradient(
-                    colors: [Color(hex: sidebarHex), Color(hex: model.userThemeCustomization.sidebarGradientHex)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .opacity(model.userThemeCustomization.gradientStrength)
-            }
-        } else {
-            Color(hex: sidebarHex)
-        }
+        themedBackground(
+            baseHex: themeColorForDisplay(\.sidebarHex, fallback: tokens.palette.sidebarHex),
+            gradientHex: model.userThemeCustomization.sidebarGradientHex
+        )
     }
 
-    @ViewBuilder
     private var settingsDetailBackground: some View {
-        let chatHex = tokens.palette.backgroundHex
-        if model.userThemeCustomization.isEnabled {
-            ZStack {
-                Color(hex: chatHex)
-                LinearGradient(
-                    colors: [Color(hex: chatHex), Color(hex: model.userThemeCustomization.chatGradientHex)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .opacity(model.userThemeCustomization.gradientStrength)
-            }
-        } else {
-            Color(hex: chatHex)
-        }
+        themedBackground(
+            baseHex: themeColorForDisplay(\.backgroundHex, fallback: tokens.palette.backgroundHex),
+            gradientHex: model.userThemeCustomization.chatGradientHex
+        )
     }
 
     private var runtimeConfigCard: some View {
@@ -358,19 +336,36 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("Enable custom theme", isOn: userThemeEnabledBinding)
 
-                Text("Use color pickers to personalize the app, including Arc-style gradient overlays.")
+                Text("By default, light mode stays bright and dark mode stays deep black. Enable overrides only where you want changes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                themeColorPickerRow("Primary accent", keyPath: \.accentHex)
-                themeColorPickerRow("Sidebar", keyPath: \.sidebarHex)
-                themeColorPickerRow("Main chat panel", keyPath: \.backgroundHex)
-                themeColorPickerRow("Card / input panel", keyPath: \.panelHex)
+                themeColorPickerRow("Primary accent", keyPath: \.accentHex, fallback: tokens.palette.accentHex)
+                themeColorPickerRow("Sidebar", keyPath: \.sidebarHex, fallback: tokens.palette.sidebarHex)
+                themeColorPickerRow("Main chat panel", keyPath: \.backgroundHex, fallback: tokens.palette.backgroundHex)
+                themeColorPickerRow("Card / input panel", keyPath: \.panelHex, fallback: tokens.palette.panelHex)
 
                 Divider()
 
-                themeColorPickerRow("Sidebar gradient", keyPath: \.sidebarGradientHex)
-                themeColorPickerRow("Chat gradient", keyPath: \.chatGradientHex)
+                themeColorPickerRow("Sidebar gradient", keyPath: \.sidebarGradientHex, fallback: tokens.palette.sidebarHex)
+                themeColorPickerRow("Chat gradient", keyPath: \.chatGradientHex, fallback: tokens.palette.backgroundHex)
+
+                Picker(
+                    "Surface mode",
+                    selection: Binding(
+                        get: { model.userThemeCustomization.transparencyMode },
+                        set: { mode in
+                            updateUserThemeCustomization { customization in
+                                customization.transparencyMode = mode
+                                customization.isEnabled = true
+                            }
+                        }
+                    )
+                ) {
+                    Text("Solid").tag(AppModel.UserThemeCustomization.TransparencyMode.solid)
+                    Text("Glass (Experimental)").tag(AppModel.UserThemeCustomization.TransparencyMode.glass)
+                }
+                .pickerStyle(.segmented)
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -384,6 +379,12 @@ struct SettingsView: View {
 
                     Slider(value: userThemeGradientStrengthBinding, in: 0 ... 1)
                         .accessibilityLabel("Gradient intensity")
+                }
+
+                if model.userThemeCustomization.transparencyMode == .glass {
+                    Text("Glass mode applies transparent backgrounds to major app surfaces for a desktop-through effect.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 HStack(spacing: 8) {
@@ -906,14 +907,15 @@ struct SettingsView: View {
 
     private func themeColorPickerRow(
         _ label: String,
-        keyPath: WritableKeyPath<AppModel.UserThemeCustomization, String>
+        keyPath: WritableKeyPath<AppModel.UserThemeCustomization, String?>,
+        fallback: String
     ) -> some View {
         SettingsFieldRow(label: label) {
             HStack(spacing: 8) {
                 ColorPicker(
                     label,
                     selection: Binding(
-                        get: { Color(hex: model.userThemeCustomization[keyPath: keyPath]) },
+                        get: { Color(hex: themeColorForDisplay(keyPath, fallback: fallback)) },
                         set: { color in
                             guard let hex = color.codexHexString() else { return }
                             updateUserThemeCustomization { customization in
@@ -926,11 +928,47 @@ struct SettingsView: View {
                 )
                 .labelsHidden()
 
-                Text(model.userThemeCustomization[keyPath: keyPath])
+                Text(model.userThemeCustomization[keyPath: keyPath] ?? "System")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 84, alignment: .trailing)
+
+                Button("System") {
+                    updateUserThemeCustomization { customization in
+                        customization[keyPath: keyPath] = nil
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(model.userThemeCustomization[keyPath: keyPath] == nil)
             }
+        }
+    }
+
+    private func themeColorForDisplay(
+        _ keyPath: KeyPath<AppModel.UserThemeCustomization, String?>,
+        fallback: String
+    ) -> String {
+        model.userThemeCustomization[keyPath: keyPath] ?? fallback
+    }
+
+    @ViewBuilder
+    private func themedBackground(baseHex: String, gradientHex: String?) -> some View {
+        if model.userThemeCustomization.isEnabled {
+            ZStack {
+                Color(hex: baseHex)
+                    .opacity(model.isTransparentThemeMode ? 0.58 : 1)
+                if let gradientHex, model.userThemeCustomization.gradientStrength > 0 {
+                    LinearGradient(
+                        colors: [Color(hex: baseHex), Color(hex: gradientHex)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .opacity(model.userThemeCustomization.gradientStrength)
+                }
+            }
+        } else {
+            Color(hex: baseHex)
         }
     }
 
@@ -1041,28 +1079,30 @@ private struct ThemeStudioPreview: View {
     let tokens: DesignTokens
 
     private var accentHex: String {
-        customization.isEnabled ? customization.accentHex : tokens.palette.accentHex
+        customization.isEnabled ? (customization.accentHex ?? tokens.palette.accentHex) : tokens.palette.accentHex
     }
 
     private var sidebarHex: String {
-        customization.isEnabled ? customization.sidebarHex : tokens.palette.sidebarHex
+        customization.isEnabled ? (customization.sidebarHex ?? tokens.palette.sidebarHex) : tokens.palette.sidebarHex
     }
 
     private var chatHex: String {
-        customization.isEnabled ? customization.backgroundHex : tokens.palette.backgroundHex
+        customization.isEnabled ? (customization.backgroundHex ?? tokens.palette.backgroundHex) : tokens.palette.backgroundHex
     }
 
     private var panelHex: String {
-        customization.isEnabled ? customization.panelHex : tokens.palette.panelHex
+        customization.isEnabled ? (customization.panelHex ?? tokens.palette.panelHex) : tokens.palette.panelHex
     }
 
     var body: some View {
         HStack(spacing: 0) {
             ZStack {
                 Color(hex: sidebarHex)
+                    .opacity(customization.isGlassEnabled ? 0.58 : 1)
                 if customization.isEnabled {
+                    let gradientHex = customization.sidebarGradientHex ?? sidebarHex
                     LinearGradient(
-                        colors: [Color(hex: sidebarHex), Color(hex: customization.sidebarGradientHex)],
+                        colors: [Color(hex: sidebarHex), Color(hex: gradientHex)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1087,9 +1127,11 @@ private struct ThemeStudioPreview: View {
 
             ZStack {
                 Color(hex: chatHex)
+                    .opacity(customization.isGlassEnabled ? 0.58 : 1)
                 if customization.isEnabled {
+                    let gradientHex = customization.chatGradientHex ?? chatHex
                     LinearGradient(
-                        colors: [Color(hex: chatHex), Color(hex: customization.chatGradientHex)],
+                        colors: [Color(hex: chatHex), Color(hex: gradientHex)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )

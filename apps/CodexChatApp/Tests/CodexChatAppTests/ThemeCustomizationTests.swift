@@ -52,6 +52,20 @@ final class ThemeCustomizationTests: XCTestCase {
         XCTAssertEqual(resolved.resolvedPalettePanelHex, "#FFFFFF")
     }
 
+    func testResolvedThemeOverrideKeepsSystemDefaultsWhenEnabledWithoutOverrides() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.effectiveDarkThemeOverride = ModThemeOverride(
+            palette: .init(accentHex: "#11AA11", backgroundHex: "#000000", panelHex: "#121212", sidebarHex: "#0A0A0A")
+        )
+        model.userThemeCustomization = .init(isEnabled: true)
+
+        let resolved = model.resolvedDarkThemeOverride
+        XCTAssertEqual(resolved.resolvedPaletteAccentHex, "#11AA11")
+        XCTAssertEqual(resolved.resolvedPaletteSidebarHex, "#0A0A0A")
+        XCTAssertEqual(resolved.resolvedPaletteBackgroundHex, "#000000")
+        XCTAssertEqual(resolved.resolvedPalettePanelHex, "#121212")
+    }
+
     func testRestoreUserThemeCustomizationReadsPreference() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-theme-restore-\(UUID().uuidString)", isDirectory: true)
@@ -82,5 +96,38 @@ final class ThemeCustomizationTests: XCTestCase {
 
         await model.restoreUserThemeCustomizationIfNeeded()
         XCTAssertEqual(model.userThemeCustomization, expected)
+    }
+
+    func testRestoreUserThemeCustomizationMigratesLegacyDefaultOverrideToSystemDefault() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-theme-legacy-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        let legacyJSON = """
+        {
+          "isEnabled": true,
+          "accentHex": "#10A37F",
+          "sidebarHex": "#F5F5F5",
+          "backgroundHex": "#F9F9F9",
+          "panelHex": "#FFFFFF",
+          "sidebarGradientHex": "#8AA2B2",
+          "chatGradientHex": "#B9C6D0",
+          "gradientStrength": 0.35
+        }
+        """
+
+        try await repositories.preferenceRepository.setPreference(
+            key: .userThemeCustomizationV1,
+            value: legacyJSON
+        )
+
+        await model.restoreUserThemeCustomizationIfNeeded()
+        XCTAssertEqual(model.userThemeCustomization, .default)
     }
 }

@@ -52,16 +52,21 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sidebarBackground: some View {
-        let sidebarHex = tokens.palette.sidebarHex
+        let sidebarHex = model.userThemeCustomization.sidebarHex ?? tokens.palette.sidebarHex
         if model.userThemeCustomization.isEnabled {
             ZStack {
                 Color(hex: sidebarHex)
-                LinearGradient(
-                    colors: [Color(hex: sidebarHex), Color(hex: model.userThemeCustomization.sidebarGradientHex)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .opacity(model.userThemeCustomization.gradientStrength)
+                    .opacity(model.isTransparentThemeMode ? 0.58 : 1)
+                if let gradientHex = model.userThemeCustomization.sidebarGradientHex,
+                   model.userThemeCustomization.gradientStrength > 0
+                {
+                    LinearGradient(
+                        colors: [Color(hex: sidebarHex), Color(hex: gradientHex)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .opacity(model.userThemeCustomization.gradientStrength)
+                }
             }
         } else {
             Color(hex: sidebarHex)
