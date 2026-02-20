@@ -49,6 +49,9 @@ final class AppModelComputerActionsTests: XCTestCase {
 
         let second = model.adaptiveIntent(for: "show my calendar for the next 8 hours")
         XCTAssertEqual(second, .calendarToday(rangeHours: 8))
+
+        let third = model.adaptiveIntent(for: "whats on my cal tmrw?")
+        XCTAssertEqual(third, .calendarToday(rangeHours: 24))
     }
 
     func testAdaptiveIntentParsesRemindersCheckPhrases() {
@@ -426,6 +429,53 @@ final class AppModelComputerActionsTests: XCTestCase {
 
         XCTAssertTrue(userMessages.contains(where: { $0.text.contains("calendar") }))
         XCTAssertTrue(assistantMessages.contains(where: { $0.text.contains("Planning") }))
+    }
+
+    func testCalendarActionUsesTomorrowPromptWhenDayOffsetProvided() async throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let event = CalendarEvent(
+            id: "event-3",
+            title: "Offsite",
+            calendarName: "Work",
+            startAt: start.addingTimeInterval(86400),
+            endAt: start.addingTimeInterval(90000),
+            isAllDay: false
+        )
+
+        let calendarAction = CalendarTodayAction(
+            eventSource: FixedCalendarEventSource(events: [event]),
+            nowProvider: { start }
+        )
+        let registry = ComputerActionRegistry(calendarToday: calendarAction)
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            computerActionRegistry: registry
+        )
+
+        let threadID = UUID()
+        try await model.runNativeComputerAction(
+            actionID: "calendar.today",
+            arguments: [
+                "rangeHours": "24",
+                "dayOffset": "1",
+                "anchor": "dayStart",
+            ],
+            threadID: threadID,
+            projectID: UUID()
+        )
+
+        guard let entries = model.transcriptStore[threadID] else {
+            XCTFail("Expected transcript entries for calendar action")
+            return
+        }
+
+        guard case let .message(userMessage) = entries.first else {
+            XCTFail("Expected first transcript entry to be a user message")
+            return
+        }
+        XCTAssertEqual(userMessage.text, "What's on my calendar tomorrow?")
     }
 
     private func eventually(

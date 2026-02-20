@@ -407,8 +407,24 @@ extension AppModel {
                let hours = Int(hoursRaw),
                hours > 0
             {
+                let dayOffset = Int(arguments["dayOffset"] ?? "0") ?? 0
+                let anchor = arguments["anchor"]?.lowercased() ?? "dayStart"
+
+                if anchor == "now", dayOffset == 0, hours < 24 {
+                    return "Show my calendar for the next \(hours) hours."
+                }
+
                 if hours == 24 {
-                    return "What's on my calendar today?"
+                    switch dayOffset {
+                    case 1:
+                        return "What's on my calendar tomorrow?"
+                    case -1:
+                        return "What was on my calendar yesterday?"
+                    case 0:
+                        return "What's on my calendar today?"
+                    default:
+                        return "Show my calendar for day offset \(dayOffset)."
+                    }
                 }
                 return "Show my calendar for the next \(hours) hours."
             }
@@ -418,8 +434,24 @@ extension AppModel {
                let hours = Int(hoursRaw),
                hours > 0
             {
+                let dayOffset = Int(arguments["dayOffset"] ?? "0") ?? 0
+                let anchor = arguments["anchor"]?.lowercased() ?? "dayStart"
+
+                if anchor == "now", dayOffset == 0, hours < 24 {
+                    return "Show my reminders for the next \(hours) hours."
+                }
+
                 if hours == 24 {
-                    return "What reminders do I have today?"
+                    switch dayOffset {
+                    case 1:
+                        return "What reminders do I have tomorrow?"
+                    case -1:
+                        return "What reminders did I have yesterday?"
+                    case 0:
+                        return "What reminders do I have today?"
+                    default:
+                        return "Show my reminders for day offset \(dayOffset)."
+                    }
                 }
                 return "Show my reminders for the next \(hours) hours."
             }

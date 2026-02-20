@@ -52,12 +52,11 @@ public final class CalendarTodayAction: ComputerActionProvider {
 
     public func preview(request: ComputerActionRequest) async throws -> ComputerActionPreviewArtifact {
         let now = nowProvider()
-        let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: now)
-        let hours = Int(request.arguments["rangeHours"] ?? "24") ?? 24
-        let end = calendar.date(byAdding: .hour, value: max(1, min(168, hours)), to: dayStart) ?? dayStart.addingTimeInterval(86400)
-
-        let events = try await eventSource.events(from: dayStart, to: end)
+        let (start, end, clampedHours, dayOffset, anchor) = Self.queryWindow(
+            now: now,
+            arguments: request.arguments
+        )
+        let events = try await eventSource.events(from: start, to: end)
         let sorted = events.sorted { lhs, rhs in
             if lhs.startAt != rhs.startAt { return lhs.startAt < rhs.startAt }
             return lhs.title < rhs.title
@@ -93,7 +92,9 @@ public final class CalendarTodayAction: ComputerActionProvider {
             detailsMarkdown: markdown,
             data: [
                 "events": data,
-                "rangeHours": String(hours),
+                "rangeHours": String(clampedHours),
+                "dayOffset": String(dayOffset),
+                "anchor": anchor,
             ]
         )
     }
@@ -133,6 +134,32 @@ public final class CalendarTodayAction: ComputerActionProvider {
             return []
         }
         return events
+    }
+
+    private static func queryWindow(
+        now: Date,
+        arguments: [String: String]
+    ) -> (start: Date, end: Date, clampedHours: Int, dayOffset: Int, anchor: String) {
+        let calendar = Calendar.current
+        let hours = Int(arguments["rangeHours"] ?? "24") ?? 24
+        let clampedHours = max(1, min(168, hours))
+        let parsedOffset = Int(arguments["dayOffset"] ?? "0") ?? 0
+        let dayOffset = max(-30, min(30, parsedOffset))
+        let anchor = arguments["anchor"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? "dayStart"
+
+        let offsetReference = calendar.date(byAdding: .day, value: dayOffset, to: now) ?? now
+        let start: Date = if anchor == "now" {
+            offsetReference
+        } else {
+            calendar.startOfDay(for: offsetReference)
+        }
+
+        let end = calendar.date(byAdding: .hour, value: clampedHours, to: start)
+            ?? start.addingTimeInterval(TimeInterval(clampedHours * 3600))
+
+        return (start, end, clampedHours, dayOffset, anchor)
     }
 }
 

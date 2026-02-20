@@ -85,6 +85,46 @@ final class CodexComputerActionsTests: XCTestCase {
         }
     }
 
+    func testCalendarTodaySupportsDayOffsetAndNowAnchor() async throws {
+        let now = Date(timeIntervalSince1970: 1_735_707_600) // 2025-01-20 13:00:00 UTC
+        let source = RecordingCalendarSource(events: [])
+        let action = CalendarTodayAction(eventSource: source, nowProvider: { now })
+
+        let tomorrowRequest = ComputerActionRequest(
+            runContextID: "calendar-tomorrow",
+            arguments: [
+                "rangeHours": "24",
+                "dayOffset": "1",
+                "anchor": "dayStart",
+            ]
+        )
+        _ = try await action.preview(request: tomorrowRequest)
+        let tomorrowRange = await source.capturedRange()
+
+        let calendar = Calendar.current
+        let expectedTomorrowStart = calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        )
+        XCTAssertEqual(tomorrowRange.start, expectedTomorrowStart)
+        XCTAssertEqual(
+            tomorrowRange.end,
+            calendar.date(byAdding: .hour, value: 24, to: expectedTomorrowStart)
+        )
+
+        let nextHoursRequest = ComputerActionRequest(
+            runContextID: "calendar-next-hours",
+            arguments: [
+                "rangeHours": "8",
+                "anchor": "now",
+            ]
+        )
+        _ = try await action.preview(request: nextHoursRequest)
+        let nextHoursRange = await source.capturedRange()
+
+        XCTAssertEqual(nextHoursRange.start, now)
+        XCTAssertEqual(nextHoursRange.end, calendar.date(byAdding: .hour, value: 8, to: now))
+    }
+
     func testMessagesPreviewConfirmAndSend() async throws {
         let sender = MockMessagesSender()
         let action = MessagesSendAction(sender: sender)
@@ -311,6 +351,26 @@ private struct MockReminderSource: ReminderItemSource {
             throw error
         }
         return reminders
+    }
+}
+
+private actor RecordingCalendarSource: CalendarEventSource {
+    let events: [CalendarEvent]
+    private var lastStart: Date?
+    private var lastEnd: Date?
+
+    init(events: [CalendarEvent]) {
+        self.events = events
+    }
+
+    func events(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        lastStart = start
+        lastEnd = end
+        return events
+    }
+
+    func capturedRange() -> (start: Date?, end: Date?) {
+        (lastStart, lastEnd)
     }
 }
 
