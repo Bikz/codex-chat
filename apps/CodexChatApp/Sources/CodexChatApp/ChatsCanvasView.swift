@@ -27,13 +27,19 @@ struct ChatsCanvasView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 FollowUpQueueView(model: model)
-                if let request = model.pendingApprovalForSelectedThread {
-                    InlineApprovalRequestView(model: model, request: request)
+                if let request = model.pendingUserApprovalForSelectedThread {
+                    InlineUserApprovalRequestView(
+                        model: model,
+                        request: request,
+                        permissionRecoveryDetailsNotice: $permissionRecoveryDetailsNotice
+                    )
                 } else {
                     composerSurface
                 }
 
-                if let notice = model.permissionRecoveryNotice {
+                if let notice = model.permissionRecoveryNotice,
+                   model.pendingUserApprovalForSelectedThread == nil
+                {
                     permissionRecoveryInlineBanner(notice)
                         .padding(.horizontal, tokens.spacing.medium)
                 }

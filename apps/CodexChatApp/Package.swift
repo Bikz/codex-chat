@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "CodexChatShared", targets: ["CodexChatShared"]),
         .executable(name: "CodexChatCLI", targets: ["CodexChatCLI"]),
+        .executable(name: "codexchat-action", targets: ["CodexChatActionCLI"]),
         .executable(name: "CodexChatApp", targets: ["CodexChatCLI"]),
         .executable(name: "CodexChatDesktopFallback", targets: ["CodexChatAppExecutable"]),
     ],
@@ -50,6 +51,11 @@ let package = Package(
             name: "CodexChatCLI",
             dependencies: ["CodexChatShared"],
             path: "Sources/CodexChatCLI"
+        ),
+        .executableTarget(
+            name: "CodexChatActionCLI",
+            dependencies: [],
+            path: "Sources/CodexChatActionCLI"
         ),
         .executableTarget(
             name: "CodexChatAppExecutable",

@@ -11,6 +11,8 @@ public struct CalendarEvent: Hashable, Sendable, Codable, Identifiable {
     public let startAt: Date
     public let endAt: Date
     public let isAllDay: Bool
+    public let location: String?
+    public let notes: String?
 
     public init(
         id: String,
@@ -18,7 +20,9 @@ public struct CalendarEvent: Hashable, Sendable, Codable, Identifiable {
         calendarName: String,
         startAt: Date,
         endAt: Date,
-        isAllDay: Bool
+        isAllDay: Bool,
+        location: String? = nil,
+        notes: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -26,6 +30,8 @@ public struct CalendarEvent: Hashable, Sendable, Codable, Identifiable {
         self.startAt = startAt
         self.endAt = endAt
         self.isAllDay = isAllDay
+        self.location = location
+        self.notes = notes
     }
 }
 
@@ -184,7 +190,9 @@ public final class EventKitCalendarEventSource: CalendarEventSource {
                     calendarName: event.calendar.title,
                     startAt: event.startDate,
                     endAt: event.endDate,
-                    isAllDay: event.isAllDay
+                    isAllDay: event.isAllDay,
+                    location: event.location,
+                    notes: event.notes
                 )
             }
         #else

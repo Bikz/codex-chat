@@ -67,9 +67,21 @@ extension AppModel {
             preferredWebSearch: defaultWebSearch
         )
         let turnOptions = runtimeTurnOptions()
-        let selectedSkillInput: RuntimeSkillInput? = sourceQueueItemID == nil ? selectedSkillForComposer.map {
-            RuntimeSkillInput(name: $0.skill.name, path: $0.skill.skillPath)
-        } : nil
+        var runtimeSkillInputs: [RuntimeSkillInput] = []
+        if sourceQueueItemID == nil,
+           let selectedSkillInput = selectedSkillForComposer.map({ RuntimeSkillInput(name: $0.skill.name, path: $0.skill.skillPath) })
+        {
+            runtimeSkillInputs.append(selectedSkillInput)
+        }
+        if sourceQueueItemID == nil,
+           let harnessSkillInput = prepareHarnessSkillInputIfNeeded(
+               text: trimmedText,
+               threadID: threadID,
+               projectID: projectID
+           )
+        {
+            runtimeSkillInputs.append(harnessSkillInput)
+        }
 
         var didReserveTurnPermit = false
         do {
@@ -137,7 +149,7 @@ extension AppModel {
                     threadID: runtimeThreadID,
                     text: runtimeText,
                     safetyConfiguration: safetyConfiguration,
-                    skillInputs: selectedSkillInput.map { [$0] } ?? [],
+                    skillInputs: runtimeSkillInputs,
                     inputItems: inputItems,
                     turnOptions: turnOptions
                 )
@@ -162,7 +174,7 @@ extension AppModel {
                     threadID: runtimeThreadID,
                     text: runtimeText,
                     safetyConfiguration: safetyConfiguration,
-                    skillInputs: selectedSkillInput.map { [$0] } ?? [],
+                    skillInputs: runtimeSkillInputs,
                     inputItems: inputItems,
                     turnOptions: turnOptions
                 )

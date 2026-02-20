@@ -98,7 +98,14 @@ Current first-party native actions:
 
 - `desktop.cleanup`
 - `calendar.today`
+- `calendar.create`
+- `calendar.update`
+- `calendar.delete`
+- `reminders.today`
 - `messages.send`
+- `files.read`
+- `files.move`
+- `apple.script.run`
 
 Native actions still execute through CodexChat safety rules (preview + confirmation for sensitive actions).
 

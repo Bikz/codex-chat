@@ -19,7 +19,7 @@ struct ContentView: View {
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
-            if !model.isOnboardingActive, model.detailDestination != .skillsAndMods {
+            if !model.isOnboardingActive {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
                         model.openReviewChanges()
@@ -123,12 +123,6 @@ struct ContentView: View {
                 onCancel: model.dismissUntrustedShellWarning,
                 onContinue: model.confirmUntrustedShellWarning
             )
-        }
-        .sheet(item: Binding(get: {
-            model.pendingComputerActionPreview
-        }, set: { _ in })) { preview in
-            ComputerActionPreviewSheet(model: model, preview: preview)
-                .interactiveDismissDisabled(model.isComputerActionExecutionInProgress)
         }
         .sheet(item: Binding(get: {
             model.activeWorkerTraceEntry

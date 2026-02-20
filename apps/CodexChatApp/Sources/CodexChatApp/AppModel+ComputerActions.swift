@@ -96,6 +96,7 @@ extension AppModel {
         }
 
         permissionRecoveryNotice = nil
+        syncApprovalPresentationState()
 
         guard let provider = computerActionRegistry.provider(for: actionID) else {
             throw ComputerActionError.unsupported("Unknown computer action: \(actionID)")
@@ -125,7 +126,8 @@ extension AppModel {
             presentPermissionRecoveryNoticeIfNeeded(
                 actionID: provider.actionID,
                 arguments: request.arguments,
-                error: error
+                error: error,
+                threadID: threadID
             )
             throw error
         }
@@ -159,6 +161,7 @@ extension AppModel {
 
         if previewState.requiresConfirmation {
             pendingComputerActionPreview = previewState
+            syncApprovalPresentationState()
             appendEntry(
                 .actionCard(
                     ActionCard(
@@ -185,6 +188,7 @@ extension AppModel {
         // Clear sheet state up front so execution (and any permission prompts) happen
         // after the preview UI starts dismissing.
         pendingComputerActionPreview = nil
+        syncApprovalPresentationState()
         isComputerActionExecutionInProgress = true
         Task {
             defer { isComputerActionExecutionInProgress = false }
@@ -200,6 +204,7 @@ extension AppModel {
 
     func cancelPendingComputerActionPreview() {
         pendingComputerActionPreview = nil
+        syncApprovalPresentationState()
         computerActionStatusMessage = "Canceled computer action preview."
     }
 
@@ -302,7 +307,8 @@ extension AppModel {
             presentPermissionRecoveryNoticeIfNeeded(
                 actionID: provider.actionID,
                 arguments: previewState.request.arguments,
-                error: error
+                error: error,
+                threadID: previewState.threadID
             )
             throw error
         }
@@ -337,6 +343,7 @@ extension AppModel {
         computerActionStatusMessage = result.summary
         permissionRecoveryNotice = nil
         pendingComputerActionPreview = nil
+        syncApprovalPresentationState()
     }
 
     private func appendAndPersistComputerActionTranscriptTurn(
@@ -434,6 +441,27 @@ extension AppModel {
                 return "Show my calendar for the next \(hours) hours."
             }
             return "What's on my calendar today?"
+        case "calendar.create":
+            if let title = arguments["title"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !title.isEmpty
+            {
+                return "Create a calendar event titled \(title)."
+            }
+            return "Create a calendar event."
+        case "calendar.update":
+            if let eventID = arguments["eventID"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !eventID.isEmpty
+            {
+                return "Update calendar event \(eventID)."
+            }
+            return "Update a calendar event."
+        case "calendar.delete":
+            if let eventID = arguments["eventID"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !eventID.isEmpty
+            {
+                return "Delete calendar event \(eventID)."
+            }
+            return "Delete a calendar event."
         case "reminders.today":
             if let queryText = arguments["queryText"]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !queryText.isEmpty
@@ -477,6 +505,20 @@ extension AppModel {
             return "Send a message."
         case "apple.script.run":
             return "Run an AppleScript automation."
+        case "files.read":
+            if let path = arguments["path"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !path.isEmpty
+            {
+                return "Read file details for \(path)."
+            }
+            return "Read file details."
+        case "files.move":
+            let source = arguments["sourcePath"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let destination = arguments["destinationPath"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !source.isEmpty, !destination.isEmpty {
+                return "Move \(source) to \(destination)."
+            }
+            return "Move a file."
         default:
             return "Run \(displayName)."
         }
@@ -648,7 +690,7 @@ extension AppModel {
             }
             return .automation
 
-        case "calendar.today":
+        case "calendar.today", "calendar.create", "calendar.update", "calendar.delete":
             guard normalizedMessage.contains("calendar") else {
                 return nil
             }
@@ -690,7 +732,8 @@ extension AppModel {
     private func presentPermissionRecoveryNoticeIfNeeded(
         actionID: String,
         arguments: [String: String],
-        error: Error
+        error: Error,
+        threadID: UUID?
     ) {
         guard let computerActionError = error as? ComputerActionError,
               let target = permissionRecoveryTargetForComputerAction(
@@ -704,11 +747,13 @@ extension AppModel {
 
         permissionRecoveryNotice = PermissionRecoveryNotice(
             actionID: actionID,
+            threadID: threadID,
             target: target,
             title: target.title,
             message: computerActionError.localizedDescription,
             remediationSteps: target.remediationSteps
         )
+        syncApprovalPresentationState()
     }
 
     private func permissionRecoveryTarget(fromTargetHint hint: String?) -> PermissionRecoveryTarget? {
@@ -773,6 +818,7 @@ extension AppModel {
 
     func dismissPermissionRecoveryNotice() {
         permissionRecoveryNotice = nil
+        syncApprovalPresentationState()
     }
 
     func openPermissionRecoverySettingsFromNotice() {

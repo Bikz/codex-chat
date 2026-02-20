@@ -60,7 +60,8 @@ public enum CodexChatBootstrap {
                 bootError: nil,
                 skillCatalogService: dependencies.skillCatalogService,
                 skillCatalogProvider: dependencies.skillCatalogProvider,
-                storagePaths: dependencies.storagePaths
+                storagePaths: dependencies.storagePaths,
+                harnessEnvironment: dependencies.harnessEnvironment
             )
         } catch {
             return AppModel(
@@ -215,10 +216,25 @@ public enum CodexChatBootstrap {
         let skillCatalogProvider = RemoteJSONSkillCatalogProvider(
             indexURL: URL(string: "https://skills.sh/index.json")!
         )
+        let harnessEnvironment = try makeHarnessEnvironment(
+            storagePaths: storagePaths,
+            environment: environment,
+            fileManager: fileManager
+        )
+        let existingPath = environment["PATH"] ?? ""
+        let runtimePath = prependPathEntry(
+            URL(fileURLWithPath: harnessEnvironment.wrapperPath, isDirectory: false)
+                .deletingLastPathComponent()
+                .path,
+            toPath: existingPath
+        )
         let runtime = CodexRuntime(
             environmentOverrides: [
                 "CODEX_HOME": storagePaths.codexHomeURL.path,
-                "PATH": environment["PATH"] ?? "",
+                "CODEXCHAT_HARNESS_SOCKET": harnessEnvironment.socketPath,
+                "CODEXCHAT_HARNESS_SESSION_TOKEN": harnessEnvironment.sessionToken,
+                "CODEXCHAT_HARNESS_WRAPPER_PATH": harnessEnvironment.wrapperPath,
+                "PATH": runtimePath,
             ]
         )
 
@@ -227,8 +243,222 @@ public enum CodexChatBootstrap {
             runtime: runtime,
             skillCatalogService: skillCatalogService,
             skillCatalogProvider: skillCatalogProvider,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            harnessEnvironment: harnessEnvironment
         )
+    }
+
+    private static func makeHarnessEnvironment(
+        storagePaths: CodexChatStoragePaths,
+        environment: [String: String],
+        fileManager: FileManager
+    ) throws -> ComputerActionHarnessEnvironment {
+        let harnessRootURL = storagePaths.systemURL
+            .appendingPathComponent("computer-action-harness", isDirectory: true)
+        try fileManager.createDirectory(at: harnessRootURL, withIntermediateDirectories: true)
+
+        let wrapperPath = try ensureHarnessWrapperCommand(
+            storagePaths: storagePaths,
+            environment: environment,
+            fileManager: fileManager
+        )
+        return ComputerActionHarnessEnvironment(
+            socketPath: harnessRootURL.appendingPathComponent("harness.sock", isDirectory: false).path,
+            sessionToken: UUID().uuidString.lowercased(),
+            wrapperPath: wrapperPath
+        )
+    }
+
+    private static func ensureHarnessWrapperCommand(
+        storagePaths: CodexChatStoragePaths,
+        environment: [String: String],
+        fileManager: FileManager
+    ) throws -> String {
+        let wrapperDirectory = storagePaths.systemURL
+            .appendingPathComponent("bin", isDirectory: true)
+        try fileManager.createDirectory(at: wrapperDirectory, withIntermediateDirectories: true)
+
+        let wrapperURL = wrapperDirectory.appendingPathComponent("codexchat-action", isDirectory: false)
+        let script = harnessWrapperScriptContent(environment: environment)
+
+        if let existing = try? String(contentsOf: wrapperURL, encoding: .utf8),
+           existing == script
+        {
+            try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: wrapperURL.path)
+            return wrapperURL.path
+        }
+
+        try script.write(to: wrapperURL, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: wrapperURL.path)
+        return wrapperURL.path
+    }
+
+    private static func harnessWrapperScriptContent(environment: [String: String]) -> String {
+        let pythonPath = resolvePythonPath(environment: environment)
+        return """
+        #!/bin/sh
+        exec "\(pythonPath)" - <<'PYTHON' "$@"
+        import argparse
+        import json
+        import os
+        import socket
+        import sys
+        import uuid
+
+
+        def emit(payload):
+            sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\\n")
+
+
+        parser = argparse.ArgumentParser(prog="codexchat-action")
+        subparsers = parser.add_subparsers(dest="command")
+        invoke = subparsers.add_parser("invoke")
+        invoke.add_argument("--run-token", required=True)
+        invoke.add_argument("--action-id", required=True)
+        invoke.add_argument("--arguments-json", default="{}")
+        invoke.add_argument("--request-id")
+
+        args = parser.parse_args()
+
+        if args.command != "invoke":
+            emit(
+                {
+                    "requestID": "",
+                    "status": "invalid",
+                    "summary": "Unsupported command.",
+                    "errorCode": "unsupported_command",
+                    "errorMessage": "Use: codexchat-action invoke ...",
+                }
+            )
+            sys.exit(2)
+
+        socket_path = os.getenv("CODEXCHAT_HARNESS_SOCKET", "").strip()
+        session_token = os.getenv("CODEXCHAT_HARNESS_SESSION_TOKEN", "").strip()
+        if not socket_path or not session_token:
+            emit(
+                {
+                    "requestID": args.request_id or "",
+                    "status": "unauthorized",
+                    "summary": "Harness session is not configured.",
+                    "errorCode": "missing_harness_environment",
+                    "errorMessage": "Missing CODEXCHAT_HARNESS_SOCKET or CODEXCHAT_HARNESS_SESSION_TOKEN.",
+                }
+            )
+            sys.exit(3)
+
+        try:
+            parsed_arguments = json.loads(args.arguments_json)
+            if not isinstance(parsed_arguments, dict):
+                raise ValueError("arguments json must decode to an object")
+        except Exception as exc:
+            emit(
+                {
+                    "requestID": args.request_id or "",
+                    "status": "invalid",
+                    "summary": "Invalid arguments json.",
+                    "errorCode": "invalid_arguments_json",
+                    "errorMessage": str(exc),
+                }
+            )
+            sys.exit(2)
+
+        request_id = args.request_id or str(uuid.uuid4()).lower()
+        request = {
+            "protocolVersion": 1,
+            "requestID": request_id,
+            "sessionToken": session_token,
+            "runToken": args.run_token,
+            "actionID": args.action_id,
+            "argumentsJson": json.dumps(parsed_arguments, separators=(",", ":")),
+        }
+
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.connect(socket_path)
+                client.sendall((json.dumps(request, separators=(",", ":")) + "\\n").encode("utf-8"))
+                data = b""
+                while not data.endswith(b"\\n"):
+                    chunk = client.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                    if len(data) > 131072:
+                        break
+        except Exception as exc:
+            emit(
+                {
+                    "requestID": request_id,
+                    "status": "invalid",
+                    "summary": "Failed to invoke harness endpoint.",
+                    "errorCode": "transport_error",
+                    "errorMessage": str(exc),
+                }
+            )
+            sys.exit(4)
+
+        if not data:
+            emit(
+                {
+                    "requestID": request_id,
+                    "status": "invalid",
+                    "summary": "Harness returned no response.",
+                    "errorCode": "empty_response",
+                    "errorMessage": "No response received from harness socket.",
+                }
+            )
+            sys.exit(4)
+
+        line = data.splitlines()[0] if b"\\n" in data else data
+        try:
+            response = json.loads(line.decode("utf-8"))
+        except Exception as exc:
+            emit(
+                {
+                    "requestID": request_id,
+                    "status": "invalid",
+                    "summary": "Harness returned invalid JSON.",
+                    "errorCode": "invalid_response_json",
+                    "errorMessage": str(exc),
+                }
+            )
+            sys.exit(4)
+
+        emit(response)
+        status = response.get("status")
+        if status in {"executed", "queued_for_approval"}:
+            sys.exit(0)
+        sys.exit(1)
+        PYTHON
+        """
+    }
+
+    private static func resolvePythonPath(environment: [String: String]) -> String {
+        let configuredPath = environment["PATH"] ?? ""
+        for pathEntry in configuredPath.split(separator: ":").map(String.init) {
+            let candidate = URL(fileURLWithPath: pathEntry, isDirectory: true)
+                .appendingPathComponent("python3", isDirectory: false)
+                .path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return "/usr/bin/python3"
+    }
+
+    private static func prependPathEntry(_ entry: String, toPath existingPath: String) -> String {
+        guard !entry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return existingPath
+        }
+
+        if existingPath.isEmpty {
+            return entry
+        }
+
+        let currentEntries = existingPath.split(separator: ":").map(String.init)
+        if currentEntries.contains(entry) {
+            return existingPath
+        }
+        return "\(entry):\(existingPath)"
     }
 
     private static func codexExecutablePath(
@@ -260,6 +490,7 @@ private extension CodexChatBootstrap {
         let skillCatalogService: SkillCatalogService
         let skillCatalogProvider: any SkillCatalogProvider
         let storagePaths: CodexChatStoragePaths
+        let harnessEnvironment: ComputerActionHarnessEnvironment
     }
 
     struct ReproFixture: Codable {

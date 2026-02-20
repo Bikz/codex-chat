@@ -322,6 +322,122 @@ final class CodexComputerActionsTests: XCTestCase {
         }
     }
 
+    func testCalendarCreateUpdateDeleteActions() async throws {
+        let now = Date(timeIntervalSince1970: 1_735_660_800)
+        let existing = CalendarEvent(
+            id: "evt_existing",
+            title: "Existing Event",
+            calendarName: "Work",
+            startAt: now.addingTimeInterval(7200),
+            endAt: now.addingTimeInterval(10800),
+            isAllDay: false
+        )
+        let store = MockCalendarMutationStore(initialEvents: [existing])
+
+        let createAction = CalendarCreateAction(store: store)
+        let createRequest = ComputerActionRequest(
+            runContextID: "calendar-create",
+            arguments: [
+                "title": "Planning Session",
+                "startAt": "2025-01-20T05:00:00Z",
+                "endAt": "2025-01-20T06:00:00Z",
+                "calendarName": "Work",
+            ]
+        )
+
+        let createPreview = try await createAction.preview(request: createRequest)
+        XCTAssertEqual(createPreview.actionID, "calendar.create")
+        XCTAssertTrue(createPreview.summary.contains("Ready to create"))
+
+        let createResult = try await createAction.execute(request: createRequest, preview: createPreview)
+        XCTAssertTrue(createResult.summary.contains("Created"))
+
+        let createdEventID = try XCTUnwrap(createResult.metadata["eventID"])
+        let updatedAction = CalendarUpdateAction(store: store)
+        let updateRequest = ComputerActionRequest(
+            runContextID: "calendar-update",
+            arguments: [
+                "eventID": createdEventID,
+                "title": "Planning Session Updated",
+            ]
+        )
+
+        let updatePreview = try await updatedAction.preview(request: updateRequest)
+        XCTAssertEqual(updatePreview.actionID, "calendar.update")
+        XCTAssertTrue(updatePreview.summary.contains("Ready to update"))
+
+        let updateResult = try await updatedAction.execute(request: updateRequest, preview: updatePreview)
+        XCTAssertTrue(updateResult.summary.contains("Updated"))
+
+        let deleteAction = CalendarDeleteAction(store: store)
+        let deleteRequest = ComputerActionRequest(
+            runContextID: "calendar-delete",
+            arguments: ["eventID": createdEventID]
+        )
+
+        let deletePreview = try await deleteAction.preview(request: deleteRequest)
+        XCTAssertEqual(deletePreview.actionID, "calendar.delete")
+        XCTAssertTrue(deletePreview.summary.contains("Ready to delete"))
+
+        let deleteResult = try await deleteAction.execute(request: deleteRequest, preview: deletePreview)
+        XCTAssertTrue(deleteResult.summary.contains("Deleted"))
+    }
+
+    func testFilesReadAndMoveActions() async throws {
+        let root = try makeTempDirectory(prefix: "files-actions")
+        let sourceDirectory = root.appendingPathComponent("source", isDirectory: true)
+        let destinationDirectory = root.appendingPathComponent("destination", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
+        let sourceFile = sourceDirectory.appendingPathComponent("notes.txt", isDirectory: false)
+        try Data("hello".utf8).write(to: sourceFile)
+
+        let readAction = FilesReadAction()
+        let readFilePreview = try await readAction.preview(
+            request: ComputerActionRequest(
+                runContextID: "files-read-file",
+                arguments: ["path": sourceFile.path]
+            )
+        )
+        XCTAssertEqual(readFilePreview.actionID, "files.read")
+        XCTAssertEqual(readFilePreview.data["mode"], "file")
+
+        let readDirectoryPreview = try await readAction.preview(
+            request: ComputerActionRequest(
+                runContextID: "files-read-dir",
+                arguments: ["path": sourceDirectory.path]
+            )
+        )
+        XCTAssertEqual(readDirectoryPreview.actionID, "files.read")
+        XCTAssertEqual(readDirectoryPreview.data["mode"], "directory")
+
+        let moveAction = FilesMoveAction()
+        let moveRequest = ComputerActionRequest(
+            runContextID: "files-move",
+            arguments: [
+                "sourcePath": sourceFile.path,
+                "destinationPath": destinationDirectory.path,
+                "collisionPolicy": "error",
+            ],
+            artifactDirectoryPath: root.path
+        )
+
+        let movePreview = try await moveAction.preview(request: moveRequest)
+        XCTAssertEqual(movePreview.actionID, "files.move")
+        XCTAssertTrue(movePreview.summary.contains("Ready to move"))
+
+        let moveResult = try await moveAction.execute(request: moveRequest, preview: movePreview)
+        XCTAssertTrue(moveResult.summary.contains("Moved"))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourceFile.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: destinationDirectory.appendingPathComponent("notes.txt", isDirectory: false).path
+            )
+        )
+    }
+
     private func makeTempDirectory(prefix: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
@@ -421,5 +537,67 @@ private actor MockOsaScriptRunner: OsaScriptCommandRunning {
 
     func calls() -> [Call] {
         recordedCalls
+    }
+}
+
+private actor MockCalendarMutationStore: CalendarEventMutationStore {
+    private var eventsByID: [String: CalendarEvent]
+
+    init(initialEvents: [CalendarEvent]) {
+        var index: [String: CalendarEvent] = [:]
+        for event in initialEvents {
+            index[event.id] = event
+        }
+        eventsByID = index
+    }
+
+    func events(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        eventsByID.values.filter { event in
+            start < event.endAt && event.startAt < end
+        }
+    }
+
+    func event(withID id: String) async throws -> CalendarEvent? {
+        eventsByID[id]
+    }
+
+    func createEvent(_ draft: CalendarEventDraft) async throws -> CalendarEvent {
+        let event = CalendarEvent(
+            id: UUID().uuidString.lowercased(),
+            title: draft.title,
+            calendarName: draft.calendarName ?? "Default",
+            startAt: draft.startAt,
+            endAt: draft.endAt,
+            isAllDay: draft.isAllDay,
+            location: draft.location,
+            notes: draft.notes
+        )
+        eventsByID[event.id] = event
+        return event
+    }
+
+    func updateEvent(id: String, draft: CalendarEventDraft) async throws -> CalendarEvent {
+        guard eventsByID[id] != nil else {
+            throw ComputerActionError.invalidArguments("Calendar event not found.")
+        }
+        let event = CalendarEvent(
+            id: id,
+            title: draft.title,
+            calendarName: draft.calendarName ?? "Default",
+            startAt: draft.startAt,
+            endAt: draft.endAt,
+            isAllDay: draft.isAllDay,
+            location: draft.location,
+            notes: draft.notes
+        )
+        eventsByID[id] = event
+        return event
+    }
+
+    func deleteEvent(id: String) async throws -> CalendarEvent {
+        guard let removed = eventsByID.removeValue(forKey: id) else {
+            throw ComputerActionError.invalidArguments("Calendar event not found.")
+        }
+        return removed
     }
 }

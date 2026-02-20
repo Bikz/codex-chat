@@ -392,6 +392,11 @@ extension AppModel {
             runtimeTurnID: request.turnID
         )
 
+        if shouldAutoApproveTrustedHarnessCommand(request) {
+            autoApproveTrustedHarnessCommand(request, localThreadID: localThreadID)
+            return
+        }
+
         guard let localThreadID else {
             if !unscopedApprovalRequests.contains(where: { $0.id == request.id }) {
                 unscopedApprovalRequests.append(request)
@@ -402,6 +407,74 @@ extension AppModel {
         }
 
         presentApprovalRequest(request, localThreadID: localThreadID)
+    }
+
+    func shouldAutoApproveTrustedHarnessCommand(_ request: RuntimeApprovalRequest) -> Bool {
+        guard request.kind == .commandExecution else {
+            return false
+        }
+        guard let environment = effectiveComputerActionHarnessEnvironment() else {
+            return false
+        }
+        let command = request.command
+        guard command.count == 8 else {
+            return false
+        }
+        guard command[0] == environment.wrapperPath,
+              command[1] == "invoke",
+              command[2] == "--run-token",
+              !command[3].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              command[4] == "--action-id",
+              !command[5].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              command[6] == "--arguments-json",
+              !command[7].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return false
+        }
+        return true
+    }
+
+    private func autoApproveTrustedHarnessCommand(_ request: RuntimeApprovalRequest, localThreadID: UUID?) {
+        guard let runtimePool else {
+            if let localThreadID {
+                presentApprovalRequest(request, localThreadID: localThreadID)
+            } else if !unscopedApprovalRequests.contains(where: { $0.id == request.id }) {
+                unscopedApprovalRequests.append(request)
+                syncApprovalPresentationState()
+            }
+            return
+        }
+
+        appendLog(.info, "Auto-approving trusted computer action harness command approval \(request.id).")
+        if let localThreadID {
+            appendEntry(
+                .actionCard(
+                    ActionCard(
+                        threadID: localThreadID,
+                        method: request.method,
+                        title: "Trusted harness command auto-approved",
+                        detail: approvalSummary(for: request)
+                    )
+                ),
+                to: localThreadID
+            )
+            markThreadUnreadIfNeeded(localThreadID)
+        }
+
+        Task {
+            do {
+                try await runtimePool.respondToApproval(requestID: request.id, decision: .approveOnce)
+                requestAutoDrain(reason: "trusted harness command approved")
+            } catch {
+                appendLog(.warning, "Trusted harness auto-approval failed (\(request.id)): \(error.localizedDescription)")
+                if let localThreadID {
+                    presentApprovalRequest(request, localThreadID: localThreadID)
+                } else if !unscopedApprovalRequests.contains(where: { $0.id == request.id }) {
+                    unscopedApprovalRequests.append(request)
+                }
+                syncApprovalPresentationState()
+            }
+        }
     }
 
     private func presentApprovalRequest(_ request: RuntimeApprovalRequest, localThreadID: UUID) {

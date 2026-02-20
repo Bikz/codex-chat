@@ -34,6 +34,139 @@ struct InlineApprovalRequestView: View {
     }
 }
 
+struct InlineUserApprovalRequestView: View {
+    @ObservedObject var model: AppModel
+    let request: AppModel.UserApprovalRequest
+    @Binding var permissionRecoveryDetailsNotice: AppModel.PermissionRecoveryNotice?
+
+    var body: some View {
+        switch request {
+        case let .runtimeApproval(runtimeRequest):
+            InlineApprovalRequestView(model: model, request: runtimeRequest)
+        case let .computerActionPreview(preview):
+            InlineComputerActionPreviewApprovalView(model: model, preview: preview)
+        case let .permissionRecovery(notice):
+            InlinePermissionRecoveryApprovalView(
+                model: model,
+                notice: notice,
+                permissionRecoveryDetailsNotice: $permissionRecoveryDetailsNotice
+            )
+        }
+    }
+}
+
+private struct InlineComputerActionPreviewApprovalView: View {
+    @ObservedObject var model: AppModel
+    let preview: AppModel.PendingComputerActionPreview
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Approval Required")
+                .font(.title3.weight(.semibold))
+
+            Text(preview.providerDisplayName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            MarkdownMessageView(
+                text: preview.artifact.detailsMarkdown,
+                allowsExternalContent: false
+            )
+            .font(.callout)
+            .textSelection(.enabled)
+            .frame(maxHeight: 180, alignment: .topLeading)
+
+            if let status = model.computerActionStatusMessage,
+               !status.isEmpty
+            {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Button("Cancel") {
+                    model.cancelPendingComputerActionPreview()
+                }
+                .buttonStyle(.bordered)
+
+                Button(preview.requiresConfirmation ? "Confirm Run" : "Run") {
+                    model.confirmPendingComputerActionPreview()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .disabled(model.isComputerActionExecutionInProgress)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            Color.primary.opacity(tokens.surfaces.baseOpacity),
+            in: RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+        )
+    }
+}
+
+private struct InlinePermissionRecoveryApprovalView: View {
+    @ObservedObject var model: AppModel
+    let notice: AppModel.PermissionRecoveryNotice
+    @Binding var permissionRecoveryDetailsNotice: AppModel.PermissionRecoveryNotice?
+    @Environment(\.designTokens) private var tokens
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(notice.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(notice.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                Button("Open Settings") {
+                    model.openPermissionRecoverySettings(for: notice.target)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button("Details") {
+                    permissionRecoveryDetailsNotice = notice
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button("Dismiss") {
+                    model.dismissPermissionRecoveryNotice()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+            }
+            .font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            Color.primary.opacity(tokens.surfaces.baseOpacity),
+            in: RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
+                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+        )
+    }
+}
+
 private struct ApprovalRequestDialogContent: View {
     @ObservedObject var model: AppModel
     let request: RuntimeApprovalRequest

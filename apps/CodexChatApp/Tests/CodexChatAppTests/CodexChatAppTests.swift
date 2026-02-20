@@ -1,6 +1,7 @@
 import CodexChatCore
 import CodexChatInfra
 @testable import CodexChatShared
+import CodexComputerActions
 import CodexKit
 import CodexMemory
 import CodexMods
@@ -638,6 +639,165 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testPermissionRecoveryNoticeFromPreviewFailureIsThreadScoped() async {
+        let registry = ComputerActionRegistry(
+            calendarToday: CalendarTodayAction(
+                eventSource: PreviewPermissionDeniedCalendarSource()
+            )
+        )
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            computerActionRegistry: registry
+        )
+        let threadID = UUID()
+        let projectID = UUID()
+
+        do {
+            try await model.runNativeComputerAction(
+                actionID: "calendar.today",
+                arguments: [:],
+                threadID: threadID,
+                projectID: projectID
+            )
+            XCTFail("Expected permission denied error")
+        } catch {}
+
+        XCTAssertEqual(model.permissionRecoveryNotice?.threadID, threadID)
+        XCTAssertEqual(model.permissionRecoveryNotice?.target, .calendars)
+        XCTAssertTrue(model.hasPendingApproval(for: threadID))
+    }
+
+    @MainActor
+    func testPermissionRecoveryNoticeFromExecuteFailureIsThreadScoped() async throws {
+        let registry = ComputerActionRegistry(
+            messagesSend: MessagesSendAction(sender: ExecutePermissionDeniedMessagesSender())
+        )
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            computerActionRegistry: registry
+        )
+        model.computerActionPermissionPromptHandler = { _, _ in true }
+
+        let threadID = UUID()
+        let projectID = UUID()
+
+        try await model.runNativeComputerAction(
+            actionID: "messages.send",
+            arguments: [
+                "recipient": "+15551234567",
+                "body": "Hi",
+            ],
+            threadID: threadID,
+            projectID: projectID
+        )
+        XCTAssertNotNil(model.pendingComputerActionPreview)
+
+        model.confirmPendingComputerActionPreview()
+        try await waitUntil {
+            model.permissionRecoveryNotice != nil
+        }
+
+        XCTAssertEqual(model.permissionRecoveryNotice?.threadID, threadID)
+        XCTAssertEqual(model.permissionRecoveryNotice?.target, .automation)
+        XCTAssertTrue(model.hasPendingApproval(for: threadID))
+    }
+
+    @MainActor
+    func testTrustedHarnessCommandMatcherRequiresExactWrapperShape() {
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            harnessEnvironment: ComputerActionHarnessEnvironment(
+                socketPath: "/tmp/codexchat-harness.sock",
+                sessionToken: "session-token",
+                wrapperPath: "/tmp/codexchat-action"
+            )
+        )
+
+        let trusted = RuntimeApprovalRequest(
+            id: 999,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: "w0|thread",
+            turnID: "w0|turn",
+            itemID: nil,
+            reason: nil,
+            risk: nil,
+            cwd: "/tmp",
+            command: [
+                "/tmp/codexchat-action",
+                "invoke",
+                "--run-token",
+                "run-token",
+                "--action-id",
+                "calendar.today",
+                "--arguments-json",
+                "{\"rangeHours\":\"24\"}",
+            ],
+            changes: [],
+            detail: "{}"
+        )
+        XCTAssertTrue(model.shouldAutoApproveTrustedHarnessCommand(trusted))
+
+        let untrustedPath = RuntimeApprovalRequest(
+            id: 1000,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: "w0|thread",
+            turnID: "w0|turn",
+            itemID: nil,
+            reason: nil,
+            risk: nil,
+            cwd: "/tmp",
+            command: [
+                "/usr/local/bin/codexchat-action",
+                "invoke",
+                "--run-token",
+                "run-token",
+                "--action-id",
+                "calendar.today",
+                "--arguments-json",
+                "{\"rangeHours\":\"24\"}",
+            ],
+            changes: [],
+            detail: "{}"
+        )
+        XCTAssertFalse(model.shouldAutoApproveTrustedHarnessCommand(untrustedPath))
+
+        let untrustedShape = RuntimeApprovalRequest(
+            id: 1001,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: "w0|thread",
+            turnID: "w0|turn",
+            itemID: nil,
+            reason: nil,
+            risk: nil,
+            cwd: "/tmp",
+            command: [
+                "/tmp/codexchat-action",
+                "invoke",
+                "--run-token",
+                "run-token",
+                "--action-id",
+                "calendar.today",
+                "--arguments-json",
+                "{\"rangeHours\":\"24\"}",
+                "--extra",
+                "value",
+            ],
+            changes: [],
+            detail: "{}"
+        )
+        XCTAssertFalse(model.shouldAutoApproveTrustedHarnessCommand(untrustedShape))
+    }
+
+    @MainActor
     func testUnscopedApprovalsQueueWithoutOverwritingEarlierRequest() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let first = makeUnscopedApprovalRequest(id: 301)
@@ -1095,32 +1255,6 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(model.effectiveWebSearchMode(preferred: .live, projectPolicy: .cached), .cached)
         XCTAssertEqual(model.effectiveWebSearchMode(preferred: .live, projectPolicy: .disabled), .disabled)
         XCTAssertEqual(model.effectiveWebSearchMode(preferred: .disabled, projectPolicy: .live), .disabled)
-    }
-
-    @MainActor
-    func testShouldRetryWithoutTurnOptionsForUnsupportedModelOrReasoning() {
-        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
-
-        XCTAssertTrue(
-            model.shouldRetryWithoutTurnOptions(
-                CodexRuntimeError.rpcError(code: -32602, message: "Unknown model: custom-model")
-            )
-        )
-        XCTAssertTrue(
-            model.shouldRetryWithoutTurnOptions(
-                CodexRuntimeError.rpcError(code: -32602, message: "Invalid effort value")
-            )
-        )
-        XCTAssertTrue(
-            model.shouldRetryWithoutTurnOptions(
-                CodexRuntimeError.rpcError(code: -32600, message: "unsupported value for reasoning.effort")
-            )
-        )
-        XCTAssertFalse(
-            model.shouldRetryWithoutTurnOptions(
-                CodexRuntimeError.rpcError(code: -32601, message: "Unknown method")
-            )
-        )
     }
 
     @MainActor
@@ -2570,6 +2704,22 @@ final class CodexChatAppTests: XCTestCase {
             definition: definition,
             computedChecksum: nil
         )
+    }
+
+    private struct PreviewPermissionDeniedCalendarSource: CalendarEventSource {
+        func events(from _: Date, to _: Date) async throws -> [CalendarEvent] {
+            throw ComputerActionError.permissionDenied(
+                "Calendar access is denied. Enable Calendar permissions in System Settings > Privacy & Security > Calendars."
+            )
+        }
+    }
+
+    private struct ExecutePermissionDeniedMessagesSender: MessagesSender {
+        func send(message _: String, to _: String) async throws {
+            throw ComputerActionError.permissionDenied(
+                "Messages send failed. Check Messages permissions in System Settings > Privacy & Security > Automation."
+            )
+        }
     }
 
     @MainActor

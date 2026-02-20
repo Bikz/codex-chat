@@ -331,6 +331,7 @@ final class AppModel: ObservableObject {
     struct PermissionRecoveryNotice: Identifiable, Equatable {
         let id: UUID
         let actionID: String
+        let threadID: UUID?
         let target: PermissionRecoveryTarget
         let title: String
         let message: String
@@ -339,6 +340,7 @@ final class AppModel: ObservableObject {
         init(
             id: UUID = UUID(),
             actionID: String,
+            threadID: UUID? = nil,
             target: PermissionRecoveryTarget,
             title: String,
             message: String,
@@ -346,10 +348,28 @@ final class AppModel: ObservableObject {
         ) {
             self.id = id
             self.actionID = actionID
+            self.threadID = threadID
             self.target = target
             self.title = title
             self.message = message
             self.remediationSteps = remediationSteps
+        }
+    }
+
+    enum UserApprovalRequest: Identifiable, Equatable {
+        case runtimeApproval(RuntimeApprovalRequest)
+        case computerActionPreview(PendingComputerActionPreview)
+        case permissionRecovery(PermissionRecoveryNotice)
+
+        var id: String {
+            switch self {
+            case let .runtimeApproval(request):
+                "runtime:\(request.id)"
+            case let .computerActionPreview(preview):
+                "computer:\(preview.id)"
+            case let .permissionRecovery(notice):
+                "permission:\(notice.id.uuidString)"
+            }
         }
     }
 
@@ -729,6 +749,9 @@ final class AppModel: ObservableObject {
     var runtimeEventTraceSampleCounter: UInt64 = 0
     var workerTraceByActionFingerprint: [String: WorkerTraceEntry] = [:]
     var computerActionPermissionPromptHandler: ((String, ComputerActionSafetyLevel) -> Bool)?
+    var computerActionHarnessEnvironment: ComputerActionHarnessEnvironment?
+    var computerActionHarnessServer: ComputerActionHarnessServer?
+    var harnessRunContextByToken: [String: HarnessRunContext] = [:]
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
     var watchedProjectModsRootPath: String?
@@ -746,7 +769,8 @@ final class AppModel: ObservableObject {
         modDiscoveryService: UIModDiscoveryService = UIModDiscoveryService(),
         modCatalogProvider: any ModCatalogProvider = EmptyModCatalogProvider(),
         voiceCaptureService: (any VoiceCaptureService)? = nil,
-        storagePaths: CodexChatStoragePaths = .current()
+        storagePaths: CodexChatStoragePaths = .current(),
+        harnessEnvironment: ComputerActionHarnessEnvironment? = nil
     ) {
         projectRepository = repositories?.projectRepository
         threadRepository = repositories?.threadRepository
@@ -772,6 +796,7 @@ final class AppModel: ObservableObject {
         self.modDiscoveryService = modDiscoveryService
         self.modCatalogProvider = modCatalogProvider
         self.storagePaths = storagePaths
+        computerActionHarnessEnvironment = harnessEnvironment
         self.voiceCaptureService = voiceCaptureService ?? AppleSpeechVoiceCaptureService()
         storageRootPath = storagePaths.rootURL.path
         keychainStore = APIKeychainStore()
@@ -840,6 +865,9 @@ final class AppModel: ObservableObject {
         globalModsWatcher = nil
         projectModsWatcher?.stop()
         projectModsWatcher = nil
+        computerActionHarnessServer?.stop()
+        computerActionHarnessServer = nil
+        harnessRunContextByToken.removeAll(keepingCapacity: false)
 
         if let runtimePoolForLoginCancellation, let pendingLoginID {
             Task {
@@ -899,6 +927,8 @@ final class AppModel: ObservableObject {
         userThemePersistenceTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
+        computerActionHarnessServer?.stop()
+        computerActionHarnessServer = nil
 
         if let runtimePoolForLoginCancellation, let pendingLoginID {
             Task {
@@ -976,19 +1006,61 @@ final class AppModel: ObservableObject {
         return approvalStateMachine.pendingRequest(for: selectedThreadID)
     }
 
+    var pendingComputerActionPreviewForSelectedThread: PendingComputerActionPreview? {
+        guard let selectedThreadID,
+              let preview = pendingComputerActionPreview,
+              preview.threadID == selectedThreadID
+        else {
+            return nil
+        }
+        return preview
+    }
+
+    var pendingPermissionRecoveryForSelectedThread: PermissionRecoveryNotice? {
+        guard let selectedThreadID,
+              let notice = permissionRecoveryNotice,
+              notice.threadID == selectedThreadID
+        else {
+            return nil
+        }
+        return notice
+    }
+
+    var pendingUserApprovalForSelectedThread: UserApprovalRequest? {
+        if let runtimeApproval = pendingApprovalForSelectedThread {
+            return .runtimeApproval(runtimeApproval)
+        }
+        if let computerActionPreview = pendingComputerActionPreviewForSelectedThread {
+            return .computerActionPreview(computerActionPreview)
+        }
+        if let permissionRecovery = pendingPermissionRecoveryForSelectedThread {
+            return .permissionRecovery(permissionRecovery)
+        }
+        return nil
+    }
+
     var hasPendingApprovalForSelectedThread: Bool {
-        pendingApprovalForSelectedThread != nil
+        pendingUserApprovalForSelectedThread != nil
     }
 
     var isSelectedThreadApprovalInProgress: Bool {
-        guard let request = pendingApprovalForSelectedThread else {
-            return false
+        if let request = pendingApprovalForSelectedThread {
+            return approvalDecisionInFlightRequestIDs.contains(request.id)
         }
-        return approvalDecisionInFlightRequestIDs.contains(request.id)
+        return isComputerActionExecutionInProgress
     }
 
     func hasPendingApproval(for threadID: UUID) -> Bool {
-        approvalStateMachine.pendingRequest(for: threadID) != nil
+        if approvalStateMachine.pendingRequest(for: threadID) != nil {
+            return true
+        }
+        if pendingComputerActionPreview?.threadID == threadID {
+            return true
+        }
+        if permissionRecoveryNotice?.threadID == threadID {
+            return true
+        }
+        return false
     }
 
     var canSendMessages: Bool {
@@ -1582,7 +1654,17 @@ final class AppModel: ObservableObject {
     }
 
     func syncApprovalPresentationState() {
-        pendingApprovalThreadIDs = approvalStateMachine.pendingThreadIDs
+        var combinedPendingThreadIDs = approvalStateMachine.pendingThreadIDs
+        if let preview = pendingComputerActionPreview {
+            combinedPendingThreadIDs.insert(preview.threadID)
+        }
+        if let notice = permissionRecoveryNotice,
+           let threadID = notice.threadID
+        {
+            combinedPendingThreadIDs.insert(threadID)
+        }
+
+        pendingApprovalThreadIDs = combinedPendingThreadIDs
         if let selectedThreadRequest = pendingApprovalForSelectedThread {
             activeApprovalRequest = selectedThreadRequest
         } else {
