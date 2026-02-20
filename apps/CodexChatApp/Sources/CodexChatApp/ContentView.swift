@@ -20,6 +20,18 @@ struct ContentView: View {
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
             if !model.isOnboardingActive {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        toggleSidebarVisibility()
+                    } label: {
+                        Label("Toggle Sidebar", systemImage: "sidebar.left")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Toggle sidebar")
+                    .help("Toggle sidebar")
+                    .keyboardShortcut("s", modifiers: [.command, .option])
+                }
+
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
                         model.openReviewChanges()
@@ -169,6 +181,25 @@ struct ContentView: View {
 
     private func syncSplitViewVisibility(isOnboardingActive: Bool) {
         splitViewVisibility = isOnboardingActive ? .detailOnly : .all
+    }
+
+    private func toggleSidebarVisibility() {
+        withAnimation(.easeInOut(duration: tokens.motion.transitionDuration)) {
+            splitViewVisibility = Self.nextSplitViewVisibility(
+                current: splitViewVisibility,
+                isOnboardingActive: model.isOnboardingActive
+            )
+        }
+    }
+
+    static func nextSplitViewVisibility(
+        current: NavigationSplitViewVisibility,
+        isOnboardingActive: Bool
+    ) -> NavigationSplitViewVisibility {
+        guard !isOnboardingActive else {
+            return .detailOnly
+        }
+        return current == .detailOnly ? .all : .detailOnly
     }
 
     private var unscopedApprovalSheetBinding: Binding<RuntimeApprovalRequest?> {
