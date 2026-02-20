@@ -100,14 +100,22 @@ enum PlanParser {
         let title: String
     }
 
-    private static let headingRegex = try! NSRegularExpression(pattern: #"^\s*#{1,6}\s+(.+?)\s*$"#)
+    private static let headingRegex = makeRegex(#"^\s*#{1,6}\s+(.+?)\s*$"#)
     private static let taskRegexes: [NSRegularExpression] = [
-        try! NSRegularExpression(pattern: #"^\s*[-*]\s*(?:\[[ xX]\]\s*)?(?:Task\s+)?([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*)[:.)-]?\s+(.+?)\s*$"#),
-        try! NSRegularExpression(pattern: #"^\s*\d+[.)]\s*(?:Task\s+)?([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*)[:.)-]?\s+(.+?)\s*$"#),
-        try! NSRegularExpression(pattern: #"^\s*Task\s+([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*)[:.)-]?\s+(.+?)\s*$"#),
+        makeRegex(#"^\s*[-*]\s*(?:\[[ xX]\]\s*)?(?:Task\s+)?([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*)[:.)-]?\s+(.+?)\s*$"#),
+        makeRegex(#"^\s*\d+[.)]\s*(?:Task\s+)?([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*)[:.)-]?\s+(.+?)\s*$"#),
+        makeRegex(#"^\s*Task\s+([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*)[:.)-]?\s+(.+?)\s*$"#),
     ]
-    private static let dependencyRegex = try! NSRegularExpression(pattern: #"(?i)\b(?:depends\s+on|dependencies?)\s*[:=-]\s*(.+)$"#)
-    private static let taskIDTokenRegex = try! NSRegularExpression(pattern: #"[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*"#)
+    private static let dependencyRegex = makeRegex(#"(?i)\b(?:depends\s+on|dependencies?)\s*[:=-]\s*(.+)$"#)
+    private static let taskIDTokenRegex = makeRegex(#"[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*"#)
+
+    private static func makeRegex(_ pattern: String) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            fatalError("Invalid regex pattern '\(pattern)': \(error)")
+        }
+    }
 
     private static func parseHeading(_ line: String) -> String? {
         let range = NSRange(line.startIndex ..< line.endIndex, in: line)

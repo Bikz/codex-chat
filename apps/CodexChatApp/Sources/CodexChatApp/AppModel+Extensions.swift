@@ -431,9 +431,7 @@ extension AppModel {
     }
 
     func extensionProjectContext(forThreadID threadID: UUID) -> (projectID: UUID, projectPath: String)? {
-        if let activeTurnContext,
-           activeTurnContext.localThreadID == threadID
-        {
+        if let activeTurnContext = activeTurnContext(for: threadID) {
             return (projectID: activeTurnContext.projectID, projectPath: activeTurnContext.projectPath)
         }
 

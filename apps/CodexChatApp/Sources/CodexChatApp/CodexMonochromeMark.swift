@@ -13,8 +13,8 @@ struct CodexMonochromeMark: View {
             let xOffset = (proxy.size.width - side) / 2
             let yOffset = (proxy.size.height - side) / 2
 
-            let point: (CGFloat, CGFloat) -> CGPoint = { x, y in
-                CGPoint(x: xOffset + side * x, y: yOffset + side * y)
+            let point: (CGFloat, CGFloat) -> CGPoint = { relativeX, relativeY in
+                CGPoint(x: xOffset + side * relativeX, y: yOffset + side * relativeY)
             }
 
             ZStack {

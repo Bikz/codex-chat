@@ -310,7 +310,7 @@ private actor CaptureState {
         stopTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: nanoseconds)
             guard let self else { return }
-            await self.handleStopTimeout()
+            await handleStopTimeout()
         }
     }
 

@@ -422,7 +422,7 @@ extension AppModel {
     private func waitForPlanRunnerTurnCompletion(timeoutSeconds: TimeInterval) async throws {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
-            if !isTurnInProgress, activeTurnContext == nil {
+            if activeTurnThreadIDs.isEmpty {
                 return
             }
             try await Task.sleep(nanoseconds: 200_000_000)
