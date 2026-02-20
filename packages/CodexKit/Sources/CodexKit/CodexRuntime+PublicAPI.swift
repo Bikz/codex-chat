@@ -274,4 +274,11 @@ public extension CodexRuntime {
             seenModelIDs.insert(model.id).inserted
         }
     }
+
+    func makeSiblingRuntime() -> CodexRuntime {
+        CodexRuntime(
+            executableResolver: executableResolver,
+            environmentOverrides: environmentOverrides
+        )
+    }
 }
