@@ -55,24 +55,28 @@ extension AppModel {
                 [
                     "Open System Settings > Privacy & Security > Automation.",
                     "Enable automation access for CodexChat.",
+                    "If CodexChat is not listed yet, retry the action once in CodexChat to trigger a system permission request, then reopen this pane.",
                     "Retry the action in CodexChat.",
                 ]
             case .calendars:
                 [
                     "Open System Settings > Privacy & Security > Calendars.",
                     "Enable calendar access for CodexChat.",
+                    "If CodexChat is not listed yet, retry the action once in CodexChat to trigger a system permission request, then reopen this pane.",
                     "Retry the action in CodexChat.",
                 ]
             case .reminders:
                 [
                     "Open System Settings > Privacy & Security > Reminders.",
                     "Enable reminders access for CodexChat.",
+                    "If CodexChat is not listed yet, retry the action once in CodexChat to trigger a system permission request, then reopen this pane.",
                     "Retry the action in CodexChat.",
                 ]
             case .genericAutomation:
                 [
                     "Open System Settings > Privacy & Security and check relevant app permissions.",
                     "Enable CodexChat for Automation and any required data category (Calendars/Reminders).",
+                    "If CodexChat is not listed yet, retry the action once in CodexChat to trigger a system permission request, then reopen this pane.",
                     "Retry the action in CodexChat.",
                 ]
             }
