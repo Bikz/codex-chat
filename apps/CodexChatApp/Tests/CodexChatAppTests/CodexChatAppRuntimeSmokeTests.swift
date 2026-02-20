@@ -35,7 +35,8 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
 
         let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
             .getRuntimeThreadID(localThreadID: harness.thread.id)
-        XCTAssertEqual(mappedRuntimeThreadID, "thr_test")
+        let parsedMappedRuntimeThread = try XCTUnwrap(mappedRuntimeThreadID.flatMap(RuntimePool.parseScopedID))
+        XCTAssertEqual(parsedMappedRuntimeThread.1, "thr_test")
 
         let archiveContent: String = try await eventuallyValue(timeoutSeconds: 3.0) {
             guard let archiveURL = ChatArchiveStore.latestArchiveURL(
@@ -166,7 +167,8 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
 
         let mappedRuntimeThreadID = try await harness.repositories.runtimeThreadMappingRepository
             .getRuntimeThreadID(localThreadID: harness.thread.id)
-        XCTAssertEqual(mappedRuntimeThreadID, "thr_test")
+        let parsedMappedRuntimeThread = try XCTUnwrap(mappedRuntimeThreadID.flatMap(RuntimePool.parseScopedID))
+        XCTAssertEqual(parsedMappedRuntimeThread.1, "thr_test")
 
         harness.model.approvePendingApprovalOnce()
 

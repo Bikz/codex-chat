@@ -53,7 +53,7 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
 
         let result = try await runSimulatedHarness(
             threadCount: 5,
-            workerCount: 1,
+            workerCount: 2,
             executablePath: executablePath,
             expectedDeltaChunksPerTurn: 1
         )

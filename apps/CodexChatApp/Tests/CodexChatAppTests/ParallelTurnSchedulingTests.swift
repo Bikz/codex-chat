@@ -60,26 +60,10 @@ final class ParallelTurnSchedulingTests: XCTestCase {
 
     @MainActor
     func testActiveRuntimePoolSizeDefaultsToConfiguredSizeWithoutFlags() {
-        let shardingKey = "CODEXCHAT_RUNTIME_POOL_ENABLE_SHARDING"
-        let disableKey = "CODEXCHAT_RUNTIME_POOL_DISABLE_SHARDING"
         let sizeKey = "CODEXCHAT_RUNTIME_POOL_SIZE"
-        let previousSharding = ProcessInfo.processInfo.environment[shardingKey]
-        let previousDisable = ProcessInfo.processInfo.environment[disableKey]
         let previousSize = ProcessInfo.processInfo.environment[sizeKey]
-        unsetenv(shardingKey)
-        unsetenv(disableKey)
         setenv(sizeKey, "4", 1)
         defer {
-            if let previousSharding {
-                setenv(shardingKey, previousSharding, 1)
-            } else {
-                unsetenv(shardingKey)
-            }
-            if let previousDisable {
-                setenv(disableKey, previousDisable, 1)
-            } else {
-                unsetenv(disableKey)
-            }
             if let previousSize {
                 setenv(sizeKey, previousSize, 1)
             } else {
@@ -91,19 +75,11 @@ final class ParallelTurnSchedulingTests: XCTestCase {
     }
 
     @MainActor
-    func testActiveRuntimePoolSizeDisableOverrideForcesSingleWorker() {
-        let disableKey = "CODEXCHAT_RUNTIME_POOL_DISABLE_SHARDING"
+    func testActiveRuntimePoolSizeClampsToAtLeastTwoWorkers() {
         let sizeKey = "CODEXCHAT_RUNTIME_POOL_SIZE"
-        let previousDisable = ProcessInfo.processInfo.environment[disableKey]
         let previousSize = ProcessInfo.processInfo.environment[sizeKey]
-        setenv(disableKey, "1", 1)
-        setenv(sizeKey, "6", 1)
+        setenv(sizeKey, "1", 1)
         defer {
-            if let previousDisable {
-                setenv(disableKey, previousDisable, 1)
-            } else {
-                unsetenv(disableKey)
-            }
             if let previousSize {
                 setenv(sizeKey, previousSize, 1)
             } else {
@@ -111,19 +87,19 @@ final class ParallelTurnSchedulingTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(AppModel.activeRuntimePoolSize, 1)
+        XCTAssertEqual(AppModel.activeRuntimePoolSize, 2)
     }
 
     @MainActor
-    func testActiveRuntimePoolSizeUsesConfiguredSizeWhenExplicitlyEnabled() {
+    func testLegacyShardingFlagsDoNotDisablePoolSharding() {
         let shardingKey = "CODEXCHAT_RUNTIME_POOL_ENABLE_SHARDING"
         let disableKey = "CODEXCHAT_RUNTIME_POOL_DISABLE_SHARDING"
         let sizeKey = "CODEXCHAT_RUNTIME_POOL_SIZE"
         let previousSharding = ProcessInfo.processInfo.environment[shardingKey]
         let previousDisable = ProcessInfo.processInfo.environment[disableKey]
         let previousSize = ProcessInfo.processInfo.environment[sizeKey]
-        setenv(shardingKey, "1", 1)
-        unsetenv(disableKey)
+        setenv(shardingKey, "0", 1)
+        setenv(disableKey, "1", 1)
         setenv(sizeKey, "4", 1)
         defer {
             if let previousSharding {

@@ -11,18 +11,29 @@ final class RuntimePoolTests: XCTestCase {
         XCTAssertEqual(parsed.1, "thr_123")
     }
 
-    func testUnscopedIDFallsBackWhenInputIsNotScoped() {
-        XCTAssertEqual(RuntimePool.unscopedID("turn_abc"), "turn_abc")
-    }
-
     func testResolveRouteRejectsMalformedScopedThreadID() {
         XCTAssertThrowsError(try RuntimePool.resolveRoute(fromScopedThreadID: "not-scoped"))
     }
 
-    func testResolveRouteFromPossiblyScopedThreadIDFallsBackToPrimaryWorkerForLegacyIDs() {
-        let route = RuntimePool.resolveRoute(fromPossiblyScopedThreadID: "thr_legacy")
-        XCTAssertEqual(route.workerID, RuntimePoolWorkerID(0))
-        XCTAssertEqual(route.threadID, "thr_legacy")
+    func testResolveScopedRuntimeIDRejectsMalformedID() {
+        XCTAssertThrowsError(
+            try RuntimePool.resolveScopedRuntimeID(
+                "turn_legacy",
+                expectedWorkerID: RuntimePoolWorkerID(0),
+                kind: "turn"
+            )
+        )
+    }
+
+    func testResolveScopedRuntimeIDRejectsWrongWorker() {
+        let scopedTurnID = RuntimePool.scope(id: "turn_123", workerID: RuntimePoolWorkerID(1))
+        XCTAssertThrowsError(
+            try RuntimePool.resolveScopedRuntimeID(
+                scopedTurnID,
+                expectedWorkerID: RuntimePoolWorkerID(2),
+                kind: "turn"
+            )
+        )
     }
 
     func testConsistentWorkerIDIsDeterministicAndBounded() throws {

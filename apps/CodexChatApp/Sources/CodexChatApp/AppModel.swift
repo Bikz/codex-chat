@@ -47,11 +47,8 @@ final class AppModel: ObservableObject {
            let parsed = Int(configured),
            parsed > 0
         {
-            return max(1, min(parsed, 16))
-        }
-
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
-            return 1
+            // Runtime sharding is required for launch builds. Clamp to a multi-worker minimum.
+            return max(2, min(parsed, 16))
         }
 
         let performanceCoreCount = appleSiliconPerformanceCoreCount()
@@ -65,20 +62,8 @@ final class AppModel: ObservableObject {
     }
 
     static var activeRuntimePoolSize: Int {
-        let environment = ProcessInfo.processInfo.environment
-
-        // Explicit operator override to force single-worker mode for troubleshooting.
-        if environment["CODEXCHAT_RUNTIME_POOL_DISABLE_SHARDING"] == "1" {
-            return 1
-        }
-
-        // Backward-compatible override for older rollout toggles.
-        if environment["CODEXCHAT_RUNTIME_POOL_ENABLE_SHARDING"] == "0" {
-            return 1
-        }
-
-        // Sharding is enabled by default for production parallel throughput.
-        return defaultRuntimePoolSize
+        // Sharding is always enabled in launch mode.
+        max(2, defaultRuntimePoolSize)
     }
 
     static var runtimeEventTraceSampleRate: Int {

@@ -391,34 +391,44 @@ extension AppModel {
 
         do {
             if let cached = runtimeThreadIDByLocalThreadID[localThreadID] {
-                if let runtimePool {
-                    await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: cached)
+                if RuntimePool.parseScopedID(cached) != nil {
+                    if let runtimePool {
+                        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: cached)
+                    }
+                    await PerformanceTracer.shared.end(
+                        span,
+                        extraMetadata: ["result": "cache"]
+                    )
+                    return cached
                 }
-                await PerformanceTracer.shared.end(
-                    span,
-                    extraMetadata: ["result": "cache"]
-                )
-                return cached
+
+                runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID)
+                localThreadIDByRuntimeThreadID.removeValue(forKey: cached)
+                appendLog(.warning, "Discarded legacy unscoped runtime thread mapping from cache for \(localThreadID.uuidString)")
             }
 
             if let persisted = try await runtimeThreadMappingRepository?.getRuntimeThreadID(localThreadID: localThreadID),
                !persisted.isEmpty
             {
-                if let previous = runtimeThreadIDByLocalThreadID.updateValue(persisted, forKey: localThreadID),
-                   previous != persisted
-                {
-                    localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
+                if RuntimePool.parseScopedID(persisted) != nil {
+                    if let previous = runtimeThreadIDByLocalThreadID.updateValue(persisted, forKey: localThreadID),
+                       previous != persisted
+                    {
+                        localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
+                    }
+                    localThreadIDByRuntimeThreadID[persisted] = localThreadID
+                    if let runtimePool {
+                        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: persisted)
+                    }
+                    appendLog(.debug, "Loaded persisted runtime thread mapping for local thread \(localThreadID.uuidString)")
+                    await PerformanceTracer.shared.end(
+                        span,
+                        extraMetadata: ["result": "persisted"]
+                    )
+                    return persisted
                 }
-                localThreadIDByRuntimeThreadID[persisted] = localThreadID
-                if let runtimePool {
-                    await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: persisted)
-                }
-                appendLog(.debug, "Loaded persisted runtime thread mapping for local thread \(localThreadID.uuidString)")
-                await PerformanceTracer.shared.end(
-                    span,
-                    extraMetadata: ["result": "persisted"]
-                )
-                return persisted
+
+                appendLog(.warning, "Discarded legacy unscoped persisted runtime thread mapping for \(localThreadID.uuidString)")
             }
 
             let runtimePool = runtimePool
