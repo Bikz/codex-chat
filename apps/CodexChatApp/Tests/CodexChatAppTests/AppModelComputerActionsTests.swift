@@ -61,6 +61,28 @@ final class AppModelComputerActionsTests: XCTestCase {
         XCTAssertEqual(second, .remindersToday(rangeHours: 6))
     }
 
+    func testAdaptiveIntentParsesExpandedMessageSendPhrases() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let first = model.adaptiveIntent(for: "send an iMessage to +16502509815 saying hello from codex")
+        XCTAssertEqual(
+            first,
+            .messagesSend(recipient: "+16502509815", body: "hello from codex")
+        )
+
+        let second = model.adaptiveIntent(for: "Can you send message to Alice: Running 5 min late.")
+        XCTAssertEqual(
+            second,
+            .messagesSend(recipient: "Alice", body: "Running 5 min late.")
+        )
+
+        let third = model.adaptiveIntent(for: "please text \"Bob\" saying \"Hey there\"")
+        XCTAssertEqual(
+            third,
+            .messagesSend(recipient: "Bob", body: "Hey there")
+        )
+    }
+
     func testMaybeHandleAdaptiveIntentRoutesNativeActionsOnly() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
 
