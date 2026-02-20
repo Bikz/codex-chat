@@ -1,6 +1,6 @@
-import CodexSkills
 @testable import CodexChatShared
 import CodexKit
+import CodexSkills
 import XCTest
 
 @MainActor

@@ -240,7 +240,7 @@ extension AppModel {
         }
 
         let queryStart = text.index(after: tokenStart)
-        let query = String(text[queryStart..<text.endIndex])
+        let query = String(text[queryStart ..< text.endIndex])
         guard query.allSatisfy(\.isComposerSkillTokenCharacter) else {
             return nil
         }
