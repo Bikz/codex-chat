@@ -28,11 +28,22 @@ struct ProjectSettingsSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: tokens.spacing.small) {
-                SettingsInlineHeader(
-                    eyebrow: "Settings",
-                    title: "Project",
-                    subtitle: "Project-specific trust, safety, memory, and archived chat controls."
-                )
+                HStack(alignment: .top, spacing: tokens.spacing.small) {
+                    SettingsInlineHeader(
+                        eyebrow: "Settings",
+                        title: "Project",
+                        subtitle: "Project-specific trust, safety, memory, and archived chat controls."
+                    )
+                    Spacer(minLength: tokens.spacing.small)
+                    Button {
+                        model.closeProjectSettings()
+                    } label: {
+                        Label("Close", systemImage: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityLabel("Close Project Settings")
+                }
 
                 if let project = model.selectedProject {
                     projectSummaryCard(project)
