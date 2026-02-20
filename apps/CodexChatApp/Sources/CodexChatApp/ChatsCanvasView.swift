@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatCore
 import CodexChatUI
 import SwiftUI
@@ -72,6 +73,15 @@ struct ChatsCanvasView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
+                    toggleSidebar()
+                } label: {
+                    Label("Toggle Sidebar", systemImage: "sidebar.leading")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel("Toggle sidebar")
+                .help("Toggle sidebar")
+
+                Button {
                     model.openReviewChanges()
                 } label: {
                     Label("Review Changes", systemImage: "doc.text.magnifyingglass")
@@ -126,6 +136,7 @@ struct ChatsCanvasView: View {
                 }
             }
         }
+        .toolbar(removing: .sidebarToggle)
         .sheet(item: $permissionRecoveryDetailsNotice) { notice in
             PermissionRecoveryDetailsSheet(
                 notice: notice,
@@ -582,6 +593,10 @@ struct ChatsCanvasView: View {
         }
 
         return true
+    }
+
+    private func toggleSidebar() {
+        NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
     }
 
     private func droppedFileURLs(from providers: [NSItemProvider]) async -> [URL] {
