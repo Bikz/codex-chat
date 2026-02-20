@@ -5,7 +5,6 @@ struct ShellSplitContainerView: View {
     @ObservedObject var model: AppModel
     let projectID: UUID
     let session: ShellSessionState
-    @Environment(\.designTokens) private var tokens
 
     var body: some View {
         ShellSplitNodeView(
@@ -15,7 +14,7 @@ struct ShellSplitContainerView: View {
             activePaneID: session.activePaneID,
             node: session.rootNode
         )
-        .padding(tokens.spacing.xSmall)
+        .padding(2)
     }
 }
 

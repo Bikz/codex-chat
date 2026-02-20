@@ -33,3 +33,4 @@ This folder contains contributor-facing documentation tracked in git.
 - `apps/CodexChatApp` is shared logic + contributor CLI (`CodexChatCLI`).
 - Preferred onboarding command is `bash scripts/bootstrap.sh`.
 - Preferred OSS smoke command is `make oss-smoke`.
+- Shell workspace UI favors minimal chrome: compact multi-shell rail on the left and maximal terminal space on the right.

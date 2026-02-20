@@ -35,66 +35,7 @@ struct ShellPaneChromeView<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(pane.processStatus == .running ? Color(hex: tokens.palette.accentHex) : Color.orange)
-                    .frame(width: 8, height: 8)
-
-                Text(pane.title)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-
-                Text(pane.cwd)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Spacer(minLength: 8)
-
-                if pane.processStatus == .exited {
-                    Button {
-                        onRestart()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .frame(width: 18, height: 18)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Restart shell")
-                }
-
-                Button {
-                    onSplitHorizontal()
-                } label: {
-                    Image(systemName: "rectangle.split.2x1")
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(.borderless)
-                .help("Split horizontally")
-
-                Button {
-                    onSplitVertical()
-                } label: {
-                    Image(systemName: "rectangle.split.1x2")
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(.borderless)
-                .help("Split vertically")
-
-                Button {
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark")
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(.borderless)
-                .help("Close pane")
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 32)
-            .background(Color.primary.opacity(isActive ? tokens.surfaces.activeOpacity : tokens.surfaces.baseOpacity))
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onFocus)
+            chromeHeader
 
             Divider()
                 .opacity(tokens.surfaces.hairlineOpacity)
@@ -106,10 +47,59 @@ struct ShellPaneChromeView<Content: View>: View {
         .overlay(
             RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
                 .strokeBorder(
-                    isActive ? Color(hex: tokens.palette.accentHex).opacity(0.65) : Color.primary.opacity(0.12),
-                    lineWidth: 1
+                    isActive ? Color(hex: tokens.palette.accentHex).opacity(0.6) : Color.primary.opacity(0.08),
+                    lineWidth: isActive ? 1 : 0.8
                 )
         )
         .clipShape(RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous))
+    }
+
+    private var chromeHeader: some View {
+        HStack(spacing: 6) {
+            Button(action: onFocus) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(pane.processStatus == .running ? Color(hex: tokens.palette.accentHex) : Color.orange)
+                        .frame(width: 6, height: 6)
+
+                    Text(pane.title)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+
+                    Text(ShellPathPresentation.leafName(for: pane.cwd))
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(ShellPathPresentation.compactPath(pane.cwd))
+            .accessibilityLabel("Focus shell pane \(pane.title)")
+            .accessibilityHint("Sets this pane as active")
+
+            if pane.processStatus == .exited {
+                headerButton(symbol: "arrow.clockwise", label: "Restart shell", action: onRestart)
+            }
+
+            headerButton(symbol: "rectangle.split.2x1", label: "Split horizontally", action: onSplitHorizontal)
+            headerButton(symbol: "rectangle.split.1x2", label: "Split vertically", action: onSplitVertical)
+            headerButton(symbol: "xmark", label: "Close pane", action: onClose)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background(Color.primary.opacity(isActive ? tokens.surfaces.activeOpacity * 0.8 : tokens.surfaces.baseOpacity * 0.7))
+    }
+
+    private func headerButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 17, height: 17)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(label)
+        .help(label)
     }
 }
