@@ -1386,8 +1386,24 @@ final class AppModel: ObservableObject {
         guard var context = activeTurnContextsByThreadID[threadID] else {
             return nil
         }
+        let previousRuntimeThreadID = context.runtimeThreadID
         mutate(&context)
         activeTurnContextsByThreadID[threadID] = context
+
+        if previousRuntimeThreadID != context.runtimeThreadID,
+           !previousRuntimeThreadID.isEmpty,
+           localThreadIDByRuntimeThreadID[previousRuntimeThreadID] == threadID
+        {
+            localThreadIDByRuntimeThreadID.removeValue(forKey: previousRuntimeThreadID)
+        }
+
+        if !context.runtimeThreadID.isEmpty {
+            runtimeThreadIDByLocalThreadID[threadID] = context.runtimeThreadID
+            localThreadIDByRuntimeThreadID[context.runtimeThreadID] = threadID
+        } else if runtimeThreadIDByLocalThreadID[threadID] == previousRuntimeThreadID {
+            runtimeThreadIDByLocalThreadID.removeValue(forKey: threadID)
+        }
+
         if let runtimeTurnID = context.runtimeTurnID,
            !runtimeTurnID.isEmpty
         {
@@ -1399,7 +1415,22 @@ final class AppModel: ObservableObject {
     }
 
     func upsertActiveTurnContext(_ context: ActiveTurnContext) {
+        let previousRuntimeThreadID = activeTurnContextsByThreadID[context.localThreadID]?.runtimeThreadID
         activeTurnContextsByThreadID[context.localThreadID] = context
+
+        if previousRuntimeThreadID != context.runtimeThreadID,
+           let previousRuntimeThreadID,
+           !previousRuntimeThreadID.isEmpty,
+           localThreadIDByRuntimeThreadID[previousRuntimeThreadID] == context.localThreadID
+        {
+            localThreadIDByRuntimeThreadID.removeValue(forKey: previousRuntimeThreadID)
+        }
+
+        if !context.runtimeThreadID.isEmpty {
+            runtimeThreadIDByLocalThreadID[context.localThreadID] = context.runtimeThreadID
+            localThreadIDByRuntimeThreadID[context.runtimeThreadID] = context.localThreadID
+        }
+
         if let runtimeTurnID = context.runtimeTurnID,
            !runtimeTurnID.isEmpty
         {

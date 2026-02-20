@@ -435,9 +435,6 @@ extension AppModel {
             if let mapped = localThreadIDByRuntimeThreadID[runtimeThreadID] {
                 return mapped
             }
-            if let activeContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeThreadID == runtimeThreadID }) {
-                return activeContext.localThreadID
-            }
         }
 
         if activeTurnContextsByThreadID.count == 1 {
