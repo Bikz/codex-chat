@@ -19,6 +19,11 @@ extension AppModel {
         let clock = ContinuousClock()
         let startedAt = shouldTrace ? clock.now : nil
         defer {
+            if !unscopedApprovalRequests.isEmpty {
+                promoteResolvableUnscopedApprovals()
+            }
+        }
+        defer {
             if let startedAt {
                 let duration = clock.now - startedAt
                 let components = duration.components
@@ -396,6 +401,10 @@ extension AppModel {
             return
         }
 
+        presentApprovalRequest(request, localThreadID: localThreadID)
+    }
+
+    private func presentApprovalRequest(_ request: RuntimeApprovalRequest, localThreadID: UUID) {
         approvalStateMachine.enqueue(request, threadID: localThreadID)
         syncApprovalPresentationState()
 
@@ -424,6 +433,33 @@ extension AppModel {
                     "kind": request.kind.rawValue,
                 ]
             )
+        }
+    }
+
+    private func promoteResolvableUnscopedApprovals() {
+        guard !unscopedApprovalRequests.isEmpty else {
+            return
+        }
+
+        var unresolved: [RuntimeApprovalRequest] = []
+        unresolved.reserveCapacity(unscopedApprovalRequests.count)
+
+        for request in unscopedApprovalRequests {
+            guard let localThreadID = resolveLocalThreadID(
+                runtimeThreadID: request.threadID,
+                itemID: request.itemID,
+                runtimeTurnID: request.turnID
+            ) else {
+                unresolved.append(request)
+                continue
+            }
+
+            presentApprovalRequest(request, localThreadID: localThreadID)
+        }
+
+        if unresolved.count != unscopedApprovalRequests.count {
+            unscopedApprovalRequests = unresolved
+            syncApprovalPresentationState()
         }
     }
 

@@ -666,6 +666,51 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testUnscopedApprovalAutoPromotesWhenRuntimeTurnMappingAppears() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.upsertActiveTurnContext(
+            AppModel.ActiveTurnContext(
+                localTurnID: UUID(),
+                localThreadID: threadID,
+                projectID: UUID(),
+                projectPath: "/tmp",
+                runtimeThreadID: "w0|thr_auto",
+                runtimeTurnID: nil,
+                memoryWriteMode: .off,
+                userText: "hello",
+                assistantText: "",
+                actions: [],
+                startedAt: Date()
+            )
+        )
+
+        let unscoped = RuntimeApprovalRequest(
+            id: 501,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: nil,
+            turnID: "w0|turn_auto",
+            itemID: nil,
+            reason: "needs approval",
+            risk: nil,
+            cwd: "/tmp",
+            command: ["echo", "auto"],
+            changes: [],
+            detail: "{}"
+        )
+        model.handleRuntimeEvent(.approvalRequested(unscoped))
+        XCTAssertEqual(model.unscopedApprovalRequests.map(\.id), [501])
+        XCTAssertNil(model.pendingApprovalForSelectedThread)
+
+        model.handleRuntimeEvent(.turnStarted(threadID: "w0|thr_auto", turnID: "w0|turn_auto"))
+
+        XCTAssertTrue(model.unscopedApprovalRequests.isEmpty)
+        XCTAssertEqual(model.pendingApprovalThreadIDs, [threadID])
+        XCTAssertEqual(model.approvalStateMachine.pendingRequest(for: threadID)?.id, 501)
+    }
+
+    @MainActor
     func testRuntimeTerminationResetsPendingApprovalWithExplicitMessage() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let threadID = UUID()
