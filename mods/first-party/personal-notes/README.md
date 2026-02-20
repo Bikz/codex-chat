@@ -5,7 +5,8 @@ Per-thread notes inside the CodexChat Mods bar.
 ## Behavior
 
 - Shows thread-specific notes in the Mods bar.
-- `Add / Edit Note` prompts for text and persists it to thread state.
+- In current CodexChat builds, notes are editable inline and autosave per thread.
+- `Add / Edit Note` remains available for compatibility with older app builds.
 - `Clear Note` clears the current thread note.
 
 ## Install

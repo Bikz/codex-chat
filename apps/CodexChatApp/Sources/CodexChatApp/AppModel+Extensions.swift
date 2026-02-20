@@ -6,6 +6,13 @@ import Darwin
 import Foundation
 
 extension AppModel {
+    private enum PersonalNotesModsBarConstants {
+        static let modID = "codexchat.personal-notes"
+        static let actionHookID = "notes-action"
+        static let emptyStateMarkdown = "_Start typing to save thread-specific notes. Notes autosave for this chat._"
+        static let legacyEmptyStateMarkdown = "_No notes yet. Use Add or Edit to save thread-specific notes._"
+    }
+
     func toggleModsBar() {
         guard let selectedThreadID else { return }
         let next = !(extensionModsBarVisibilityByThreadID[selectedThreadID] ?? false)
@@ -129,6 +136,52 @@ extension AppModel {
 
     func refreshModsBarForSelectedThread() async {
         await loadModsBarCacheForSelectedThread()
+    }
+
+    var isPersonalNotesModsBarActiveForSelectedThread: Bool {
+        selectedThreadID != nil
+            && activeModsBarModID == PersonalNotesModsBarConstants.modID
+            && (activeModsBarSlot?.enabled ?? false)
+    }
+
+    func personalNotesEditorText(from markdown: String?) -> String {
+        guard let markdown else { return "" }
+        let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == PersonalNotesModsBarConstants.emptyStateMarkdown
+            || trimmed == PersonalNotesModsBarConstants.legacyEmptyStateMarkdown
+        {
+            return ""
+        }
+        return markdown
+    }
+
+    func upsertPersonalNotesInline(_ text: String) {
+        guard isPersonalNotesModsBarActiveForSelectedThread,
+              let selectedThreadID,
+              let context = extensionProjectContext(forThreadID: selectedThreadID)
+        else {
+            return
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var payload: [String: String] = [
+            "targetHookID": PersonalNotesModsBarConstants.actionHookID,
+            "targetModID": PersonalNotesModsBarConstants.modID,
+        ]
+        if trimmed.isEmpty {
+            payload["operation"] = "clear"
+        } else {
+            payload["operation"] = "upsert"
+            payload["input"] = text
+        }
+
+        emitExtensionEvent(
+            .modsBarAction,
+            projectID: context.projectID,
+            projectPath: context.projectPath,
+            threadID: selectedThreadID,
+            payload: payload
+        )
     }
 
     func performModsBarAction(_ action: ExtensionModsBarOutput.Action) {

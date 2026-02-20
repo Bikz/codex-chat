@@ -13,7 +13,7 @@ final class FirstPartyModsScriptsTests: XCTestCase {
             threadID: threadID
         )
         XCTAssertEqual(initial.modsBar?.scope, .thread)
-        XCTAssertTrue(initial.modsBar?.markdown.contains("No notes yet") == true)
+        XCTAssertTrue(initial.modsBar?.markdown.contains("Start typing") == true)
 
         let upserted = try await runModScript(
             modDirectory: modDirectory,
@@ -36,7 +36,7 @@ final class FirstPartyModsScriptsTests: XCTestCase {
                 "targetHookID": "notes-action",
             ]
         )
-        XCTAssertTrue(cleared.modsBar?.markdown.contains("No notes yet") == true)
+        XCTAssertTrue(cleared.modsBar?.markdown.contains("Start typing") == true)
     }
 
     func testThreadSummaryScriptAppendsAndClearsTimeline() async throws {

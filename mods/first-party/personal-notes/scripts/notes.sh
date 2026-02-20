@@ -72,7 +72,7 @@ note="$(trim_value "$note")"
 
 markdown="$note"
 if [ -z "$markdown" ]; then
-  markdown="_No notes yet. Use Add or Edit to save thread-specific notes._"
+  markdown="_Start typing to save thread-specific notes. Notes autosave for this chat._"
 fi
 escaped_markdown="$(json_escape "$markdown")"
 
