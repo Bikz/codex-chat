@@ -305,21 +305,31 @@ actor RuntimePool {
     }
 
     private func workerID(for localThreadID: UUID) -> RuntimePoolWorkerID {
-        if let pinnedWorkerID = pinnedWorkerIDByLocalThreadID[localThreadID],
-           workersByID[pinnedWorkerID] != nil
-        {
-            return pinnedWorkerID
-        }
-
-        let selectedWorkerID = Self.consistentWorkerID(
+        let unavailableWorkerIDs = unavailableWorkerIDSet()
+        let selectedWorkerID = Self.selectWorkerID(
             for: localThreadID,
-            workerCount: configuredWorkerCount
+            workerCount: configuredWorkerCount,
+            pinnedWorkerID: pinnedWorkerIDByLocalThreadID[localThreadID],
+            unavailableWorkerIDs: unavailableWorkerIDs
         )
         let resolvedWorkerID = workersByID[selectedWorkerID] == nil
             ? Constants.primaryWorkerID
             : selectedWorkerID
         pinnedWorkerIDByLocalThreadID[localThreadID] = resolvedWorkerID
         return resolvedWorkerID
+    }
+
+    private func unavailableWorkerIDSet() -> Set<RuntimePoolWorkerID> {
+        Set(
+            healthByWorkerID.compactMap { workerID, health in
+                switch health.state {
+                case .degraded, .restarting, .stopped:
+                    workerID
+                case .idle, .starting, .healthy:
+                    nil
+                }
+            }
+        )
     }
 
     private func startEventPumpIfNeeded(for workerID: RuntimePoolWorkerID) {
@@ -373,6 +383,7 @@ actor RuntimePool {
 
         markWorkerFailed(workerID)
         inFlightTurnsByWorkerID[workerID] = 0
+        reassignPinsAwayFromWorker(workerID)
         scheduleWorkerRestart(
             workerID: workerID,
             detail: action.detail
@@ -393,6 +404,30 @@ actor RuntimePool {
         health.failureCount += 1
         health.lastFailureAt = Date()
         healthByWorkerID[workerID] = health
+    }
+
+    private func reassignPinsAwayFromWorker(_ failedWorkerID: RuntimePoolWorkerID) {
+        let replacementWorkerID = preferredFallbackWorkerID(excluding: failedWorkerID)
+        for (localThreadID, pinnedWorkerID) in pinnedWorkerIDByLocalThreadID where pinnedWorkerID == failedWorkerID {
+            pinnedWorkerIDByLocalThreadID[localThreadID] = replacementWorkerID
+        }
+    }
+
+    private func preferredFallbackWorkerID(excluding workerID: RuntimePoolWorkerID) -> RuntimePoolWorkerID {
+        if workerID != Constants.primaryWorkerID,
+           workersByID[Constants.primaryWorkerID] != nil,
+           !unavailableWorkerIDSet().contains(Constants.primaryWorkerID)
+        {
+            return Constants.primaryWorkerID
+        }
+
+        for candidateID in workersByID.keys.sorted()
+            where candidateID != workerID && !unavailableWorkerIDSet().contains(candidateID)
+        {
+            return candidateID
+        }
+
+        return Constants.primaryWorkerID
     }
 
     private func scheduleWorkerRestart(workerID: RuntimePoolWorkerID, detail: String) {
@@ -608,6 +643,34 @@ actor RuntimePool {
         let hash = deterministicHash(for: localThreadID)
         let slot = Int(hash % UInt64(workerCount))
         return RuntimePoolWorkerID(slot)
+    }
+
+    static func selectWorkerID(
+        for localThreadID: UUID,
+        workerCount: Int,
+        pinnedWorkerID: RuntimePoolWorkerID?,
+        unavailableWorkerIDs: Set<RuntimePoolWorkerID>
+    ) -> RuntimePoolWorkerID {
+        if let pinnedWorkerID,
+           !unavailableWorkerIDs.contains(pinnedWorkerID),
+           pinnedWorkerID.rawValue >= 0,
+           pinnedWorkerID.rawValue < max(1, workerCount)
+        {
+            return pinnedWorkerID
+        }
+
+        let hashedWorkerID = consistentWorkerID(for: localThreadID, workerCount: workerCount)
+        if !unavailableWorkerIDs.contains(hashedWorkerID) {
+            return hashedWorkerID
+        }
+
+        for candidate in (0 ..< max(1, workerCount)).map(RuntimePoolWorkerID.init)
+            where !unavailableWorkerIDs.contains(candidate)
+        {
+            return candidate
+        }
+
+        return Constants.primaryWorkerID
     }
 
     static func unscopedID(_ possiblyScopedID: String) -> String {
