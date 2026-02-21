@@ -151,6 +151,11 @@ private struct PersonalNotesInlineEditor: View {
     @State private var lastSubmittedText: String
     @State private var autosaveTask: Task<Void, Never>?
 
+    private var editorFillColor: Color {
+        Color(hex: tokens.palette.panelHex)
+            .opacity(model.isTransparentThemeMode ? 0.72 : 0.96)
+    }
+
     init(model: AppModel, initialText: String) {
         self.model = model
         self.initialText = initialText
@@ -170,7 +175,7 @@ private struct PersonalNotesInlineEditor: View {
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                        .fill(editorFillColor)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -252,6 +257,11 @@ private struct PromptBookInlineEditor: View {
 
     private let maxPrompts = 12
 
+    private var editorFillColor: Color {
+        Color(hex: tokens.palette.panelHex)
+            .opacity(model.isTransparentThemeMode ? 0.72 : 0.96)
+    }
+
     init(model: AppModel, initialEntries: [AppModel.PromptBookEntry]) {
         self.model = model
         self.initialEntries = initialEntries
@@ -276,7 +286,7 @@ private struct PromptBookInlineEditor: View {
                         .padding(8)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                                .fill(editorFillColor)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -344,7 +354,7 @@ private struct PromptBookInlineEditor: View {
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                    .fill(editorFillColor)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)

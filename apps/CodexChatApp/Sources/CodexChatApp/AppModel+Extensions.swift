@@ -7,15 +7,17 @@ import Foundation
 
 extension AppModel {
     private enum PersonalNotesModsBarConstants {
-        static let modID = "codexchat.personal-notes"
+        static let canonicalModID = "codexchat.personal-notes"
         static let actionHookID = "notes-action"
+        static let titleToken = "personal-notes"
         static let emptyStateMarkdown = "_Start typing to save thread-specific notes. Notes autosave for this chat._"
         static let legacyEmptyStateMarkdown = "_No notes yet. Use Add or Edit to save thread-specific notes._"
     }
 
     private enum PromptBookModsBarConstants {
-        static let modID = "codexchat.prompt-book"
+        static let canonicalModID = "codexchat.prompt-book"
         static let actionHookID = "prompt-book-action"
+        static let titleToken = "prompt-book"
         static let maxPrompts = 12
     }
 
@@ -156,13 +158,19 @@ extension AppModel {
 
     var isPersonalNotesModsBarActiveForSelectedThread: Bool {
         selectedThreadID != nil
-            && activeModsBarModID == PersonalNotesModsBarConstants.modID
+            && (
+                isLikelyPersonalNotesModID(activeModsBarModID)
+                    || activeModsBarTitleContains(PersonalNotesModsBarConstants.titleToken)
+            )
             && (activeModsBarSlot?.enabled ?? false)
     }
 
     var isPromptBookModsBarActiveForSelectedThread: Bool {
         selectedThreadID != nil
-            && activeModsBarModID == PromptBookModsBarConstants.modID
+            && (
+                isLikelyPromptBookModID(activeModsBarModID)
+                    || activeModsBarTitleContains(PromptBookModsBarConstants.titleToken)
+            )
             && (activeModsBarSlot?.enabled ?? false)
     }
 
@@ -185,10 +193,19 @@ extension AppModel {
             return
         }
 
+        guard let targetHookID = resolvedActiveModsBarActionHookID(
+            preferredHookID: PersonalNotesModsBarConstants.actionHookID
+        ) else {
+            extensionStatusMessage = "Personal Notes mod is missing a modsBar.action hook."
+            return
+        }
+
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         var payload: [String: String] = [
-            "targetHookID": PersonalNotesModsBarConstants.actionHookID,
-            "targetModID": PersonalNotesModsBarConstants.modID,
+            "targetHookID": targetHookID,
+            "targetModID": resolvedActiveModsBarTargetModID(
+                fallbackModID: PersonalNotesModsBarConstants.canonicalModID
+            ),
         ]
         if trimmed.isEmpty {
             payload["operation"] = "clear"
@@ -242,6 +259,13 @@ extension AppModel {
             return
         }
 
+        guard let targetHookID = resolvedActiveModsBarActionHookID(
+            preferredHookID: PromptBookModsBarConstants.actionHookID
+        ) else {
+            extensionStatusMessage = "Prompt Book mod is missing a modsBar.action hook."
+            return
+        }
+
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else {
             extensionStatusMessage = "Prompt text cannot be empty."
@@ -251,8 +275,10 @@ extension AppModel {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let encodedInput = trimmedTitle.isEmpty ? trimmedText : "\(trimmedTitle) :: \(trimmedText)"
         var payload: [String: String] = [
-            "targetHookID": PromptBookModsBarConstants.actionHookID,
-            "targetModID": PromptBookModsBarConstants.modID,
+            "targetHookID": targetHookID,
+            "targetModID": resolvedActiveModsBarTargetModID(
+                fallbackModID: PromptBookModsBarConstants.canonicalModID
+            ),
             "operation": index == nil ? "add" : "edit",
             "input": encodedInput,
         ]
@@ -277,9 +303,18 @@ extension AppModel {
             return
         }
 
+        guard let targetHookID = resolvedActiveModsBarActionHookID(
+            preferredHookID: PromptBookModsBarConstants.actionHookID
+        ) else {
+            extensionStatusMessage = "Prompt Book mod is missing a modsBar.action hook."
+            return
+        }
+
         let payload: [String: String] = [
-            "targetHookID": PromptBookModsBarConstants.actionHookID,
-            "targetModID": PromptBookModsBarConstants.modID,
+            "targetHookID": targetHookID,
+            "targetModID": resolvedActiveModsBarTargetModID(
+                fallbackModID: PromptBookModsBarConstants.canonicalModID
+            ),
             "operation": "delete",
             "index": String(index),
         ]
@@ -1017,12 +1052,76 @@ extension AppModel {
     }
 
     private func promptBookModDirectoryPath() -> String? {
-        if activeModsBarModID == PromptBookModsBarConstants.modID,
+        if isPromptBookModsBarActiveForSelectedThread,
            let activeModsBarModDirectoryPath
         {
             return activeModsBarModDirectoryPath
         }
-        return activeExtensionHooks.first(where: { $0.modID == PromptBookModsBarConstants.modID })?.modDirectoryPath
+        if isLikelyPromptBookModID(activeModsBarModID),
+           let activeModsBarModDirectoryPath
+        {
+            return activeModsBarModDirectoryPath
+        }
+        return activeExtensionHooks.first(where: { isLikelyPromptBookModID($0.modID) })?.modDirectoryPath
+    }
+
+    private func resolvedActiveModsBarActionHookID(preferredHookID: String) -> String? {
+        guard let activeModID = normalizedActiveModsBarModID else {
+            return nil
+        }
+
+        let actionHooks = activeExtensionHooks.filter {
+            $0.modID == activeModID && $0.definition.event == .modsBarAction
+        }
+        guard !actionHooks.isEmpty else {
+            return nil
+        }
+
+        if let preferred = actionHooks.first(where: { $0.definition.id == preferredHookID }) {
+            return preferred.definition.id
+        }
+        if actionHooks.count == 1 {
+            return actionHooks[0].definition.id
+        }
+
+        let preferredPrefix = preferredHookID.replacingOccurrences(of: "-action", with: "")
+        if let prefixed = actionHooks.first(where: { $0.definition.id.hasPrefix(preferredPrefix) }) {
+            return prefixed.definition.id
+        }
+        return actionHooks.first?.definition.id
+    }
+
+    private func resolvedActiveModsBarTargetModID(fallbackModID: String) -> String {
+        normalizedActiveModsBarModID ?? fallbackModID
+    }
+
+    private var normalizedActiveModsBarModID: String? {
+        let trimmed = (activeModsBarModID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func activeModsBarTitleContains(_ token: String) -> Bool {
+        normalizedModsBarToken(activeModsBarSlot?.title).contains(token)
+    }
+
+    private func isLikelyPersonalNotesModID(_ modID: String?) -> Bool {
+        let normalized = normalizedModsBarToken(modID)
+        guard !normalized.isEmpty else { return false }
+        return normalized == PersonalNotesModsBarConstants.canonicalModID || normalized.contains(PersonalNotesModsBarConstants.titleToken)
+    }
+
+    private func isLikelyPromptBookModID(_ modID: String?) -> Bool {
+        let normalized = normalizedModsBarToken(modID)
+        guard !normalized.isEmpty else { return false }
+        return normalized == PromptBookModsBarConstants.canonicalModID || normalized.contains(PromptBookModsBarConstants.titleToken)
+    }
+
+    private func normalizedModsBarToken(_ value: String?) -> String {
+        (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+            .replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
     }
 
     private func promptBookDefaultEntries() -> [PromptBookEntry] {

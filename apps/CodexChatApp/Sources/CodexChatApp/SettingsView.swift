@@ -363,7 +363,6 @@ struct SettingsView: View {
                         set: { mode in
                             updateUserThemeCustomization { customization in
                                 customization.transparencyMode = mode
-                                customization.isEnabled = true
                             }
                         }
                     )
@@ -905,7 +904,6 @@ struct SettingsView: View {
             set: { value in
                 updateUserThemeCustomization { customization in
                     customization.gradientStrength = AppModel.UserThemeCustomization.clampedGradientStrength(value)
-                    customization.isEnabled = true
                 }
             }
         )
@@ -926,7 +924,6 @@ struct SettingsView: View {
                             guard let hex = color.codexHexString() else { return }
                             updateUserThemeCustomization { customization in
                                 customization[keyPath: keyPath] = hex
-                                customization.isEnabled = true
                             }
                         }
                     ),

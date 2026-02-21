@@ -246,6 +246,55 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertFalse(written.contains("\"input\""))
     }
 
+    func testUpsertPersonalNotesInlineTargetsForkedModIDAndActionHook() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-personal-notes-fork")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let threadID = UUID()
+        let projectPath = try makeTempDirectory(prefix: "modsbar-personal-notes-fork-project").path
+        let output = URL(fileURLWithPath: projectPath).appendingPathComponent("notes-fork.json", isDirectory: false)
+        let script = try makeCaptureScript(outputURL: output)
+
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Project", path: projectPath, trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.threadsState = .loaded([
+            ThreadRecord(id: threadID, projectId: projectID, title: "Thread"),
+        ])
+        model.selectedThreadID = threadID
+        model.activeModsBarModID = "acme.personal-notes"
+        model.activeModsBarSlot = .init(enabled: true, title: "Personal Notes")
+        model.activeExtensionHooks = [
+            AppModel.ResolvedExtensionHook(
+                modID: "acme.personal-notes",
+                modDirectoryPath: projectPath,
+                definition: ModHookDefinition(
+                    id: "acme-notes-action",
+                    event: .modsBarAction,
+                    handler: .init(command: [script.path], cwd: ".")
+                )
+            ),
+        ]
+
+        XCTAssertTrue(model.isPersonalNotesModsBarActiveForSelectedThread)
+        model.upsertPersonalNotesInline("Remember this from the forked mod.")
+
+        try await eventually(timeoutSeconds: 10) {
+            guard FileManager.default.fileExists(atPath: output.path),
+                  let written = try? String(contentsOf: output)
+            else {
+                return false
+            }
+            return written.contains("\"event\":\"modsBar.action\"")
+        }
+
+        let written = try String(contentsOf: output)
+        XCTAssertTrue(written.contains("\"targetModID\":\"acme.personal-notes\""))
+        XCTAssertTrue(written.contains("\"targetHookID\":\"acme-notes-action\""))
+        XCTAssertTrue(written.contains("\"operation\":\"upsert\""))
+    }
+
     func testPromptBookEntriesFromStateReturnsDefaultsWhenMissingStateFile() throws {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let modRoot = try makeTempDirectory(prefix: "modsbar-promptbook-defaults")
@@ -293,6 +342,88 @@ final class ModsBarActionTests: XCTestCase {
             entries[0].text,
             "Perform a deep architectural review, include reliability, edge-case handling, and migration strategy notes."
         )
+    }
+
+    func testPromptBookEntriesFromStateReadsSavedPromptBodiesForForkedModID() throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let modRoot = try makeTempDirectory(prefix: "modsbar-promptbook-fork-state")
+        let stateDirectory = modRoot.appendingPathComponent(".codexchat/state", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
+        let stateFile = stateDirectory.appendingPathComponent("prompt-book.json", isDirectory: false)
+
+        let payload = """
+        {
+          "prompts": [
+            {
+              "id": "forked-review",
+              "title": "Forked Review",
+              "text": "Run the forked prompt book workflow."
+            }
+          ]
+        }
+        """
+        try payload.write(to: stateFile, atomically: true, encoding: .utf8)
+
+        model.selectedThreadID = UUID()
+        model.activeModsBarModID = "acme.prompt-book"
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book")
+        model.activeModsBarModDirectoryPath = modRoot.path
+
+        XCTAssertTrue(model.isPromptBookModsBarActiveForSelectedThread)
+        let entries = model.promptBookEntriesFromState()
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].title, "Forked Review")
+        XCTAssertEqual(entries[0].text, "Run the forked prompt book workflow.")
+    }
+
+    func testUpsertPromptBookEntryInlineTargetsForkedModIDAndActionHook() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-promptbook-fork-upsert")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let threadID = UUID()
+        let projectPath = try makeTempDirectory(prefix: "modsbar-promptbook-fork-upsert-project").path
+        let output = URL(fileURLWithPath: projectPath).appendingPathComponent("prompt-fork.json", isDirectory: false)
+        let script = try makeCaptureScript(outputURL: output)
+
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Project", path: projectPath, trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.threadsState = .loaded([
+            ThreadRecord(id: threadID, projectId: projectID, title: "Thread"),
+        ])
+        model.selectedThreadID = threadID
+        model.activeModsBarModID = "acme.prompt-book"
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book")
+        model.activeExtensionHooks = [
+            AppModel.ResolvedExtensionHook(
+                modID: "acme.prompt-book",
+                modDirectoryPath: projectPath,
+                definition: ModHookDefinition(
+                    id: "acme-prompt-action",
+                    event: .modsBarAction,
+                    handler: .init(command: [script.path], cwd: ".")
+                )
+            ),
+        ]
+
+        XCTAssertTrue(model.isPromptBookModsBarActiveForSelectedThread)
+        model.upsertPromptBookEntryInline(index: nil, title: "Forked", text: "Use forked prompt action")
+
+        try await eventually(timeoutSeconds: 10) {
+            guard FileManager.default.fileExists(atPath: output.path),
+                  let written = try? String(contentsOf: output)
+            else {
+                return false
+            }
+            return written.contains("\"event\":\"modsBar.action\"")
+        }
+
+        let written = try String(contentsOf: output)
+        XCTAssertTrue(written.contains("\"targetModID\":\"acme.prompt-book\""))
+        XCTAssertTrue(written.contains("\"targetHookID\":\"acme-prompt-action\""))
+        XCTAssertTrue(written.contains("\"operation\":\"add\""))
+        XCTAssertTrue(written.contains("\"input\":\"Forked :: Use forked prompt action\""))
     }
 
     func testModsBarQuickSwitchOptionsIncludeProjectAndGlobalChoices() {
