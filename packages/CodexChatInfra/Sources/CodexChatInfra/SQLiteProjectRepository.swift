@@ -135,8 +135,8 @@ public final class SQLiteProjectRepository: ProjectRepository, @unchecked Sendab
                 arguments: [projectID]
             )
             try db.execute(
-                sql: "DELETE FROM computer_action_permissions WHERE projectID = ? OR projectKey = ?",
-                arguments: [projectID, projectKey]
+                sql: "DELETE FROM computer_action_permissions WHERE projectKey = ?",
+                arguments: [projectKey]
             )
 
             // Project deletion cascades to threads, follow-ups, mappings, and other FK-backed tables.
