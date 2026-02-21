@@ -1,5 +1,4 @@
 import CodexChatShared
-import CodexMods
 import Foundation
 
 @main
@@ -82,41 +81,12 @@ struct CodexChatCLI {
     }
 
     private static func runMod(_ command: CodexChatCLIModCommand) throws {
-        switch command {
-        case let .validate(source):
-            let preview = try ModInstallService().preview(source: source)
-            print("Mod package is valid.")
-            print("source: \(preview.source)")
-            print("id: \(preview.packageManifest.id)")
-            print("name: \(preview.packageManifest.name)")
-            print("version: \(preview.packageManifest.version)")
-            print("permissions: \(preview.requestedPermissions.map(\.rawValue).sorted().joined(separator: ", "))")
-            if !preview.warnings.isEmpty {
-                fputs("warnings:\n", stderr)
-                for warning in preview.warnings {
-                    fputs("- \(warning)\n", stderr)
-                }
-            }
-
-        case let .inspectSource(source):
-            let preview = try ModInstallService().preview(source: source)
-            let payload = ModInspectPayload(preview: preview)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(payload)
-            guard let json = String(data: data, encoding: .utf8) else {
-                throw CLIError("Failed to encode inspect-source output")
-            }
-            print(json)
-
-        case let .initSample(name, outputPath):
-            let discovery = UIModDiscoveryService()
-            let definitionURL = try discovery.writeSampleMod(to: outputPath, name: name)
-            let packageRoot = definitionURL.deletingLastPathComponent().path
-            print("Created sample mod package:")
-            print(packageRoot)
-            print("Validate with:")
-            print("CodexChatCLI mod validate --source \"\(packageRoot)\"")
+        let result = try CodexChatCLIModRunner.run(command: command)
+        for line in result.stdoutLines {
+            print(line)
+        }
+        for line in result.stderrLines {
+            fputs("\(line)\n", stderr)
         }
     }
 
@@ -161,41 +131,5 @@ private struct CLIError: LocalizedError {
 
     var errorDescription: String? {
         message
-    }
-}
-
-private struct ModInspectPayload: Encodable {
-    struct UISummary: Encodable {
-        let hookCount: Int
-        let automationCount: Int
-        let hasModsBarSlot: Bool
-    }
-
-    let source: String
-    let manifestSource: String
-    let id: String
-    let name: String
-    let version: String
-    let permissions: [String]
-    let requestedPermissions: [String]
-    let warnings: [String]
-    let compatibility: ModCompatibility?
-    let ui: UISummary
-
-    init(preview: ModInstallPreview) {
-        source = preview.source
-        manifestSource = preview.manifestSource.rawValue
-        id = preview.packageManifest.id
-        name = preview.packageManifest.name
-        version = preview.packageManifest.version
-        permissions = preview.packageManifest.permissions.map(\.rawValue).sorted()
-        requestedPermissions = preview.requestedPermissions.map(\.rawValue).sorted()
-        warnings = preview.warnings
-        compatibility = preview.packageManifest.compatibility
-        ui = UISummary(
-            hookCount: preview.definition.hooks.count,
-            automationCount: preview.definition.automations.count,
-            hasModsBarSlot: preview.definition.uiSlots?.modsBar?.enabled == true
-        )
     }
 }
