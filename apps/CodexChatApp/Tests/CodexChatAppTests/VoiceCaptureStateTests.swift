@@ -124,8 +124,9 @@ final class VoiceCaptureStateTests: XCTestCase {
         try await waitForCondition(timeoutSeconds: 2.0) {
             voiceService.requestAuthorizationCallCount == 1
         }
-
-        try await Task.sleep(nanoseconds: 600_000_000)
+        try await waitForCondition(timeoutSeconds: 2.0) {
+            voiceService.requestAuthorizationCompletionCount == 1
+        }
         XCTAssertEqual(model.voiceCaptureState, .idle)
         XCTAssertEqual(voiceService.startCaptureCallCount, 0)
     }
@@ -156,15 +157,20 @@ final class VoiceCaptureStateTests: XCTestCase {
         let model = makeReadyModel(voiceService: voiceService)
 
         model.toggleVoiceCapture()
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .requestingPermission }
         model.cancelVoiceCapture()
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .idle }
         model.toggleVoiceCapture()
+        try await waitForVoiceCaptureState(model, timeoutSeconds: 2.0) { $0 == .requestingPermission }
 
         try await waitForVoiceCaptureState(model, timeoutSeconds: 3.0) { state in
             if case .recording = state { return true }
             return false
         }
 
-        try await Task.sleep(nanoseconds: 700_000_000)
+        try await waitForCondition(timeoutSeconds: 2.0) {
+            voiceService.requestAuthorizationCompletionCount == 2
+        }
         XCTAssertEqual(voiceService.startCaptureCallCount, 1)
         if case .recording = model.voiceCaptureState {
             // expected
@@ -267,6 +273,7 @@ private final class MockVoiceCaptureService: VoiceCaptureService, @unchecked Sen
     var stopResult: Result<String, Error> = .success("mock transcript")
 
     private(set) var requestAuthorizationCallCount = 0
+    private(set) var requestAuthorizationCompletionCount = 0
     private(set) var startCaptureCallCount = 0
     private(set) var stopCaptureCallCount = 0
     private(set) var cancelCaptureCallCount = 0
@@ -276,6 +283,7 @@ private final class MockVoiceCaptureService: VoiceCaptureService, @unchecked Sen
         if authorizationDelayNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: authorizationDelayNanoseconds)
         }
+        requestAuthorizationCompletionCount += 1
         return authorizationStatus
     }
 
