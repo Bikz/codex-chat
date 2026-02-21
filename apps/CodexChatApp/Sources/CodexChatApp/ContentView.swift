@@ -89,6 +89,7 @@ struct ContentView: View {
                 }
             }
         }
+        .toolbar(removing: .sidebarToggle)
         .navigationTitle("")
         .sheet(isPresented: $model.isDiagnosticsVisible) {
             DiagnosticsView(
