@@ -306,6 +306,7 @@ struct SidebarView: View {
         let isSelected = model.isProjectSidebarVisuallySelected(project.id)
         let isHovered = hoveredProjectID == project.id
         let isFlashed = flashedProjectID == project.id
+        let projectControlsVisible = Self.trailingControlsVisible(isHovered: isHovered, isSelected: isSelected)
 
         return ZStack(alignment: .trailing) {
             Button {
@@ -373,8 +374,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .help("New thread")
                 .accessibilityLabel("New thread in \(project.name)")
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                .opacity(projectControlsVisible ? 1 : 0)
+                .allowsHitTesting(projectControlsVisible)
 
                 Button {
                     if model.selectedProjectID != project.id {
@@ -391,8 +392,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .help("Project settings")
                 .accessibilityLabel("Open settings for \(project.name)")
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                .opacity(projectControlsVisible ? 1 : 0)
+                .allowsHitTesting(projectControlsVisible)
             }
             .frame(width: SidebarLayoutSpec.projectTrailingWidth, alignment: .trailing)
             .padding(.trailing, SidebarLayoutSpec.rowHorizontalPadding)
@@ -411,7 +412,7 @@ struct SidebarView: View {
     @ViewBuilder
     private func projectThreadRows(for project: ProjectRecord) -> some View {
         if model.selectedProjectID == project.id {
-            let projectThreads = model.threads.filter { $0.projectId == project.id }
+            let projectThreads = groupedThreadsByProjectID[project.id] ?? []
             ForEach(projectThreads) { thread in
                 threadRow(thread, isGeneralThread: false)
             }
@@ -452,6 +453,11 @@ struct SidebarView: View {
     private func threadRow(_ thread: ThreadRecord, isGeneralThread: Bool) -> some View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
+        let controlsVisible = Self.threadTrailingControlsVisible(
+            isHovered: isHovered,
+            isSelected: isSelected,
+            isSelectionSuppressed: isThreadSelectionSuppressed
+        )
         let rowSpacing = isGeneralThread ? 0 : SidebarLayoutSpec.iconTextGap
 
         return ZStack(alignment: .trailing) {
@@ -570,8 +576,8 @@ struct SidebarView: View {
                     .help("Archive chat")
                     .accessibilityLabel("Archive \(thread.title)")
                 }
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                .opacity(controlsVisible ? 1 : 0)
+                .allowsHitTesting(controlsVisible)
             }
             .frame(width: SidebarLayoutSpec.threadTrailingWidth, alignment: .trailing)
             .padding(.trailing, SidebarLayoutSpec.threadRowHorizontalPadding)
@@ -765,6 +771,23 @@ struct SidebarView: View {
 
     private func projectLeadingIconName(isExpanded: Bool, isHovered: Bool) -> String {
         SidebarProjectIconResolver.leadingSymbolName(isExpanded: isExpanded, isHovered: isHovered)
+    }
+
+    private var groupedThreadsByProjectID: [UUID: [ThreadRecord]] {
+        Dictionary(grouping: model.threads, by: \.projectId)
+    }
+
+    static func trailingControlsVisible(isHovered: Bool, isSelected: Bool) -> Bool {
+        isHovered || isSelected
+    }
+
+    static func threadTrailingControlsVisible(
+        isHovered: Bool,
+        isSelected: Bool,
+        isSelectionSuppressed: Bool
+    ) -> Bool {
+        guard !isSelectionSuppressed else { return false }
+        return trailingControlsVisible(isHovered: isHovered, isSelected: isSelected)
     }
 
     private func loadExpandedProjectThreads(projectID: UUID) {

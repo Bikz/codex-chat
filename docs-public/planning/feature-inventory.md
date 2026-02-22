@@ -1,0 +1,56 @@
+# Feature Inventory
+
+## Scope + Method
+This inventory covers user-facing features and major system capabilities across:
+- `apps/CodexChatHost`
+- `apps/CodexChatApp` (`CodexChatShared` + `CodexChatCLI`)
+- `packages/*`
+- tests in `apps/CodexChatApp/Tests` and `packages/*/Tests`
+- operational docs/scripts/workflows
+
+Notes:
+- `Assumption` items are inferred from tests and usage patterns where implementation intent is implicit.
+- “Data touched” includes both user-owned and system-managed storage.
+
+## Inventory
+| Feature / Capability | User Value | Entry Point(s) | Key Files / Dirs | Dependencies | Data Touched | Primary Risk |
+|---|---|---|---|---|---|---|
+| Onboarding + Runtime Readiness | Gets users from first launch to usable runtime quickly | Onboarding screen (`OnboardingView`), startup load | `apps/CodexChatApp/Sources/CodexChatApp/ChatSetupView.swift`, `AppModel+Lifecycle.swift`, `AppModel+Onboarding.swift` | `CodexKit`, `CodexChatInfra`, local Codex CLI | Preferences, runtime status state | Startup dead-ends if runtime/auth not recoverable |
+| Account Auth (ChatGPT/API key/device code) | Supports multiple sign-in paths with local key handling | Account card in onboarding/settings, API key sheet | `AppModel+Account.swift`, `APIKeyLoginSheet.swift`, `APIKeychainStore.swift` | Runtime auth APIs, macOS Keychain, browser/terminal handoff | Keychain secret, account state, login polling state | Stale login sessions / unclear auth fallback |
+| Project Management + Trust | Lets users organize real folders with explicit trust posture | Sidebar project actions, New Project sheet, Project settings | `SidebarView.swift`, `NewProjectSheet.swift`, `AppModel+Projects.swift`, `ProjectSettingsSheet.swift` | `CodexChatCore`, `CodexChatInfra`, file system | `projects` table, project directories | Unsafe defaults or trust drift across existing projects |
+| Safety Controls (sandbox/approval/network/web) | Makes agent permissions legible and configurable | Project settings + global defaults in settings | `ProjectSettingsSheet.swift`, `SettingsView.swift`, `AppModel+Safety.swift`, `DangerConfirmationSheet.swift` | Runtime safety config mapping, core model enums | Project safety fields, default safety prefs | Misconfiguration enabling dangerous execution |
+| Conversation Canvas + Streaming Transcript | Real-time chat with action transparency | Main canvas (`ChatsCanvasView`) | `ChatsCanvasView.swift`, `ConversationComponents.swift`, `TranscriptPresentation.swift`, `AppModel+RuntimeEvents.swift` | Runtime event stream, formatter/presentation pipeline | In-memory transcript store, per-thread logs | UI desync under high event volume |
+| Approval Workflow (runtime + user approvals) | Prevents unsafe execution without explicit consent | Inline approval panel and approval sheet | `ApprovalRequestSheet.swift`, `AppModel+Approvals.swift`, `ApprovalStateMachine.swift` | Runtime approval RPC, thread/turn mapping | Approval queue state, transcript action cards | Approval routing errors (wrong thread/request)
+| Follow-up Queue + Steering | Enables queued next steps and semi-automated progression | Follow-up queue UI + turn completion flow | `FollowUpQueueView.swift`, `AppModel+FollowUps.swift` | Follow-up repository, runtime steer APIs | `follow_up_queue` table | Queue starvation/failed items not recovered |
+| Thread Lifecycle (draft/new/select/pin/archive) | Keeps chat history manageable and recoverable | Sidebar thread interactions | `AppModel+Threads.swift`, `SidebarView.swift`, `ChatArchiveStore.swift` | Thread repository, memory store, archive store | `threads` table, transcript markdown archive files | Archive/select race conditions |
+| Search (titles + excerpts) | Fast recall across conversation history | Sidebar search field/results | `AppModel+Search.swift`, `SidebarView.swift`, `SQLiteChatSearchRepository.swift` | FTS index (`chat_search_index`) | Search index + selected context prefs | Stale/missing indexing for recent turns |
+| Local Archive Durability + Rehydration | User-owned transcript files with stable replay | Turn persistence and reveal-in-finder actions | `ChatArchiveStore.swift`, `TurnPersistenceWorker.swift`, `AppModel+RuntimePersistence.swift` | File I/O, thread metadata, persistence batching | `projects/*/chats/threads/*.md` | Partial writes/corrupted replay if non-atomic handling regresses |
+| Skills Discovery/Install/Enablement | Reusable workflows and prompt acceleration | Skills tab, composer autocomplete, install flows | `AppModel+Skills.swift`, `SkillsCanvasView.swift`, `SkillInstallViews.swift`, `packages/CodexSkills/*` | Local skill scanning + remote index (`skills.sh`) | Skill directories under `.agents/skills`, enablement tables | Supply-chain / source trust / update rollback failures |
+| Mods Install + Theme + Mods Bar | UI customization and extension entry points | Mods tab, mods bar toggle/actions | `AppModel+ModsSurface.swift`, `ModViews.swift`, `ExtensionModsBarView.swift`, `packages/CodexMods/*` | Mod manifest/schema validation, discovery service | `mods/` trees, extension install records, preferences | Invalid mod payloads or executable behavior abuse |
+| Extension Hooks + Automations | Post-turn automation and custom workflow output | Hook dispatch + automation scheduler | `AppModel+Extensions.swift`, `packages/CodexExtensions/*` | Worker runner, cron parser, permission evaluator, launchd manager | Extension hook/automation state tables, per-mod state files | Unsafe permission escalation or runaway automation loops |
+| Native Computer Actions (Personal Actions) | Real-world tasks (desktop/calendar/messages/files/script) with safety | Composer/adaptive intent/mods bar/native action bridge | `AppModel+ComputerActions.swift`, `ComputerActionPreviewSheet.swift`, `packages/CodexComputerActions/*` | macOS APIs/AppleScript/EventKit, permission repository | `computer_action_permissions`, `computer_action_runs`, preview artifacts | Externally visible/destructive actions without clear confirmation |
+| Computer-Action Harness Bridge | Lets runtime-triggered flows call native actions safely | Harness wrapper + UNIX socket server | `AppModel+ComputerActionHarness.swift`, `ComputerActionHarnessServer.swift`, harness models | Local socket IPC, tokenized run contexts | System harness socket/bin under storage root | Token/session misuse if validation weakens |
+| Voice Capture to Composer | Dictation for prompt input with permission-aware UX | Composer microphone control | `AppModel+VoiceCapture.swift`, `VoiceCaptureService.swift` | `AVFoundation`, `Speech` framework | In-memory voice state/composer text | Permission race conditions or stale session updates |
+| Memory Workspace + Auto Summaries | Persistent project memory with optional semantic retrieval | Memory canvas + snippet insert + auto-write modes | `MemoryCanvas.swift`, `MemorySnippetInsertSheet.swift`, `MemoryAutoSummary.swift`, `packages/CodexMemory/*` | Memory store, optional NL embeddings | `projects/*/memory/*.md`, semantic index JSON | Incorrect summary/fact extraction, privacy expectations mismatch |
+| Shell Workspace (per-project split terminal) | In-app shell sessions tied to project context | Toolbar shell toggle + drawer | `AppModel+ShellState.swift`, `ShellWorkspaceDrawer.swift`, `ShellTerminalPaneView.swift`, `ShellSplitTree.swift` | `SwiftTerm`, project trust gating | In-memory per-project shell session trees + warning prefs | Unsafe shell use on untrusted projects |
+| Plan Runner (multi-task orchestration) | Executes dependency-ordered implementation plans | Plan runner sheet, toolbar action | `AppModel+PlanRunner.swift`, `PlanRunner/*`, plan run repositories | Plan parser/scheduler, runtime turns, persistence | `plan_runs`, `plan_run_tasks` tables | Deadlocks from invalid dependencies / ambiguous completion markers |
+| Review Changes + Mod-Safety Review | Guardrails before accepting risky or mod-related edits | Review sheets and action cards | `ReviewChangesSheet.swift`, `ModChangesReviewSheet.swift`, `AppModel+ReviewChanges.swift`, `ModEditSafety.swift` | Git restore, mod snapshot capture/restore | In-memory change sets + snapshot files | Revert/restore inconsistency under concurrent edits |
+| Runtime Pool + Adaptive Concurrency | Keeps app responsive under many active turns | Runtime startup/dispatch internals | `RuntimePool.swift`, `CodexRuntimeWorker.swift`, `AdaptiveConcurrencyController.swift`, `AppModel+AdaptiveConcurrency.swift` | Multi-runtime sharding, health/restart loops | Worker metrics in memory, thread pinning maps | Worker degradation causing cascading failures |
+| Diagnostics + Performance Tracing | Improves supportability and debugging | Diagnostics sheet + export action | `DiagnosticsView.swift`, `AppModel+Diagnostics.swift`, `Performance/PerformanceTracer.swift` | Local logging, diagnostics bundle export | Log buffers, exported diagnostic snapshot file | Sensitive data leakage if sanitization regresses |
+| Storage Root Migration + Codex Home Repair | Recoverable local-first storage lifecycle | Settings > Storage actions | `AppModel+Storage.swift`, `CodexChatStorageMigrationCoordinator.swift`, `CodexChatStoragePaths.swift` | File migration coordinator, metadata rewrites | `~/CodexChat` tree, metadata DB paths, quarantine reports | Data loss if migration/repair edge cases mishandled |
+| Contributor CLI (doctor/smoke/repro/mod) | Deterministic verification and reproducibility | `CodexChatCLI` commands | `CodexChatCLICommandParser.swift`, `CodexChatBootstrap.swift`, `CodexChatCLIModRunner.swift`, `tests/fixtures/*` | Runtime bootstrap + fixtures + mod install service | No user chat data; fixture/test artifacts | Drift between CLI verification and GUI behavior |
+| Build/Release/CI Capability | Reliable delivery and quality gates | `make` targets + GH workflows | `Makefile`, `.github/workflows/ci.yml`, `.github/workflows/release-dmg.yml`, `scripts/*` | Swift toolchain, pnpm, signing/notarization pipeline | Build artifacts, release DMGs | Broken release pipeline despite local green tests |
+
+## Test-Inferred Assumptions
+1. Assumption: Runtime thread mappings are recreated and retried once when stale IDs are detected.
+   - Evidence: runtime mapping tests and dispatch fallback paths (`ActiveTurnContextMappingTests`, runtime dispatch logic).
+2. Assumption: Approval queue continuity is thread-scoped first, with explicit handling for unscoped requests.
+   - Evidence: `SidebarSelectionTests`, approval queue tests in `CodexChatAppTests`.
+3. Assumption: Archive checkpointing is intended to be append-safe and update-safe across partial turn lifecycle.
+   - Evidence: `ChatArchiveStoreCheckpointTests`.
+4. Assumption: General project “draft chat” behavior is a deliberate UX invariant to avoid empty-canvas dead ends.
+   - Evidence: `GeneralDraftThreadFallbackTests`, onboarding completion tests.
+5. Assumption: Shell workspace state is intentionally non-persistent across fresh model instances.
+   - Evidence: `testShellWorkspaceIsScopedPerProjectAndNotRestoredInNewModel`.
+6. Assumption: Mods schema v1 + `modsBar` is the only supported forward path; legacy inspector pane is intentionally rejected.
+   - Evidence: Mods install/discovery tests around schema validation.

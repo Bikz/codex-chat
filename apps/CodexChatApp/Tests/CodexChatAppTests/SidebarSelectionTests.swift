@@ -67,6 +67,35 @@ final class SidebarSelectionTests: XCTestCase {
         XCTAssertTrue(model.hasPendingApprovalForSelectedThread)
     }
 
+    func testTrailingControlsVisibleWhenRowIsSelectedEvenWithoutHover() {
+        XCTAssertTrue(
+            SidebarView.trailingControlsVisible(isHovered: false, isSelected: true)
+        )
+        XCTAssertTrue(
+            SidebarView.trailingControlsVisible(isHovered: true, isSelected: false)
+        )
+        XCTAssertFalse(
+            SidebarView.trailingControlsVisible(isHovered: false, isSelected: false)
+        )
+    }
+
+    func testThreadTrailingControlsHideWhenSelectionSuppressed() {
+        XCTAssertFalse(
+            SidebarView.threadTrailingControlsVisible(
+                isHovered: true,
+                isSelected: true,
+                isSelectionSuppressed: true
+            )
+        )
+        XCTAssertTrue(
+            SidebarView.threadTrailingControlsVisible(
+                isHovered: false,
+                isSelected: true,
+                isSelectionSuppressed: false
+            )
+        )
+    }
+
     func testRemoveSelectedProjectDisconnectsItAndKeepsFilesOnDisk() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-remove-project-\(UUID().uuidString)", isDirectory: true)

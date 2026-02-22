@@ -11,6 +11,7 @@ struct ShellPaneChromeView<Content: View>: View {
     let onClose: () -> Void
     private let content: () -> Content
 
+    @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
 
     init(
@@ -37,12 +38,12 @@ struct ShellPaneChromeView<Content: View>: View {
         ZStack(alignment: .topTrailing) {
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onFocus)
 
             controlsOverlay
                 .padding(6)
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onFocus)
         .background(shellSurfaceColor)
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -72,8 +73,9 @@ struct ShellPaneChromeView<Content: View>: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .semibold))
-                .frame(width: 15, height: 15)
+                .frame(width: 20, height: 20)
                 .foregroundStyle(controlIconColor)
+                .contentShape(Rectangle())
         }
         .accessibilityLabel(label)
         .accessibilityHint(ShellPathPresentation.compactPath(pane.cwd))
@@ -82,22 +84,22 @@ struct ShellPaneChromeView<Content: View>: View {
     }
 
     private var shellSurfaceColor: Color {
-        colorScheme == .dark ? .black : .white
+        Color(hex: tokens.palette.panelHex)
     }
 
     private var controlGroupBackgroundColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.06)
+        Color.primary.opacity(tokens.surfaces.raisedOpacity * (colorScheme == .dark ? 1.4 : 1.2))
     }
 
     private var controlIconColor: Color {
-        colorScheme == .dark ? .white : .black
+        Color.primary.opacity(colorScheme == .dark ? 0.9 : 0.8)
     }
 
     private var activeBorderColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.18)
+        Color.primary.opacity(max(tokens.surfaces.activeOpacity, 0.14))
     }
 
     private var inactiveBorderColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)
+        Color.primary.opacity(max(tokens.surfaces.hairlineOpacity, 0.08))
     }
 }

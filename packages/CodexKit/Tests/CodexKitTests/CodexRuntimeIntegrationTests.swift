@@ -3,12 +3,11 @@ import Foundation
 import XCTest
 
 final class CodexRuntimeIntegrationTests: XCTestCase {
-    func testReadAccountPrefersNameOverFullName() async throws {
+    func testReadAccountUsesNameField() async throws {
         let fakeCodexPath = try Self.makeAccountFixtureExecutable(
             account: [
                 "type": "chatgpt",
                 "name": "Preferred Name",
-                "fullName": "Fallback Name",
                 "email": "preferred@example.com",
                 "planType": "pro",
             ]
@@ -20,22 +19,6 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
         XCTAssertEqual(state.account?.name, "Preferred Name")
         XCTAssertEqual(state.account?.email, "preferred@example.com")
         XCTAssertEqual(state.account?.planType, "pro")
-    }
-
-    func testReadAccountFallsBackToFullNameWhenNameMissing() async throws {
-        let fakeCodexPath = try Self.makeAccountFixtureExecutable(
-            account: [
-                "type": "chatgpt",
-                "fullName": "Full Name Only",
-                "email": "full@example.com",
-            ]
-        )
-        let runtime = CodexRuntime(executableResolver: { fakeCodexPath })
-        defer { Task { await runtime.stop() } }
-
-        let state = try await runtime.readAccount()
-        XCTAssertEqual(state.account?.name, "Full Name Only")
-        XCTAssertEqual(state.account?.email, "full@example.com")
     }
 
     func testLegacyFixtureReportsNoCapabilities() async throws {
