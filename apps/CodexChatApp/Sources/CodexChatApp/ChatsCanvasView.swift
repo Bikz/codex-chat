@@ -86,12 +86,6 @@ struct ChatsCanvasView: View {
                         composerAttachmentChip(attachment)
                     }
                 }
-            } else if model.shouldShowComposerStarterPrompts {
-                composerContextStrip {
-                    ForEach(model.composerStarterPrompts, id: \.self) { prompt in
-                        composerStarterPromptChip(prompt)
-                    }
-                }
             }
 
             HStack(alignment: .center, spacing: 10) {
@@ -434,26 +428,6 @@ struct ChatsCanvasView: View {
                 .strokeBorder(chipSurfaceStrokeColor)
         )
         .help(attachment.path)
-    }
-
-    private func composerStarterPromptChip(_ starterPrompt: AppModel.ComposerStarterPrompt) -> some View {
-        Button(starterPrompt.label) {
-            model.insertStarterPrompt(starterPrompt.prompt)
-            isComposerFocused = true
-        }
-        .buttonStyle(.plain)
-        .font(.caption.weight(.medium))
-        .lineLimit(1)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule(style: .continuous)
-                .fill(chipSurfaceFillColor)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(chipSurfaceStrokeColor)
-        )
     }
 
     @ViewBuilder
