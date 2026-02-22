@@ -99,6 +99,9 @@ private struct WindowAccessor: NSViewRepresentable {
         window.minSize = NSSize(width: 600, height: 400)
         // Don't cap maxSize — let the user go full-screen or any size
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        window.toolbarStyle = .unifiedCompact
+        window.toolbar?.showsBaselineSeparator = false
+        window.titleVisibility = .hidden
         if isTransparent {
             window.styleMask.insert(.fullSizeContentView)
             window.titlebarAppearsTransparent = true

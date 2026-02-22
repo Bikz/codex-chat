@@ -187,16 +187,16 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .environment(\.defaultMinListHeaderHeight, 18)
         .scrollContentBackground(.hidden)
-        .background(sidebarBackground)
         .listRowInsets(EdgeInsets(
             top: 0,
             leading: SidebarLayoutSpec.listHorizontalInset,
             bottom: 0,
             trailing: SidebarLayoutSpec.listHorizontalInset
         ))
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             accountRow
         }
+        .background(sidebarBackground)
         .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.expandedProjectIDs)
         .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.showAllProjects)
     }
@@ -698,36 +698,30 @@ struct SidebarView: View {
     }
 
     private var accountRow: some View {
-        VStack(spacing: 0) {
-            Divider()
-                .opacity(0.4)
+        Button {
+            openSettingsWindow()
+        } label: {
+            HStack(spacing: 10) {
+                UserInitialCircle(sidebarAccountDisplayName, size: 28)
 
-            Button {
-                openSettingsWindow()
-            } label: {
-                HStack(spacing: 10) {
-                    UserInitialCircle(sidebarAccountDisplayName, size: 28)
+                Text(sidebarAccountDisplayName)
+                    .font(sidebarBodyFont.weight(.medium))
+                    .lineLimit(1)
 
-                    Text(sidebarAccountDisplayName)
-                        .font(sidebarBodyFont.weight(.medium))
-                        .lineLimit(1)
+                Spacer()
 
-                    Spacer()
-
-                    Image(systemName: "gearshape")
-                        .foregroundStyle(sidebarControlIconColor)
-                        .font(sidebarMetaIconFont)
-                        .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
-                }
-                .frame(minHeight: SidebarLayoutSpec.footerHeight - (SidebarLayoutSpec.footerVerticalInset * 2))
-                .padding(.horizontal, SidebarLayoutSpec.footerHorizontalInset)
-                .padding(.vertical, SidebarLayoutSpec.footerVerticalInset)
+                Image(systemName: "gearshape")
+                    .foregroundStyle(sidebarControlIconColor)
+                    .font(sidebarMetaIconFont)
+                    .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Account and settings")
-            .accessibilityHint("Opens global CodexChat settings and General project controls")
+            .frame(minHeight: SidebarLayoutSpec.footerHeight - (SidebarLayoutSpec.footerVerticalInset * 2))
+            .padding(.horizontal, SidebarLayoutSpec.footerHorizontalInset)
+            .padding(.vertical, SidebarLayoutSpec.footerVerticalInset)
         }
-        .background(sidebarBackground)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Account and settings")
+        .accessibilityHint("Opens global CodexChat settings and General project controls")
     }
 
     private func openSettingsWindow() {
