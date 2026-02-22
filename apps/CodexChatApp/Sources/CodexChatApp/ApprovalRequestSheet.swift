@@ -24,7 +24,7 @@ struct InlineApprovalRequestView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
-                Color.primary.opacity(tokens.surfaces.baseOpacity),
+                Color(hex: tokens.palette.panelHex).opacity(model.isTransparentThemeMode ? 0.78 : 0.95),
                 in: RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
             )
             .overlay(
@@ -102,7 +102,7 @@ private struct InlineComputerActionPreviewApprovalView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
-            Color.primary.opacity(tokens.surfaces.baseOpacity),
+            Color(hex: tokens.palette.panelHex).opacity(model.isTransparentThemeMode ? 0.78 : 0.95),
             in: RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
         )
         .overlay(
@@ -157,7 +157,7 @@ private struct InlinePermissionRecoveryApprovalView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
-            Color.primary.opacity(tokens.surfaces.baseOpacity),
+            Color(hex: tokens.palette.panelHex).opacity(model.isTransparentThemeMode ? 0.78 : 0.95),
             in: RoundedRectangle(cornerRadius: tokens.radius.large, style: .continuous)
         )
         .overlay(

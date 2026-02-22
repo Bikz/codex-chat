@@ -65,15 +65,8 @@ struct ChatsCanvasView: View {
         }
         .navigationTitle("")
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .onAppear {
-            Task {
-                await model.refreshModsBarForSelectedThread()
-            }
-        }
-        .onChange(of: model.selectedThreadID) { _, _ in
-            Task {
-                await model.refreshModsBarForSelectedThread()
-            }
+        .task(id: model.selectedThreadID) {
+            await model.refreshModsBarForSelectedThread()
         }
         .sheet(item: $permissionRecoveryDetailsNotice) { notice in
             PermissionRecoveryDetailsSheet(
@@ -231,12 +224,12 @@ struct ChatsCanvasView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
-            Color.primary.opacity(tokens.surfaces.baseOpacity * 0.95),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(panelSurfaceFillColor)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity * 0.95))
+                .strokeBorder(panelSurfaceStrokeColor)
 
             if isComposerDropTargeted {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -255,6 +248,24 @@ struct ChatsCanvasView: View {
         )
         .padding(.horizontal, tokens.spacing.medium)
         .padding(.vertical, tokens.spacing.small)
+    }
+
+    private var panelSurfaceFillColor: Color {
+        Color(hex: tokens.palette.panelHex)
+            .opacity(model.isTransparentThemeMode ? 0.78 : 0.96)
+    }
+
+    private var panelSurfaceStrokeColor: Color {
+        Color.primary.opacity(tokens.surfaces.hairlineOpacity * (model.isTransparentThemeMode ? 1.15 : 0.95))
+    }
+
+    private var chipSurfaceFillColor: Color {
+        Color(hex: tokens.palette.panelHex)
+            .opacity(model.isTransparentThemeMode ? 0.62 : 0.92)
+    }
+
+    private var chipSurfaceStrokeColor: Color {
+        Color.primary.opacity(tokens.surfaces.hairlineOpacity)
     }
 
     private func permissionRecoveryInlineBanner(_ notice: AppModel.PermissionRecoveryNotice) -> some View {
@@ -416,11 +427,11 @@ struct ChatsCanvasView: View {
         .padding(.vertical, 6)
         .background(
             Capsule(style: .continuous)
-                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                .fill(chipSurfaceFillColor)
         )
         .overlay(
             Capsule(style: .continuous)
-                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                .strokeBorder(chipSurfaceStrokeColor)
         )
         .help(attachment.path)
     }
@@ -437,11 +448,11 @@ struct ChatsCanvasView: View {
         .padding(.vertical, 6)
         .background(
             Capsule(style: .continuous)
-                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                .fill(chipSurfaceFillColor)
         )
         .overlay(
             Capsule(style: .continuous)
-                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                .strokeBorder(chipSurfaceStrokeColor)
         )
     }
 
@@ -474,11 +485,11 @@ struct ChatsCanvasView: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(tokens.surfaces.baseOpacity))
+                .fill(chipSurfaceFillColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                .strokeBorder(chipSurfaceStrokeColor)
         )
     }
 
@@ -621,10 +632,9 @@ struct ChatsCanvasView: View {
             case let .loaded(entries):
                 conversationWithModsBar {
                     let presentationRows = model.presentationRowsForSelectedConversation(entries: entries)
-                    let indexedRows = Array(presentationRows.enumerated())
 
                     ScrollViewReader { proxy in
-                        List(indexedRows, id: \.element.id) { _, row in
+                        List(presentationRows, id: \.id) { row in
                             switch row {
                             case let .message(message):
                                 MessageRow(
@@ -769,7 +779,7 @@ private struct ThreadEmptyStateView: View {
         VStack(spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(tokens.surfaces.baseOpacity * 1.6))
+                    .fill(Color(hex: tokens.palette.panelHex).opacity(0.94))
                     .frame(width: 66, height: 66)
                 CodexMonochromeMark()
                     .frame(width: 31, height: 31)
@@ -981,8 +991,8 @@ private struct ComposerControlBar: View {
         .padding(.vertical, 6)
         .frame(minWidth: minWidth, alignment: .leading)
         .background(
-            Color.primary.opacity(tokens.surfaces.baseOpacity * 1.15),
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color(hex: tokens.palette.panelHex).opacity(model.isTransparentThemeMode ? 0.66 : 0.94))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)

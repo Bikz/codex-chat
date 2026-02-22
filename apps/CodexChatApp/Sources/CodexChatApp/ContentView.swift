@@ -18,6 +18,7 @@ struct ContentView: View {
                 .background(detailBackground)
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
             if !model.isOnboardingActive {
                 ToolbarItem(placement: .navigation) {
@@ -89,7 +90,6 @@ struct ContentView: View {
                 }
             }
         }
-        .toolbar(removing: .sidebarToggle)
         .navigationTitle("")
         .sheet(isPresented: $model.isDiagnosticsVisible) {
             DiagnosticsView(

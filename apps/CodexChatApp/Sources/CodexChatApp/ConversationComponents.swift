@@ -128,7 +128,10 @@ struct ActionCardRow: View {
             .accessibilityLabel("\(card.title) — \(card.method)")
         }
         .padding(10)
-        .background(Color.primary.opacity(tokens.surfaces.baseOpacity), in: shape)
+        .background(
+            Color(hex: tokens.palette.panelHex).opacity(0.94),
+            in: shape
+        )
         .overlay(shape.strokeBorder(methodColor(card.method).opacity(0.32)))
     }
 
