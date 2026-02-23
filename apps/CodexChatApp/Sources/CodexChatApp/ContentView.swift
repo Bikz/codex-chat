@@ -115,6 +115,7 @@ struct ContentView: View {
                 runtimePoolSnapshot: model.runtimePoolSnapshot,
                 adaptiveTurnConcurrencyLimit: model.adaptiveTurnConcurrencyLimit,
                 logs: model.logs,
+                extensibilityDiagnostics: model.extensibilityDiagnostics,
                 onClose: model.closeDiagnostics
             )
         }
