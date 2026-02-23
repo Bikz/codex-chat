@@ -1,0 +1,30 @@
+{
+  "name": "stale-thread-remap",
+  "events": [
+    {
+      "kind": "delta",
+      "text": "Detected stale runtime thread id."
+    },
+    {
+      "kind": "action",
+      "title": "Invalidated runtime thread mapping"
+    },
+    {
+      "kind": "action",
+      "title": "Created fresh runtime thread and retried turn"
+    },
+    {
+      "kind": "delta",
+      "text": " Turn completed after one retry."
+    },
+    {
+      "kind": "turnCompleted",
+      "status": "completed"
+    }
+  ],
+  "expected": {
+    "transcript": "Detected stale runtime thread id. Turn completed after one retry.",
+    "actionCount": 2,
+    "finalStatus": "completed"
+  }
+}

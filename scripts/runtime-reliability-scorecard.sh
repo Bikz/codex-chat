@@ -41,7 +41,12 @@ TOTAL_START_EPOCH="$(date +%s)"
 
 run_check "local reliability harness" make -C "$ROOT" reliability-local
 run_check "targeted smoke" make -C "$ROOT" oss-smoke
-run_check "deterministic repro fixture" swift run --package-path "$ROOT/apps/CodexChatApp" CodexChatCLI repro --fixture basic-turn
+run_check "repro fixture: basic-turn" \
+  swift run --package-path "$ROOT/apps/CodexChatApp" CodexChatCLI repro --fixture basic-turn
+run_check "repro fixture: runtime-termination-recovery" \
+  swift run --package-path "$ROOT/apps/CodexChatApp" CodexChatCLI repro --fixture runtime-termination-recovery
+run_check "repro fixture: stale-thread-remap" \
+  swift run --package-path "$ROOT/apps/CodexChatApp" CodexChatCLI repro --fixture stale-thread-remap
 
 TOTAL_END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 TOTAL_END_EPOCH="$(date +%s)"

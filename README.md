@@ -105,6 +105,7 @@ make reliability-scorecard
 ```
 
 Writes markdown + JSON scorecard outputs under `.artifacts/reliability/`.
+Includes deterministic repro fixtures for `basic-turn`, runtime-termination recovery, and stale-thread remap.
 
 ### Local pre-push gate
 
@@ -143,6 +144,8 @@ cd apps/CodexChatApp
 swift run CodexChatCLI doctor
 swift run CodexChatCLI smoke
 swift run CodexChatCLI repro --fixture basic-turn
+swift run CodexChatCLI repro --fixture runtime-termination-recovery
+swift run CodexChatCLI repro --fixture stale-thread-remap
 swift run CodexChatCLI replay --project-path <project-path> --thread-id <thread-uuid> --json
 swift run CodexChatCLI ledger export --project-path <project-path> --thread-id <thread-uuid>
 swift run CodexChatCLI policy validate --file ../../config/runtime-policy/default-policy.json
