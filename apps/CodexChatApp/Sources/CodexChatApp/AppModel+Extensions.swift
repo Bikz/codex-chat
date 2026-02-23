@@ -996,7 +996,7 @@ extension AppModel {
                 appendLog(.warning, "Failed to persist extension modsBar output: \(error.localizedDescription)")
             }
 
-            if (resolvedScope != .thread || threadID != nil),
+            if resolvedScope != .thread || threadID != nil,
                !extensionModsBarIsVisible
             {
                 extensionModsBarIsVisible = true

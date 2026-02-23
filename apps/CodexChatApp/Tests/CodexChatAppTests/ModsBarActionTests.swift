@@ -730,7 +730,7 @@ final class ModsBarActionTests: XCTestCase {
             ]
         )
 
-        let hookIDs = Set(model.activeExtensionHooks.map { $0.definition.id })
+        let hookIDs = Set(model.activeExtensionHooks.map(\.definition.id))
         XCTAssertEqual(hookIDs, Set(["hook-a", "hook-b"]))
     }
 

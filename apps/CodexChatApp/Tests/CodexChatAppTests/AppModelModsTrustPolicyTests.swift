@@ -174,7 +174,7 @@ final class AppModelModsTrustPolicyTests: XCTestCase {
             let path = try await repositories.preferenceRepository.getPreference(key: .globalUIModPath)
             let installs = try await repositories.extensionInstallRepository.list()
             let enabled = installs.first(where: { $0.modID == modID })?.enabled
-            if (path ?? "").isEmpty && enabled == false {
+            if (path ?? "").isEmpty, enabled == false {
                 conditionMet = true
                 break
             }

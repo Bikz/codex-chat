@@ -515,8 +515,13 @@ final class AppModel: ObservableObject {
         let scope: ModsBarQuickSwitchOption.Scope
         let options: [ModsBarQuickSwitchOption]
 
-        var id: ModsBarQuickSwitchOption.Scope { scope }
-        var title: String { scope.label }
+        var id: ModsBarQuickSwitchOption.Scope {
+            scope
+        }
+
+        var title: String {
+            scope.label
+        }
     }
 
     struct PendingModReview: Identifiable, Hashable {

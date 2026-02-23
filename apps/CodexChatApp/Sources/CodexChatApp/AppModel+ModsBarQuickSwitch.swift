@@ -185,7 +185,7 @@ extension AppModel {
 
         if let explicit = option.mod.definition.manifest.iconSymbol?
             .trimmingCharacters(in: .whitespacesAndNewlines),
-           !explicit.isEmpty
+            !explicit.isEmpty
         {
             return explicit
         }
@@ -225,7 +225,7 @@ extension AppModel {
             "slider.horizontal.3",
         ]
         let seed = id.unicodeScalars.reduce(0) { partial, scalar in
-            ((partial &* 33) &+ Int(scalar.value)) & 0x7fffffff
+            ((partial &* 33) &+ Int(scalar.value)) & 0x7FFF_FFFF
         }
         return fallbackSymbols[seed % fallbackSymbols.count]
     }
