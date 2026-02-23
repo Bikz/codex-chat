@@ -16,7 +16,8 @@ extension AppModel {
         static let canonicalModID = "codexchat.personal-notes"
         static let actionHookID = "notes-action"
         static let titleToken = "personal-notes"
-        static let emptyStateMarkdown = "_Start typing to save thread-specific notes. Notes autosave for this chat._"
+        static let emptyStateMarkdown = "_Start typing to save project-specific notes. Notes autosave for this project._"
+        static let legacyThreadEmptyStateMarkdown = "_Start typing to save thread-specific notes. Notes autosave for this chat._"
         static let legacyEmptyStateMarkdown = "_No notes yet. Use Add or Edit to save thread-specific notes._"
     }
 
@@ -323,11 +324,11 @@ extension AppModel {
     }
 
     var isPersonalNotesModsBarActiveForSelectedThread: Bool {
-        selectedThreadID != nil
-            && (
-                isLikelyPersonalNotesModID(activeModsBarModID)
-                    || activeModsBarTitleContains(PersonalNotesModsBarConstants.titleToken)
-            )
+        (
+            isLikelyPersonalNotesModID(activeModsBarModID)
+                || activeModsBarTitleContains(PersonalNotesModsBarConstants.titleToken)
+        )
+            && (!isActiveModsBarThreadRequired || selectedThreadID != nil)
             && (activeModsBarSlot?.enabled ?? false)
     }
 
@@ -344,6 +345,7 @@ extension AppModel {
         guard let markdown else { return "" }
         let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed == PersonalNotesModsBarConstants.emptyStateMarkdown
+            || trimmed == PersonalNotesModsBarConstants.legacyThreadEmptyStateMarkdown
             || trimmed == PersonalNotesModsBarConstants.legacyEmptyStateMarkdown
         {
             return ""
@@ -353,8 +355,7 @@ extension AppModel {
 
     func upsertPersonalNotesInline(_ text: String) {
         guard isPersonalNotesModsBarActiveForSelectedThread,
-              let selectedThreadID,
-              let context = extensionProjectContext(forThreadID: selectedThreadID)
+              let context = activeModsBarActionContext(requireThread: isActiveModsBarThreadRequired)
         else {
             return
         }
@@ -384,7 +385,7 @@ extension AppModel {
             .modsBarAction,
             projectID: context.projectID,
             projectPath: context.projectPath,
-            threadID: selectedThreadID,
+            threadID: context.threadID,
             payload: payload
         )
     }

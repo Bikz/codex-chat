@@ -193,7 +193,7 @@ private struct PersonalNotesInlineEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: tokens.spacing.small) {
-            Text("Thread Notes")
+            Text(model.isActiveModsBarThreadRequired ? "Thread Notes" : "Project Notes")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 

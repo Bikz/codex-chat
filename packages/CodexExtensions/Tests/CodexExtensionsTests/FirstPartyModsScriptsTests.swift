@@ -12,7 +12,7 @@ final class FirstPartyModsScriptsTests: XCTestCase {
             event: .threadStarted,
             threadID: threadID
         )
-        XCTAssertEqual(initial.modsBar?.scope, .thread)
+        XCTAssertEqual(initial.modsBar?.scope, .project)
         XCTAssertTrue(initial.modsBar?.markdown.contains("Start typing") == true)
 
         let upserted = try await runModScript(

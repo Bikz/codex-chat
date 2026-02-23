@@ -107,8 +107,8 @@ If your extension requests privileged permissions (`projectWrite`, `network`, `r
 
 ## Patterns For Common Extensions
 
-1. Personal Notes (per chat):
-- use `turn.completed` hook + modsBar markdown + optional `artifacts` writes under project root.
+1. Personal Notes (per project):
+- use `modsBar.scope: project` so notes persist across chats in the same project.
 
 2. Thread Summary:
 - emit one-line bullet updates in modsBar markdown after each turn.
