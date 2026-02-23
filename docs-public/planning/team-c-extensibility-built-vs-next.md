@@ -55,6 +55,7 @@ Date: 2026-02-23
 | P2 | Added one-click remediation actions for diagnostics playbooks (copy recovery steps and copy rerun command) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1c9c156` |
 | P2 | Added contextual Diagnostics shortcut to open app settings for launchd-related remediation paths | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `5c346cc` |
 | P2 | Added guarded inline rerun preparation by routing diagnostics commands into composer prompts (manual send remains explicit) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelDiagnosticsActionsTests.swift` | `6d0f43a` |
+| P2 | Added automation-health failure transition events into shared diagnostics stream for timeline visibility | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensionAutomationHealthTests.swift` | `985d4e2` |
 
 ### Remaining prioritized backlog
 
@@ -75,7 +76,8 @@ Date: 2026-02-23
 - Phase 12 shipped: diagnostics playbooks now include one-click copy actions for recovery steps and rerun commands.
 - Phase 13 shipped: diagnostics now provide contextual app-settings deep links for launchd remediation flows.
 - Phase 14 shipped: diagnostics can now prepare safe rerun prompts in composer without auto-executing commands.
-- Next step is policy-gated direct rerun execution for explicitly allowlisted command classes.
+- Phase 15 shipped: automation-health failing transitions now emit normalized diagnostics events for timeline continuity.
+- Next step is policy-gated direct rerun execution for explicitly allowlisted command classes plus unified automation timeline UX.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
