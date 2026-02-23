@@ -17,6 +17,21 @@ Build the most trusted autonomous coding workstation on macOS by making runtime 
 2. Keep GitHub-hosted CI minimal: fast checks + targeted smoke only.
 3. Run deep reliability suites locally for now, with deterministic scripts and repeatable outputs.
 
+## Implementation Status (Current Branch)
+
+1. Completed:
+- Local reliability harness + pre-push gate (`make reliability-local`, `make prepush-local`).
+- Optional pre-push hook installer (`make install-local-hooks`).
+- Hosted CI minimization to required `fast-checks` + `full-checks` where `full-checks` runs targeted smoke.
+- Reliability scorecard generator (`make reliability-scorecard`) with JSON + markdown artifacts.
+- Local replay and ledger export CLI (`CodexChatCLI replay`, `CodexChatCLI ledger export`).
+- Runtime policy-as-code validation CLI (`CodexChatCLI policy validate`) with tracked default policy file.
+- Draft runtime reliability SLO document and replay/ledger + policy docs.
+
+2. In progress:
+- Extended fault-injection scenario breadth beyond current deterministic suites.
+- Event-sourced ledger migration/backfill planning from existing artifacts to future unified model.
+
 ## OKRs (Next 90 Days)
 
 1. Objective: Prove runtime recovery behavior is deterministic.

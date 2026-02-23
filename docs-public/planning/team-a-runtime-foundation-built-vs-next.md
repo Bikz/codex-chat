@@ -27,6 +27,11 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Runtime option compatibility fallback | Retry-without-turn-options heuristics are codified and directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:671`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7` |
 | Turn-options compatibility policy seam | Compatibility fallback heuristics now live in a dedicated policy type with direct unit coverage. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimeTurnOptionsCompatibilityPolicy.swift:4`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:693`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsCompatibilityPolicyTests.swift:4` |
 | Runtime/data reliability contract | Dedicated runtime/data invariants contract is published and cross-linked from architecture and contributor docs. | `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:1`, `docs-public/ARCHITECTURE_CONTRACT.md:4`, `AGENTS.md:46` |
+| Local reliability gate | Team A reliability harness and pre-push flow are scriptable and enforced through make targets. | `scripts/runtime-reliability-local.sh:1`, `Makefile:40`, `Makefile:43`, `README.md:85` |
+| Reliability scorecard artifacts | Local scorecard script writes machine-readable and human-readable reports for deterministic gates. | `scripts/runtime-reliability-scorecard.sh:1`, `Makefile:43`, `README.md:93` |
+| Replay + ledger prototype | CLI supports replaying persisted thread artifacts and exporting deterministic event-ledger JSON. | `apps/CodexChatApp/Sources/CodexChatCLI/main.swift:22`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:178`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:227`, `docs-public/RUNTIME_LEDGER_REPLAY.md:1` |
+| Runtime policy-as-code validation | Tracked runtime policy defaults are validated via CLI and included in local reliability harness flow. | `config/runtime-policy/default-policy.json:1`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:256`, `scripts/runtime-reliability-local.sh:41`, `docs-public/RUNTIME_POLICY_AS_CODE.md:1` |
+| Lean hosted CI | Hosted CI path is minimized to required quick checks plus targeted smoke to reduce minute consumption. | `.github/workflows/ci.yml:1`, `.github/workflows/ci.yml:54` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
 
@@ -37,8 +42,11 @@ Evidence: former P0 gaps (archive replacement-boundary durability and follow-up 
 
 ### P1
 
-1. No open P1 documentation/coordination gaps in the current Team A slice.
-Evidence: runbook + workstream coordination updates landed in `docs-public/STORAGE_REPAIR_RUNBOOK.md:1` and `docs-public/planning/workstreams.md:14`.
+1. Expand reliability harness with additional deterministic fault-injection fixtures (runtime termination + stale mapping edge combinations).
+Evidence seed: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:40`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift:34`.
+
+2. Add migration/backfill plan for future event-sourced ledger model from existing transcript artifacts.
+Evidence gap: v1 replay/ledger prototype exists, but migration contract is still planning-only (`docs-public/RUNTIME_LEDGER_REPLAY.md:1`).
 
 ### P2
 
