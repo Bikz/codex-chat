@@ -2,15 +2,24 @@ import Foundation
 
 public actor ExtensionAutomationScheduler {
     public typealias Handler = @Sendable (_ automation: ExtensionAutomationDefinition) async -> Bool
+    public typealias Sleeper = @Sendable (_ nanoseconds: UInt64) async throws -> Void
 
     private let now: @Sendable () -> Date
+    private let sleep: Sleeper
     private let timeZone: TimeZone
     private var tasks: [String: Task<Void, Never>] = [:]
     private var schedules: [String: CronSchedule] = [:]
 
-    public init(timeZone: TimeZone = .current, now: @escaping @Sendable () -> Date = Date.init) {
+    public init(
+        timeZone: TimeZone = .current,
+        now: @escaping @Sendable () -> Date = Date.init,
+        sleep: @escaping Sleeper = { nanoseconds in
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
+    ) {
         self.timeZone = timeZone
         self.now = now
+        self.sleep = sleep
     }
 
     public func replaceAutomations(_ automations: [ExtensionAutomationDefinition], handler: @escaping Handler) {
@@ -62,7 +71,7 @@ public actor ExtensionAutomationScheduler {
             let delayNanoseconds = UInt64(delaySeconds * 1_000_000_000)
 
             do {
-                try await Task.sleep(nanoseconds: delayNanoseconds)
+                try await sleep(delayNanoseconds)
             } catch {
                 return
             }
@@ -85,7 +94,7 @@ public actor ExtensionAutomationScheduler {
 
             let backoffSeconds = min(300, Int(pow(2.0, Double(retryAttempts))) * 15)
             do {
-                try await Task.sleep(nanoseconds: UInt64(backoffSeconds) * 1_000_000_000)
+                try await sleep(UInt64(backoffSeconds) * 1_000_000_000)
             } catch {
                 return
             }
