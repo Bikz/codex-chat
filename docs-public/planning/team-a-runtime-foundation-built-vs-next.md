@@ -20,19 +20,17 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Runtime degradation explicitness | Turn-start checkpoint failures log explicit warning while runtime turn still starts. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:114`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:339` |
 | Completion persistence pressure handling | Batcher threshold, shutdown, and max-pending spill are now tested. | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` |
 | Runtime option compatibility fallback | Retry-without-turn-options heuristics are codified and directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:689`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7` |
+| Runtime/data reliability contract | Dedicated runtime/data invariants contract is now published and linked from architecture docs. | `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:1`, `docs-public/ARCHITECTURE_CONTRACT.md:3` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
 
 ### P0
 
-1. Add event-driven RuntimePool resilience tests for non-primary worker `runtime/terminated` behavior (event suppression, pin reassignment, restart sequencing).
-Evidence gap: `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:376`, no direct test assertion for this path.
-
-2. Publish a single runtime/data reliability contract document in `docs-public/` (thread mapping invariants, approval reset invariants, recovery policy invariants, durability invariants).
-Evidence gap: invariants currently spread across `AGENTS.md:45`, `docs-public/ARCHITECTURE_CONTRACT.md:27`, planning docs.
-
-3. Add crash-boundary durability harness beyond write-denial fault injection for transcript replace semantics.
+1. Add crash-boundary durability harness beyond write-denial fault injection for transcript replace semantics.
 Evidence gap: current tests validate permission/write-denial failure, not simulated crash-mid-replace semantics (`apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`).
+
+2. Expand RuntimePool resilience coverage from single non-primary termination regression to repeated degradation/recovery soak coverage.
+Evidence gap: deterministic load harness exists but does not repeatedly assert worker degradation/recovery invariants (`apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`).
 
 ### P1
 
@@ -60,12 +58,12 @@ Evidence seed: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigration
 
 ### Day 0-30
 
-1. Land P0 RuntimePool event-driven resilience tests.
-2. Draft and merge dedicated runtime/data reliability contract doc.
-3. Add crash-boundary transcript durability test harness design and first deterministic checks.
+1. Add crash-boundary transcript durability harness design and first deterministic checks.
+2. Extend RuntimePool resilience into repeated degradation/recovery soak assertions.
+3. Link runtime/data reliability contract from additional contributor docs (`AGENTS.md` and planning indexes).
 
 Dependencies:
-- Existing RuntimePool + harness infrastructure: `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:376`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`.
+- Existing RuntimePool + harness infrastructure: `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:376`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:7`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`.
 - Existing transcript write seam: `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`.
 
 ### Day 31-60
@@ -92,15 +90,11 @@ Dependencies:
 
 ### Proposed contract changes
 
-1. Add explicit runtime/data reliability contract page in `docs-public/` with four invariants sections:
-- Runtime lifecycle and bounded recovery.
-- Local thread <-> runtime thread mapping invariants.
-- Approval reset and user-visible messaging invariants.
-- Transcript and completion durability invariants.
+1. Adopt the new runtime/data reliability contract as the canonical invariant reference from contributor-facing docs (`AGENTS.md`, planning indexes).
 
-2. Update `docs-public/planning/feature-inventory.md` to remove stale `Assumption` markers where behavior is now explicit and tested.
+2. Continue updating planning docs to remove stale assumption markers where behavior is now explicit and tested.
 
-3. Clarify that bounded recovery applies at both app runtime layer and RuntimePool worker layer.
+3. Clarify that bounded recovery applies at both app runtime layer and RuntimePool worker layer, with shared policy terminology.
 
 ### Migration considerations
 
@@ -111,6 +105,6 @@ Dependencies:
 - If `RuntimeRecoveryPolicy` is introduced, roll out behind equivalent tests to preserve current retry/backoff semantics.
 
 3. Documentation migration:
-- Add links from `AGENTS.md` and `docs-public/ARCHITECTURE_CONTRACT.md` to the new runtime/data reliability contract page to prevent future drift.
+- Add links from `AGENTS.md` and planning index docs to `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md` to prevent future drift.
 
 Assumption: No UI IA migration is required because all changes stay inside existing two-pane surfaces and explicit messaging paths.
