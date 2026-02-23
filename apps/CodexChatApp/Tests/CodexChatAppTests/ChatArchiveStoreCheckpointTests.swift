@@ -1,5 +1,6 @@
 import CodexChatCore
 @testable import CodexChatShared
+import Darwin
 import Foundation
 import XCTest
 
@@ -202,6 +203,59 @@ final class ChatArchiveStoreCheckpointTests: XCTestCase {
         let after = try String(contentsOf: archiveURL, encoding: .utf8)
         XCTAssertEqual(after, before)
         XCTAssertFalse(after.contains("This write should fail"))
+    }
+
+    func testFinalizeCheckpointReplaceBoundaryFailurePreservesArchiveAndCleansTempArtifacts() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-replace-boundary-failure")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000109"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_350)
+
+        let archiveURL = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Question before replace failure",
+                assistantText: "",
+                actions: []
+            )
+        )
+        let before = try String(contentsOf: archiveURL, encoding: .utf8)
+
+        try setUserImmutableFlag(path: archiveURL.path)
+        defer { clearUserImmutableFlag(path: archiveURL.path) }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.finalizeCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before replace failure",
+                    assistantText: "This replacement should fail",
+                    actions: []
+                )
+            )
+        )
+
+        let after = try String(contentsOf: archiveURL, encoding: .utf8)
+        XCTAssertEqual(after, before)
+        XCTAssertFalse(after.contains("This replacement should fail"))
+
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        let directoryEntries = try FileManager.default.contentsOfDirectory(
+            at: threadsDirectory,
+            includingPropertiesForKeys: nil
+        )
+        let tempArtifacts = directoryEntries.filter { $0.lastPathComponent.contains(".tmp-") }
+        XCTAssertTrue(tempArtifacts.isEmpty)
     }
 
     func testBeginCheckpointWriteFailureDoesNotCreatePartialArchive() throws {
@@ -541,5 +595,20 @@ final class ChatArchiveStoreCheckpointTests: XCTestCase {
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
+    }
+
+    private func setUserImmutableFlag(path: String) throws {
+        let result = path.withCString { pointer in
+            chflags(pointer, UInt32(UF_IMMUTABLE))
+        }
+        if result != 0 {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    private func clearUserImmutableFlag(path: String) {
+        _ = path.withCString { pointer in
+            chflags(pointer, 0)
+        }
     }
 }
