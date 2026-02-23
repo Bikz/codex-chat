@@ -182,6 +182,7 @@ extension CodexRuntime {
         isStdoutReadPaused = false
         isStderrReadPaused = false
         pendingApprovalRequests.removeAll()
+        nextLocalApprovalRequestID = 1
         runtimeCapabilities = .none
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)
@@ -213,6 +214,7 @@ extension CodexRuntime {
         isStdoutReadPaused = false
         isStderrReadPaused = false
         pendingApprovalRequests.removeAll()
+        nextLocalApprovalRequestID = 1
         runtimeCapabilities = .none
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)

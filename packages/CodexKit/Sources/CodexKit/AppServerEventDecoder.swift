@@ -9,20 +9,30 @@ enum AppServerEventDecoder {
         }
 
         let params = notification.params ?? .object([:])
-        let threadID = params.value(at: ["threadId"])?.stringValue
-            ?? params.value(at: ["thread", "id"])?.stringValue
-        let turnID = params.value(at: ["turnId"])?.stringValue
-            ?? params.value(at: ["turn", "id"])?.stringValue
+        let threadID = stringValue(
+            in: params,
+            keyPaths: [["threadId"], ["thread_id"], ["thread", "id"], ["thread", "threadId"], ["thread", "thread_id"]]
+        )
+        let turnID = stringValue(
+            in: params,
+            keyPaths: [["turnId"], ["turn_id"], ["turn", "id"], ["turn", "turnId"], ["turn", "turn_id"]]
+        )
 
         switch method {
         case "thread/started":
-            guard let threadID = params.value(at: ["thread", "id"])?.stringValue else {
+            guard let threadID = stringValue(
+                in: params,
+                keyPaths: [["thread", "id"], ["threadId"], ["thread_id"], ["thread", "threadId"], ["thread", "thread_id"]]
+            ) else {
                 return []
             }
             return [.threadStarted(threadID: threadID)]
 
         case "turn/started":
-            guard let turnID = params.value(at: ["turn", "id"])?.stringValue else {
+            guard let turnID = stringValue(
+                in: params,
+                keyPaths: [["turn", "id"], ["turnId"], ["turn_id"], ["turn", "turnId"], ["turn", "turn_id"]]
+            ) else {
                 return []
             }
             return [.turnStarted(threadID: threadID, turnID: turnID)]
@@ -34,15 +44,16 @@ enum AppServerEventDecoder {
                 return []
             }
 
-            let itemID = params.value(at: ["itemId"])?.stringValue
-                ?? params.value(at: ["item", "id"])?.stringValue
+            let itemID = stringValue(in: params, keyPaths: [["itemId"], ["item_id"], ["item", "id"], ["item", "itemId"], ["item", "item_id"]])
                 ?? "agent-message"
 
             return [.assistantMessageDelta(threadID: threadID, turnID: turnID, itemID: itemID, delta: delta)]
 
         case "item/commandExecution/outputDelta":
-            guard let itemID = params.value(at: ["itemId"])?.stringValue
-                ?? params.value(at: ["item", "id"])?.stringValue,
+            guard let itemID = stringValue(
+                in: params,
+                keyPaths: [["itemId"], ["item_id"], ["item", "id"], ["item", "itemId"], ["item", "item_id"]]
+            ),
                 let delta = params.value(at: ["delta"])?.stringValue,
                 !delta.isEmpty
             else {
@@ -121,7 +132,10 @@ enum AppServerEventDecoder {
         case "turn/completed":
             let completion = RuntimeTurnCompletion(
                 threadID: threadID,
-                turnID: params.value(at: ["turn", "id"])?.stringValue,
+                turnID: stringValue(
+                    in: params,
+                    keyPaths: [["turn", "id"], ["turnId"], ["turn_id"], ["turn", "turnId"], ["turn", "turn_id"]]
+                ),
                 status: params.value(at: ["turn", "status"])?.stringValue ?? "unknown",
                 errorMessage: params.value(at: ["turn", "error", "message"])?.stringValue
             )
@@ -224,5 +238,18 @@ enum AppServerEventDecoder {
             || trace.status != nil
             || trace.unavailableReason != nil
         return hasAnyValue ? trace : nil
+    }
+
+    private static func stringValue(in payload: JSONValue, keyPaths: [[String]]) -> String? {
+        for keyPath in keyPaths {
+            guard let raw = payload.value(at: keyPath)?.stringValue else {
+                continue
+            }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return nil
     }
 }

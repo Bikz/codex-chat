@@ -42,7 +42,7 @@ actor RequestCorrelator {
 
     @discardableResult
     func resolveResponse(_ response: JSONRPCMessageEnvelope) -> Bool {
-        guard let id = response.id,
+        guard let id = response.id?.intValue,
               terminalError == nil
         else { return false }
 

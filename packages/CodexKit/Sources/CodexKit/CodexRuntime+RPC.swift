@@ -5,10 +5,10 @@ extension CodexRuntime {
         requestID: Int,
         decision: RuntimeApprovalDecision
     ) throws {
-        guard pendingApprovalRequests.removeValue(forKey: requestID) != nil else {
+        guard let pending = pendingApprovalRequests.removeValue(forKey: requestID) else {
             throw CodexRuntimeError.invalidResponse("Unknown approval request id: \(requestID)")
         }
-        try writeMessage(JSONRPCMessageEnvelope.response(id: requestID, result: decision.rpcResult))
+        try writeMessage(JSONRPCMessageEnvelope.response(id: pending.rpcID, result: decision.rpcResult))
     }
 
     func handleIncomingMessage(_ message: JSONRPCMessageEnvelope) async throws {
@@ -28,19 +28,21 @@ extension CodexRuntime {
     }
 
     private func handleServerRequest(_ request: JSONRPCMessageEnvelope) async throws {
-        guard let id = request.id,
+        guard let rpcID = request.id,
               let method = request.method
         else {
             return
         }
 
         if method.hasSuffix("/requestApproval") {
+            let localRequestID = nextLocalApprovalRequestID
+            nextLocalApprovalRequestID += 1
             let approval = Self.decodeApprovalRequest(
-                requestID: id,
+                requestID: localRequestID,
                 method: method,
                 params: request.params
             )
-            pendingApprovalRequests[id] = approval
+            pendingApprovalRequests[localRequestID] = PendingApprovalRequest(rpcID: rpcID, request: approval)
             eventContinuation.yield(.approvalRequested(approval))
             return
         }
@@ -50,7 +52,7 @@ extension CodexRuntime {
             message: "Unsupported client method: \(method)",
             data: nil
         )
-        try writeMessage(JSONRPCMessageEnvelope.response(id: id, error: error))
+        try writeMessage(JSONRPCMessageEnvelope.response(id: rpcID, error: error))
     }
 
     func performHandshake() async throws {
@@ -104,7 +106,7 @@ extension CodexRuntime {
     }
 
     private func sendNotification(method: String, params: JSONValue) throws {
-        let notification = JSONRPCRequestEnvelope(id: nil, method: method, params: params)
+        let notification = JSONRPCRequestEnvelope(id: Int?.none, method: method, params: params)
         try writeMessage(notification)
     }
 
