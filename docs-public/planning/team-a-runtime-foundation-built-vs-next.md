@@ -34,6 +34,7 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Lean hosted CI | Hosted CI path is minimized to required quick checks plus targeted smoke to reduce minute consumption. | `.github/workflows/ci.yml:1`, `.github/workflows/ci.yml:54` |
 | Reliability diagnostics bundle | One-command local diagnostics bundle captures doctor/smoke/policy checks plus scorecard artifacts into a portable archive. | `scripts/runtime-reliability-bundle.sh:1`, `Makefile:46`, `README.md:103`, `docs-public/RUNTIME_RELIABILITY_BUNDLE.md:1` |
 | Ledger migration/backfill planning | A migration-safe backfill plan now specifies dual-write rollout, idempotent markers, fallback read semantics, and crash-safe requirements. | `docs-public/planning/runtime-ledger-migration-backfill-plan.md:1` |
+| Ledger backfill execution path | CLI backfill scans archived thread artifacts, exports missing ledgers, and writes idempotent per-thread marker files with force rerun support. | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatCLICommandParser.swift:47`, `apps/CodexChatApp/Sources/CodexChatCLI/main.swift:112`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:174`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatRuntimeReliabilityArtifactsTests.swift:165` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
 
@@ -44,8 +45,8 @@ Evidence: former P0 gaps (archive replacement-boundary durability and follow-up 
 
 ### P1
 
-1. Expand reliability harness with additional deterministic fault-injection fixtures (runtime termination + stale mapping edge combinations).
-Evidence seed: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:40`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift:34`.
+1. Expand reliability harness with additional deterministic fault-injection fixtures beyond current repro set (for example mixed interruption + partial persistence edge cases).
+Evidence seed: current repro lanes exist in `apps/CodexChatApp/Fixtures/repro/runtime-termination-recovery.json:1` and `apps/CodexChatApp/Fixtures/repro/stale-thread-remap.json:1`.
 
 2. Implement dual-write ledger persistence and migration markers from the published backfill plan.
 Evidence seed: plan exists (`docs-public/planning/runtime-ledger-migration-backfill-plan.md:1`) but runtime write-path implementation is not landed yet.

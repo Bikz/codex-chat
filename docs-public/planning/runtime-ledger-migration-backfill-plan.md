@@ -14,7 +14,8 @@ Move from transcript-only durability to an event-sourced reliability ledger with
 
 1. Canonical thread transcript artifacts exist at `<project>/chats/threads/<thread-id>.md`.
 2. Replay and ledger export are available through `CodexChatCLI replay` and `CodexChatCLI ledger export`.
-3. Exported ledger is currently generated from existing archive turns (derived artifact, not authoritative store).
+3. Marker-based idempotent backfill is available through `CodexChatCLI ledger backfill`.
+4. Exported ledger is currently generated from existing archive turns (derived artifact, not authoritative store).
 
 ## Target State
 
@@ -36,6 +37,9 @@ Move from transcript-only durability to an event-sourced reliability ledger with
 2. Generate ledger files idempotently from archive turns.
 3. Write migration marker per thread when backfill succeeds.
 4. On rerun, skip threads with completed markers unless explicit force flag is passed.
+
+Status: Implemented (CLI path) for deterministic local backfill with marker files under
+`<project>/chats/threads/.ledger-backfill/`.
 
 ### Phase C: Read-path cutover
 
@@ -70,3 +74,15 @@ Move from transcript-only durability to an event-sourced reliability ledger with
 1. Backfill runs deterministically on local harness across representative fixtures.
 2. Replay parity checks pass between transcript-derived and ledger-derived summaries.
 3. Migration status is observable via CLI diagnostics and reliability bundle artifacts.
+
+## Evidence (Current Branch)
+
+1. Backfill command parser and CLI surface:
+- `apps/CodexChatApp/Sources/CodexChatApp/CodexChatCLICommandParser.swift`
+- `apps/CodexChatApp/Sources/CodexChatCLI/main.swift`
+
+2. Backfill implementation and marker schema:
+- `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift`
+
+3. Backfill idempotency + force regression test:
+- `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatRuntimeReliabilityArtifactsTests.swift`

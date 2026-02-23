@@ -31,6 +31,16 @@ swift run CodexChatCLI ledger export \
   --limit 100
 ```
 
+Backfill ledgers for all archived thread artifacts in a project (idempotent, marker-based):
+
+```sh
+cd apps/CodexChatApp
+swift run CodexChatCLI ledger backfill \
+  --project-path /absolute/project/path \
+  --limit 100 \
+  --json
+```
+
 ## Ledger Schema (v1)
 
 Each ledger file includes:
@@ -54,6 +64,22 @@ Each `entries[]` record contains:
 
 Ledger export returns a SHA-256 digest of the exported JSON payload.
 Use this digest in incident notes or reliability scorecards to verify artifact integrity.
+
+## Backfill Markers
+
+`ledger backfill` writes per-thread markers under:
+
+`<project>/chats/threads/.ledger-backfill/<thread-id>.json`
+
+Markers include:
+
+1. `schemaVersion`
+2. `generatedAt`
+3. `projectPath`
+4. `threadID`
+5. `ledgerPath`
+6. `entryCount`
+7. `sha256`
 
 ## Migration Path
 

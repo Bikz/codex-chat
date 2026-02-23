@@ -26,13 +26,14 @@ Build the most trusted autonomous coding workstation on macOS by making runtime 
 - Reliability scorecard generator (`make reliability-scorecard`) with JSON + markdown artifacts.
 - Reliability diagnostics bundle generator (`make reliability-bundle`) with portable archive output.
 - Local replay and ledger export CLI (`CodexChatCLI replay`, `CodexChatCLI ledger export`).
+- Marker-based idempotent ledger backfill CLI (`CodexChatCLI ledger backfill`) for project archives.
 - Runtime policy-as-code validation CLI (`CodexChatCLI policy validate`) with tracked default policy file.
 - Draft runtime reliability SLO document and replay/ledger + policy docs.
 - Ledger migration/backfill plan document for event-sourced transition design.
 - Additional deterministic repro fixtures for runtime termination recovery and stale-thread remap.
 
 2. In progress:
-- Extended fault-injection scenario breadth beyond current deterministic suites.
+- Extended fault-injection scenario breadth beyond current deterministic repro fixtures.
 - Dual-write implementation for authoritative event ledger persistence.
 
 ## OKRs (Next 90 Days)

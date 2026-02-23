@@ -157,6 +157,7 @@ swift run CodexChatCLI repro --fixture runtime-termination-recovery
 swift run CodexChatCLI repro --fixture stale-thread-remap
 swift run CodexChatCLI replay --project-path <project-path> --thread-id <thread-uuid> --json
 swift run CodexChatCLI ledger export --project-path <project-path> --thread-id <thread-uuid>
+swift run CodexChatCLI ledger backfill --project-path <project-path> --json
 swift run CodexChatCLI policy validate --file ../../config/runtime-policy/default-policy.json
 ```
 
