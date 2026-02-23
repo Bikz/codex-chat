@@ -919,6 +919,7 @@ final class AppModel: ObservableObject {
     @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
     @Published var activeUntrustedShellWarning: UntrustedShellWarningContext?
     @Published var extensionModsBarByThreadID: [UUID: ExtensionModsBarState] = [:]
+    @Published var extensionModsBarByProjectID: [UUID: ExtensionModsBarState] = [:]
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
     @Published var extensionModsBarIsVisible = false
     @Published var extensionModsBarPresentationMode: ModsBarPresentationMode = .peek
@@ -1489,8 +1490,17 @@ final class AppModel: ObservableObject {
     }
 
     var selectedExtensionModsBarState: ExtensionModsBarState? {
-        guard let selectedThreadID else { return extensionGlobalModsBarState }
-        return extensionModsBarByThreadID[selectedThreadID] ?? extensionGlobalModsBarState
+        if let selectedThreadID,
+           let threadState = extensionModsBarByThreadID[selectedThreadID]
+        {
+            return threadState
+        }
+        if let selectedProjectID,
+           let projectState = extensionModsBarByProjectID[selectedProjectID]
+        {
+            return projectState
+        }
+        return extensionGlobalModsBarState
     }
 
     var resolvedLightThemeOverride: ModThemeOverride {

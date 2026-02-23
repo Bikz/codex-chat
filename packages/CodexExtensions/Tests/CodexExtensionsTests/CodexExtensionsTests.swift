@@ -277,6 +277,7 @@ final class CodexExtensionsTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         let store = ExtensionStateStore()
         let threadID = UUID()
+        let projectID = UUID()
 
         let threadOutput = ExtensionModsBarOutput(
             title: "Thread Summary",
@@ -286,7 +287,27 @@ final class CodexExtensionsTests: XCTestCase {
                 .init(id: "clear", label: "Clear", kind: .emitEvent, payload: ["operation": "clear"]),
             ]
         )
-        _ = try await store.writeModsBarOutput(output: threadOutput, modDirectory: tempRoot, threadID: threadID)
+        _ = try await store.writeModsBarOutput(
+            output: threadOutput,
+            modDirectory: tempRoot,
+            threadID: threadID,
+            projectID: nil
+        )
+
+        let projectOutput = ExtensionModsBarOutput(
+            title: "Project Notes",
+            markdown: "- project status",
+            scope: .project,
+            actions: [
+                .init(id: "insert", label: "Insert", kind: .composerInsert, payload: ["text": "project note"]),
+            ]
+        )
+        _ = try await store.writeModsBarOutput(
+            output: projectOutput,
+            modDirectory: tempRoot,
+            threadID: nil,
+            projectID: projectID
+        )
 
         let globalOutput = ExtensionModsBarOutput(
             title: "Prompt Book",
@@ -296,21 +317,36 @@ final class CodexExtensionsTests: XCTestCase {
                 .init(id: "send", label: "Send", kind: .composerInsertAndSend, payload: ["text": "ship it"]),
             ]
         )
-        _ = try await store.writeModsBarOutput(output: globalOutput, modDirectory: tempRoot, threadID: nil)
+        _ = try await store.writeModsBarOutput(
+            output: globalOutput,
+            modDirectory: tempRoot,
+            threadID: nil,
+            projectID: nil
+        )
 
         let loadedThread = try await store.readModsBarOutput(
             modDirectory: tempRoot,
             scope: .thread,
-            threadID: threadID
+            threadID: threadID,
+            projectID: nil
+        )
+        let loadedProject = try await store.readModsBarOutput(
+            modDirectory: tempRoot,
+            scope: .project,
+            threadID: nil,
+            projectID: projectID
         )
         let loadedGlobal = try await store.readModsBarOutput(
             modDirectory: tempRoot,
             scope: .global,
-            threadID: nil
+            threadID: nil,
+            projectID: nil
         )
 
         XCTAssertEqual(loadedThread?.markdown, "- completed")
         XCTAssertEqual(loadedThread?.actions?.first?.id, "clear")
+        XCTAssertEqual(loadedProject?.markdown, "- project status")
+        XCTAssertEqual(loadedProject?.actions?.first?.id, "insert")
         XCTAssertEqual(loadedGlobal?.markdown, "- ship checklist")
         XCTAssertEqual(loadedGlobal?.actions?.first?.kind, .composerInsertAndSend)
     }

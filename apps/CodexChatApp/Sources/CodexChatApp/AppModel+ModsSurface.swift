@@ -61,6 +61,7 @@ extension AppModel {
                     selectedGlobalPath: snapshot.selectedGlobal,
                     selectedProjectPath: snapshot.selectedProject
                 )
+                let installRecords = try await extensionInstallRepository?.list() ?? []
                 effectiveThemeOverride = resolved.light
                 effectiveDarkThemeOverride = resolved.dark
                 modsState = .loaded(
@@ -75,7 +76,8 @@ extension AppModel {
                     globalMods: snapshot.globalMods,
                     projectMods: snapshot.projectMods,
                     selectedGlobalPath: snapshot.selectedGlobal,
-                    selectedProjectPath: snapshot.selectedProject
+                    selectedProjectPath: snapshot.selectedProject,
+                    installRecords: installRecords
                 )
                 let modIDs = (snapshot.globalMods + snapshot.projectMods).map(\.definition.manifest.id)
                 await refreshAutomationHealthSummaries(for: modIDs)

@@ -74,6 +74,13 @@ extension AppModel {
     }
 
     func modsBarQuickSwitchSymbolName(for option: ModsBarQuickSwitchOption) -> String {
+        if let explicit = option.mod.definition.manifest.iconSymbol?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !explicit.isEmpty
+        {
+            return explicit
+        }
+
         let title = modsBarQuickSwitchTitle(for: option).lowercased()
         let id = option.mod.definition.manifest.id.lowercased()
 
