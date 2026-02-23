@@ -84,8 +84,8 @@ Primary code/docs reviewed:
 - Feasible today with `turn.completed` hook and modsBar markdown output.
 
 3. Prompt Book / Prompt Bar (cross-chat, project-independent prompt launcher):
-- Partially feasible.
-- Gap: current modsBar state is thread-scoped (`extensionModsBarByThreadID`) and does not provide first-class global extension state or cross-chat persistent UI behavior.
+- Feasible.
+- Update (2026-02-23): modsBar visibility + presentation is now persisted globally across chats/new drafts, and supports docked `rail`/`peek`/`expanded` modes.
 
 ## Summary
 
@@ -110,4 +110,4 @@ CodexChat has a solid extension runtime foundation (hooks, automations, modsBar 
 
 1. Signed registry metadata + signature verification (publisher identity and tamper evidence).
 2. Expanded capability APIs for slash-command packs and richer UI cards/actions.
-3. Global extension state APIs to support cross-chat features (for example Prompt Book) without violating two-pane IA.
+3. Continue refining cross-chat extension UX primitives (quick-switch icon policies, panel sizing heuristics, and accessibility defaults) on top of shipped global modsBar state.

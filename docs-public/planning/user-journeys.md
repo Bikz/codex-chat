@@ -188,7 +188,9 @@ Conventions:
 1. Mod package validates (`codex.mod.json` + `ui.mod.json`).
 2. Mod installs and is discovered in scope.
 3. User enables global/project mod.
-4. Mods bar output appears; user actions route to composer/events/native actions.
+4. User can open mods bar from any selected-project conversation context (including new draft chats before first message).
+5. Mods bar output appears; user actions route to composer/events/native actions.
+6. Visibility + mode persist across thread switches and new drafts (`rail`/`peek`/`expanded` with reopen restore behavior).
 - States:
   - Empty: no active mods/mods bar disabled
   - Loading: mod refresh/install operation
@@ -197,6 +199,7 @@ Conventions:
 - Failure recovery:
   - Invalid schema/legacy keys: explicit migration guidance.
   - Advanced executable mod lock blocks non-vetted executable behavior until unlocked.
+  - On reopen from hidden while in `rail`, app restores last open non-rail panel mode for usability.
 - Telemetry points:
   - extension install records + enablement
   - mod status/log messages

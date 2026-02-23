@@ -78,6 +78,13 @@ Capabilities are still runtime-driven by `ui.mod.json`:
 - `scope`: `thread` (default) or `global`
 - `actions`: typed actions (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`)
 
+Host-managed modsBar UI behavior:
+
+- visibility + presentation mode are persisted globally across chats/new drafts
+- presentation modes: `rail`, `peek`, `expanded`
+- reopening from hidden restores the last open non-rail mode
+- panel remains docked in the conversation pane (no persistent third pane)
+
 Permission keys:
 
 - `projectRead`

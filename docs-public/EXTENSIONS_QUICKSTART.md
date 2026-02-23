@@ -91,6 +91,16 @@ If your extension requests privileged permissions (`projectWrite`, `network`, `r
 2. Share repo URL.
 3. Others install via `Install Mod`.
 
+## Mods Bar UX Behavior (Current)
+
+- Mods bar is collapsed by default, then persisted globally once user toggles it.
+- Visibility/presentation carries across existing chats and brand-new drafts in the selected project.
+- Modes:
+  - `rail`: compact launcher strip with extension quick-switch icons
+  - `peek`: standard docked panel
+  - `expanded`: wider docked panel for dense extension UIs
+- Closing from `rail` hides the panel fully; reopening restores the last open non-rail mode.
+
 ## Patterns For Common Extensions
 
 1. Personal Notes (per chat):
@@ -102,3 +112,4 @@ If your extension requests privileged permissions (`projectWrite`, `network`, `r
 3. Prompt Book (cross-chat launcher):
 - use `modsBar.scope: global` + `modsBar.actions` with `composer.insertAndSend`.
 - use `modsBar.action` hooks for add/edit/delete prompt management.
+- Prompt Book works best with global mods-bar persistence because the panel state is shared across chats/new drafts.

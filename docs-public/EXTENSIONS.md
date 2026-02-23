@@ -25,3 +25,4 @@ Stability:
 
 - Extension APIs are experimental and may change across minor versions.
 - Distribution channel for this cycle is GitHub URLs + local paths only (no hosted catalog onboarding).
+- Current Mods bar UX contract uses global persisted UI state across chats/new drafts, with docked `rail`/`peek`/`expanded` modes (see `MODS_SHARING.md` and `EXTENSIONS_QUICKSTART.md`).

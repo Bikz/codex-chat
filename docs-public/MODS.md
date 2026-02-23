@@ -12,6 +12,7 @@ CodexChat mods can:
 - Two-pane IA is non-negotiable.
 - `Mods bar` is optional and collapsed by default.
 - No persistent third pane.
+- `Mods bar` can be shown in docked modes that push conversation content inward; it must never overlay transcript content by default.
 
 ## Mod Roots
 
@@ -57,8 +58,11 @@ Legacy keys are rejected:
 `uiSlots.modsBar` is optional. When enabled:
 
 - users can toggle `Mods bar` from the toolbar
+- users can toggle `Mods bar` even before the first message in a new chat (project selected, draft thread)
 - content is sourced from extension worker output
-- the surface stays non-persistent by default
+- visibility and presentation mode are persisted globally across chats/new threads (`hidden`/`rail`/`peek`/`expanded`)
+- reopening from `hidden` restores the last open non-rail mode (`peek` or `expanded`)
+- `rail` mode is an icon launcher strip intended for quick extension switching
 - output may be `thread` or `global` scope
 - output may include typed action buttons (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`, `native.action`)
 

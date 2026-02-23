@@ -149,6 +149,13 @@ Rules:
 - Two-pane layout remains unchanged.
 - `Mods bar` is user-toggled and collapsed by default.
 - Content comes from `uiSlots.modsBar` + worker output.
+- `Mods bar` is docked in the conversation pane and pushes chat content inward (no persistent third pane).
+- UI presentation is global, not thread-scoped: visibility and mode are shared across existing chats and new drafts.
+- Presentation modes are `rail`, `peek`, and `expanded`:
+  - `rail`: compact icon launcher strip for quick extension switching
+  - `peek`: standard panel width
+  - `expanded`: wider panel for editing-heavy extensions (for example prompt libraries)
+- Reopening from hidden restores the last open non-rail mode.
 
 ## Install And Sharing
 
