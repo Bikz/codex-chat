@@ -69,7 +69,7 @@ Primary implementation surfaces:
 
 2. Failed checkpoint writes must not corrupt existing transcript.
 - Required behavior: failed begin/fail/finalize writes preserve previously committed archive content.
-- Evidence: `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:163`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:251`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:299`.
+- Evidence: `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:163`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:251`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:299`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362`.
 
 ## Verification Matrix
 
@@ -84,6 +84,8 @@ Primary implementation surfaces:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:306`
 - RuntimePool non-primary termination suppression + pin reassignment:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:7`
+- RuntimePool non-primary recovery resumes pinned routing after restart:
+  - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:82`
 - Worker recovery bound/reset:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:119`
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129`
@@ -92,6 +94,7 @@ Primary implementation surfaces:
 - Checkpoint durability + temp cleanup:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`
   - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:299`
+  - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362`
 - Runtime degradation behavior on checkpoint begin failure:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:339`
 

@@ -16,7 +16,8 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | App-level auto-recovery boundedness | Backoff attempts are bounded, env-configurable, and capped in implementation and tests. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:354`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:413`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:40` |
 | Worker-level recovery boundedness | RuntimePool has consecutive failure cap and reset-on-recovery semantics. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:454`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:710`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129` |
 | Approval continuity | Pending approvals reset with explicit UX messaging on communication failure and restart. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:884`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeApprovalContinuityTests.swift:8`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:306` |
-| Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial failures. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207` |
+| Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial failures and crash-leftover temp artifacts. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` |
+| RuntimePool resilience event-paths | Non-primary termination suppression, pin reassignment, and post-restart pinned routing are now directly tested. | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:7`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:82` |
 | Runtime degradation explicitness | Turn-start checkpoint failures log explicit warning while runtime turn still starts. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:114`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:339` |
 | Completion persistence pressure handling | Batcher threshold, shutdown, and max-pending spill are now tested. | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` |
 | Runtime option compatibility fallback | Retry-without-turn-options heuristics are codified and directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:689`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7` |
@@ -26,11 +27,11 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 
 ### P0
 
-1. Add crash-boundary durability harness beyond write-denial fault injection for transcript replace semantics.
-Evidence gap: current tests validate permission/write-denial failure, not simulated crash-mid-replace semantics (`apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`).
+1. Add deeper crash-boundary durability harness beyond current write-denial and crash-leftover temp-file simulations.
+Evidence gap: current tests cover permission denial and stale temp artifacts, but do not simulate abrupt interruption during `replaceItemAt` execution (`apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`).
 
-2. Expand RuntimePool resilience coverage from single non-primary termination regression to repeated degradation/recovery soak coverage.
-Evidence gap: deterministic load harness exists but does not repeatedly assert worker degradation/recovery invariants (`apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`).
+2. Expand RuntimePool resilience coverage from single-cycle regressions to repeated degradation/recovery soak coverage.
+Evidence gap: deterministic load harness exists but does not repeatedly assert worker degradation/recovery invariants under multiple crash cycles (`apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`).
 
 ### P1
 
