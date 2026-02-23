@@ -250,6 +250,16 @@ final class AppModelComputerActionsTests: XCTestCase {
             bootError: nil,
             computerActionRegistry: registry
         )
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(
+                id: projectID,
+                name: "Trusted Project",
+                path: "/tmp/project-\(projectID.uuidString)",
+                trustState: .trusted
+            ),
+        ])
+        model.selectedProjectID = projectID
 
         try await model.runNativeComputerAction(
             actionID: "messages.send",
@@ -258,7 +268,7 @@ final class AppModelComputerActionsTests: XCTestCase {
                 "body": "Hello",
             ],
             threadID: UUID(),
-            projectID: UUID()
+            projectID: projectID
         )
 
         model.confirmPendingComputerActionPreview()
@@ -299,6 +309,8 @@ final class AppModelComputerActionsTests: XCTestCase {
             trustState: .trusted,
             isGeneralProject: false
         )
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
         let thread = try await repositories.threadRepository.createThread(
             projectID: project.id,
             title: "Script Thread"

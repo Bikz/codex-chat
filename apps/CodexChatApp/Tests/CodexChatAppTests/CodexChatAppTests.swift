@@ -684,6 +684,15 @@ final class CodexChatAppTests: XCTestCase {
 
         let threadID = UUID()
         let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(
+                id: projectID,
+                name: "Trusted Project",
+                path: "/tmp/project-\(projectID.uuidString)",
+                trustState: .trusted
+            ),
+        ])
+        model.selectedProjectID = projectID
 
         try await model.runNativeComputerAction(
             actionID: "messages.send",
