@@ -8,6 +8,9 @@ struct DiagnosticsView: View {
     let adaptiveTurnConcurrencyLimit: Int
     let logs: [LogEntry]
     let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
+    let canExecuteRerunCommand: (String) -> Bool
+    let rerunExecutionPolicyMessage: (String) -> String
+    let onExecuteRerunCommand: (String) -> Void
     let onPrepareRerunCommand: (String) -> Void
     let onClose: () -> Void
     @State private var performanceSnapshot = PerformanceSnapshot(
@@ -16,6 +19,7 @@ struct DiagnosticsView: View {
         recent: []
     )
     @State private var refreshTask: Task<Void, Never>?
+    @State private var pendingAllowlistedRerunCommand: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -156,6 +160,18 @@ struct DiagnosticsView: View {
                                         }
                                         .buttonStyle(.link)
                                         .font(.caption2)
+
+                                        let canExecuteDirectly = canExecuteRerunCommand(suggestedCommand)
+                                        Button(
+                                            canExecuteDirectly ? "Run allowlisted rerun" : "Direct rerun blocked"
+                                        ) {
+                                            pendingAllowlistedRerunCommand = suggestedCommand
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                        .disabled(!canExecuteDirectly)
+                                        .help(rerunExecutionPolicyMessage(suggestedCommand))
+
                                         Button("Copy rerun command") {
                                             copyToPasteboard(suggestedCommand)
                                         }
@@ -215,6 +231,32 @@ struct DiagnosticsView: View {
         .onDisappear {
             refreshTask?.cancel()
             refreshTask = nil
+        }
+        .confirmationDialog(
+            "Run allowlisted rerun command?",
+            isPresented: Binding(
+                get: { pendingAllowlistedRerunCommand != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingAllowlistedRerunCommand = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let command = pendingAllowlistedRerunCommand {
+                Button("Run Now") {
+                    onExecuteRerunCommand(command)
+                    pendingAllowlistedRerunCommand = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingAllowlistedRerunCommand = nil
+            }
+        } message: {
+            if let command = pendingAllowlistedRerunCommand {
+                Text("This queues a single allowlisted rerun request for:\n\(command)")
+            }
         }
     }
 

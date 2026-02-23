@@ -117,6 +117,9 @@ struct ContentView: View {
                 adaptiveTurnConcurrencyLimit: model.adaptiveTurnConcurrencyLimit,
                 logs: model.logs,
                 extensibilityDiagnostics: model.extensibilityDiagnostics,
+                canExecuteRerunCommand: model.isExtensibilityRerunCommandAllowlisted,
+                rerunExecutionPolicyMessage: model.extensibilityRerunCommandPolicyMessage,
+                onExecuteRerunCommand: model.executeAllowlistedExtensibilityRerunCommand,
                 onPrepareRerunCommand: model.prepareExtensibilityRerunCommand,
                 onClose: model.closeDiagnostics
             )

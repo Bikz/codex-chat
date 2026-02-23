@@ -2,6 +2,28 @@ import AppKit
 import Foundation
 
 extension AppModel {
+    private enum ExtensibilityRerunCommandClass: String, Sendable {
+        case git
+        case npxSkillsAdd
+        case launchctl
+
+        var label: String {
+            switch self {
+            case .git:
+                "git"
+            case .npxSkillsAdd:
+                "npx skills add"
+            case .launchctl:
+                "launchctl"
+            }
+        }
+    }
+
+    private enum ExtensibilityRerunPolicyDecision: Sendable {
+        case allow(ExtensibilityRerunCommandClass)
+        case deny(String)
+    }
+
     func toggleDiagnostics() {
         isDiagnosticsVisible.toggle()
         appendLog(.debug, "Diagnostics toggled: \(isDiagnosticsVisible)")
@@ -68,5 +90,104 @@ extension AppModel {
         """
         followUpStatusMessage = "Prepared a safe rerun prompt in the composer. Review and send when ready."
         appendLog(.info, "Prepared extensibility rerun prompt in composer")
+    }
+
+    func isExtensibilityRerunCommandAllowlisted(_ command: String) -> Bool {
+        if case .allow = extensibilityRerunPolicy(for: command) {
+            return true
+        }
+        return false
+    }
+
+    func extensibilityRerunCommandPolicyMessage(_ command: String) -> String {
+        switch extensibilityRerunPolicy(for: command) {
+        case let .allow(commandClass):
+            "Allowlisted direct rerun class: \(commandClass.label)."
+        case let .deny(reason):
+            "Direct rerun blocked: \(reason)"
+        }
+    }
+
+    func executeAllowlistedExtensibilityRerunCommand(_ command: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch extensibilityRerunPolicy(for: trimmed) {
+        case let .allow(commandClass):
+            guard canSubmitComposer else {
+                prepareExtensibilityRerunCommand(trimmed)
+                followUpStatusMessage = "Command is allowlisted, but chat is not ready. Review the prepared rerun prompt and send when ready."
+                appendLog(.warning, "Allowlisted rerun command prepared but dispatch prerequisites were not met")
+                return
+            }
+
+            composerText = """
+            Run this allowlisted extensibility recovery command exactly once in the current project:
+            ```bash
+            \(trimmed)
+            ```
+            Before running, restate the command and confirm no extra chained commands will be used. After running, summarize stdout/stderr and final status.
+            """
+            submitComposerWithQueuePolicy()
+            followUpStatusMessage = "Queued allowlisted rerun command (\(commandClass.label))."
+            appendLog(.info, "Queued allowlisted extensibility rerun command: \(trimmed)")
+
+        case let .deny(reason):
+            followUpStatusMessage = "Direct rerun blocked: \(reason)"
+            appendLog(.warning, "Blocked non-allowlisted rerun command: \(trimmed)")
+        }
+    }
+
+    private func extensibilityRerunPolicy(for command: String) -> ExtensibilityRerunPolicyDecision {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .deny("No command was provided.")
+        }
+
+        if trimmed.count > 500 {
+            return .deny("Command exceeds the allowlisted length limit.")
+        }
+
+        let forbiddenFragments = ["\n", "\r", "&&", "||", ";", "|", ">", "<", "`", "$("]
+        if forbiddenFragments.contains(where: trimmed.contains) {
+            return .deny("Shell chaining or redirection operators are not allowed.")
+        }
+
+        let tokens = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let head = tokens.first?.lowercased() else {
+            return .deny("No command was provided.")
+        }
+
+        switch head {
+        case "git":
+            guard tokens.count >= 2 else {
+                return .deny("Git subcommand is required.")
+            }
+            let allowedSubcommands: Set<String> = ["clone", "pull", "fetch", "submodule", "ls-remote"]
+            let subcommand = tokens[1].lowercased()
+            guard allowedSubcommands.contains(subcommand) else {
+                return .deny("Only git clone/pull/fetch/submodule/ls-remote are allowlisted.")
+            }
+            return .allow(.git)
+
+        case "npx":
+            let lowered = tokens.map { $0.lowercased() }
+            guard lowered.count >= 3, lowered[1] == "skills", lowered[2] == "add" else {
+                return .deny("Only `npx skills add` is allowlisted for direct reruns.")
+            }
+            return .allow(.npxSkillsAdd)
+
+        case "launchctl":
+            guard tokens.count >= 2 else {
+                return .deny("launchctl subcommand is required.")
+            }
+            let allowedSubcommands: Set<String> = ["bootstrap", "bootout", "kickstart", "print", "enable", "disable"]
+            let subcommand = tokens[1].lowercased()
+            guard allowedSubcommands.contains(subcommand) else {
+                return .deny("Only bootstrap/bootout/kickstart/print/enable/disable are allowlisted.")
+            }
+            return .allow(.launchctl)
+
+        default:
+            return .deny("Command class is not allowlisted.")
+        }
     }
 }
