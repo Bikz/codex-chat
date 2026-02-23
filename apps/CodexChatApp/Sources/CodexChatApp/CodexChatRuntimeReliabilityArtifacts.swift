@@ -134,7 +134,7 @@ public struct CodexChatThreadLedgerExportSummary: Codable, Equatable, Sendable {
     }
 }
 
-public struct CodexChatThreadLedgerBackfillThreadResult: Codable, Equatable, Sendable {
+public struct CodexChatLedgerBackfillThreadResult: Codable, Equatable, Sendable {
     public let threadID: UUID
     public let status: String
     public let ledgerPath: String
@@ -159,13 +159,13 @@ public struct CodexChatThreadLedgerBackfillThreadResult: Codable, Equatable, Sen
     }
 }
 
-public struct CodexChatThreadLedgerBackfillSummary: Codable, Equatable, Sendable {
+public struct CodexChatLedgerBackfillSummary: Codable, Equatable, Sendable {
     public let projectPath: String
     public let markerDirectoryPath: String
     public let scannedThreadCount: Int
     public let exportedThreadCount: Int
     public let skippedThreadCount: Int
-    public let threads: [CodexChatThreadLedgerBackfillThreadResult]
+    public let threads: [CodexChatLedgerBackfillThreadResult]
 
     public init(
         projectPath: String,
@@ -173,7 +173,7 @@ public struct CodexChatThreadLedgerBackfillSummary: Codable, Equatable, Sendable
         scannedThreadCount: Int,
         exportedThreadCount: Int,
         skippedThreadCount: Int,
-        threads: [CodexChatThreadLedgerBackfillThreadResult]
+        threads: [CodexChatLedgerBackfillThreadResult]
     ) {
         self.projectPath = projectPath
         self.markerDirectoryPath = markerDirectoryPath
@@ -184,7 +184,7 @@ public struct CodexChatThreadLedgerBackfillSummary: Codable, Equatable, Sendable
     }
 }
 
-public struct CodexChatThreadLedgerBackfillMarker: Codable, Equatable, Sendable {
+public struct CodexChatLedgerBackfillMarker: Codable, Equatable, Sendable {
     public let schemaVersion: Int
     public let generatedAt: Date
     public let projectPath: String
@@ -358,10 +358,10 @@ public extension CodexChatBootstrap {
 
     static func backfillThreadLedgers(
         projectPath: String,
-        limit: Int = 100,
+        limit: Int = .max,
         force: Bool = false,
         fileManager: FileManager = .default
-    ) throws -> CodexChatThreadLedgerBackfillSummary {
+    ) throws -> CodexChatLedgerBackfillSummary {
         guard limit > 0 else {
             throw NSError(
                 domain: "CodexChatCLI",
@@ -377,26 +377,30 @@ public extension CodexChatBootstrap {
         let threadIDs = try discoverArchivedThreadIDs(projectPath: normalizedProjectPath, fileManager: fileManager)
         var exportedCount = 0
         var skippedCount = 0
-        var threadResults: [CodexChatThreadLedgerBackfillThreadResult] = []
+        var threadResults: [CodexChatLedgerBackfillThreadResult] = []
         threadResults.reserveCapacity(threadIDs.count)
 
         for threadID in threadIDs {
             let markerURL = ledgerBackfillMarkerURL(projectPath: normalizedProjectPath, threadID: threadID)
-            let defaultLedgerPath = defaultLedgerURL(projectPath: normalizedProjectPath, threadID: threadID).path
 
             if !force, fileManager.fileExists(atPath: markerURL.path) {
-                skippedCount += 1
-                threadResults.append(
-                    CodexChatThreadLedgerBackfillThreadResult(
-                        threadID: threadID,
-                        status: "skipped",
-                        ledgerPath: defaultLedgerPath,
-                        markerPath: markerURL.path,
-                        entryCount: nil,
-                        sha256: nil
+                if let marker = readBackfillMarker(from: markerURL),
+                   marker.threadID == threadID,
+                   fileManager.fileExists(atPath: marker.ledgerPath)
+                {
+                    skippedCount += 1
+                    threadResults.append(
+                        CodexChatLedgerBackfillThreadResult(
+                            threadID: threadID,
+                            status: "skipped",
+                            ledgerPath: marker.ledgerPath,
+                            markerPath: markerURL.path,
+                            entryCount: marker.entryCount,
+                            sha256: marker.sha256
+                        )
                     )
-                )
-                continue
+                    continue
+                }
             }
 
             let exportSummary = try exportThreadLedger(
@@ -407,7 +411,7 @@ public extension CodexChatBootstrap {
                 fileManager: fileManager
             )
 
-            let marker = CodexChatThreadLedgerBackfillMarker(
+            let marker = CodexChatLedgerBackfillMarker(
                 schemaVersion: 1,
                 generatedAt: Date(),
                 projectPath: normalizedProjectPath,
@@ -420,7 +424,7 @@ public extension CodexChatBootstrap {
 
             exportedCount += 1
             threadResults.append(
-                CodexChatThreadLedgerBackfillThreadResult(
+                CodexChatLedgerBackfillThreadResult(
                     threadID: threadID,
                     status: "exported",
                     ledgerPath: exportSummary.outputPath,
@@ -431,7 +435,7 @@ public extension CodexChatBootstrap {
             )
         }
 
-        return CodexChatThreadLedgerBackfillSummary(
+        return CodexChatLedgerBackfillSummary(
             projectPath: normalizedProjectPath,
             markerDirectoryPath: markerDirectory.path,
             scannedThreadCount: threadIDs.count,
@@ -645,7 +649,7 @@ private extension CodexChatBootstrap {
     }
 
     static func writeBackfillMarker(
-        _ marker: CodexChatThreadLedgerBackfillMarker,
+        _ marker: CodexChatLedgerBackfillMarker,
         to destination: URL
     ) throws {
         let encoder = JSONEncoder()
@@ -653,6 +657,15 @@ private extension CodexChatBootstrap {
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(marker)
         try data.write(to: destination, options: .atomic)
+    }
+
+    static func readBackfillMarker(from source: URL) -> CodexChatLedgerBackfillMarker? {
+        guard let data = try? Data(contentsOf: source) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(CodexChatLedgerBackfillMarker.self, from: data)
     }
 
     static func sha256Hex(_ data: Data) -> String {

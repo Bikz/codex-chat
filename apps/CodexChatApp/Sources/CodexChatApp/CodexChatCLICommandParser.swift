@@ -300,7 +300,7 @@ public enum CodexChatCLICommandParser {
 
     private static func parseLedgerBackfillOptions(arguments: [String]) throws -> CodexChatCLILedgerBackfillOptions {
         var projectPath: String?
-        var limit = 100
+        var limit = Int.max
         var force = false
         var asJSON = false
 

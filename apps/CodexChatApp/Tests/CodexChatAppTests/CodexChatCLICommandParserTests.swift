@@ -94,6 +94,31 @@ final class CodexChatCLICommandParserTests: XCTestCase {
         )
     }
 
+    func testParsesLedgerBackfillCommandWithDefaultOptions() throws {
+        let command = try CodexChatCLICommandParser.parse(
+            arguments: [
+                "ledger",
+                "backfill",
+                "--project-path",
+                "/tmp/project",
+            ]
+        )
+
+        XCTAssertEqual(
+            command,
+            .ledger(
+                .backfill(
+                    CodexChatCLILedgerBackfillOptions(
+                        projectPath: "/tmp/project",
+                        limit: .max,
+                        force: false,
+                        asJSON: false
+                    )
+                )
+            )
+        )
+    }
+
     func testParsesPolicyValidateCommand() throws {
         let command = try CodexChatCLICommandParser.parse(
             arguments: ["policy", "validate", "--file", "/tmp/policy.json"]

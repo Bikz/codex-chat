@@ -229,6 +229,63 @@ final class CodexChatRuntimeReliabilityArtifactsTests: XCTestCase {
         XCTAssertTrue(forcedBackfill.threads.allSatisfy { $0.status == "exported" })
     }
 
+    func testLedgerBackfillDefaultLimitExportsFullThreadHistory() throws {
+        let projectRoot = try makeTempProjectRoot(prefix: "ledger-backfill-full-history")
+        defer { try? FileManager.default.removeItem(at: projectRoot) }
+
+        let threadID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000711"))
+        for index in 0 ..< 120 {
+            _ = try ChatArchiveStore.finalizeCheckpoint(
+                projectPath: projectRoot.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: UUID(),
+                    timestamp: Date(timeIntervalSince1970: 1_700_400_000 + TimeInterval(index)),
+                    status: .completed,
+                    userText: "turn-\(index)",
+                    assistantText: "done-\(index)",
+                    actions: []
+                )
+            )
+        }
+
+        let backfill = try CodexChatBootstrap.backfillThreadLedgers(projectPath: projectRoot.path)
+        XCTAssertEqual(backfill.scannedThreadCount, 1)
+        XCTAssertEqual(backfill.exportedThreadCount, 1)
+        XCTAssertEqual(backfill.skippedThreadCount, 0)
+        XCTAssertEqual(backfill.threads.first?.entryCount, 240)
+    }
+
+    func testLedgerBackfillReexportsWhenMarkerIsStale() throws {
+        let projectRoot = try makeTempProjectRoot(prefix: "ledger-backfill-stale-marker")
+        defer { try? FileManager.default.removeItem(at: projectRoot) }
+
+        let threadID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000811"))
+        _ = try ChatArchiveStore.finalizeCheckpoint(
+            projectPath: projectRoot.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: UUID(),
+                timestamp: Date(timeIntervalSince1970: 1_700_500_001),
+                status: .completed,
+                userText: "question",
+                assistantText: "answer",
+                actions: []
+            )
+        )
+
+        let initialBackfill = try CodexChatBootstrap.backfillThreadLedgers(projectPath: projectRoot.path, limit: 10)
+        XCTAssertEqual(initialBackfill.exportedThreadCount, 1)
+        let ledgerPath = try XCTUnwrap(initialBackfill.threads.first?.ledgerPath)
+        try FileManager.default.removeItem(atPath: ledgerPath)
+
+        let secondBackfill = try CodexChatBootstrap.backfillThreadLedgers(projectPath: projectRoot.path, limit: 10)
+        XCTAssertEqual(secondBackfill.exportedThreadCount, 1)
+        XCTAssertEqual(secondBackfill.skippedThreadCount, 0)
+        XCTAssertEqual(secondBackfill.threads.first?.status, "exported")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ledgerPath))
+    }
+
     private func makeTempProjectRoot(prefix: String) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-\(prefix)-\(UUID().uuidString)", isDirectory: true)
