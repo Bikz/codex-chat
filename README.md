@@ -90,6 +90,28 @@ make oss-smoke
 
 Runs deterministic contributor smoke checks using `CodexChatCLI`.
 
+### Team A local reliability harness
+
+```sh
+make reliability-local
+```
+
+Runs deterministic runtime/data reliability suites (recovery, mapping, approvals, durability).
+
+### Local pre-push gate
+
+```sh
+make prepush-local
+```
+
+Runs `quick`, targeted smoke, and Team A reliability harness before push.
+
+Install an optional local `pre-push` hook:
+
+```sh
+make install-local-hooks
+```
+
 ### Full build + test validation
 
 ```sh
@@ -153,6 +175,7 @@ Builds signed/notarized DMG artifacts when signing credentials are configured.
 ```sh
 make quick
 make oss-smoke
+make reliability-local
 pnpm -s run check
 ```
 

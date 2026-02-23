@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: quick ci format format-check lint test-fast test periphery release-dmg release-next-version release-tag-next host-metadata-check parity-check oss-smoke bootstrap
+.PHONY: quick ci format format-check lint test-fast test periphery release-dmg release-next-version release-tag-next host-metadata-check parity-check oss-smoke reliability-local prepush-local install-local-hooks bootstrap
 
 quick: host-metadata-check parity-check format-check lint test-fast
 
@@ -41,6 +41,14 @@ parity-check:
 
 oss-smoke:
 	./scripts/oss-smoke.sh
+
+reliability-local:
+	./scripts/runtime-reliability-local.sh
+
+prepush-local: quick oss-smoke reliability-local
+
+install-local-hooks:
+	./scripts/install-local-git-hooks.sh
 
 bootstrap:
 	./scripts/bootstrap.sh

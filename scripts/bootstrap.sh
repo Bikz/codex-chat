@@ -60,8 +60,12 @@ Bootstrap complete.
 Next steps:
 1. Open host app (canonical GUI path):
    open apps/CodexChatHost/CodexChatHost.xcodeproj
-2. Run contributor smoke checks:
+2. Run local pre-push gate (quick + smoke + reliability harness):
+   make prepush-local
+3. Optional: install local pre-push hook:
+   make install-local-hooks
+4. Run contributor smoke checks directly:
    make oss-smoke
-3. Run full checks before opening a PR:
+5. Run full checks before opening a PR:
    pnpm -s run check
 OUT
