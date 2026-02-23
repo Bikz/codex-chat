@@ -52,6 +52,7 @@ Date: 2026-02-23
 | P2 | Persisted extensibility diagnostics stream via preferences and restored it on startup for cross-session visibility | `/Users/bikram/Developer/CodexChat/packages/CodexChatCore/Sources/CodexChatCore/Models.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Lifecycle.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `b607350` |
 | P2 | Added extensibility diagnostics export action plus persisted, clamped retention controls in Settings | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityDiagnosticsExporter.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/SettingsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsExporterTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `2bb01b1` |
 | P2 | Added diagnostics recovery playbooks and surfaced per-event recovery guidance in Diagnostics UI | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `c598a9f` |
+| P2 | Added one-click remediation actions for diagnostics playbooks (copy recovery steps and copy rerun command) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1c9c156` |
 
 ### Remaining prioritized backlog
 
@@ -69,7 +70,8 @@ Date: 2026-02-23
 - Phase 9 shipped: diagnostics stream is now persisted/restored across app restarts.
 - Phase 10 shipped: diagnostics now support JSON export plus persisted/clamped retention controls for audit workflows.
 - Phase 11 shipped: diagnostics now include category-specific recovery playbooks surfaced inline in Diagnostics UI.
-- Next step is attaching one-click remediation actions (for example Settings deep links or rerun affordances) to the recovery playbooks.
+- Phase 12 shipped: diagnostics playbooks now include one-click copy actions for recovery steps and rerun commands.
+- Next step is adding contextual deep links and safe inline rerun dispatch where command surfaces permit it.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
@@ -80,14 +82,14 @@ Date: 2026-02-23
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Define one-click remediation action contracts keyed by diagnostics category (settings deep links, safe rerun actions, and permission prompts).
+1. Add contextual deep-link targets and safe inline rerun dispatch contracts keyed by diagnostics category.
 2. Extend shipped automation health summary into unified launchd+scheduler status contract.
 
 Exit criteria:
 - Shared policy/process design is reviewed and approved by runtime + UX workstreams.
 
 ### 31-60 days
-1. Add first integration seam between diagnostics playbooks and policy-aware remediation actions.
+1. Add first integration seam between diagnostics remediation actions and policy-aware execution guards.
 2. Implement shared automation observability model between in-app scheduler and launchd.
 3. Draft migration plan for historical automation status records.
 
