@@ -50,6 +50,7 @@ Date: 2026-02-23
 | P2 | Added unified in-memory extensibility diagnostics stream and wired skill/mod/extension/launchd failure paths into it | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsStreamTests.swift` | `ff5e5e0` |
 | P2 | Surfaced shared extensibility diagnostics stream in Diagnostics UX for cross-surface failure visibility | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift` | `ba2b54e` |
 | P2 | Persisted extensibility diagnostics stream via preferences and restored it on startup for cross-session visibility | `/Users/bikram/Developer/CodexChat/packages/CodexChatCore/Sources/CodexChatCore/Models.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Lifecycle.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `b607350` |
+| P2 | Added extensibility diagnostics export action plus persisted, clamped retention controls in Settings | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityDiagnosticsExporter.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/SettingsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsExporterTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `2bb01b1` |
 
 ### Remaining prioritized backlog
 
@@ -65,7 +66,8 @@ Date: 2026-02-23
 - Phase 7 shipped: normalized diagnostics now stream into one shared in-memory app model.
 - Phase 8 shipped: shared diagnostics stream is now visible in Diagnostics UX.
 - Phase 9 shipped: diagnostics stream is now persisted/restored across app restarts.
-- Next step is export/retention controls for audit workflows.
+- Phase 10 shipped: diagnostics now support JSON export plus persisted/clamped retention controls for audit workflows.
+- Next step is attaching actionable recovery playbooks to each diagnostics category directly in Settings/Diagnostics surfaces.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
@@ -76,14 +78,14 @@ Date: 2026-02-23
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Define a unified telemetry schema for shared process-runner outcomes (skills/mods/extensions).
+1. Define a unified recovery-playbook schema keyed by diagnostics category for shared process-runner outcomes (skills/mods/extensions).
 2. Extend shipped automation health summary into unified launchd+scheduler status contract.
 
 Exit criteria:
 - Shared policy/process design is reviewed and approved by runtime + UX workstreams.
 
 ### 31-60 days
-1. Add first integration seam between consolidated process-executor telemetry and policy outcomes.
+1. Add first integration seam between diagnostics categories and policy-aware remediation actions.
 2. Implement shared automation observability model between in-app scheduler and launchd.
 3. Draft migration plan for historical automation status records.
 
@@ -93,7 +95,7 @@ Exit criteria:
 - Migration impact is documented and test strategy is defined.
 
 ### 61-90 days
-1. Complete policy-aware process telemetry plumbing across skills/mods/extensions.
+1. Complete policy-aware diagnostics/remediation plumbing across skills/mods/extensions.
 2. Land unified automation observability state model and UI bindings.
 3. Continue de-duplication of path/process safety helpers across Team C packages (CodexMods helper shipped; app/project artifact path safety remains to converge).
 
