@@ -151,12 +151,19 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
 
         let stderrLines = try await withTimeout(seconds: 2.0) {
             var lines: [String] = []
+            var sawTurnCompleted = false
             for await event in stream {
                 switch event {
                 case let .action(action) where action.method == "runtime/stderr":
                     lines.append(action.detail)
+                    if sawTurnCompleted, lines.count >= 2 {
+                        return lines
+                    }
                 case .turnCompleted:
-                    return lines
+                    sawTurnCompleted = true
+                    if lines.count >= 2 {
+                        return lines
+                    }
                 default:
                     continue
                 }
