@@ -13,17 +13,34 @@ Core differentiators:
 
 ## Features
 
-- Local-first project model with folder-backed chats, artifacts, memory, and mods.
-- Streaming runtime transcript with action cards and approval-driven escalation.
+- Native SwiftUI macOS experience for the Codex runtime with a chat-first flow.
+- Local Markdown memory: conversations and project context are stored on disk as editable `.md` files.
+- Theme customization with tunable palette, surface, text, and accent colors.
+- Mods and Mods Bar support UI/workflow customization and side helpers while chatting.
+- Built-in terminal workspace with multi-shell support for command-first and agent-assisted execution.
+- Skill workflows: install from skills.sh or create and save your own, then trigger with `$` shortcuts.
+- Native macOS actions (calendar, messages, desktop cleanup) with preview-first confirmations and safety controls.
 - Project safety controls for sandbox mode, approval policy, network access, and web search.
 - Chat archive persistence with searchable local metadata.
-- Skill discovery/install/enablement with per-project control.
-- UI Mods (`ui.mod.json`) plus package manifest (`codex.mod.json`) for install/distribution metadata.
-- Native computer actions (desktop cleanup, calendar lookup, message draft/send) with preview-first confirmations.
-- Adaptive intent routing for practical personal tasks and developer orchestration prompts.
-- Config role/profile builder plus dependency-aware plan runner primitives for multi-agent workflows.
 - Keychain-backed secret handling for API keys.
 - Deterministic contributor workflows via CLI diagnostics and fixtures.
+
+## Screenshots
+
+### Codex Chat (Default)
+![Codex Chat default interface](docs-public/screenshots/codex-chat.png)
+
+### Local Conversation Memory
+![Conversation memory stored locally](docs-public/screenshots/conversation-memory.png)
+
+### Theme Switching
+![Theme customization and switching](docs-public/screenshots/cc-themes.png)
+
+### Mods + Prompt Bar
+![Mods and prompt bar customization](docs-public/screenshots/cc-mod-promptbar.png)
+
+### Terminal Workspace
+![Integrated terminal workspace](docs-public/screenshots/cc-terminal.png)
 
 ## Repository Layout
 
