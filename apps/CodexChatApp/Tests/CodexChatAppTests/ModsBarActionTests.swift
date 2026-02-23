@@ -203,6 +203,53 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(model.logs.contains { $0.message.contains("outside project root") })
     }
 
+    func testPerformModsBarActionBlocksPrivilegedHookForUntrustedProject() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-untrusted-hook")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let threadID = UUID()
+        let projectURL = try makeTempDirectory(prefix: "modsbar-untrusted-project")
+        let output = projectURL.appendingPathComponent("blocked.json", isDirectory: false)
+        let script = try makeCaptureScript(outputURL: output)
+
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Project", path: projectURL.path, trustState: .untrusted),
+        ])
+        model.selectedProjectID = projectID
+        model.threadsState = .loaded([
+            ThreadRecord(id: threadID, projectId: projectID, title: "Thread"),
+        ])
+        model.selectedThreadID = threadID
+        model.activeModsBarModID = "acme.blocked"
+        model.activeExtensionHooks = [
+            AppModel.ResolvedExtensionHook(
+                modID: "acme.blocked",
+                modDirectoryPath: projectURL.path,
+                definition: ModHookDefinition(
+                    id: "blocked-hook",
+                    event: .modsBarAction,
+                    handler: .init(command: [script.path], cwd: "."),
+                    permissions: .init(projectWrite: true)
+                )
+            ),
+        ]
+
+        model.performModsBarAction(
+            .init(
+                id: "emit",
+                label: "Emit",
+                kind: .emitEvent,
+                payload: [:]
+            )
+        )
+
+        try await eventually(timeoutSeconds: 10) {
+            model.logs.contains { $0.message.contains("Extension capabilities blocked in untrusted project") }
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+    }
+
     func testUpsertPersonalNotesInlineEmitsModsBarAction() async throws {
         let repositories = try makeRepositories(prefix: "modsbar-personal-notes-upsert")
         let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)

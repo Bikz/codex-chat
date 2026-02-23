@@ -518,6 +518,7 @@ extension AppModel {
             let permitted = await ensurePermissions(
                 modID: resolved.modID,
                 permissions: resolved.definition.permissions,
+                projectID: UUID(uuidString: envelope.project.id),
                 contextHint: "Hook \(resolved.definition.id)"
             )
             guard permitted else {
@@ -562,6 +563,7 @@ extension AppModel {
         let permissionOK = await ensurePermissions(
             modID: resolved.modID,
             permissions: resolved.definition.permissions,
+            projectID: project.id,
             contextHint: "Automation \(resolved.definition.id)"
         )
         guard permissionOK else {
@@ -641,9 +643,23 @@ extension AppModel {
         return requested
     }
 
+    private func requestedExtensibilityCapabilities(_ permissions: ModExtensionPermissions) -> Set<ExtensibilityCapability> {
+        var required = Set<ExtensibilityCapability>()
+        if permissions.projectRead { required.insert(.projectRead) }
+        if permissions.projectWrite {
+            required.insert(.projectWrite)
+            required.insert(.filesystemWrite)
+        }
+        if permissions.network { required.insert(.network) }
+        if permissions.runtimeControl { required.insert(.runtimeControl) }
+        if permissions.runWhenAppClosed { required.insert(.runWhenAppClosed) }
+        return required
+    }
+
     private func ensurePermissions(
         modID: String,
         permissions: ModExtensionPermissions,
+        projectID: UUID?,
         contextHint: String
     ) async -> Bool {
         guard let extensionPermissionRepository else {
@@ -653,6 +669,19 @@ extension AppModel {
         let requested = requestedCorePermissions(permissions)
         guard !requested.isEmpty else {
             return true
+        }
+
+        let blockedCapabilities = blockedExtensibilityCapabilities(
+            for: requestedExtensibilityCapabilities(permissions),
+            projectID: projectID
+        )
+        if !blockedCapabilities.isEmpty {
+            let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+            appendLog(
+                .warning,
+                "Extension capabilities blocked in untrusted project for mod \(modID): \(blockedList)"
+            )
+            return false
         }
 
         do {
@@ -956,6 +985,7 @@ extension AppModel {
             let permitted = await ensurePermissions(
                 modID: automation.modID,
                 permissions: runWhenClosedPermission,
+                projectID: selectedProjectID,
                 contextHint: "Background automation \(automation.definition.id)"
             )
             guard permitted else {

@@ -335,6 +335,66 @@ final class AppModelComputerActionsTests: XCTestCase {
         XCTAssertFalse(model.shouldPersistComputerActionPermissionDecision(actionID: "apple.script.run"))
     }
 
+    func testUntrustedProjectBlocksPrivilegedComputerActionBeforePermissionPrompt() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-untrusted-action-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let registry = ComputerActionRegistry(messagesSend: MessagesSendAction(sender: PermissionDeniedMessagesSender()))
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            computerActionRegistry: registry
+        )
+
+        var promptCount = 0
+        model.computerActionPermissionPromptHandler = { (_: String, _: ComputerActionSafetyLevel) -> Bool in
+            promptCount += 1
+            return true
+        }
+
+        let projectURL = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Untrusted Project",
+            path: projectURL.path,
+            trustState: .untrusted,
+            isGeneralProject: false
+        )
+        let thread = try await repositories.threadRepository.createThread(
+            projectID: project.id,
+            title: "Computer Action Thread"
+        )
+        let loadedProjects: [ProjectRecord] = [project]
+        model.projectsState = .loaded(loadedProjects)
+
+        try await model.runNativeComputerAction(
+            actionID: "messages.send",
+            arguments: [
+                "recipient": "+15551234567",
+                "body": "Hello",
+            ],
+            threadID: thread.id,
+            projectID: project.id
+        )
+
+        XCTAssertNotNil(model.pendingComputerActionPreview)
+        model.confirmPendingComputerActionPreview()
+
+        try await eventually(timeoutSeconds: 1.0) {
+            model.pendingComputerActionPreview == nil
+                && model.isComputerActionExecutionInProgress == false
+                && (model.computerActionStatusMessage?.contains("Permission denied") ?? false)
+        }
+
+        XCTAssertEqual(promptCount, 0)
+    }
+
     func testCalendarActionAppendsVisibleTranscriptEntries() async throws {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let end = start.addingTimeInterval(1800)

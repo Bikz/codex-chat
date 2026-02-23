@@ -46,3 +46,27 @@ enum ExtensibilityCapabilityPolicy {
         Set(capabilities.map(planRunnerCapability))
     }
 }
+
+extension AppModel {
+    func projectTrustState(for projectID: UUID?) -> ProjectTrustState {
+        guard let projectID else {
+            return selectedProject?.trustState ?? .trusted
+        }
+
+        if let project = projects.first(where: { $0.id == projectID }) {
+            return project.trustState
+        }
+        return selectedProject?.trustState ?? .trusted
+    }
+
+    func blockedExtensibilityCapabilities(
+        for requiredCapabilities: Set<ExtensibilityCapability>,
+        projectID: UUID?
+    ) -> Set<ExtensibilityCapability> {
+        let trustState = projectTrustState(for: projectID)
+        return ExtensibilityCapabilityPolicy.blockedCapabilities(
+            for: requiredCapabilities,
+            trustState: trustState
+        )
+    }
+}
