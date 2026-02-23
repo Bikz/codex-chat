@@ -97,8 +97,16 @@ extension AppModel {
                 skillStatusMessage = "Installed skill to \(result.installedPath)."
                 appendLog(.info, "Installed skill from \(source)")
             } catch {
-                skillStatusMessage = "Skill install failed: \(error.localizedDescription)"
-                appendLog(.error, "Skill install failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    skillStatusMessage = "Skill install failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Skill install process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    skillStatusMessage = "Skill install failed: \(error.localizedDescription)"
+                    appendLog(.error, "Skill install failed: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -138,8 +146,16 @@ extension AppModel {
                 try await refreshSkills()
                 await refreshSkillsCatalog()
             } catch {
-                skillStatusMessage = "Skill update failed: \(error.localizedDescription)"
-                appendLog(.error, "Skill update failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    skillStatusMessage = "Skill update failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Skill update process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    skillStatusMessage = "Skill update failed: \(error.localizedDescription)"
+                    appendLog(.error, "Skill update failed: \(error.localizedDescription)")
+                }
             }
         }
     }

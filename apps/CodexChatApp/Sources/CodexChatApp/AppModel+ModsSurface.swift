@@ -336,8 +336,16 @@ extension AppModel {
                 }
                 appendLog(.info, "Installed mod \(installResult.definition.manifest.id) from \(trimmedSource)")
             } catch {
-                modStatusMessage = "Mod install failed: \(error.localizedDescription)"
-                appendLog(.error, "Mod install failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    modStatusMessage = "Mod install failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Mod install process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    modStatusMessage = "Mod install failed: \(error.localizedDescription)"
+                    appendLog(.error, "Mod install failed: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -407,8 +415,16 @@ extension AppModel {
                 modStatusMessage = "Updated mod: \(result.definition.manifest.name)."
                 refreshModsSurface()
             } catch {
-                modStatusMessage = "Mod update failed: \(error.localizedDescription)"
-                appendLog(.error, "Mod update failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    modStatusMessage = "Mod update failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Mod update process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    modStatusMessage = "Mod update failed: \(error.localizedDescription)"
+                    appendLog(.error, "Mod update failed: \(error.localizedDescription)")
+                }
             }
         }
     }
