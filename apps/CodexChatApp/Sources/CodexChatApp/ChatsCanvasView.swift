@@ -45,8 +45,8 @@ struct ChatsCanvasView: View {
 
     static let modsBarOverlayStyle = ModsBarOverlayStyle(
         railWidth: 64,
-        peekWidth: 332,
-        expandedWidth: 446,
+        peekWidth: 304,
+        expandedWidth: 388,
         cornerRadius: 16,
         layerOffset: 8
     )
@@ -60,6 +60,31 @@ struct ChatsCanvasView: View {
         case .expanded:
             modsBarOverlayStyle.expandedWidth
         }
+    }
+
+    static func modsBarDockedWidth(
+        for mode: AppModel.ModsBarPresentationMode,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        let base = modsBarOverlayWidth(for: mode)
+        let maxFraction: CGFloat = switch mode {
+        case .rail:
+            0.14
+        case .peek:
+            0.31
+        case .expanded:
+            0.38
+        }
+        let minWidth: CGFloat = switch mode {
+        case .rail:
+            modsBarOverlayStyle.railWidth
+        case .peek:
+            260
+        case .expanded:
+            300
+        }
+        let maxWidth = max(minWidth, containerWidth * maxFraction)
+        return min(base, maxWidth)
     }
 
     @ObservedObject var model: AppModel
@@ -82,6 +107,7 @@ struct ChatsCanvasView: View {
             }
 
             runtimeAwareConversationSurface
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             VStack(alignment: .leading, spacing: 8) {
                 FollowUpQueueView(model: model)
@@ -789,33 +815,37 @@ struct ChatsCanvasView: View {
 
     @ViewBuilder
     private func conversationWithModsBar(
-        @ViewBuilder _ content: () -> some View
+        @ViewBuilder _ content: @escaping () -> some View
     ) -> some View {
         if model.canToggleModsBarForSelectedThread {
-            HStack(alignment: .top, spacing: tokens.spacing.small) {
-                content()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { proxy in
+                HStack(alignment: .top, spacing: tokens.spacing.small) {
+                    content()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .layoutPriority(1)
 
-                if model.isModsBarVisibleForSelectedThread {
-                    modsBarDockedSurface
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    if model.isModsBarVisibleForSelectedThread {
+                        modsBarDockedSurface(containerWidth: proxy.size.width)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.isModsBarVisibleForSelectedThread)
             .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.selectedModsBarPresentationMode)
         } else {
             content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
     @ViewBuilder
-    private var modsBarDockedSurface: some View {
+    private func modsBarDockedSurface(containerWidth: CGFloat) -> some View {
         switch model.selectedModsBarPresentationMode {
         case .rail:
             modsBarRail
         case .peek, .expanded:
-            layeredModsBarPanel
+            layeredModsBarPanel(containerWidth: containerWidth)
         }
     }
 
@@ -888,9 +918,12 @@ struct ChatsCanvasView: View {
         .accessibilityLabel("Extension panel rail")
     }
 
-    private var layeredModsBarPanel: some View {
+    private func layeredModsBarPanel(containerWidth: CGFloat) -> some View {
         let style = Self.modsBarOverlayStyle
-        let width = Self.modsBarOverlayWidth(for: model.selectedModsBarPresentationMode)
+        let width = Self.modsBarDockedWidth(
+            for: model.selectedModsBarPresentationMode,
+            containerWidth: containerWidth
+        )
 
         return ZStack(alignment: .topTrailing) {
             overlayPanelLayer(offset: style.layerOffset * 2)

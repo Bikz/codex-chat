@@ -585,6 +585,21 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(model.extensionModsBarPresentationModeByThreadID[threadID], .peek)
     }
 
+    func testToggleModsBarFromRailFullyHidesPanel() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.selectedThreadID = UUID()
+
+        model.toggleModsBar()
+        model.setModsBarPresentationMode(.rail)
+
+        XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .rail)
+
+        model.toggleModsBar()
+
+        XCTAssertFalse(model.isModsBarVisibleForSelectedThread)
+    }
+
     func testCycleModsBarPresentationModeOpensHiddenModsBarInPeekMode() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.selectedThreadID = UUID()

@@ -62,10 +62,22 @@ final class ChatsCanvasViewStyleTests: XCTestCase {
         let expandedWidth = ChatsCanvasView.modsBarOverlayWidth(for: .expanded)
 
         XCTAssertEqual(railWidth, 64, accuracy: 0.0001)
-        XCTAssertEqual(peekWidth, 332, accuracy: 0.0001)
-        XCTAssertEqual(expandedWidth, 446, accuracy: 0.0001)
+        XCTAssertEqual(peekWidth, 304, accuracy: 0.0001)
+        XCTAssertEqual(expandedWidth, 388, accuracy: 0.0001)
         XCTAssertLessThan(railWidth, peekWidth)
         XCTAssertLessThan(peekWidth, expandedWidth)
+    }
+
+    func testModsBarDockedWidthClampsToContainerBudget() {
+        let peekNarrow = ChatsCanvasView.modsBarDockedWidth(for: .peek, containerWidth: 820)
+        let peekWide = ChatsCanvasView.modsBarDockedWidth(for: .peek, containerWidth: 1600)
+        let expandedNarrow = ChatsCanvasView.modsBarDockedWidth(for: .expanded, containerWidth: 820)
+        let expandedWide = ChatsCanvasView.modsBarDockedWidth(for: .expanded, containerWidth: 1600)
+
+        XCTAssertLessThan(peekNarrow, ChatsCanvasView.modsBarOverlayWidth(for: .peek))
+        XCTAssertEqual(peekWide, ChatsCanvasView.modsBarOverlayWidth(for: .peek), accuracy: 0.0001)
+        XCTAssertLessThan(expandedNarrow, ChatsCanvasView.modsBarOverlayWidth(for: .expanded))
+        XCTAssertEqual(expandedWide, ChatsCanvasView.modsBarOverlayWidth(for: .expanded), accuracy: 0.0001)
     }
 
     func testModsBarOverlayStyleKeepsLayeredPanelGeometryStable() {
