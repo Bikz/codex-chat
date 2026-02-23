@@ -4,7 +4,7 @@ import Foundation
 enum ExtensibilityCapability: String, Hashable, Sendable {
     case projectRead = "project-read"
     case projectWrite = "project-write"
-    case network = "network"
+    case network
     case runtimeControl = "runtime-control"
     case runWhenAppClosed = "run-when-app-closed"
     case nativeActions = "native-actions"
