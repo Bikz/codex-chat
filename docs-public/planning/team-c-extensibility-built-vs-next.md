@@ -65,6 +65,7 @@ Date: 2026-02-23
 | P2 | Added in-place rollup expansion in Diagnostics so collapsed automation repeats can be inspected without leaving timeline context | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1e0a4b6` |
 | P2 | Added human-readable project/thread metadata labels in automation timeline rows to accelerate triage context without UUID lookup | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift` | `b391159` |
 | P2 | Added relative recency badges in automation timeline headers to improve scan speed during incident triage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift` | `5a36745` |
+| P2 | Fixed automation timeline focus-filter persistence race by sequencing in-flight writes and added deterministic regression coverage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `782be85` |
 | P1 | Added persisted user icon overrides for mods bar identity with per-mod reset and normalization coverage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsBarQuickSwitch.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ModViews.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexChatCore/Sources/CodexChatCore/Models.swift` | `dc633f7` |
 | P1 | Grouped quick-switch entries by scope and surfaced iconized menu identity for project/global switching (with regression tests) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensionModsBarView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsBarQuickSwitch.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/docs-public/MODS.md` | `4205bec` |
 
@@ -97,6 +98,7 @@ Date: 2026-02-23
 - Phase 22 shipped: automation timeline rollups now support inline expansion to inspect underlying repeated events in place.
 - Phase 23 shipped: automation timeline rows now show human-readable project/thread labels when available.
 - Phase 24 shipped: automation timeline rows now include relative-time recency badges beside absolute timestamps.
+- Phase 25 shipped: timeline focus-filter persistence now serializes writes to avoid stale value overrides during rapid toggles.
 - Next step is evaluating if remaining diagnostics UX items should be promoted to P1 or closed out for this cycle.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
@@ -108,7 +110,20 @@ Date: 2026-02-23
 - Phase 6 shipped: rollups can now be expanded inline to inspect repeated events without context switching.
 - Phase 7 shipped: timeline rows now include project/thread labels for immediate scope context.
 - Phase 8 shipped: timeline rows now include relative-time recency badges for faster scanability.
+- Phase 9 shipped: focus-filter persistence now guarantees last-write-wins under rapid toggle churn.
 - Next step is evaluating whether to close out this automation-observability backlog slice for the cycle.
+
+## 2.1) Release readiness review (2026-02-23)
+P0 findings:
+- None in reviewed Team C scope.
+
+P1 findings:
+- None in reviewed Team C scope.
+
+P2 findings:
+- Fixed: automation timeline focus-filter persistence could record stale selection under rapid toggles due unordered async writes.
+- Evidence: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift`.
+- Commit: `782be85`.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:48`.
 
 ## 3) 30/60/90 day roadmap (re-baselined)
