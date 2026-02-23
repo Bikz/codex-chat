@@ -7,17 +7,25 @@ extension AppModel {
         case emptyPlan
         case timeoutWaitingForTurn
         case completionMarkersMissing
+        case missingCapabilityDeclarations([PlanRunnerCapability])
+        case privilegedCapabilitiesBlockedInUntrustedProject([PlanRunnerCapability])
 
         var errorDescription: String? {
             switch self {
             case .missingSelection:
-                "Select a project and thread before running a plan."
+                return "Select a project and thread before running a plan."
             case .emptyPlan:
-                "Provide a plan file or plan text before running."
+                return "Provide a plan file or plan text before running."
             case .timeoutWaitingForTurn:
-                "Timed out waiting for the runtime turn to complete."
+                return "Timed out waiting for the runtime turn to complete."
             case .completionMarkersMissing:
-                "No completion markers were found. Ask the runtime to emit TASK_COMPLETE / TASK_FAILED markers."
+                return "No completion markers were found. Ask the runtime to emit TASK_COMPLETE / TASK_FAILED markers."
+            case let .missingCapabilityDeclarations(capabilities):
+                let labels = capabilities.map(\.rawValue).sorted().joined(separator: ", ")
+                return "Plan requires explicit capability declarations before execution: \(labels). Add a line like `Capabilities: \(labels)`."
+            case let .privilegedCapabilitiesBlockedInUntrustedProject(capabilities):
+                let labels = capabilities.map(\.rawValue).sorted().joined(separator: ", ")
+                return "Plan requests privileged capabilities (\(labels)) in an untrusted project. Trust the project first."
             }
         }
     }
@@ -107,7 +115,8 @@ extension AppModel {
             await runPlanExecutionLoop(
                 threadID: selectedThreadID,
                 projectID: selectedProjectID,
-                projectPath: selectedProject.path
+                projectPath: selectedProject.path,
+                projectTrustState: selectedProject.trustState
             )
         }
     }
@@ -126,7 +135,8 @@ extension AppModel {
     private func runPlanExecutionLoop(
         threadID: UUID,
         projectID: UUID,
-        projectPath: String
+        projectPath: String,
+        projectTrustState: ProjectTrustState
     ) async {
         isPlanRunnerExecuting = true
         defer {
@@ -138,6 +148,20 @@ extension AppModel {
             let planText = try await resolvedPlanText()
             let document = try PlanParser.parse(planText)
             let scheduler = try PlanScheduler(document: document)
+            let capabilityEvaluation = PlanRunnerCapabilityPolicy.evaluate(
+                document: document,
+                trustState: projectTrustState
+            )
+            if !capabilityEvaluation.undeclaredCapabilities.isEmpty {
+                throw PlanRunnerExecutionError.missingCapabilityDeclarations(
+                    Array(capabilityEvaluation.undeclaredCapabilities)
+                )
+            }
+            if !capabilityEvaluation.blockedForTrustState.isEmpty {
+                throw PlanRunnerExecutionError.privilegedCapabilitiesBlockedInUntrustedProject(
+                    Array(capabilityEvaluation.blockedForTrustState)
+                )
+            }
 
             let planRun = try await initializePlanRun(
                 document: document,
@@ -214,7 +238,10 @@ extension AppModel {
                 )
 
                 let baseline = Date()
-                let prompt = orchestrationPrompt(for: batch, in: document)
+                let prompt = orchestrationPrompt(
+                    for: batch,
+                    in: document
+                )
                 try await dispatchNow(
                     text: prompt,
                     threadID: threadID,
@@ -399,6 +426,11 @@ extension AppModel {
         let multiAgentGuidance = isMultiAgentEnabledForPlanRunner
             ? "Multi-agent execution is enabled. You may parallelize independent tasks in this batch."
             : "Multi-agent execution is disabled. Execute tasks sequentially in this batch."
+        let declaredCapabilities = document.requestedCapabilities
+            .map(\.rawValue)
+            .sorted()
+            .joined(separator: ", ")
+        let capabilitySummary = declaredCapabilities.isEmpty ? "none" : declaredCapabilities
 
         return """
         You are executing a dependency-aware plan batch.
@@ -408,6 +440,8 @@ extension AppModel {
         \(dependencySummary)
 
         \(multiAgentGuidance)
+
+        Declared plan capabilities: \(capabilitySummary)
 
         Requirements:
         1. Execute only the listed batch tasks.

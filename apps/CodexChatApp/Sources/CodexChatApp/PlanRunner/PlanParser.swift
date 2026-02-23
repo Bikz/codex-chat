@@ -1,5 +1,12 @@
 import Foundation
 
+enum PlanRunnerCapability: String, CaseIterable, Hashable, Sendable {
+    case nativeActions = "native-actions"
+    case filesystemWrite = "filesystem-write"
+    case network = "network"
+    case runtimeControl = "runtime-control"
+}
+
 struct PlanTask: Hashable, Sendable {
     let id: String
     let title: String
@@ -10,6 +17,12 @@ struct PlanTask: Hashable, Sendable {
 
 struct PlanDocument: Hashable, Sendable {
     let tasks: [PlanTask]
+    let requestedCapabilities: Set<PlanRunnerCapability>
+
+    init(tasks: [PlanTask], requestedCapabilities: Set<PlanRunnerCapability> = []) {
+        self.tasks = tasks
+        self.requestedCapabilities = requestedCapabilities
+    }
 
     var taskByID: [String: PlanTask] {
         Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
@@ -38,11 +51,17 @@ enum PlanParser {
         let lines = rawText.components(separatedBy: .newlines)
         var currentPhaseTitle: String?
         var tasks: [PlanTask] = []
+        var requestedCapabilities = Set<PlanRunnerCapability>()
         var seenTaskIDs = Set<String>()
         var lastTaskIndex: Int?
 
         for (offset, line) in lines.enumerated() {
             let lineNumber = offset + 1
+
+            if let parsedCapabilities = parseCapabilitiesLine(line), !parsedCapabilities.isEmpty {
+                requestedCapabilities.formUnion(parsedCapabilities)
+                continue
+            }
 
             if let heading = parseHeading(line) {
                 currentPhaseTitle = heading
@@ -92,7 +111,7 @@ enum PlanParser {
             }
         }
 
-        return PlanDocument(tasks: tasks)
+        return PlanDocument(tasks: tasks, requestedCapabilities: requestedCapabilities)
     }
 
     private struct ParsedTaskLine {
@@ -108,6 +127,8 @@ enum PlanParser {
     ]
     private static let dependencyRegex = makeRegex(#"(?i)\b(?:depends\s+on|dependencies?)\s*[:=-]\s*(.+)$"#)
     private static let taskIDTokenRegex = makeRegex(#"[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*"#)
+    private static let capabilityLineRegex = makeRegex(#"(?i)^\s*(?:plan[\s_-]*runner[\s_-]*)?capabilities?\s*:\s*(.+?)\s*$"#)
+    private static let atCapabilityRegex = makeRegex(#"(?i)^\s*@capability\s+(.+?)\s*$"#)
 
     private static func makeRegex(_ pattern: String) -> NSRegularExpression {
         do {
@@ -159,6 +180,48 @@ enum PlanParser {
         }
 
         return nil
+    }
+
+    private static func parseCapabilitiesLine(_ line: String) -> Set<PlanRunnerCapability>? {
+        let range = NSRange(line.startIndex ..< line.endIndex, in: line)
+        let payload: String
+        if let match = capabilityLineRegex.firstMatch(in: line, options: [], range: range),
+           let payloadRange = Range(match.range(at: 1), in: line)
+        {
+            payload = String(line[payloadRange])
+        } else if let match = atCapabilityRegex.firstMatch(in: line, options: [], range: range),
+                  let payloadRange = Range(match.range(at: 1), in: line)
+        {
+            payload = String(line[payloadRange])
+        } else {
+            return nil
+        }
+
+        let tokens = payload
+            .split { $0 == "," || $0 == "|" || $0 == ";" || $0.isWhitespace }
+            .map { String($0) }
+
+        var capabilities = Set<PlanRunnerCapability>()
+        for token in tokens {
+            let normalized = token
+                .lowercased()
+                .replacingOccurrences(of: "_", with: "-")
+                .replacingOccurrences(of: ".", with: "-")
+            guard !normalized.isEmpty else { continue }
+            switch normalized {
+            case "native-action", "native-actions", "computer-action", "computer-actions":
+                capabilities.insert(.nativeActions)
+            case "filesystem-write", "filesystem-writes", "file-write", "file-writes", "project-write", "project-writes":
+                capabilities.insert(.filesystemWrite)
+            case "network":
+                capabilities.insert(.network)
+            case "runtime-control", "runtime":
+                capabilities.insert(.runtimeControl)
+            default:
+                continue
+            }
+        }
+        return capabilities
     }
 
     private static func parseDependencyLine(_ line: String) -> [String]? {
