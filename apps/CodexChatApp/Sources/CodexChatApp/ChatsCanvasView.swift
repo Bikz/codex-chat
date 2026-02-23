@@ -756,7 +756,8 @@ struct ChatsCanvasView: View {
                                 MessageRow(
                                     message: message,
                                     tokens: tokens,
-                                    allowsExternalMarkdownContent: model.isSelectedProjectTrusted
+                                    allowsExternalMarkdownContent: model.isSelectedProjectTrusted,
+                                    projectPath: model.selectedProject?.path
                                 )
                                 .padding(.vertical, tokens.spacing.xSmall)
                                 .listRowSeparator(.hidden)

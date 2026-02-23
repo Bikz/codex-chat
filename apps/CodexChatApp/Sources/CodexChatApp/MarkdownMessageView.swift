@@ -2,6 +2,9 @@ import CodexChatUI
 import Foundation
 import MarkdownUI
 import SwiftUI
+#if canImport(AppKit)
+    import AppKit
+#endif
 
 enum MarkdownSafetyPolicy: Equatable, Sendable {
     case trusted
@@ -22,8 +25,15 @@ enum MarkdownMessageSegment: Hashable {
 }
 
 enum MarkdownMessageProcessor {
+    struct FileReference: Hashable, Sendable {
+        let path: String
+        let line: Int?
+        let column: Int?
+    }
+
     private static let markdownImagePattern = #"!\[([^\]]*)\]\(([^)]+)\)"#
     private static let markdownLinkPattern = #"(?<!!)\[([^\]]+)\]\(([^)]+)\)"#
+    private static let backtickTokenPattern = #"`([^`\n]+)`"#
 
     static func sanitize(_ input: String, policy: MarkdownSafetyPolicy) -> String {
         guard policy == .untrusted else {
@@ -110,6 +120,108 @@ enum MarkdownMessageProcessor {
 
         let scheme = url.scheme?.lowercased()
         return scheme == "http" || scheme == "https"
+    }
+
+    static func linkifyProjectFileReferences(_ input: String) -> String {
+        sanitizeOutsideCodeFences(input) { block in
+            replaceMatches(pattern: backtickTokenPattern, in: block) { match, source in
+                guard match.numberOfRanges >= 2,
+                      let matchRange = Range(match.range, in: source),
+                      let tokenRange = Range(match.range(at: 1), in: source)
+                else {
+                    return nil
+                }
+
+                // Skip existing markdown link labels like [`file`](dest).
+                if isWrappedAsMarkdownLinkLabel(source: source, matchRange: matchRange) {
+                    return nil
+                }
+
+                let token = String(source[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let reference = parseFileReference(token) else {
+                    return nil
+                }
+
+                guard let link = projectFileURLString(reference: reference) else {
+                    return nil
+                }
+
+                return "[`\(token)`](\(link))"
+            }
+        }
+    }
+
+    static func resolveProjectFileURL(_ url: URL, projectPath: String?) -> URL? {
+        if url.scheme?.lowercased() == "codexchat-file",
+           let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let path = components.queryItems?.first(where: { $0.name == "path" })?.value
+        {
+            let line = components.queryItems?
+                .first(where: { $0.name == "line" })?
+                .value
+                .flatMap(Int.init)
+            let column = components.queryItems?
+                .first(where: { $0.name == "column" })?
+                .value
+                .flatMap(Int.init)
+            let reference = FileReference(path: path, line: line, column: column)
+            return resolveAbsoluteURL(for: reference, projectPath: projectPath)
+        }
+
+        if url.isFileURL {
+            return url
+        }
+
+        guard url.scheme == nil else {
+            return nil
+        }
+
+        let raw = url.absoluteString.removingPercentEncoding ?? url.absoluteString
+        guard let reference = parseFileReference(raw) else {
+            return nil
+        }
+        return resolveAbsoluteURL(for: reference, projectPath: projectPath)
+    }
+
+    static func parseFileReference(_ raw: String) -> FileReference? {
+        var token = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+
+        guard !token.isEmpty, !token.contains(" ") else {
+            return nil
+        }
+
+        var line: Int?
+        var column: Int?
+
+        if let anchorMatch = firstMatch(
+            pattern: #"^(.*)#L(\d+)(?:C(\d+))?$"#,
+            in: token
+        ) {
+            token = anchorMatch[0]
+            line = Int(anchorMatch[1])
+            if anchorMatch.count > 2 {
+                column = Int(anchorMatch[2])
+            }
+        } else if let lineMatch = firstMatch(
+            pattern: #"^(.*?):(\d+)(?::(\d+))?$"#,
+            in: token
+        ) {
+            token = lineMatch[0]
+            line = Int(lineMatch[1])
+            if lineMatch.count > 2 {
+                column = Int(lineMatch[2])
+            }
+        }
+
+        let normalized = normalizePathToken(token)
+        guard looksLikeFilePath(normalized) else {
+            return nil
+        }
+
+        return FileReference(path: normalized, line: line, column: column)
     }
 
     private static func sanitizeOutsideCodeFences(
@@ -237,6 +349,110 @@ enum MarkdownMessageProcessor {
 
         return isExternalURL(url)
     }
+
+    private static func projectFileURLString(reference: FileReference) -> String? {
+        var components = URLComponents()
+        components.scheme = "codexchat-file"
+        components.host = "open"
+
+        var queryItems = [URLQueryItem(name: "path", value: reference.path)]
+        if let line = reference.line {
+            queryItems.append(URLQueryItem(name: "line", value: String(line)))
+        }
+        if let column = reference.column {
+            queryItems.append(URLQueryItem(name: "column", value: String(column)))
+        }
+        components.queryItems = queryItems
+
+        return components.url?.absoluteString
+    }
+
+    private static func resolveAbsoluteURL(for reference: FileReference, projectPath: String?) -> URL? {
+        let path = reference.path
+        if path.hasPrefix("/") {
+            let absolute = URL(fileURLWithPath: path).standardizedFileURL
+            if let projectPath, !isPath(absolute.path, within: projectPath) {
+                return nil
+            }
+            return absolute
+        }
+
+        guard let projectPath else {
+            return nil
+        }
+
+        return ProjectPathSafety.destinationURL(for: path, projectPath: projectPath)
+    }
+
+    private static func isPath(_ path: String, within projectPath: String) -> Bool {
+        let rootURL = URL(fileURLWithPath: projectPath, isDirectory: true).standardizedFileURL
+        let candidateURL = URL(fileURLWithPath: path).standardizedFileURL
+        let rootPrefix = rootURL.path.hasSuffix("/") ? rootURL.path : "\(rootURL.path)/"
+        return candidateURL.path.hasPrefix(rootPrefix)
+    }
+
+    private static func normalizePathToken(_ token: String) -> String {
+        if token.hasPrefix("a/") || token.hasPrefix("b/") {
+            return String(token.dropFirst(2))
+        }
+        return token
+    }
+
+    private static func looksLikeFilePath(_ token: String) -> Bool {
+        if token.hasPrefix("/") {
+            return true
+        }
+        if token.hasPrefix("./") || token.hasPrefix("../") {
+            return true
+        }
+        if token.contains("/") {
+            return true
+        }
+        let fileLikePattern = #"^[A-Za-z0-9._-]+\.[A-Za-z0-9]+$"#
+        return token.range(of: fileLikePattern, options: .regularExpression) != nil
+    }
+
+    private static func firstMatch(pattern: String, in source: String) -> [String]? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return nil
+        }
+        let range = NSRange(source.startIndex..., in: source)
+        guard let match = regex.firstMatch(in: source, options: [], range: range),
+              match.numberOfRanges > 1
+        else {
+            return nil
+        }
+
+        var captures: [String] = []
+        captures.reserveCapacity(match.numberOfRanges - 1)
+        for captureIndex in 1 ..< match.numberOfRanges {
+            let captureRange = match.range(at: captureIndex)
+            if captureRange.location == NSNotFound {
+                captures.append("")
+                continue
+            }
+            if let range = Range(captureRange, in: source) {
+                captures.append(String(source[range]))
+            } else {
+                captures.append("")
+            }
+        }
+        return captures
+    }
+
+    private static func isWrappedAsMarkdownLinkLabel(
+        source: String,
+        matchRange: Range<String.Index>
+    ) -> Bool {
+        guard matchRange.lowerBound > source.startIndex else {
+            return false
+        }
+        let previous = source[source.index(before: matchRange.lowerBound)]
+        guard previous == "[" else {
+            return false
+        }
+        return source[matchRange.upperBound...].hasPrefix("](")
+    }
 }
 
 struct MarkdownMessageView: View {
@@ -249,20 +465,35 @@ struct MarkdownMessageView: View {
 
     let text: String
     let allowsExternalContent: Bool
+    private let projectPath: String?
     private let safetyPolicy: MarkdownSafetyPolicy
     private let indexedSegments: [IndexedSegment]
 
-    init(text: String, allowsExternalContent: Bool) {
+    init(
+        text: String,
+        allowsExternalContent: Bool,
+        projectPath: String? = nil
+    ) {
         self.text = text
         self.allowsExternalContent = allowsExternalContent
+        self.projectPath = projectPath
         let policy: MarkdownSafetyPolicy = allowsExternalContent ? .trusted : .untrusted
         safetyPolicy = policy
-        indexedSegments = Self.buildIndexedSegments(text: text, policy: policy)
+        indexedSegments = Self.buildIndexedSegments(
+            text: text,
+            policy: policy,
+            projectPath: projectPath
+        )
     }
 
-    nonisolated static func buildIndexedSegments(text: String, policy: MarkdownSafetyPolicy) -> [IndexedSegment] {
+    nonisolated static func buildIndexedSegments(
+        text: String,
+        policy: MarkdownSafetyPolicy,
+        projectPath _: String? = nil
+    ) -> [IndexedSegment] {
         let renderedText = MarkdownMessageProcessor.sanitize(text, policy: policy)
-        let segments = MarkdownMessageProcessor.parseSegments(renderedText)
+        let linkifiedText = MarkdownMessageProcessor.linkifyProjectFileReferences(renderedText)
+        let segments = MarkdownMessageProcessor.parseSegments(linkifiedText)
         return segments.enumerated().map { offset, segment in
             IndexedSegment(id: offset, segment: segment)
         }
@@ -370,6 +601,14 @@ struct MarkdownMessageView: View {
 
     private var markdownOpenURLAction: OpenURLAction {
         OpenURLAction { url in
+            if let fileURL = MarkdownMessageProcessor.resolveProjectFileURL(url, projectPath: projectPath) {
+                #if canImport(AppKit)
+                    NSWorkspace.shared.open(fileURL)
+                    return .handled
+                #else
+                    return .systemAction(fileURL)
+                #endif
+            }
             if safetyPolicy.allowsExternalLinks || !MarkdownMessageProcessor.isExternalURL(url) {
                 return .systemAction(url)
             }

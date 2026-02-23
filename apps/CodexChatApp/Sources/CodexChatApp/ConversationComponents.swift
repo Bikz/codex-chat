@@ -8,6 +8,7 @@ struct MessageRow: View {
     let message: ChatMessage
     let tokens: DesignTokens
     let allowsExternalMarkdownContent: Bool
+    let projectPath: String?
 
     var body: some View {
         let isUser = message.role == .user
@@ -45,7 +46,8 @@ struct MessageRow: View {
         if message.role == .assistant {
             MarkdownMessageView(
                 text: message.text,
-                allowsExternalContent: allowsExternalMarkdownContent
+                allowsExternalContent: allowsExternalMarkdownContent,
+                projectPath: projectPath
             )
         } else {
             Text(message.text)
