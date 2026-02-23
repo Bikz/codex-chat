@@ -40,7 +40,13 @@ public enum LaunchdManagerError: LocalizedError, Sendable {
 }
 
 public struct LaunchdManager {
-    public init() {}
+    public typealias CommandRunner = @Sendable (_ arguments: [String]) throws -> String
+
+    private let commandRunner: CommandRunner
+
+    public init(commandRunner: @escaping CommandRunner = LaunchdManager.defaultLaunchctlRunner) {
+        self.commandRunner = commandRunner
+    }
 
     public func plistData(for spec: LaunchdJobSpec) throws -> Data {
         var dictionary: [String: Any] = [
@@ -92,6 +98,10 @@ public struct LaunchdManager {
 
     @discardableResult
     private func runLaunchctl(arguments: [String]) throws -> String {
+        try commandRunner(arguments)
+    }
+
+    public static func defaultLaunchctlRunner(arguments: [String]) throws -> String {
         let process = Process()
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
