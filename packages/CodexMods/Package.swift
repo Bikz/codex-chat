@@ -7,8 +7,14 @@ let package = Package(
     products: [
         .library(name: "CodexMods", targets: ["CodexMods"]),
     ],
+    dependencies: [
+        .package(path: "../CodexProcess"),
+    ],
     targets: [
-        .target(name: "CodexMods"),
+        .target(
+            name: "CodexMods",
+            dependencies: ["CodexProcess"]
+        ),
         .testTarget(
             name: "CodexModsTests",
             dependencies: ["CodexMods"],

@@ -7,8 +7,14 @@ let package = Package(
     products: [
         .library(name: "CodexSkills", targets: ["CodexSkills"]),
     ],
+    dependencies: [
+        .package(path: "../CodexProcess"),
+    ],
     targets: [
-        .target(name: "CodexSkills"),
+        .target(
+            name: "CodexSkills",
+            dependencies: ["CodexProcess"]
+        ),
         .testTarget(name: "CodexSkillsTests", dependencies: ["CodexSkills"]),
     ]
 )

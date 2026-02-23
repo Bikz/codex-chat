@@ -1,5 +1,5 @@
 import Foundation
-import Darwin
+import CodexProcess
 
 public enum SkillScope: String, CaseIterable, Hashable, Sendable, Codable {
     case project
@@ -1000,135 +1000,41 @@ public final class SkillCatalogService: @unchecked Sendable {
     }
 
     public static func defaultProcessRunner(_ argv: [String], _ cwd: String?) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = argv
-        if let cwd {
-            process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-        }
+        let limits = BoundedProcessRunner.Limits.fromEnvironment()
+        let command = argv.joined(separator: " ")
 
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        let maxOutputBytes = configuredProcessMaxOutputBytes()
-        let collector = CappedOutputCollector(maxBytes: maxOutputBytes)
-
-        let stdoutHandle = stdoutPipe.fileHandleForReading
-        let stderrHandle = stderrPipe.fileHandleForReading
-        stdoutHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
+        do {
+            let result = try BoundedProcessRunner.run(argv, cwd: cwd, limits: limits)
+            var merged = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if result.truncated {
+                let notice = "[output truncated after \(limits.maxOutputBytes) bytes]"
+                merged = merged.isEmpty ? notice : "\(merged)\n\(notice)"
             }
-            collector.append(data)
-        }
-        stderrHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
+
+            guard result.terminationStatus == 0 else {
+                throw SkillCatalogError.commandFailed(command: command, output: merged)
             }
-            collector.append(data)
-        }
 
-        let completion = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in
-            completion.signal()
-        }
-
-        try process.run()
-        let timeoutMs = configuredProcessTimeoutMs()
-        if completion.wait(timeout: .now() + .milliseconds(timeoutMs)) == .timedOut {
-            stdoutHandle.readabilityHandler = nil
-            stderrHandle.readabilityHandler = nil
-            process.terminate()
-            usleep(200_000)
-            if process.isRunning {
-                kill(process.processIdentifier, SIGKILL)
+            return merged
+        } catch let error as BoundedProcessRunner.RunnerError {
+            let output: String
+            switch error {
+            case let .launchFailed(message):
+                output = message
+            case let .timedOut(timeoutMs, partialOutput, truncated):
+                var merged = partialOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                if truncated {
+                    let notice = "[output truncated after \(limits.maxOutputBytes) bytes]"
+                    merged = merged.isEmpty ? notice : "\(merged)\n\(notice)"
+                }
+                let timeoutNotice = "Timed out after \(timeoutMs)ms"
+                output = merged.isEmpty ? timeoutNotice : "\(merged)\n\(timeoutNotice)"
             }
-            throw SkillCatalogError.commandFailed(
-                command: argv.joined(separator: " "),
-                output: "Timed out after \(timeoutMs)ms"
-            )
-        }
 
-        stdoutHandle.readabilityHandler = nil
-        stderrHandle.readabilityHandler = nil
-        collector.append(stdoutHandle.readDataToEndOfFile())
-        collector.append(stderrHandle.readDataToEndOfFile())
-
-        let outputSnapshot = collector.snapshot()
-        var merged = String(bytes: outputSnapshot.data, encoding: .utf8) ?? ""
-        merged = merged.trimmingCharacters(in: .whitespacesAndNewlines)
-        if outputSnapshot.truncated {
-            let notice = "[output truncated after \(maxOutputBytes) bytes]"
-            merged = merged.isEmpty ? notice : "\(merged)\n\(notice)"
-        }
-
-        guard process.terminationStatus == 0 else {
+            throw SkillCatalogError.commandFailed(command: command, output: output)
+        } catch {
             let command = argv.joined(separator: " ")
-            throw SkillCatalogError.commandFailed(command: command, output: merged)
-        }
-
-        return merged
-    }
-
-    private static func configuredProcessTimeoutMs() -> Int {
-        let fallback = 120_000
-        guard let raw = ProcessInfo.processInfo.environment["CODEX_PROCESS_TIMEOUT_MS"],
-              let parsed = Int(raw)
-        else {
-            return fallback
-        }
-        return max(100, parsed)
-    }
-
-    private static func configuredProcessMaxOutputBytes() -> Int {
-        let fallback = 131_072
-        guard let raw = ProcessInfo.processInfo.environment["CODEX_PROCESS_MAX_OUTPUT_BYTES"],
-              let parsed = Int(raw)
-        else {
-            return fallback
-        }
-        return max(1024, parsed)
-    }
-
-    private final class CappedOutputCollector: @unchecked Sendable {
-        private let lock = NSLock()
-        private let maxBytes: Int
-        private var data = Data()
-        private var truncated = false
-
-        init(maxBytes: Int) {
-            self.maxBytes = maxBytes
-        }
-
-        func append(_ chunk: Data) {
-            guard !chunk.isEmpty else { return }
-            lock.lock()
-            defer { lock.unlock() }
-
-            guard data.count < maxBytes else {
-                truncated = true
-                return
-            }
-
-            let remaining = maxBytes - data.count
-            if chunk.count > remaining {
-                data.append(chunk.prefix(remaining))
-                truncated = true
-            } else {
-                data.append(chunk)
-            }
-        }
-
-        func snapshot() -> (data: Data, truncated: Bool) {
-            lock.lock()
-            defer { lock.unlock() }
-            return (data, truncated)
+            throw SkillCatalogError.commandFailed(command: command, output: error.localizedDescription)
         }
     }
 }
