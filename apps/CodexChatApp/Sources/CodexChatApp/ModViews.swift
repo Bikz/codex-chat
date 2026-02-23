@@ -125,7 +125,7 @@ struct ModsCanvas: View {
         SkillsModsCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Global Mod")
+                    Text("Global Mods")
                         .font(.title3.weight(.semibold))
 
                     Spacer()
@@ -149,6 +149,10 @@ struct ModsCanvas: View {
                         systemImage: "folder"
                     )
                 } else {
+                    Text("Checked = active for this scope. Installed mods remain available from the Mods bar quick switch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     LazyVGrid(columns: modCardColumns, alignment: .leading, spacing: 10) {
                         ForEach(surface.globalMods) { mod in
                             modOptionCard(
@@ -225,7 +229,7 @@ struct ModsCanvas: View {
         SkillsModsCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Project Mod")
+                    Text("Project Mods")
                         .font(.title3.weight(.semibold))
 
                     Spacer()
@@ -256,6 +260,10 @@ struct ModsCanvas: View {
                         systemImage: "doc.badge.plus"
                     )
                 } else {
+                    Text("Checked = active for this scope. Installed mods remain available from the Mods bar quick switch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     LazyVGrid(columns: modCardColumns, alignment: .leading, spacing: 10) {
                         ForEach(surface.projectMods) { mod in
                             modOptionCard(
@@ -292,12 +300,12 @@ struct ModsCanvas: View {
                 }
 
                 Menu {
-                    Button("Enable") {
+                    Button("Set Active") {
                         onSelect()
                     }
 
                     if isSelected {
-                        Button("Disable") {
+                        Button("Clear Active Selection") {
                             clearModSelection(scope: scope)
                         }
                     }
