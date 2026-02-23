@@ -30,26 +30,19 @@ Date: 2026-02-23
 | P1 | Added skill provenance hardening (explicit untrusted-source confirmation + git pinning) | `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Tests/CodexSkillsTests/CodexSkillsTests.swift` | `9d9f517` |
 | P1 | Added advanced executable-mod lock regression tests (migration + install-time disabled behavior) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelAdvancedExecutableModsTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+AdvancedExecutableMods.swift:16`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift:296` | `2353310` |
 | P1 | Added extension artifact path-safety regression coverage + shared path helper | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ProjectPathSafety.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ProjectPathSafetyTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift` | `307aa26`, `a11f298` |
+| P0 | Added extension worker malformed-output and output-limit negative tests | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:105` | `c8ff0ca` |
 
 ### Remaining prioritized backlog
 
 ### P0 (safety/reliability critical)
-1. Update `EXTENSIONS_QUICKSTART.md` to explicitly document executable-mod lock behavior after install.
-- Current docs still imply unconditional auto-enable, but install can be disabled by advanced lock.
-- References: `/Users/bikram/Developer/CodexChat/docs-public/EXTENSIONS_QUICKSTART.md:79`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift:296`.
-
-2. Add stronger negative-path coverage for extension worker output decoding edge cases.
-- Focus on malformed first-line JSON and boundary-size error messaging to keep external-output handling explicit.
-- References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:105`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift`.
+1. Add fuzz-style parser coverage for harness and extension-worker framing boundaries.
+- Deterministic negative tests are in place; randomized malformed framing coverage is still open.
+- References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ComputerActionHarnessServerTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift`.
 
 ### P1 (high value hardening + platform clarity)
 1. Add tests for scheduler retry/backoff observability in automation runtime.
 - Launchd coverage is now present; scheduler-level assertions are still light.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:16`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`.
-
-2. Strengthen mod provenance guidance in sharing docs for checksum usage.
-- Integrity exists but remains optional; docs should push stronger default guidance for remote installs.
-- References: `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModPackageManifest.swift:223`, `/Users/bikram/Developer/CodexChat/docs-public/MODS_SHARING.md`.
 
 ### P2 (platform evolution and maintainability)
 1. Unify permission policy primitives across skills/mods/extensions/native actions.
@@ -67,14 +60,12 @@ Date: 2026-02-23
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Update `EXTENSIONS_QUICKSTART.md` for executable-lock caveat and checksum guidance for remote installs.
-2. Add extension worker malformed-output boundary tests.
-3. Add scheduler retry/backoff reliability assertions.
+1. Add scheduler retry/backoff reliability assertions.
+2. Add fuzz-style malformed framing tests for harness + worker boundaries.
 
 Exit criteria:
-- Public extension install docs match actual enabled/disabled outcomes.
-- External worker-output failure paths are regression-tested.
 - Automation retry/backoff behavior has deterministic tests.
+- External-input parser boundaries are covered by deterministic and fuzz-style tests.
 
 ### 31-60 days
 1. Prototype unified capability-policy primitives and map existing Team C permission surfaces.
