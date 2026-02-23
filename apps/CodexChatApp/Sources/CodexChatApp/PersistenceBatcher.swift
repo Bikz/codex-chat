@@ -7,22 +7,39 @@ actor PersistenceBatcher {
         case batched
     }
 
+    struct Configuration: Sendable {
+        let maxPendingJobs: Int
+        let flushThreshold: Int
+        let flushIntervalNanoseconds: UInt64
+
+        init(
+            maxPendingJobs: Int = 256,
+            flushThreshold: Int = 8,
+            flushIntervalNanoseconds: UInt64 = 300_000_000
+        ) {
+            self.maxPendingJobs = max(1, maxPendingJobs)
+            self.flushThreshold = max(1, flushThreshold)
+            self.flushIntervalNanoseconds = max(1, flushIntervalNanoseconds)
+        }
+
+        static let `default` = Configuration()
+    }
+
     struct Job: Sendable {
         let context: AppModel.ActiveTurnContext
         let completion: RuntimeTurnCompletion
     }
 
-    private enum Constants {
-        static let maxPendingJobs = 256
-        static let flushThreshold = 8
-        static let flushIntervalNanoseconds: UInt64 = 300_000_000
-    }
-
+    private let configuration: Configuration
     private let handler: @MainActor ([Job]) async -> Void
     private var pendingJobs: [Job] = []
     private var flushTask: Task<Void, Never>?
 
-    init(handler: @escaping @MainActor ([Job]) async -> Void) {
+    init(
+        configuration: Configuration = .default,
+        handler: @escaping @MainActor ([Job]) async -> Void
+    ) {
+        self.configuration = configuration
         self.handler = handler
     }
 
@@ -31,7 +48,7 @@ actor PersistenceBatcher {
         completion: RuntimeTurnCompletion,
         durability: Durability
     ) async {
-        if pendingJobs.count >= Constants.maxPendingJobs {
+        if pendingJobs.count >= configuration.maxPendingJobs {
             await flushNow()
         }
 
@@ -40,7 +57,7 @@ actor PersistenceBatcher {
         case .immediate:
             await flushNow()
         case .batched:
-            if pendingJobs.count >= Constants.flushThreshold {
+            if pendingJobs.count >= configuration.flushThreshold {
                 await flushNow()
             } else {
                 scheduleFlushIfNeeded()
@@ -73,8 +90,9 @@ actor PersistenceBatcher {
             return
         }
 
+        let flushDelayNanoseconds = configuration.flushIntervalNanoseconds
         flushTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Constants.flushIntervalNanoseconds)
+            try? await Task.sleep(nanoseconds: flushDelayNanoseconds)
             guard let self else {
                 return
             }

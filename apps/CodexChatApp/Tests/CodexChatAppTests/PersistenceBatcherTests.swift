@@ -98,6 +98,41 @@ final class PersistenceBatcherTests: XCTestCase {
         XCTAssertEqual(batchCount, 1)
     }
 
+    func testMaxPendingJobsFlushesBeforeAppendingNewJob() async throws {
+        let recorder = PersistenceBatchRecorder()
+        let batcher = PersistenceBatcher(
+            configuration: .init(
+                maxPendingJobs: 3,
+                flushThreshold: 100,
+                flushIntervalNanoseconds: 5_000_000_000
+            )
+        ) { jobs in
+            await recorder.record(jobs)
+        }
+
+        for _ in 0 ..< 4 {
+            await batcher.enqueue(
+                context: sampleContext(threadID: UUID()),
+                completion: sampleCompletion(status: "completed"),
+                durability: .batched
+            )
+        }
+
+        try await eventually(timeoutSeconds: 0.5) {
+            await recorder.totalJobs() == 3
+        }
+
+        let batchCountAfterSpill = await recorder.batchCount()
+        XCTAssertEqual(batchCountAfterSpill, 1)
+
+        await batcher.shutdown()
+        try await eventually(timeoutSeconds: 0.5) {
+            await recorder.totalJobs() == 4
+        }
+        let finalBatchCount = await recorder.batchCount()
+        XCTAssertEqual(finalBatchCount, 2)
+    }
+
     private func sampleContext(threadID: UUID) -> AppModel.ActiveTurnContext {
         AppModel.ActiveTurnContext(
             localTurnID: UUID(),
