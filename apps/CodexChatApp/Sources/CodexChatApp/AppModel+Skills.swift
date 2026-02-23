@@ -64,6 +64,18 @@ extension AppModel {
             return
         }
 
+        let blockedCapabilities = blockedCapabilitiesForSkillInstall(
+            source: source,
+            scope: scope,
+            installer: installer
+        )
+        if !blockedCapabilities.isEmpty {
+            let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+            skillStatusMessage = "Skill install blocked in untrusted project: \(blockedList)."
+            appendLog(.warning, "Skill install blocked in untrusted project (\(blockedList)) for source \(source)")
+            return
+        }
+
         isSkillOperationInProgress = true
         skillStatusMessage = nil
 
@@ -279,6 +291,57 @@ extension AppModel {
         case .global:
             .global
         }
+    }
+
+    func blockedCapabilitiesForSkillInstall(
+        source: String,
+        scope: SkillInstallScope,
+        installer: SkillInstallerKind
+    ) -> Set<ExtensibilityCapability> {
+        guard scope == .project else {
+            return []
+        }
+
+        return blockedExtensibilityCapabilities(
+            for: requiredExtensibilityCapabilitiesForSkillInstall(
+                source: source,
+                installer: installer
+            ),
+            projectID: selectedProjectID
+        )
+    }
+
+    func requiredExtensibilityCapabilitiesForSkillInstall(
+        source: String,
+        installer: SkillInstallerKind
+    ) -> Set<ExtensibilityCapability> {
+        switch installer {
+        case .npx:
+            return [.network, .runtimeControl]
+        case .git:
+            return skillInstallLikelyRequiresNetwork(source) ? [.network] : []
+        }
+    }
+
+    func skillInstallLikelyRequiresNetwork(_ source: String) -> Bool {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return true
+        }
+
+        if trimmed.hasPrefix("/") || trimmed.hasPrefix("./") || trimmed.hasPrefix("../") || trimmed.hasPrefix("~/") {
+            return false
+        }
+
+        if trimmed.hasPrefix("file://") {
+            return false
+        }
+
+        if trimmed.hasPrefix("git@") || trimmed.contains("://") {
+            return true
+        }
+
+        return !trimmed.hasPrefix(".")
     }
 
     private func composerSkillTokenMatch(in text: String) -> ComposerSkillTokenMatch? {
