@@ -99,17 +99,16 @@ private struct WindowAccessor: NSViewRepresentable {
         window.minSize = NSSize(width: 600, height: 400)
         // Don't cap maxSize — let the user go full-screen or any size
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        window.styleMask.insert(.fullSizeContentView)
         window.toolbarStyle = .unifiedCompact
         window.toolbar?.showsBaselineSeparator = false
         window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         if isTransparent {
-            window.styleMask.insert(.fullSizeContentView)
-            window.titlebarAppearsTransparent = true
             window.isOpaque = false
             window.backgroundColor = .clear
         } else {
-            window.styleMask.remove(.fullSizeContentView)
-            window.titlebarAppearsTransparent = false
             window.isOpaque = true
             window.backgroundColor = NSColor.windowBackgroundColor
         }
@@ -138,7 +137,8 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
 
         window.styleMask.insert(.fullSizeContentView)
         window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = isTransparent
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.toolbarStyle = .unifiedCompact
         window.toolbar?.showsBaselineSeparator = false
         if isTransparent {
