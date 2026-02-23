@@ -106,6 +106,9 @@ extension AppModel {
         await restoreSavedCustomThemePresetIfNeeded()
         try ensureCurrentStartupGeneration(generation)
 
+        await restoreModsBarIconOverridesIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
         await restoreModsBarVisibility()
         try ensureCurrentStartupGeneration(generation)
 

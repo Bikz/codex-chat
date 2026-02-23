@@ -78,6 +78,7 @@ In `Skills & Mods -> Mods`, runtime enablement is now separate from active selec
 
 - `Runtime On/Off` controls whether hooks/automations/modsBar surfaces participate
 - `Set Active` chooses which scoped mod is currently focused in the panel
+- `Set Icon` lets users override the rail icon per mod; `Automatic` falls back to manifest/default resolver
 
 ## Hook Events
 

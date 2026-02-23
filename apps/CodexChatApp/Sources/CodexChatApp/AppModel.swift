@@ -923,6 +923,7 @@ final class AppModel: ObservableObject {
     @Published var extensionModsBarByThreadID: [UUID: ExtensionModsBarState] = [:]
     @Published var extensionModsBarByProjectID: [UUID: ExtensionModsBarState] = [:]
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
+    @Published var modsBarIconOverridesByModID: [String: String] = [:]
     @Published var extensionModsBarIsVisible = false
     @Published var extensionModsBarPresentationMode: ModsBarPresentationMode = .peek
     @Published var extensionModsBarLastOpenPresentationMode: ModsBarPresentationMode = .peek
@@ -1053,6 +1054,7 @@ final class AppModel: ObservableObject {
     var voiceElapsedTickerTask: Task<Void, Never>?
     var userThemePersistenceTask: Task<Void, Never>?
     var savedCustomThemePresetPersistenceTask: Task<Void, Never>?
+    var modsBarIconOverridesPersistenceTask: Task<Void, Never>?
     var voiceCaptureSessionID: UInt64 = 0
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
     let voiceElapsedClock = ContinuousClock()
@@ -1178,6 +1180,7 @@ final class AppModel: ObservableObject {
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
         savedCustomThemePresetPersistenceTask?.cancel()
+        modsBarIconOverridesPersistenceTask?.cancel()
         conversationUpdateScheduler.invalidate()
         globalModsWatcher?.stop()
         globalModsWatcher = nil
@@ -1244,6 +1247,7 @@ final class AppModel: ObservableObject {
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
         savedCustomThemePresetPersistenceTask?.cancel()
+        modsBarIconOverridesPersistenceTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
         computerActionHarnessServer?.stop()

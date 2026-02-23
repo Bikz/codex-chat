@@ -752,6 +752,78 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "tray.full")
     }
 
+    func testModsBarIconOverrideAffectsResolvedSymbol() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let unknownMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .global,
+            directorySuffix: "custom"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "tray.full")
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: "bolt.fill")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
+    }
+
+    func testModsBarIconOverridesPersistAndRestore() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-icon-override")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: "bolt.fill")
+
+        let deadline = Date().addingTimeInterval(3)
+        var persistedValue: String?
+        repeat {
+            persistedValue = try await repositories.preferenceRepository.getPreference(key: .modsBarIconOverridesV1)
+            if persistedValue?.contains("\"acme.custom-tool\":\"bolt.fill\"") == true {
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        } while Date() < deadline
+
+        XCTAssertTrue(
+            persistedValue?.contains("\"acme.custom-tool\":\"bolt.fill\"") == true,
+            "Expected icon override to persist within timeout"
+        )
+
+        let restored = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        await restored.restoreModsBarIconOverridesIfNeeded()
+        XCTAssertEqual(restored.modsBarIconOverridesByModID["acme.custom-tool"], "bolt.fill")
+    }
+
+    func testModsBarIconOverrideCanResetToAutomatic() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let unknownMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .global,
+            directorySuffix: "custom"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
+
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: "bolt.fill")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
+
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: nil)
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "tray.full")
+    }
+
+    func testModsBarIconOverrideNormalizesKeyWhitespaceAndCase() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let unknownMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .global,
+            directorySuffix: "custom"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
+
+        model.setModsBarIconOverride(modID: "  ACME.CUSTOM-TOOL  ", symbolName: " bolt.fill ")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
+    }
+
     func testToggleModsBarOpensThreadInPeekModeByDefault() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.selectedThreadID = UUID()

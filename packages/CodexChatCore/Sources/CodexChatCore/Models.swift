@@ -351,6 +351,7 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case extensionsBackgroundAutomationPermission = "extensions.background_automation_permission"
     case extensionsModsBarVisibilityByThread = "extensions.mods_bar_visibility_by_thread"
     case extensionsLegacyModsBarVisibility = "extensions.inspector_visibility_by_thread"
+    case modsBarIconOverridesV1 = "extensions.mods_bar_icon_overrides_v1"
     case advancedExecutableModsUnlock = "mods.advanced_executable_unlock"
     case advancedExecutableModsMigrationV1 = "mods.advanced_executable_unlock_migration_v1"
     case workerTraceCacheByTurn = "runtime.worker_trace_cache_by_turn"

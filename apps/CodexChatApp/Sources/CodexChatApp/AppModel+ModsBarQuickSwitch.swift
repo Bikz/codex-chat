@@ -2,6 +2,19 @@ import CodexMods
 import Foundation
 
 extension AppModel {
+    private enum ModsBarIconOverridesStorage {
+        static func normalized(_ raw: [String: String]) -> [String: String] {
+            var normalized: [String: String] = [:]
+            for (modID, symbol) in raw {
+                let cleanID = modID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let cleanSymbol = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !cleanID.isEmpty, !cleanSymbol.isEmpty else { continue }
+                normalized[cleanID] = cleanSymbol
+            }
+            return normalized
+        }
+    }
+
     var modsBarQuickSwitchOptions: [ModsBarQuickSwitchOption] {
         guard case let .loaded(surface) = modsState else { return [] }
 
@@ -58,6 +71,27 @@ extension AppModel {
         modsBarQuickSwitchOptions.count > 1
     }
 
+    func modsBarIconPresetSymbols() -> [String] {
+        [
+            "puzzlepiece.extension",
+            "text.book.closed",
+            "note.text",
+            "text.alignleft",
+            "bookmark",
+            "wand.and.stars",
+            "square.and.pencil",
+            "tray.full",
+            "doc.on.doc",
+            "magnifyingglass",
+            "sparkles",
+            "list.bullet.rectangle",
+            "slider.horizontal.3",
+            "calendar",
+            "checklist",
+            "shield.lefthalf.filled",
+        ]
+    }
+
     func activateModsBarQuickSwitchOption(_ option: ModsBarQuickSwitchOption) {
         switch option.scope {
         case .global:
@@ -79,7 +113,63 @@ extension AppModel {
         "\(modsBarQuickSwitchTitle(for: option)) (\(option.scope.label))"
     }
 
+    func setModsBarIconOverride(modID: String, symbolName: String?) {
+        let normalizedModID = modID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedModID.isEmpty else { return }
+        var next = modsBarIconOverridesByModID
+        if let symbolName {
+            let normalizedSymbol = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalizedSymbol.isEmpty {
+                next.removeValue(forKey: normalizedModID)
+            } else {
+                next[normalizedModID] = normalizedSymbol
+            }
+        } else {
+            next.removeValue(forKey: normalizedModID)
+        }
+        modsBarIconOverridesByModID = next
+        persistModsBarIconOverrides()
+    }
+
+    func restoreModsBarIconOverridesIfNeeded() async {
+        guard let preferenceRepository else { return }
+        do {
+            guard let raw = try await preferenceRepository.getPreference(key: .modsBarIconOverridesV1),
+                  let data = raw.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+            else {
+                modsBarIconOverridesByModID = [:]
+                return
+            }
+            modsBarIconOverridesByModID = ModsBarIconOverridesStorage.normalized(decoded)
+        } catch {
+            appendLog(.warning, "Failed restoring mods bar icon overrides: \(error.localizedDescription)")
+        }
+    }
+
+    private func persistModsBarIconOverrides() {
+        guard let preferenceRepository else { return }
+        let snapshot = ModsBarIconOverridesStorage.normalized(modsBarIconOverridesByModID)
+        modsBarIconOverridesPersistenceTask?.cancel()
+        modsBarIconOverridesPersistenceTask = Task { [weak self] in
+            do {
+                let data = try JSONEncoder().encode(snapshot)
+                let value = String(data: data, encoding: .utf8) ?? "{}"
+                try await preferenceRepository.setPreference(key: .modsBarIconOverridesV1, value: value)
+            } catch {
+                self?.appendLog(.warning, "Failed persisting mods bar icon overrides: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func modsBarQuickSwitchSymbolName(for option: ModsBarQuickSwitchOption) -> String {
+        let modID = option.mod.definition.manifest.id.lowercased()
+        if let override = modsBarIconOverridesByModID[modID],
+           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return override
+        }
+
         if let explicit = option.mod.definition.manifest.iconSymbol?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !explicit.isEmpty
@@ -88,7 +178,7 @@ extension AppModel {
         }
 
         let title = modsBarQuickSwitchTitle(for: option).lowercased()
-        let id = option.mod.definition.manifest.id.lowercased()
+        let id = modID
 
         if title.contains("prompt") || id.contains("prompt") {
             return "text.book.closed"

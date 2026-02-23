@@ -290,6 +290,12 @@ struct ModsCanvas: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
+                if mod.definition.uiSlots?.modsBar?.enabled == true {
+                    Image(systemName: modsBarSymbolName(for: mod, scope: scope))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Text(mod.definition.manifest.name)
                     .font(.headline)
                     .lineLimit(1)
@@ -319,6 +325,24 @@ struct ModsCanvas: View {
                         model.setInstalledModEnabled(mod, scope: scope, enabled: !isEnabled)
                     }
                     .disabled(model.isModOperationInProgress)
+
+                    if mod.definition.uiSlots?.modsBar?.enabled == true {
+                        Menu("Set Icon") {
+                            Button("Automatic") {
+                                model.setModsBarIconOverride(modID: mod.definition.manifest.id, symbolName: nil)
+                            }
+
+                            Divider()
+
+                            ForEach(model.modsBarIconPresetSymbols(), id: \.self) { symbol in
+                                Button {
+                                    model.setModsBarIconOverride(modID: mod.definition.manifest.id, symbolName: symbol)
+                                } label: {
+                                    Label(symbol, systemImage: symbol)
+                                }
+                            }
+                        }
+                    }
 
                     Button("Update/Reinstall") {
                         model.updateInstalledMod(mod, scope: scope)
@@ -403,6 +427,17 @@ struct ModsCanvas: View {
         case .project:
             model.setProjectMod(nil)
         }
+    }
+
+    private func modsBarSymbolName(for mod: DiscoveredUIMod, scope: ExtensionInstallScope) -> String {
+        let optionScope: AppModel.ModsBarQuickSwitchOption.Scope = switch scope {
+        case .global:
+            .global
+        case .project:
+            .project
+        }
+        let option = AppModel.ModsBarQuickSwitchOption(scope: optionScope, mod: mod, isSelected: false)
+        return model.modsBarQuickSwitchSymbolName(for: option)
     }
 
     private func modCapabilityBadge(_ capability: SkillsModsPresentation.ModCapability) -> some View {
