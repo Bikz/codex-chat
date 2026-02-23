@@ -232,6 +232,9 @@ struct DiagnosticsView: View {
                                     Text(event.timestamp.formatted(.dateTime.hour().minute().second()))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
+                                    Text(relativeTimestampLabel(for: event.timestamp))
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
                                     Text(automationSourceLabel(for: event))
                                         .font(.caption2.weight(.semibold))
                                         .foregroundStyle(.secondary)
@@ -548,6 +551,12 @@ struct DiagnosticsView: View {
         } else {
             expandedAutomationRollupIDs.insert(rollupID)
         }
+    }
+
+    private func relativeTimestampLabel(for timestamp: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: timestamp, relativeTo: Date())
     }
 
     private func startRefreshingPerformanceSnapshot() {
