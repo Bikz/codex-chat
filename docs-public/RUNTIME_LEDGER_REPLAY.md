@@ -37,9 +37,10 @@ Backfill ledgers for all archived thread artifacts in a project (idempotent, mar
 cd apps/CodexChatApp
 swift run CodexChatCLI ledger backfill \
   --project-path /absolute/project/path \
-  --limit 100 \
   --json
 ```
+
+By default, `ledger backfill` exports full thread history. Use `--limit <n>` only when you intentionally want a bounded replay/export window.
 
 ## Ledger Schema (v1)
 

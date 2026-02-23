@@ -27,6 +27,7 @@ Build the most trusted autonomous coding workstation on macOS by making runtime 
 - Reliability diagnostics bundle generator (`make reliability-bundle`) with portable archive output.
 - Local replay and ledger export CLI (`CodexChatCLI replay`, `CodexChatCLI ledger export`).
 - Marker-based idempotent ledger backfill CLI (`CodexChatCLI ledger backfill`) for project archives.
+- Backfill hardening: full-history default and stale-marker self-healing re-export behavior.
 - Runtime policy-as-code validation CLI (`CodexChatCLI policy validate`) with tracked default policy file.
 - Draft runtime reliability SLO document and replay/ledger + policy docs.
 - Ledger migration/backfill plan document for event-sourced transition design.
@@ -115,6 +116,15 @@ Exit criteria:
 1. Event-sourced runtime ledger prototype.
 2. One-click local recovery diagnostics bundle.
 3. Future self-hosted runner migration plan (when budget/ops are ready).
+
+## Release Hardening Sweep (2026-02-23)
+
+1. Review scope covered all Team A branch deltas (`origin/main...team-a/runtime-foundation-next`) and validated runtime/data release gates.
+2. Fixed high-risk backfill truncation defect by making `ledger backfill` default to full-history export.
+3. Hardened stale marker handling so backfill only skips when markers decode and referenced ledger artifacts exist; otherwise re-export occurs.
+4. Added regression tests for parser defaults, full-history backfill behavior, and stale-marker re-export recovery.
+5. Current defect status for shipped Team A scope: no open P0/P1/P2 release defects.
+Assumption: Remaining P1/P2 entries in this roadmap represent strategic investment work, not current defects.
 
 ## Risks and Mitigations
 

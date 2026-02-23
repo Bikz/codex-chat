@@ -40,6 +40,7 @@ Move from transcript-only durability to an event-sourced reliability ledger with
 
 Status: Implemented (CLI path) for deterministic local backfill with marker files under
 `<project>/chats/threads/.ledger-backfill/`.
+Current behavior: default backfill runs on full thread history; reruns skip only when marker payload decodes and referenced ledger files exist.
 
 ### Phase C: Read-path cutover
 

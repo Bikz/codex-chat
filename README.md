@@ -162,6 +162,8 @@ swift run CodexChatCLI ledger backfill --project-path <project-path> --json
 swift run CodexChatCLI policy validate --file ../../config/runtime-policy/default-policy.json
 ```
 
+`ledger backfill` defaults to full-history export per thread and only skips threads with valid markers pointing to existing ledger files.
+
 ### Release packaging
 
 ```sh

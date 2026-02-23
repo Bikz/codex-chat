@@ -5,6 +5,7 @@ Scope: Runtime reliability + data foundation planning for CodexChat’s macOS-na
 
 Assumption: Priorities below optimize for reliability risk reduction and merge safety before feature breadth.
 Assumption: P0 means "blocks confidence in runtime/data invariants under failure," not "customer-visible feature gap."
+Assumption: Severity tiers in section 2 now distinguish release-defect backlog (none open) from strategic roadmap investment work.
 
 ## 1) What Is Already Built
 
@@ -35,8 +36,17 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Reliability diagnostics bundle | One-command local diagnostics bundle captures doctor/smoke/policy checks plus scorecard artifacts into a portable archive. | `scripts/runtime-reliability-bundle.sh:1`, `Makefile:46`, `README.md:103`, `docs-public/RUNTIME_RELIABILITY_BUNDLE.md:1` |
 | Ledger migration/backfill planning | A migration-safe backfill plan now specifies dual-write rollout, idempotent markers, fallback read semantics, and crash-safe requirements. | `docs-public/planning/runtime-ledger-migration-backfill-plan.md:1` |
 | Ledger backfill execution path | CLI backfill scans archived thread artifacts, exports missing ledgers, and writes idempotent per-thread marker files with force rerun support. | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatCLICommandParser.swift:47`, `apps/CodexChatApp/Sources/CodexChatCLI/main.swift:112`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:174`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatRuntimeReliabilityArtifactsTests.swift:165` |
+| Backfill full-history + stale-marker safety | Backfill now defaults to full-history export and only skips threads when markers decode and point to existing ledgers; stale markers are self-healed via re-export. | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatCLICommandParser.swift:301`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:359`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatRuntimeReliabilityArtifactsTests.swift:232` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
+
+Release-defect backlog status (2026-02-23 sweep):
+1. P0: none open.
+2. P1: none open.
+3. P2: none open.
+Evidence: local gates passed (`make quick`, `make oss-smoke`, `make reliability-local`, `make reliability-scorecard`) on this branch after backfill hardening updates.
+
+Strategic roadmap backlog (non-defect):
 
 ### P0
 
