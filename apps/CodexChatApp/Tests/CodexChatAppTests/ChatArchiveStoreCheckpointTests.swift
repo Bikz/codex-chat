@@ -150,6 +150,60 @@ final class ChatArchiveStoreCheckpointTests: XCTestCase {
         XCTAssertTrue(content.contains("_Turn failed before assistant output._"))
     }
 
+    func testFinalizeCheckpointWriteFailurePreservesExistingArchiveContent() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-write-failure")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000104"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_300)
+
+        let archiveURL = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Question before failure",
+                assistantText: "",
+                actions: []
+            )
+        )
+        let before = try String(contentsOf: archiveURL, encoding: .utf8)
+
+        let fileManager = FileManager.default
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.finalizeCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before failure",
+                    assistantText: "This write should fail",
+                    actions: []
+                )
+            )
+        )
+
+        let after = try String(contentsOf: archiveURL, encoding: .utf8)
+        XCTAssertEqual(after, before)
+        XCTAssertFalse(after.contains("This write should fail"))
+    }
+
     func testLoadRecentTurnsReturnsOnlyLastFiftyTurns() throws {
         let root = try makeTempProjectRoot(prefix: "checkpoint-limit")
         defer { try? FileManager.default.removeItem(at: root) }
