@@ -88,6 +88,7 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
             "Re-run the action after reducing payload size or splitting the task."
         )
         XCTAssertNil(playbook.suggestedCommand)
+        XCTAssertNil(playbook.shortcut)
     }
 
     func testBuildsLaunchdCommandRecoveryPlaybook() {
@@ -110,6 +111,7 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
             playbook.suggestedCommand,
             "launchctl bootstrap gui/501/com.example.mod"
         )
+        XCTAssertEqual(playbook.shortcut, .openAppSettings)
     }
 
     func testBuildsGitCommandRecoveryPlaybook() {
@@ -132,5 +134,6 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
             playbook.suggestedCommand,
             "git clone --depth 1 https://example.test/skill"
         )
+        XCTAssertNil(playbook.shortcut)
     }
 }

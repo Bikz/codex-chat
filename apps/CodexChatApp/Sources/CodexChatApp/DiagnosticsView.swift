@@ -156,6 +156,13 @@ struct DiagnosticsView: View {
                                         .buttonStyle(.link)
                                         .font(.caption2)
                                     }
+                                    if let shortcut = playbook.shortcut {
+                                        Button(shortcutLabel(for: shortcut)) {
+                                            performShortcut(shortcut)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
                                 }
                             }
                         }
@@ -249,5 +256,23 @@ struct DiagnosticsView: View {
     private func copyToPasteboard(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func shortcutLabel(
+        for shortcut: AppModel.ExtensibilityDiagnosticPlaybook.Shortcut
+    ) -> String {
+        switch shortcut {
+        case .openAppSettings:
+            "Open app settings"
+        }
+    }
+
+    private func performShortcut(
+        _ shortcut: AppModel.ExtensibilityDiagnosticPlaybook.Shortcut
+    ) {
+        switch shortcut {
+        case .openAppSettings:
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
     }
 }

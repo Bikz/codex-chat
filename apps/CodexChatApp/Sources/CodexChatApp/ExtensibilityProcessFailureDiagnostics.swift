@@ -38,9 +38,14 @@ extension AppModel {
     }
 
     struct ExtensibilityDiagnosticPlaybook: Hashable, Sendable {
+        enum Shortcut: String, Hashable, Sendable {
+            case openAppSettings
+        }
+
         let headline: String
         let steps: [String]
         let suggestedCommand: String?
+        let shortcut: Shortcut?
 
         var primaryStep: String {
             steps.first ?? headline
@@ -116,7 +121,8 @@ extension AppModel {
                     "Re-run the action after reducing payload size or splitting the task.",
                     "If this repeats, verify the worker command can complete locally within timeout."
                 ],
-                suggestedCommand: nil
+                suggestedCommand: nil,
+                shortcut: nil
             )
         case .truncatedOutput:
             return ExtensibilityDiagnosticPlaybook(
@@ -125,7 +131,8 @@ extension AppModel {
                     "Run `\(event.command)` manually to capture complete output.",
                     "Trim verbose logs in scripts so critical errors stay in the first lines."
                 ],
-                suggestedCommand: event.command
+                suggestedCommand: event.command,
+                shortcut: nil
             )
         case .launch:
             return ExtensibilityDiagnosticPlaybook(
@@ -134,7 +141,8 @@ extension AppModel {
                     "Confirm `\(event.command)` exists, is executable, and is reachable in PATH.",
                     "For mods/extensions, verify entrypoint paths and execute permissions."
                 ],
-                suggestedCommand: event.command
+                suggestedCommand: event.command,
+                shortcut: nil
             )
         case .protocolViolation:
             return ExtensibilityDiagnosticPlaybook(
@@ -143,7 +151,8 @@ extension AppModel {
                     "Ensure the first stdout line is valid JSON matching the extension worker schema.",
                     "Move extra diagnostics to stderr or later stdout lines."
                 ],
-                suggestedCommand: nil
+                suggestedCommand: nil,
+                shortcut: nil
             )
         case .command:
             return commandFailurePlaybook(for: event.command)
@@ -154,7 +163,8 @@ extension AppModel {
                     "Capture the failing command output and validate permissions/source trust.",
                     "Retry after addressing environment preconditions."
                 ],
-                suggestedCommand: nil
+                suggestedCommand: nil,
+                shortcut: nil
             )
         }
     }
@@ -328,7 +338,8 @@ extension AppModel {
                     "Re-enable background automations and confirm launchd permissions in Settings.",
                     "Re-run the automation and verify launchd health in the Mods view."
                 ],
-                suggestedCommand: command
+                suggestedCommand: command,
+                shortcut: .openAppSettings
             )
         }
 
@@ -339,7 +350,8 @@ extension AppModel {
                     "Verify repository/package source trust, credentials, and network reachability.",
                     "Run `\(command)` manually to inspect the exact failure details."
                 ],
-                suggestedCommand: command
+                suggestedCommand: command,
+                shortcut: nil
             )
         }
 
@@ -349,7 +361,8 @@ extension AppModel {
                 "Confirm command availability, permissions, and required environment variables.",
                 "Re-run the operation after correcting the reported error."
             ],
-            suggestedCommand: command
+            suggestedCommand: command,
+            shortcut: nil
         )
     }
 }
