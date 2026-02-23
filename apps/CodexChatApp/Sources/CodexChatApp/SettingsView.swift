@@ -4,6 +4,9 @@ import CodexChatUI
 import SwiftUI
 
 struct SettingsView: View {
+    static let minimumWindowSize = CGSize(width: 940, height: 620)
+    static let detailMaxContentWidth: CGFloat = 980
+
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
     @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
@@ -40,24 +43,44 @@ struct SettingsView: View {
             sidebar
                 .padding(tokens.spacing.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(settingsSidebarBackground)
+                .background(
+                    settingsSidebarBackground
+                        .ignoresSafeArea(.container, edges: SettingsLiquidGlassStyle.safeAreaExtensionEdges)
+                )
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
             ScrollView {
-                VStack(alignment: .leading, spacing: tokens.spacing.small) {
-                    SettingsInlineHeader(eyebrow: "Settings", title: selectedSection.title)
+                LazyVStack(alignment: .leading, spacing: tokens.spacing.medium) {
+                    SettingsHeroHeader(
+                        eyebrow: "Settings",
+                        title: selectedSection.title,
+                        subtitle: selectedSection.subtitle,
+                        symbolName: selectedSection.symbolName
+                    )
                     sectionContent
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: Self.detailMaxContentWidth, alignment: .leading)
                 .padding(tokens.spacing.medium)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .background(settingsDetailBackground)
+            .background(
+                settingsDetailBackground
+                    .ignoresSafeArea(.container, edges: SettingsLiquidGlassStyle.safeAreaExtensionEdges)
+            )
         }
+        .background(
+            settingsDetailBackground
+                .ignoresSafeArea(.container, edges: SettingsLiquidGlassStyle.safeAreaExtensionEdges)
+        )
         .navigationSplitViewStyle(.balanced)
         .toolbarBackground(.hidden, for: .windowToolbar)
         .navigationTitle("")
         .tint(Color(hex: tokens.palette.accentHex))
-        .frame(minWidth: 940, minHeight: 620)
+        .frame(
+            minWidth: Self.minimumWindowSize.width,
+            minHeight: Self.minimumWindowSize.height
+        )
+        .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: selectedSection)
         .onAppear {
             runtimeModelDraft = model.isUsingRuntimeDefaultModel ? "" : model.defaultModel
             syncSafetyDefaultsFromModel()
@@ -165,18 +188,39 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(SettingsSection.allCases) { section in
-                SettingsSidebarItem(
-                    title: section.title,
-                    symbolName: section.symbolName,
-                    isSelected: selectedSection == section
-                ) {
-                    selectedSection = section
+        let style = SettingsLiquidGlassStyle.sidebarContainerStyle(glassEnabled: model.isTransparentThemeMode)
+
+        return VStack(alignment: .leading, spacing: tokens.spacing.small) {
+            SettingsInlineHeader(
+                eyebrow: "Workspace",
+                title: "Preferences",
+                subtitle: "Tune behavior, safety, and storage.",
+                symbolName: "slider.horizontal.3"
+            )
+            .padding(.horizontal, 2)
+            .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(SettingsSection.allCases) { section in
+                    SettingsSidebarItem(
+                        title: section.title,
+                        symbolName: section.symbolName,
+                        isSelected: selectedSection == section
+                    ) {
+                        selectedSection = section
+                    }
                 }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(2)
         }
+        .padding(tokens.spacing.small)
+        .tokenCard(
+            style: .panel,
+            radius: tokens.radius.large,
+            strokeOpacity: style.strokeOpacity,
+            shadowRadius: style.shadowRadius
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

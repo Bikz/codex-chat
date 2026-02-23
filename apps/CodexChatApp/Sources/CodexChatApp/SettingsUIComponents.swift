@@ -58,6 +58,27 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
             "externaldrive"
         }
     }
+
+    var subtitle: String {
+        switch self {
+        case .account:
+            "Authentication and identity preferences."
+        case .appearance:
+            "Theme, gradients, and transparency controls."
+        case .runtime:
+            "Model defaults and runtime behavior."
+        case .generalProject:
+            "Baseline project trust and memory settings."
+        case .safetyDefaults:
+            "Default safety posture for newly created projects."
+        case .experimental:
+            "Advanced capabilities gated behind confirmations."
+        case .diagnostics:
+            "Support bundle and troubleshooting exports."
+        case .storage:
+            "Managed paths, migration, and repair tools."
+        }
+    }
 }
 
 enum SettingsSectionCardEmphasis {
@@ -65,33 +86,176 @@ enum SettingsSectionCardEmphasis {
     case secondary
 }
 
+enum SettingsLiquidGlassStyle {
+    struct ContainerStyle: Equatable {
+        let strokeOpacity: Double
+        let shadowRadius: CGFloat
+    }
+
+    struct SelectionStyle: Equatable {
+        let fillOpacity: Double
+        let strokeOpacity: Double
+        let indicatorOpacity: Double
+    }
+
+    static let safeAreaExtensionEdges: Edge.Set = .top
+
+    static func sidebarContainerStyle(glassEnabled: Bool) -> ContainerStyle {
+        ContainerStyle(
+            strokeOpacity: glassEnabled ? 0.14 : 0.08,
+            shadowRadius: glassEnabled ? 0 : 6
+        )
+    }
+
+    static func sectionCardStyle(
+        emphasis: SettingsSectionCardEmphasis,
+        glassEnabled: Bool
+    ) -> ContainerStyle {
+        let baseOpacity = switch emphasis {
+        case .primary:
+            0.10
+        case .secondary:
+            0.08
+        }
+
+        return ContainerStyle(
+            strokeOpacity: glassEnabled ? baseOpacity + 0.05 : baseOpacity - 0.02,
+            shadowRadius: glassEnabled ? 0 : 4
+        )
+    }
+
+    static func sidebarSelectionStyle(
+        isSelected: Bool,
+        glassEnabled: Bool
+    ) -> SelectionStyle {
+        guard isSelected else {
+            return SelectionStyle(fillOpacity: 0, strokeOpacity: 0, indicatorOpacity: 0)
+        }
+        return SelectionStyle(
+            fillOpacity: glassEnabled ? 0.12 : 0.07,
+            strokeOpacity: glassEnabled ? 0.22 : 0.10,
+            indicatorOpacity: 1
+        )
+    }
+}
+
 struct SettingsInlineHeader: View {
     let eyebrow: String
     let title: String
     let subtitle: String?
+    let symbolName: String?
 
-    init(eyebrow: String, title: String, subtitle: String? = nil) {
+    init(
+        eyebrow: String,
+        title: String,
+        subtitle: String? = nil,
+        symbolName: String? = nil
+    ) {
         self.eyebrow = eyebrow
         self.title = title
         self.subtitle = subtitle
+        self.symbolName = symbolName
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(eyebrow.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 10) {
+            if let symbolName {
+                Image(systemName: symbolName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(Color.primary.opacity(0.08))
+                    )
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.primary.opacity(0.12))
+                    )
+            }
 
-            Text(title)
-                .font(.title3.weight(.semibold))
-
-            if let subtitle {
-                Text(subtitle)
-                    .font(.subheadline)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow.uppercased())
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
+
+                Text(title)
+                    .font(.title3.weight(.semibold))
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct SettingsHeroHeader<Accessory: View>: View {
+    let eyebrow: String
+    let title: String
+    let subtitle: String?
+    let symbolName: String
+    private let accessory: Accessory
+
+    @Environment(\.designTokens) private var tokens
+    @Environment(\.glassSurfacesEnabled) private var glassSurfacesEnabled
+
+    init(
+        eyebrow: String,
+        title: String,
+        subtitle: String? = nil,
+        symbolName: String,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.eyebrow = eyebrow
+        self.title = title
+        self.subtitle = subtitle
+        self.symbolName = symbolName
+        self.accessory = accessory()
+    }
+
+    init(
+        eyebrow: String,
+        title: String,
+        subtitle: String? = nil,
+        symbolName: String
+    ) where Accessory == EmptyView {
+        self.init(
+            eyebrow: eyebrow,
+            title: title,
+            subtitle: subtitle,
+            symbolName: symbolName
+        ) {
+            EmptyView()
+        }
+    }
+
+    var body: some View {
+        let style = SettingsLiquidGlassStyle.sectionCardStyle(
+            emphasis: .secondary,
+            glassEnabled: glassSurfacesEnabled
+        )
+
+        return HStack(alignment: .top, spacing: tokens.spacing.small) {
+            SettingsInlineHeader(
+                eyebrow: eyebrow,
+                title: title,
+                subtitle: subtitle,
+                symbolName: symbolName
+            )
+
+            Spacer(minLength: 0)
+            accessory
+        }
+        .padding(tokens.spacing.small)
+        .tokenCard(
+            style: .panel,
+            radius: tokens.radius.medium,
+            strokeOpacity: style.strokeOpacity,
+            shadowRadius: style.shadowRadius
+        )
     }
 }
 
@@ -102,8 +266,14 @@ struct SettingsSidebarItem: View {
     let action: () -> Void
 
     @Environment(\.designTokens) private var tokens
+    @Environment(\.glassSurfacesEnabled) private var glassSurfacesEnabled
 
     var body: some View {
+        let selectionStyle = SettingsLiquidGlassStyle.sidebarSelectionStyle(
+            isSelected: isSelected,
+            glassEnabled: glassSurfacesEnabled
+        )
+
         Button(action: action) {
             HStack(spacing: tokens.spacing.small) {
                 Image(systemName: symbolName)
@@ -120,29 +290,30 @@ struct SettingsSidebarItem: View {
             .foregroundStyle(isSelected ? .primary : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .frame(minHeight: 34, alignment: .leading)
+            .frame(minHeight: 36, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                    .fill(isSelected ? Color.primary.opacity(0.05) : .clear)
+                RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
+                    .fill(Color.primary.opacity(selectionStyle.fillOpacity))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: tokens.radius.small, style: .continuous)
-                    .strokeBorder(isSelected ? Color.primary.opacity(0.10) : .clear)
+                RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(selectionStyle.strokeOpacity))
             )
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 1, style: .continuous)
                     .fill(Color(hex: tokens.palette.accentHex))
                     .frame(width: 2, height: 16)
                     .padding(.leading, 2)
-                    .opacity(isSelected ? 1 : 0)
+                    .opacity(selectionStyle.indicatorOpacity)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .animation(.easeInOut(duration: 0.16), value: isSelected)
     }
 }
 
@@ -153,6 +324,7 @@ struct SettingsSectionCard<Content: View>: View {
     let content: Content
 
     @Environment(\.designTokens) private var tokens
+    @Environment(\.glassSurfacesEnabled) private var glassSurfacesEnabled
 
     init(
         title: String,
@@ -167,6 +339,11 @@ struct SettingsSectionCard<Content: View>: View {
     }
 
     var body: some View {
+        let style = SettingsLiquidGlassStyle.sectionCardStyle(
+            emphasis: emphasis,
+            glassEnabled: glassSurfacesEnabled
+        )
+
         VStack(alignment: .leading, spacing: tokens.spacing.small) {
             Text(title)
                 .font(.headline)
@@ -183,8 +360,9 @@ struct SettingsSectionCard<Content: View>: View {
         .padding(tokens.spacing.small)
         .tokenCard(
             style: cardStyle,
-            radius: tokens.radius.small,
-            strokeOpacity: borderOpacity
+            radius: tokens.radius.medium,
+            strokeOpacity: style.strokeOpacity,
+            shadowRadius: style.shadowRadius
         )
     }
 
@@ -194,15 +372,6 @@ struct SettingsSectionCard<Content: View>: View {
             .card
         case .secondary:
             .panel
-        }
-    }
-
-    private var borderOpacity: Double {
-        switch emphasis {
-        case .primary:
-            0.08
-        case .secondary:
-            0.06
         }
     }
 }
