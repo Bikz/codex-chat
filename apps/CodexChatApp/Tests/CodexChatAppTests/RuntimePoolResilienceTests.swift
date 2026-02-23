@@ -168,6 +168,101 @@ final class RuntimePoolResilienceTests: XCTestCase {
         }
     }
 
+    func testNonPrimaryWorkerHandlesRepeatedCrashRecoveryCyclesThenSucceeds() async throws {
+        let fixture = try Self.makeCrashBudgetFixtureExecutable(crashBudget: 2)
+        defer {
+            try? FileManager.default.removeItem(at: fixture.rootURL)
+        }
+
+        let runtime = CodexRuntime(executableResolver: { fixture.executablePath })
+        let pool = RuntimePool(primaryRuntime: runtime, configuredWorkerCount: 2)
+        do {
+            try await pool.start()
+
+            let eventRecorder = RuntimePoolEventRecorder()
+            let stream = await pool.events()
+            let eventTask = Task {
+                for await event in stream {
+                    await eventRecorder.record(event)
+                }
+            }
+
+            for cycle in 1 ... 2 {
+                let localThreadID = UUID()
+                await pool.pin(localThreadID: localThreadID, runtimeThreadID: "w1|thr_cycle_\(cycle)")
+                let scopedThreadID = try await pool.startThread(
+                    localThreadID: localThreadID,
+                    cwd: nil,
+                    safetyConfiguration: nil
+                )
+                let route = try XCTUnwrap(RuntimePool.parseScopedID(scopedThreadID))
+                XCTAssertEqual(route.0, RuntimePoolWorkerID(1))
+
+                do {
+                    _ = try await pool.startTurn(
+                        scopedThreadID: scopedThreadID,
+                        text: "cycle-\(cycle)-crash",
+                        safetyConfiguration: nil,
+                        skillInputs: [],
+                        inputItems: [],
+                        turnOptions: nil
+                    )
+                    XCTFail("Expected cycle \(cycle) turn to fail during crash budget phase")
+                } catch {
+                    // Expected while crash budget remains.
+                }
+
+                try await eventually(timeoutSeconds: 8.0) {
+                    let snapshot = await pool.snapshot()
+                    guard let workerOne = snapshot.workers.first(where: { $0.workerID == RuntimePoolWorkerID(1) }) else {
+                        return false
+                    }
+                    return workerOne.health == .healthy
+                        && workerOne.restartCount >= cycle
+                        && workerOne.failureCount == 0
+                }
+            }
+
+            let recoveredThreadID = UUID()
+            await pool.pin(localThreadID: recoveredThreadID, runtimeThreadID: "w1|thr_after_cycles")
+            let recoveredScopedThreadID = try await pool.startThread(
+                localThreadID: recoveredThreadID,
+                cwd: nil,
+                safetyConfiguration: nil
+            )
+            let recoveredRoute = try XCTUnwrap(RuntimePool.parseScopedID(recoveredScopedThreadID))
+            XCTAssertEqual(recoveredRoute.0, RuntimePoolWorkerID(1))
+
+            let recoveredScopedTurnID = try await pool.startTurn(
+                scopedThreadID: recoveredScopedThreadID,
+                text: "post-cycle-success",
+                safetyConfiguration: nil,
+                skillInputs: [],
+                inputItems: [],
+                turnOptions: nil
+            )
+            let recoveredTurnRoute = try XCTUnwrap(RuntimePool.parseScopedID(recoveredScopedTurnID))
+            XCTAssertEqual(recoveredTurnRoute.0, RuntimePoolWorkerID(1))
+
+            try await eventually(timeoutSeconds: 4.0) {
+                await eventRecorder.completedTurnIDs().contains(recoveredScopedTurnID)
+            }
+
+            // Non-primary runtime terminations should remain suppressed from unified event stream.
+            let actionMethods = await eventRecorder.actionMethods()
+            XCTAssertFalse(actionMethods.contains("runtime/terminated"))
+
+            eventTask.cancel()
+            _ = await eventTask.result
+            await pool.stop()
+            await runtime.stop()
+        } catch {
+            await pool.stop()
+            await runtime.stop()
+            throw error
+        }
+    }
+
     private func eventually(timeoutSeconds: TimeInterval, condition: @escaping () async -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
@@ -376,6 +471,123 @@ final class RuntimePoolResilienceTests: XCTestCase {
 
                 if not crash_marker.exists():
                     crash_marker.write_text("crashed once\\n", encoding="utf-8")
+                    sys.exit(42)
+
+                turn_id = f"turn_{next_turn}"
+                next_turn += 1
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"turn": {"id": turn_id}}})
+                send({"jsonrpc": "2.0", "method": "turn/started", "params": {"threadId": thread_id, "turn": {"id": turn_id}}})
+                send({"jsonrpc": "2.0", "method": "turn/completed", "params": {"threadId": thread_id, "turn": {"id": turn_id, "status": "completed"}}})
+                continue
+
+            send({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32601, "message": f"method not found: {method}", "data": None}
+            })
+        """
+
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: scriptURL.path
+        )
+
+        return FixtureExecutable(rootURL: rootURL, executablePath: scriptURL.path)
+    }
+
+    private static func makeCrashBudgetFixtureExecutable(crashBudget: Int) throws -> FixtureExecutable {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-runtimepool-resilience-budget-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let scriptURL = rootURL.appendingPathComponent("fake-codex-runtimepool-resilience-budget")
+        let budgetURL = rootURL.appendingPathComponent("crash-budget.txt")
+        try "\(max(0, crashBudget))\n".write(to: budgetURL, atomically: true, encoding: .utf8)
+
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        from pathlib import Path
+        import sys
+
+        def send(message):
+            sys.stdout.write(json.dumps(message) + "\\n")
+            sys.stdout.flush()
+
+        initialized = False
+        next_thread = 1
+        next_turn = 1
+        known_threads = set()
+        crash_budget_path = Path("\(budgetURL.path)")
+
+        args = sys.argv[1:]
+        if len(args) != 1 or args[0] != "app-server":
+            sys.stderr.write("usage: fake-codex-runtimepool-resilience-budget app-server\\n")
+            raise SystemExit(2)
+
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line:
+                continue
+
+            try:
+                msg = json.loads(line)
+            except Exception:
+                continue
+
+            msg_id = msg.get("id")
+            method = msg.get("method")
+            params = msg.get("params") or {}
+            result = msg.get("result")
+            error = msg.get("error")
+
+            is_request = msg_id is not None and method is not None and result is None and error is None
+            is_notification = msg_id is None and method is not None and result is None and error is None
+
+            if is_notification:
+                if method == "initialized":
+                    initialized = True
+                continue
+
+            if not is_request:
+                continue
+
+            if method == "initialize":
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"capabilities": {}}})
+                continue
+
+            if not initialized:
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {"code": -32002, "message": "not initialized", "data": None}
+                })
+                continue
+
+            if method == "thread/start":
+                thread_id = f"thr_{next_thread}"
+                next_thread += 1
+                known_threads.add(thread_id)
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"thread": {"id": thread_id}}})
+                send({"jsonrpc": "2.0", "method": "thread/started", "params": {"thread": {"id": thread_id}}})
+                continue
+
+            if method == "turn/start":
+                thread_id = params.get("threadId")
+                if thread_id not in known_threads:
+                    send({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {"code": -32010, "message": f"unknown threadId: {thread_id}", "data": None}
+                    })
+                    continue
+
+                if crash_budget_path.exists():
+                    remaining = int(crash_budget_path.read_text(encoding="utf-8").strip() or "0")
+                else:
+                    remaining = 0
+                if remaining > 0:
+                    crash_budget_path.write_text(f"{remaining - 1}\\n", encoding="utf-8")
                     sys.exit(42)
 
                 turn_id = f"turn_{next_turn}"
