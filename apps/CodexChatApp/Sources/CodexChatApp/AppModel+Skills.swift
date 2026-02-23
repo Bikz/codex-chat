@@ -55,7 +55,9 @@ extension AppModel {
     func installSkill(
         source: String,
         scope: SkillInstallScope,
-        installer: SkillInstallerKind
+        installer: SkillInstallerKind,
+        allowUntrustedSource: Bool = false,
+        pinnedRef: String? = nil
     ) {
         if scope == .project, selectedProject == nil {
             skillStatusMessage = "Select a project to install a project-scoped skill."
@@ -69,7 +71,9 @@ extension AppModel {
             source: source,
             scope: mapSkillScope(scope),
             projectPath: selectedProject?.path,
-            installer: installer
+            installer: installer,
+            pinnedRef: pinnedRef,
+            allowUntrustedSource: allowUntrustedSource
         )
 
         Task {

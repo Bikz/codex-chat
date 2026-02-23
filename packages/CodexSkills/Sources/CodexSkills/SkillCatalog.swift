@@ -19,12 +19,20 @@ public enum SkillUpdateCapabilityKind: String, CaseIterable, Hashable, Sendable,
 public struct SkillInstallMetadata: Hashable, Sendable, Codable {
     public let source: String
     public let installer: SkillInstallerKind
+    public let pinnedRef: String?
     public let installedAt: Date?
     public let updatedAt: Date?
 
-    public init(source: String, installer: SkillInstallerKind, installedAt: Date? = nil, updatedAt: Date? = nil) {
+    public init(
+        source: String,
+        installer: SkillInstallerKind,
+        pinnedRef: String? = nil,
+        installedAt: Date? = nil,
+        updatedAt: Date? = nil
+    ) {
         self.source = source
         self.installer = installer
+        self.pinnedRef = pinnedRef
         self.installedAt = installedAt
         self.updatedAt = updatedAt
     }
@@ -180,12 +188,23 @@ public struct SkillInstallRequest: Hashable, Sendable {
     public let scope: SkillScope
     public let projectPath: String?
     public let installer: SkillInstallerKind
+    public let pinnedRef: String?
+    public let allowUntrustedSource: Bool
 
-    public init(source: String, scope: SkillScope, projectPath: String?, installer: SkillInstallerKind) {
+    public init(
+        source: String,
+        scope: SkillScope,
+        projectPath: String?,
+        installer: SkillInstallerKind,
+        pinnedRef: String? = nil,
+        allowUntrustedSource: Bool = false
+    ) {
         self.source = source
         self.scope = scope
         self.projectPath = projectPath
         self.installer = installer
+        self.pinnedRef = pinnedRef
+        self.allowUntrustedSource = allowUntrustedSource
     }
 }
 
@@ -216,6 +235,7 @@ public enum SkillCatalogError: LocalizedError, Sendable {
     case nonGitSkill(String)
     case installMetadataMissing(String)
     case reinstallSourceMissing(String)
+    case untrustedSourceRequiresConfirmation(String)
     case commandFailed(command: String, output: String)
 
     public var errorDescription: String? {
@@ -236,6 +256,8 @@ public enum SkillCatalogError: LocalizedError, Sendable {
             "Skill install metadata is missing: \(path)"
         case let .reinstallSourceMissing(path):
             "Skill reinstall source is unavailable: \(path)"
+        case let .untrustedSourceRequiresConfirmation(source):
+            "Untrusted skill source requires explicit confirmation: \(source)"
         case let .commandFailed(command, output):
             "Skill command failed (\(command)): \(output)"
         }
@@ -254,8 +276,14 @@ public final class SkillCatalogService: @unchecked Sendable {
     private struct InstallMetadataPayload: Codable {
         let source: String
         let installer: SkillInstallerKind
+        let pinnedRef: String?
         let installedAt: Date
         let updatedAt: Date?
+    }
+
+    private struct SourceReference {
+        let source: String
+        let pinnedRef: String?
     }
 
     private struct DiscoveryCacheKey: Hashable {
@@ -370,26 +398,47 @@ public final class SkillCatalogService: @unchecked Sendable {
 
         switch request.installer {
         case .git:
-            let destinationName = Self.destinationName(from: source)
+            let parsed = Self.parseSourceReference(source: source, explicitPinnedRef: request.pinnedRef)
+            guard isTrustedSource(parsed.source) || request.allowUntrustedSource else {
+                throw SkillCatalogError.untrustedSourceRequiresConfirmation(parsed.source)
+            }
+
+            let destinationName = Self.destinationName(from: parsed.source)
             let destination = root.appendingPathComponent(destinationName, isDirectory: true)
             if fileManager.fileExists(atPath: destination.path) {
                 throw SkillCatalogError.installTargetExists(destination.path)
             }
 
             let output = try processRunner(
-                ["git", "clone", "--depth", "1", source, destination.path],
+                ["git", "clone", "--depth", "1", parsed.source, destination.path],
                 nil
             )
+            let checkoutOutput = try checkoutPinnedRefIfNeeded(
+                at: destination.path,
+                pinnedRef: parsed.pinnedRef
+            )
+            let combinedOutput = [output, checkoutOutput]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n")
             if directoryExists(destination.path) {
                 try? writeInstallMetadata(
                     at: destination,
-                    metadata: SkillInstallMetadata(source: source, installer: .git, installedAt: Date(), updatedAt: Date())
+                    metadata: SkillInstallMetadata(
+                        source: parsed.source,
+                        installer: .git,
+                        pinnedRef: parsed.pinnedRef,
+                        installedAt: Date(),
+                        updatedAt: Date()
+                    )
                 )
             }
             invalidateDiscoveryCache()
-            return SkillInstallResult(installedPath: destination.path, output: output)
+            return SkillInstallResult(installedPath: destination.path, output: combinedOutput)
 
         case .npx:
+            guard isTrustedSource(source) || request.allowUntrustedSource else {
+                throw SkillCatalogError.untrustedSourceRequiresConfirmation(source)
+            }
             guard isNodeInstallerAvailable() else {
                 throw SkillCatalogError.nodeUnavailable
             }
@@ -406,7 +455,13 @@ public final class SkillCatalogService: @unchecked Sendable {
             }
             try? writeInstallMetadata(
                 at: URL(fileURLWithPath: installedPath, isDirectory: true),
-                metadata: SkillInstallMetadata(source: source, installer: .npx, installedAt: Date(), updatedAt: Date())
+                metadata: SkillInstallMetadata(
+                    source: source,
+                    installer: .npx,
+                    pinnedRef: nil,
+                    installedAt: Date(),
+                    updatedAt: Date()
+                )
             )
             invalidateDiscoveryCache()
             return SkillInstallResult(installedPath: installedPath, output: output)
@@ -422,11 +477,25 @@ public final class SkillCatalogService: @unchecked Sendable {
             throw SkillCatalogError.nonGitSkill(path)
         }
 
-        let output = try processRunner(["git", "-C", path, "pull", "--ff-only"], nil)
-        if var metadata = try? readInstallMetadata(at: URL(fileURLWithPath: path, isDirectory: true)) {
+        let metadata = try? readInstallMetadata(at: URL(fileURLWithPath: path, isDirectory: true))
+        let output: String
+        if let pinnedRef = metadata?.pinnedRef?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !pinnedRef.isEmpty
+        {
+            let fetch = try processRunner(["git", "-C", path, "fetch", "--depth", "1", "origin", pinnedRef], nil)
+            let checkout = try processRunner(["git", "-C", path, "checkout", "--detach", "FETCH_HEAD"], nil)
+            output = [fetch, checkout]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n")
+        } else {
+            output = try processRunner(["git", "-C", path, "pull", "--ff-only"], nil)
+        }
+
+        if var metadata {
             metadata = SkillInstallMetadata(
                 source: metadata.source,
                 installer: metadata.installer,
+                pinnedRef: metadata.pinnedRef,
                 installedAt: metadata.installedAt,
                 updatedAt: Date()
             )
@@ -447,17 +516,28 @@ public final class SkillCatalogService: @unchecked Sendable {
 
         switch installer {
         case .git:
+            let parsed = Self.parseSourceReference(source: source, explicitPinnedRef: skill.installMetadata?.pinnedRef)
             let stagingURL = try createStagingDirectory(in: parent)
             defer { try? fileManager.removeItem(at: stagingURL) }
 
-            let output = try processRunner(["git", "clone", "--depth", "1", source, stagingURL.path], nil)
+            let output = try processRunner(["git", "clone", "--depth", "1", parsed.source, stagingURL.path], nil)
+            let checkoutOutput = try checkoutPinnedRefIfNeeded(at: stagingURL.path, pinnedRef: parsed.pinnedRef)
+            let combinedOutput = [output, checkoutOutput]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n")
             try writeInstallMetadata(
                 at: stagingURL,
-                metadata: SkillInstallMetadata(source: source, installer: .git, installedAt: Date(), updatedAt: Date())
+                metadata: SkillInstallMetadata(
+                    source: parsed.source,
+                    installer: .git,
+                    pinnedRef: parsed.pinnedRef,
+                    installedAt: Date(),
+                    updatedAt: Date()
+                )
             )
             try replaceDirectoryAtomically(existingURL: skillURL, replacementURL: stagingURL)
             invalidateDiscoveryCache()
-            return SkillInstallResult(installedPath: skillURL.path, output: output)
+            return SkillInstallResult(installedPath: skillURL.path, output: combinedOutput)
 
         case .npx:
             guard isNodeInstallerAvailable() else {
@@ -482,7 +562,13 @@ public final class SkillCatalogService: @unchecked Sendable {
             let installedURL = URL(fileURLWithPath: installedPath, isDirectory: true)
             try writeInstallMetadata(
                 at: installedURL,
-                metadata: SkillInstallMetadata(source: source, installer: .npx, installedAt: Date(), updatedAt: Date())
+                metadata: SkillInstallMetadata(
+                    source: source,
+                    installer: .npx,
+                    pinnedRef: nil,
+                    installedAt: Date(),
+                    updatedAt: Date()
+                )
             )
             try replaceDirectoryAtomically(existingURL: skillURL, replacementURL: installedURL)
             invalidateDiscoveryCache()
@@ -847,10 +933,42 @@ public final class SkillCatalogService: @unchecked Sendable {
         skillDirectory.appendingPathComponent(".codexchat-install.json", isDirectory: false)
     }
 
+    private static func parseSourceReference(source: String, explicitPinnedRef: String?) -> SourceReference {
+        let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let explicit = explicitPinnedRef?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !explicit.isEmpty
+        {
+            return SourceReference(source: trimmedSource, pinnedRef: explicit)
+        }
+
+        guard let hashIndex = trimmedSource.lastIndex(of: "#") else {
+            return SourceReference(source: trimmedSource, pinnedRef: nil)
+        }
+
+        let base = String(trimmedSource[..<hashIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let ref = String(trimmedSource[trimmedSource.index(after: hashIndex)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !base.isEmpty, !ref.isEmpty else {
+            return SourceReference(source: trimmedSource, pinnedRef: nil)
+        }
+        return SourceReference(source: base, pinnedRef: ref)
+    }
+
+    private func checkoutPinnedRefIfNeeded(at path: String, pinnedRef: String?) throws -> String {
+        guard let pinnedRef = pinnedRef?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !pinnedRef.isEmpty
+        else {
+            return ""
+        }
+        return try processRunner(["git", "-C", path, "checkout", "--detach", pinnedRef], nil)
+    }
+
     private func writeInstallMetadata(at skillDirectory: URL, metadata: SkillInstallMetadata) throws {
         let payload = InstallMetadataPayload(
             source: metadata.source,
             installer: metadata.installer,
+            pinnedRef: metadata.pinnedRef,
             installedAt: metadata.installedAt ?? Date(),
             updatedAt: metadata.updatedAt
         )
@@ -874,6 +992,7 @@ public final class SkillCatalogService: @unchecked Sendable {
         return SkillInstallMetadata(
             source: payload.source,
             installer: payload.installer,
+            pinnedRef: payload.pinnedRef,
             installedAt: payload.installedAt,
             updatedAt: payload.updatedAt
         )
