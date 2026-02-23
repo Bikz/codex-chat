@@ -80,7 +80,7 @@ actor PerformanceTracer {
     func measure<T>(
         name: String,
         metadata: [String: String] = [:],
-        operation: @Sendable () async throws -> T
+        operation: () async throws -> T
     ) async rethrows -> T {
         let span = begin(name: name, metadata: metadata)
         do {
