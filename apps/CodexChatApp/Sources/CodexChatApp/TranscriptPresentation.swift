@@ -1,4 +1,5 @@
 import CodexChatCore
+import CodexKit
 import Foundation
 
 enum TranscriptPresentationRow: Identifiable, Hashable {
@@ -40,6 +41,19 @@ struct LiveTurnActivityPresentation: Identifiable, Hashable {
     let latestActionTitle: String
     let actions: [ActionCard]
     let milestoneCounts: TranscriptMilestoneCounts
+    let commandOutputPreview: CommandOutputPreview?
+}
+
+struct CommandOutputPreview: Hashable, Sendable {
+    struct Line: Identifiable, Hashable, Sendable {
+        let id: String
+        let level: LogLevel
+        let text: String
+    }
+
+    let lines: [Line]
+    let totalLineCount: Int
+    let isTruncated: Bool
 }
 
 struct TurnSummaryPresentation: Identifiable, Hashable {
@@ -217,7 +231,8 @@ enum TranscriptPresentationBuilder {
     static func rows(
         entries: [TranscriptEntry],
         detailLevel: TranscriptDetailLevel,
-        activeTurnContext: AppModel.ActiveTurnContext?
+        activeTurnContext: AppModel.ActiveTurnContext?,
+        threadLogs: [ThreadLogEntry] = []
     ) -> [TranscriptPresentationRow] {
         if detailLevel == .detailed {
             return entries.compactMap {
@@ -269,7 +284,7 @@ enum TranscriptPresentationBuilder {
         }
 
         if let activeTurnContext {
-            rows.append(.liveActivity(liveActivity(from: activeTurnContext)))
+            rows.append(.liveActivity(liveActivity(from: activeTurnContext, threadLogs: threadLogs)))
         }
 
         return rows
@@ -354,7 +369,8 @@ enum TranscriptPresentationBuilder {
             let classification = TranscriptActionPolicy.classify(
                 method: action.method,
                 title: action.title,
-                detail: action.detail
+                detail: action.detail,
+                itemType: action.itemType
             )
 
             switch classification {
@@ -453,6 +469,13 @@ enum TranscriptPresentationBuilder {
     }
 
     private static func liveActivity(from context: AppModel.ActiveTurnContext) -> LiveTurnActivityPresentation {
+        liveActivity(from: context, threadLogs: [])
+    }
+
+    private static func liveActivity(
+        from context: AppModel.ActiveTurnContext,
+        threadLogs: [ThreadLogEntry]
+    ) -> LiveTurnActivityPresentation {
         let visibleActions = context.actions.filter { action in
             !TranscriptActionPolicy.shouldSuppressFromTranscript(action)
         }
@@ -464,7 +487,8 @@ enum TranscriptPresentationBuilder {
             assistantPreview: preview(context.assistantText, maxLength: 220),
             latestActionTitle: visibleActions.last?.title ?? "Streaming response",
             actions: visibleActions,
-            milestoneCounts: milestoneCounts(from: visibleActions)
+            milestoneCounts: milestoneCounts(from: visibleActions),
+            commandOutputPreview: commandOutputPreview(for: context, threadLogs: threadLogs)
         )
     }
 
@@ -478,7 +502,8 @@ enum TranscriptPresentationBuilder {
             let classification = TranscriptActionPolicy.classify(
                 method: action.method,
                 title: action.title,
-                detail: action.detail
+                detail: action.detail,
+                itemType: action.itemType
             )
 
             if method.contains("reasoning")
@@ -517,6 +542,67 @@ enum TranscriptPresentationBuilder {
         }
 
         return counts
+    }
+
+    private static func commandOutputPreview(
+        for context: AppModel.ActiveTurnContext,
+        threadLogs: [ThreadLogEntry]
+    ) -> CommandOutputPreview? {
+        guard context.actions.contains(where: { action in
+            let kind = RuntimeVisualStateClassifier.classify(action).kind
+            return kind == .commandExecActive || kind == .commandOutputStreaming
+        }) else {
+            return nil
+        }
+
+        guard !threadLogs.isEmpty else {
+            return nil
+        }
+
+        var flattened: [(level: LogLevel, text: String)] = []
+        flattened.reserveCapacity(threadLogs.count)
+
+        for entry in threadLogs {
+            let sanitizedText = entry.text.replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+            let parts = sanitizedText.split(separator: "\n", omittingEmptySubsequences: false)
+            if parts.isEmpty {
+                let compacted = sanitizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !compacted.isEmpty {
+                    flattened.append((level: entry.level, text: compacted))
+                }
+                continue
+            }
+
+            for part in parts {
+                let compacted = String(part).trimmingCharacters(in: .whitespacesAndNewlines)
+                if compacted.isEmpty {
+                    continue
+                }
+                flattened.append((level: entry.level, text: compacted))
+            }
+        }
+
+        guard !flattened.isEmpty else {
+            return nil
+        }
+
+        let maxLines = 220
+        let start = max(0, flattened.count - maxLines)
+        let tail = Array(flattened[start...])
+        let lines = tail.enumerated().map { offset, line in
+            CommandOutputPreview.Line(
+                id: "terminal-\(start + offset)-\(line.level.rawValue)",
+                level: line.level,
+                text: line.text
+            )
+        }
+
+        return CommandOutputPreview(
+            lines: lines,
+            totalLineCount: flattened.count,
+            isTruncated: flattened.count > lines.count
+        )
     }
 
     private static func preview(_ text: String, maxLength: Int) -> String {

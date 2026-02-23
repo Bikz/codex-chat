@@ -584,6 +584,8 @@ extension AppModel {
                     method: action.method,
                     title: action.title,
                     detail: action.detail,
+                    itemID: action.itemID,
+                    itemType: action.itemType,
                     createdAt: action.createdAt
                 )
                 entries.append(.actionCard(normalizedAction))

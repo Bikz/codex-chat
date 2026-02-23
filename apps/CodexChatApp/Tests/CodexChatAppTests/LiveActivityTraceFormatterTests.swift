@@ -43,7 +43,7 @@ final class LiveActivityTraceFormatterTests: XCTestCase {
         XCTAssertEqual(presentation.statusLabel, "Running")
         XCTAssertTrue(presentation.showTraceBox)
         XCTAssertEqual(presentation.lines.count, 1)
-        XCTAssertTrue(presentation.lines[0].text.contains("Completed commandExecution"))
+        XCTAssertTrue(presentation.lines[0].text.contains("npm run build completed"))
     }
 
     func testDetailedModeAlwaysShowsTraceBox() {

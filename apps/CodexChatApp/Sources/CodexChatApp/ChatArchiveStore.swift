@@ -37,12 +37,16 @@ enum ChatArchiveStore {
         let title: String
         let method: String
         let detail: String
+        let itemID: String?
+        let itemType: String?
         let createdAt: Date
 
         init(action: ActionCard) {
             title = action.title
             method = action.method
             detail = action.detail
+            itemID = action.itemID
+            itemType = action.itemType
             createdAt = action.createdAt
         }
 
@@ -52,6 +56,8 @@ enum ChatArchiveStore {
                 method: method,
                 title: title,
                 detail: detail,
+                itemID: itemID,
+                itemType: itemType,
                 createdAt: createdAt
             )
         }

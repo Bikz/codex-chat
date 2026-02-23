@@ -11,30 +11,33 @@ struct MessageRow: View {
 
     var body: some View {
         let isUser = message.role == .user
-        let bubbleHex = isUser ? tokens.bubbles.userBackgroundHex : tokens.bubbles.assistantBackgroundHex
+        let bubbleHex = tokens.bubbles.userBackgroundHex
         let style = tokens.bubbles.style
         let foreground = bubbleForeground(isUser: isUser, style: style)
 
-        HStack(alignment: .top, spacing: 0) {
-            if isUser {
+        if isUser {
+            HStack(alignment: .top, spacing: 0) {
                 Spacer(minLength: 44)
-            }
 
+                messageText(message: message)
+                    .font(.system(size: tokens.typography.bodySize))
+                    .foregroundStyle(foreground)
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: 560, alignment: .leading)
+                    .background(bubbleBackground(style: style, colorHex: bubbleHex, isUser: true))
+            }
+            .frame(maxWidth: .infinity)
+        } else {
             messageText(message: message)
                 .font(.system(size: tokens.typography.bodySize))
-                .foregroundStyle(foreground)
+                .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: 560, alignment: .leading)
-                .background(bubbleBackground(style: style, colorHex: bubbleHex, isUser: isUser))
-
-            if !isUser {
-                Spacer(minLength: 44)
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -83,11 +86,13 @@ struct ActionCardRow: View {
     @Environment(\.designTokens) private var tokens
 
     var body: some View {
+        let state = RuntimeVisualStateClassifier.classify(card)
+        let tint = toneColor(state.tone)
         let shape = RoundedRectangle(cornerRadius: tokens.radius.medium, style: .continuous)
 
         DisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(card.detail)
+                Text(RuntimeVisualStateClassifier.detailPreview(for: card, maxLength: 800))
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,21 +109,22 @@ struct ActionCardRow: View {
             }
         } label: {
             HStack(alignment: .center, spacing: 8) {
-                Circle()
-                    .fill(methodColor(card.method))
-                    .frame(width: 8, height: 8)
-                    .accessibilityLabel("Action: \(card.method)")
+                Image(systemName: state.iconName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 14)
+                    .accessibilityLabel(state.label)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(card.title)
+                        Text(RuntimeVisualStateClassifier.conciseTitle(for: card))
                             .font(.callout.weight(.semibold))
-                        Text(methodCategory(card.method))
+                        Text(state.label)
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(methodColor(card.method).opacity(0.12), in: Capsule())
-                            .foregroundStyle(methodColor(card.method))
+                            .background(tint.opacity(0.14), in: Capsule())
+                            .foregroundStyle(tint)
                     }
                     Text(card.method)
                         .font(.caption.monospaced())
@@ -132,37 +138,22 @@ struct ActionCardRow: View {
             Color(hex: tokens.palette.panelHex).opacity(0.94),
             in: shape
         )
-        .overlay(shape.strokeBorder(methodColor(card.method).opacity(0.32)))
+        .overlay(shape.strokeBorder(tint.opacity(0.32)))
     }
 
-    private func methodColor(_ method: String) -> Color {
-        let lower = method.lowercased()
-        if lower.contains("write") || lower.contains("delete") || lower.contains("remove") {
-            return .orange
-        } else if lower.contains("exec") || lower.contains("run") || lower.contains("shell") {
-            return .red
-        } else if lower.contains("read") || lower.contains("search") || lower.contains("list") {
-            return Color(hex: tokens.palette.accentHex)
-        } else {
-            return .secondary
+    private func toneColor(_ tone: RuntimeVisualStateTone) -> Color {
+        switch tone {
+        case .neutral:
+            .secondary
+        case .accent:
+            Color(hex: tokens.palette.accentHex)
+        case .success:
+            .green
+        case .warning:
+            .orange
+        case .error:
+            .red
         }
-    }
-
-    private func methodCategory(_ method: String) -> String {
-        let lower = method.lowercased()
-        if lower.contains("approval") {
-            return "approval"
-        }
-        if lower.contains("write") || lower.contains("delete") || lower.contains("remove") {
-            return "write"
-        }
-        if lower.contains("exec") || lower.contains("run") || lower.contains("shell") {
-            return "exec"
-        }
-        if lower.contains("read") || lower.contains("search") || lower.contains("list") {
-            return "read"
-        }
-        return "event"
     }
 }
 
@@ -173,6 +164,9 @@ struct InlineActionNoticeRow: View {
     @State private var isExpanded = false
 
     var body: some View {
+        let state = RuntimeVisualStateClassifier.classify(card)
+        let tint = toneColor(state.tone)
+
         DisclosureGroup(isExpanded: $isExpanded) {
             InlineActionDetailsList(
                 actions: [card],
@@ -181,12 +175,17 @@ struct InlineActionNoticeRow: View {
             )
         } label: {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(methodTint(card.method))
-                    .frame(width: 6, height: 6)
+                Image(systemName: state.iconName)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 12)
                     .accessibilityHidden(true)
 
-                Text(card.title)
+                Text(state.label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tint)
+
+                Text(RuntimeVisualStateClassifier.conciseTitle(for: card))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -201,19 +200,19 @@ struct InlineActionNoticeRow: View {
         .accessibilityLabel("\(card.title). \(isExpanded ? "Hide details" : "Show details").")
     }
 
-    private func methodTint(_ method: String) -> Color {
-        let lower = method.lowercased()
-        if lower.contains("error")
-            || lower.contains("failed")
-            || lower.contains("stderr")
-            || lower.contains("terminated")
-        {
-            return .red
+    private func toneColor(_ tone: RuntimeVisualStateTone) -> Color {
+        switch tone {
+        case .neutral:
+            .secondary.opacity(0.85)
+        case .accent:
+            .secondary
+        case .success:
+            .green
+        case .warning:
+            .orange
+        case .error:
+            .red
         }
-        if lower.contains("approval") {
-            return .orange
-        }
-        return .secondary.opacity(0.85)
     }
 }
 
@@ -269,6 +268,10 @@ struct LiveTurnActivityRow: View {
 
             if presentation.showTraceBox, detailLevel == .balanced, activity.milestoneCounts.hasAny {
                 TranscriptMilestoneChips(counts: activity.milestoneCounts)
+            }
+
+            if let commandOutputPreview = activity.commandOutputPreview {
+                InlineTerminalPreview(preview: commandOutputPreview)
             }
 
             if presentation.showTraceBox {
@@ -349,6 +352,89 @@ struct LiveTurnActivityRow: View {
         compactStatusPulse = false
         withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
             compactStatusPulse = true
+        }
+    }
+}
+
+private struct InlineTerminalPreview: View {
+    let preview: CommandOutputPreview
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Label("Terminal", systemImage: "terminal")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 8)
+                Text("\(preview.totalLineCount) lines")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(preview.lines) { line in
+                            HStack(alignment: .top, spacing: 6) {
+                                Circle()
+                                    .fill(levelColor(line.level))
+                                    .frame(width: 4, height: 4)
+                                    .padding(.top, 5)
+                                    .accessibilityHidden(true)
+                                Text(line.text)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .id(line.id)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onAppear {
+                    if let lastID = preview.lines.last?.id {
+                        proxy.scrollTo(lastID, anchor: .bottom)
+                    }
+                }
+                .onChange(of: preview.lines.count) { _, _ in
+                    guard let lastID = preview.lines.last?.id else { return }
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(lastID, anchor: .bottom)
+                    }
+                }
+            }
+            .frame(minHeight: 66, idealHeight: 114, maxHeight: 180)
+
+            if preview.isTruncated {
+                Text("Showing latest output in chat.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08))
+        )
+    }
+
+    private func levelColor(_ level: LogLevel) -> Color {
+        switch level {
+        case .debug:
+            .secondary
+        case .info:
+            .green
+        case .warning:
+            .orange
+        case .error:
+            .red
         }
     }
 }
@@ -534,7 +620,7 @@ private struct TurnSummaryDetailsList: View {
     }
 
     private func primaryLine(for action: ActionCard) -> String {
-        let title = compactWhitespace(action.title)
+        let title = RuntimeVisualStateClassifier.conciseTitle(for: action)
         if !title.isEmpty {
             return title
         }
@@ -548,21 +634,19 @@ private struct TurnSummaryDetailsList: View {
     }
 
     private func tint(for action: ActionCard) -> Color {
-        let method = action.method.lowercased()
-        if method.contains("error")
-            || method.contains("failed")
-            || method.contains("stderr")
-            || method.contains("terminated")
-        {
+        let state = RuntimeVisualStateClassifier.classify(action)
+        switch state.tone {
+        case .neutral:
+            return .secondary.opacity(0.9)
+        case .accent:
+            return .blue
+        case .success:
+            return .green
+        case .warning:
+            return .orange
+        case .error:
             return .red
         }
-        if method.contains("approval") {
-            return .orange
-        }
-        if method.contains("search") {
-            return .blue
-        }
-        return .secondary.opacity(0.9)
     }
 
     private func compactWhitespace(_ value: String) -> String {
@@ -585,7 +669,7 @@ private struct InlineActionDetailsList: View {
             ForEach(actions) { action in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .center, spacing: 8) {
-                        Text(action.title)
+                        Text(RuntimeVisualStateClassifier.conciseTitle(for: action))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 8)
@@ -610,7 +694,7 @@ private struct InlineActionDetailsList: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
 
-                    Text(compactDetail(action.detail))
+                    Text(RuntimeVisualStateClassifier.detailPreview(for: action))
                         .font(.system(.caption2, design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -625,16 +709,6 @@ private struct InlineActionDetailsList: View {
         .sheet(item: $selectedWorkerTrace) { entry in
             WorkerTraceDetailsSheet(model: model, entry: entry)
         }
-    }
-
-    private func compactDetail(_ value: String) -> String {
-        let flattened = value
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if flattened.count <= 220 {
-            return flattened
-        }
-        return String(flattened.prefix(220)) + "…"
     }
 }
 

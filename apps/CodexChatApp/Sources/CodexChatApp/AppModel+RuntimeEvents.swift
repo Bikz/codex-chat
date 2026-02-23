@@ -303,7 +303,9 @@ extension AppModel {
             threadID: localThreadID,
             method: action.method,
             title: action.title,
-            detail: transcriptDetail
+            detail: transcriptDetail,
+            itemID: action.itemID,
+            itemType: action.itemType
         )
 
         captureWorkerTraceIfPresent(

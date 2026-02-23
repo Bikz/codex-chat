@@ -21,7 +21,10 @@ enum LiveActivityTraceFormatter {
         let visibleActions = actions.filter { action in
             !TranscriptActionPolicy.shouldSuppressFromTranscript(action)
         }
-        let statusLabel = statusLabelForLatestAction(actions: visibleActions, fallbackTitle: fallbackTitle)
+        let statusLabel = RuntimeVisualStateClassifier.statusLabel(
+            for: visibleActions,
+            fallbackTitle: fallbackTitle
+        )
         guard !visibleActions.isEmpty else {
             return Presentation(statusLabel: statusLabel, showTraceBox: false, lines: [])
         }
@@ -48,78 +51,28 @@ enum LiveActivityTraceFormatter {
     }
 
     private static func traceLine(for action: ActionCard) -> Line {
-        let title = compactWhitespace(action.title)
+        let title = RuntimeVisualStateClassifier.conciseTitle(for: action)
         let detail = compactWhitespace(action.detail)
-        let method = action.method.lowercased()
+        let stateLabel = RuntimeVisualStateClassifier.classify(action).label
 
         let text: String = if detail.isEmpty || detail.caseInsensitiveCompare(title) == .orderedSame {
             title
-        } else if method.contains("stderr")
-            || method.contains("error")
-            || method.contains("failed")
-            || method.contains("terminated")
-        {
-            "\(title): \(compactDetail(detail, maxLength: 180))"
         } else {
-            "\(title): \(compactDetail(detail, maxLength: 180))"
+            "\(stateLabel): \(compactDetail(detail, maxLength: 180))"
         }
 
         return Line(id: action.id, text: text)
     }
 
-    private static func statusLabelForLatestAction(actions: [ActionCard], fallbackTitle: String) -> String {
-        let fallback = compactWhitespace(fallbackTitle)
-        guard let latest = actions.last else {
-            return fallback.isEmpty ? "Working" : statusLabel(from: fallback)
-        }
-
-        let source = "\(latest.method) \(latest.title) \(latest.detail)"
-        return statusLabel(from: source)
-    }
-
-    private static func statusLabel(from source: String) -> String {
-        let lowered = source.lowercased()
-
-        if lowered.contains("websearch") || lowered.contains("search") {
-            return "Searching"
-        }
-        if lowered.contains("reasoning") || lowered.contains("think") {
-            return "Thinking"
-        }
-        if lowered.contains("error")
-            || lowered.contains("failed")
-            || lowered.contains("stderr")
-            || lowered.contains("terminated")
-        {
-            return "Troubleshooting"
-        }
-        if lowered.contains("commandexecution")
-            || lowered.contains("command")
-            || lowered.contains("shell")
-            || lowered.contains("exec")
-        {
-            return "Running"
-        }
-        if lowered.contains("write")
-            || lowered.contains("edit")
-            || lowered.contains("patch")
-            || lowered.contains("file")
-        {
-            return "Editing"
-        }
-        if lowered.contains("read") || lowered.contains("list") || lowered.contains("inspect") {
-            return "Reading"
-        }
-        if lowered.contains("approval") {
-            return "Waiting"
-        }
-
-        return "Working"
-    }
-
     private static func hasRichTraceContent(_ action: ActionCard) -> Bool {
-        let method = action.method.lowercased()
-        if method.contains("stderr") || method.contains("command") {
+        let state = RuntimeVisualStateClassifier.classify(action).kind
+        if state == .commandExecActive
+            || state == .commandOutputStreaming
+            || state == .warningStderr
+            || state == .errorStderr
+            || state == .runtimeTerminated
+            || state == .approvalRequired
+        {
             return true
         }
 
