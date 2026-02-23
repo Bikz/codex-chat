@@ -45,6 +45,7 @@ Date: 2026-02-23
 | P2 | Unified checked command-failure mapping for skills/mods through shared `CodexProcess.runChecked` API with package-level regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Sources/CodexProcess/BoundedProcessRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Tests/CodexProcessTests/CodexProcessTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift` | `98ce357` |
 | P2 | Expanded automation health summary to include launchd-specific scheduled/failing status and surfaced it in Mods UI | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ModViews.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensionAutomationHealthTests.swift` | `8d2f05e` |
 | P2 | Centralized mod package/install path traversal checks behind shared `ModPathSafety` helper with dedicated regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModPathSafety.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModPackageManifest.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Tests/CodexModsTests/ModPathSafetyTests.swift` | `2836990` |
+| P2 | Added shared app-level process failure classifier and adopted it for skill/mod install+update status/log messaging | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `c963738` |
 
 ### Remaining prioritized backlog
 
@@ -55,7 +56,8 @@ Date: 2026-02-23
 1. Unify process execution adapters.
 - Phase 3 shipped: skills/mods/extensions now all execute through shared `CodexProcess` bounded runner primitives.
 - Phase 4 shipped: skills/mods now also share checked command-failure taxonomy via `CodexProcess.runChecked`.
-- Next step is unifying process telemetry reporting across app surfaces.
+- Phase 5 shipped: app-level diagnostics now normalize skill/mod process failure categories for status+logging.
+- Next step is extending the same telemetry vocabulary to extension worker and launchd automation failure surfaces.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
