@@ -37,6 +37,7 @@ Output: one JSON line, for example:
 Then keep `ui.mod.json` hook bound to `turn.completed` and `uiSlots.modsBar`.
 
 Keep `ui.mod.json` on `schemaVersion: 1` and do not use legacy `uiSlots.rightInspector`.
+Use `modsBar.scope` as needed: `thread`, `project`, or `global`.
 
 ### Runtime baseline for no-dependency mods
 
@@ -102,6 +103,7 @@ If your extension requests privileged permissions (`projectWrite`, `network`, `r
 - Closing from `rail` hides the panel fully; reopening restores the last open non-rail mode.
 - When the same mod id exists in both project and global scope, rail quick-switch deduplicates to one entry.
 - Add `uiSlots.modsBar.requiresThread: false` for mods that should work in draft mode without a selected thread.
+- Optionally set `manifest.iconSymbol` to control the Mods bar rail icon.
 
 ## Patterns For Common Extensions
 

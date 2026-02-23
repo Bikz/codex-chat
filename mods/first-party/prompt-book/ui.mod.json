@@ -4,6 +4,7 @@
     "id": "codexchat.prompt-book",
     "name": "Prompt Book",
     "version": "1.0.0",
+    "iconSymbol": "text.book.closed",
     "description": "Global reusable prompts with one-click insert and send.",
     "author": "CodexChat",
     "license": "MIT",

@@ -60,7 +60,8 @@ Precedence:
   "manifest": {
     "id": "acme.thread-summary",
     "name": "Thread Summary",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "iconSymbol": "text.alignleft"
   },
   "theme": {},
   "hooks": [
@@ -111,7 +112,7 @@ Input (one JSON line):
 Output:
 
 ```json
-{"ok":true,"modsBar":{"title":"Thread Summary","scope":"thread","markdown":"- Turn completed","actions":[{"id":"clear","label":"Clear","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"summary-action"}}]},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}]}
+{"ok":true,"modsBar":{"title":"Thread Summary","scope":"project","markdown":"- Turn completed","actions":[{"id":"clear","label":"Clear","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"summary-action"}}]},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}]}
 ```
 
 Native action output example:

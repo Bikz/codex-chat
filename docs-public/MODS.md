@@ -41,7 +41,7 @@ Each mod package should contain:
 Top-level fields:
 
 - `schemaVersion`: must be `1`
-- `manifest`: `id`, `name`, `version` (+ optional metadata)
+- `manifest`: `id`, `name`, `version` (+ optional metadata, including `iconSymbol`)
 - `theme` and optional `darkTheme`
 - `hooks` (optional array)
 - `automations` (optional array)
@@ -64,7 +64,7 @@ Legacy keys are rejected:
 - reopening from `hidden` restores the last open non-rail mode (`peek` or `expanded`)
 - `rail` mode is an icon launcher strip intended for quick extension switching
 - duplicate entries are deduplicated in `rail` when the same mod id is installed in both project/global roots
-- output may be `thread` or `global` scope
+- output may be `thread`, `project`, or `global` scope
 - output may include typed action buttons (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`, `native.action`)
 
 `uiSlots.modsBar` fields:

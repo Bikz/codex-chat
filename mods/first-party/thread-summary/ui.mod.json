@@ -4,6 +4,7 @@
     "id": "codexchat.thread-summary",
     "name": "Thread Summary",
     "version": "1.0.0",
+    "iconSymbol": "text.alignleft",
     "description": "One-line per-turn timeline in the Mods bar.",
     "author": "CodexChat",
     "license": "MIT",
