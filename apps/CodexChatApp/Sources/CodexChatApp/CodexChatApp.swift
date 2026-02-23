@@ -4,39 +4,76 @@ import SwiftUI
 
 @MainActor
 func configureDesktopWindow(_ window: NSWindow, isTransparent: Bool) {
-    window.styleMask.insert(.resizable)
-    window.minSize = NSSize(width: 600, height: 400)
+    if !window.styleMask.contains(.resizable) {
+        window.styleMask.insert(.resizable)
+    }
+    let minSize = NSSize(width: 600, height: 400)
+    if window.minSize != minSize {
+        window.minSize = minSize
+    }
+
     // Don't cap maxSize — let the user go full-screen or any size.
-    window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-    window.styleMask.insert(.fullSizeContentView)
-    window.toolbarStyle = .unified
-    window.toolbar?.showsBaselineSeparator = false
-    window.titleVisibility = .hidden
-    window.titlebarAppearsTransparent = true
-    window.titlebarSeparatorStyle = .none
-    if isTransparent {
-        window.isOpaque = false
-        window.backgroundColor = .clear
-    } else {
-        window.isOpaque = true
-        window.backgroundColor = NSColor.windowBackgroundColor
+    let maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    if window.maxSize != maxSize {
+        window.maxSize = maxSize
+    }
+    if !window.styleMask.contains(.fullSizeContentView) {
+        window.styleMask.insert(.fullSizeContentView)
+    }
+    if window.toolbarStyle != .unified {
+        window.toolbarStyle = .unified
+    }
+    if window.toolbar?.showsBaselineSeparator != false {
+        window.toolbar?.showsBaselineSeparator = false
+    }
+    if window.titleVisibility != .hidden {
+        window.titleVisibility = .hidden
+    }
+    if !window.titlebarAppearsTransparent {
+        window.titlebarAppearsTransparent = true
+    }
+    if window.titlebarSeparatorStyle != .none {
+        window.titlebarSeparatorStyle = .none
+    }
+
+    let shouldBeOpaque = !isTransparent
+    if window.isOpaque != shouldBeOpaque {
+        window.isOpaque = shouldBeOpaque
+    }
+    let targetBackgroundColor = isTransparent ? NSColor.clear : NSColor.windowBackgroundColor
+    if window.backgroundColor != targetBackgroundColor {
+        window.backgroundColor = targetBackgroundColor
     }
 }
 
 @MainActor
 func configureSettingsWindow(_ window: NSWindow, isTransparent: Bool) {
-    window.styleMask.insert(.fullSizeContentView)
-    window.titleVisibility = .hidden
-    window.titlebarAppearsTransparent = true
-    window.titlebarSeparatorStyle = .none
-    window.toolbarStyle = .unified
-    window.toolbar?.showsBaselineSeparator = false
-    if isTransparent {
-        window.isOpaque = false
-        window.backgroundColor = .clear
-    } else {
-        window.isOpaque = true
-        window.backgroundColor = NSColor.windowBackgroundColor
+    if !window.styleMask.contains(.fullSizeContentView) {
+        window.styleMask.insert(.fullSizeContentView)
+    }
+    if window.titleVisibility != .hidden {
+        window.titleVisibility = .hidden
+    }
+    if !window.titlebarAppearsTransparent {
+        window.titlebarAppearsTransparent = true
+    }
+    if window.titlebarSeparatorStyle != .none {
+        window.titlebarSeparatorStyle = .none
+    }
+    if window.toolbarStyle != .unified {
+        window.toolbarStyle = .unified
+    }
+    if window.toolbar?.showsBaselineSeparator != false {
+        window.toolbar?.showsBaselineSeparator = false
+    }
+
+    let shouldBeOpaque = !isTransparent
+    if window.isOpaque != shouldBeOpaque {
+        window.isOpaque = shouldBeOpaque
+    }
+    let targetBackgroundColor = isTransparent ? NSColor.clear : NSColor.windowBackgroundColor
+    if window.backgroundColor != targetBackgroundColor {
+        window.backgroundColor = targetBackgroundColor
     }
 }
 
@@ -121,6 +158,11 @@ private struct WindowAccessor: NSViewRepresentable {
     final class Coordinator {
         weak var configuredWindow: NSWindow?
         var lastTransparentValue: Bool?
+        var pendingConfigTask: Task<Void, Never>?
+
+        deinit {
+            pendingConfigTask?.cancel()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -128,17 +170,22 @@ private struct WindowAccessor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            // The NSWindow is often attached after makeNSView; defer and configure once attached.
-            configureWindow(for: view, coordinator: context.coordinator)
-        }
+        let view = NSView(frame: .zero)
+        scheduleWindowConfiguration(for: view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            configureWindow(for: nsView, coordinator: context.coordinator)
+        scheduleWindowConfiguration(for: nsView, coordinator: context.coordinator)
+    }
+
+    private func scheduleWindowConfiguration(for view: NSView, coordinator: Coordinator) {
+        coordinator.pendingConfigTask?.cancel()
+        coordinator.pendingConfigTask = Task { @MainActor in
+            // Avoid mutating AppKit window state from the same pass that updates SwiftUI layout.
+            await Task.yield()
+            await Task.yield()
+            configureWindow(for: view, coordinator: coordinator)
         }
     }
 
@@ -159,6 +206,11 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
     final class Coordinator {
         weak var configuredWindow: NSWindow?
         var lastTransparentValue: Bool?
+        var pendingConfigTask: Task<Void, Never>?
+
+        deinit {
+            pendingConfigTask?.cancel()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -166,17 +218,22 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            // The NSWindow is often attached after makeNSView; defer and configure once attached.
-            configureWindow(for: view, coordinator: context.coordinator)
-        }
+        let view = NSView(frame: .zero)
+        scheduleWindowConfiguration(for: view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            configureWindow(for: nsView, coordinator: context.coordinator)
+        scheduleWindowConfiguration(for: nsView, coordinator: context.coordinator)
+    }
+
+    private func scheduleWindowConfiguration(for view: NSView, coordinator: Coordinator) {
+        coordinator.pendingConfigTask?.cancel()
+        coordinator.pendingConfigTask = Task { @MainActor in
+            // Avoid mutating AppKit window state from the same pass that updates SwiftUI layout.
+            await Task.yield()
+            await Task.yield()
+            configureWindow(for: view, coordinator: coordinator)
         }
     }
 

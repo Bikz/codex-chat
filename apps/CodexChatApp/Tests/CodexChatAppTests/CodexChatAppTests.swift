@@ -1971,6 +1971,36 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testMaterializeDraftThreadRecoversWhenDraftSelectionStateIsMissing() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-materialize-draft-recovery-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        try await model.refreshProjects()
+        try await model.ensureGeneralProject()
+        try await model.refreshProjects()
+
+        let generalID = try XCTUnwrap(model.generalProject?.id)
+        model.selectedProjectID = generalID
+        model.selectedThreadID = nil
+        model.draftChatProjectID = nil
+        model.refreshConversationState()
+
+        let threadID = try await model.materializeDraftThreadIfNeeded()
+
+        XCTAssertEqual(model.selectedProjectID, generalID)
+        XCTAssertEqual(model.selectedThreadID, threadID)
+        XCTAssertNil(model.draftChatProjectID)
+        XCTAssertTrue(model.followUpQueueByThreadID.keys.contains(threadID))
+    }
+
+    @MainActor
     func testLoadInitialDataEntersOnboardingWhenRuntimeIsUnavailable() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-onboarding-startup-\(UUID().uuidString)", isDirectory: true)

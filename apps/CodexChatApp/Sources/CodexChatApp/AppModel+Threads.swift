@@ -377,35 +377,48 @@ extension AppModel {
             return selectedThreadID
         }
 
-        guard let selectedProjectID,
-              draftChatProjectID == selectedProjectID,
-              let threadRepository
-        else {
+        guard let threadRepository else {
+            throw CodexRuntimeError.invalidResponse("Thread repository is unavailable.")
+        }
+
+        let targetProjectID = selectedProjectID ?? generalProject?.id
+        guard let targetProjectID else {
             throw CodexRuntimeError.invalidResponse("No draft chat is active.")
         }
 
+        if selectedProjectID != targetProjectID {
+            selectedProjectID = targetProjectID
+        }
+
+        if draftChatProjectID != targetProjectID {
+            draftChatProjectID = targetProjectID
+            detailDestination = .thread
+            refreshConversationState()
+            appendLog(.debug, "Recovered missing draft chat state before materializing a thread.")
+        }
+
         let title = "New chat"
-        let thread = try await threadRepository.createThread(projectID: selectedProjectID, title: title)
-        let isGeneralProject = generalProject?.id == selectedProjectID
+        let thread = try await threadRepository.createThread(projectID: targetProjectID, title: title)
+        let isGeneralProject = generalProject?.id == targetProjectID
         pendingFirstTurnTitleThreadIDs.insert(thread.id)
 
         try await chatSearchRepository?.indexThreadTitle(
             threadID: thread.id,
-            projectID: selectedProjectID,
+            projectID: targetProjectID,
             title: title
         )
 
         selectedThreadID = thread.id
         draftChatProjectID = nil
         detailDestination = .thread
-        seedThreadListForMaterializedDraft(thread, projectID: selectedProjectID, isGeneralProject: isGeneralProject)
+        seedThreadListForMaterializedDraft(thread, projectID: targetProjectID, isGeneralProject: isGeneralProject)
         followUpQueueByThreadID[thread.id] = []
         clearUnreadMarker(for: thread.id)
         try await persistSelection()
         refreshConversationState()
         schedulePostMaterializationRefresh(
             threadID: thread.id,
-            projectID: selectedProjectID,
+            projectID: targetProjectID,
             isGeneralProject: isGeneralProject
         )
         scheduleRuntimeThreadPrewarm(
