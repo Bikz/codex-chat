@@ -38,6 +38,7 @@ Date: 2026-02-23
 | P2 | Extended shared capability policy to skill-install trust checks for untrusted projects | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelSkillsTrustPolicyTests.swift` | `b0e38b2` |
 | P2 | Extended shared capability policy to mod install/update trust checks for untrusted projects | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelModsTrustPolicyTests.swift` | `c345a43` |
 | P2 | Hardened skill/mod process runners with timeout and output-cap safeguards plus package-level regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Tests/CodexSkillsTests/CodexSkillsTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Tests/CodexModsTests/ModInstallServiceTests.swift` | `49418d9` |
+| P2 | Marked background-automation capability as privileged for untrusted projects via shared policy | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityCapabilityPolicyTests.swift` | `049f2d1` |
 
 ### Remaining prioritized backlog
 
@@ -45,33 +46,28 @@ Date: 2026-02-23
 1. No open P0 safety blockers in Team C scope for this cycle.
 
 ### P2 (platform evolution and maintainability)
-1. Complete capability-policy rollout to remaining install/runtime surfaces.
-- Shared policy now gates plan-runner, extension hooks/automations, native actions, project skill installs, and project mod install/update.
-- Next step is applying policy semantics to remaining automation-control affordances.
-- References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`.
-
-2. Unify process execution adapters.
+1. Unify process execution adapters.
 - Phase 1 shipped: skill/mod runners now enforce timeout + capped output with tests.
 - Next step is de-duplicating these runners with extension worker execution into one shared abstraction and telemetry schema.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
-3. Improve automation observability UX.
+2. Improve automation observability UX.
 - Surface unified “next run / last run / last failure” across in-app and launchd paths.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:48`.
 
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Complete policy rollout for remaining automation-control edges.
-2. Draft migration and compatibility plan for consolidating now-bounded process runners into one shared adapter.
+1. Draft migration and compatibility plan for consolidating now-bounded process runners into one shared adapter.
+2. Define unified automation observability state contract (next run / last run / last failure).
 
 Exit criteria:
 - Shared policy/process design is reviewed and approved by runtime + UX workstreams.
 
 ### 31-60 days
-1. Finalize policy migration for legacy permission records and install decisions.
-2. Add first integration seam between consolidated process-executor telemetry and policy outcomes.
-3. Draft automation observability model shared by in-app scheduler and launchd.
+1. Add first integration seam between consolidated process-executor telemetry and policy outcomes.
+2. Implement shared automation observability model between in-app scheduler and launchd.
+3. Draft migration plan for historical automation status records.
 
 Exit criteria:
 - One policy decision model can represent current extension/native-action/skill checks.
