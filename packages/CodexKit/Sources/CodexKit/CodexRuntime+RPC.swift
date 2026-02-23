@@ -42,7 +42,7 @@ extension CodexRuntime {
                 method: method,
                 params: request.params
             )
-            pendingApprovalRequests[localRequestID] = PendingApprovalRequest(rpcID: rpcID, request: approval)
+            pendingApprovalRequests[localRequestID] = PendingApprovalRequest(rpcID: rpcID)
             eventContinuation.yield(.approvalRequested(approval))
             return
         }

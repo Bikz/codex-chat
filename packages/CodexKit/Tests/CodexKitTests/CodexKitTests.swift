@@ -136,6 +136,24 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
     }
 
+    func testRequestCorrelatorAcceptsNumericStringResponseID() async throws {
+        let correlator = RequestCorrelator()
+        let requestID = await correlator.makeRequestID()
+
+        let response = JSONRPCMessageEnvelope(
+            id: .string(String(requestID)),
+            method: nil,
+            params: nil,
+            result: .object(["ok": .bool(true)]),
+            error: nil
+        )
+        _ = await correlator.resolveResponse(response)
+
+        let resolved = try await correlator.suspendResponse(id: requestID)
+        XCTAssertEqual(resolved.id, .string(String(requestID)))
+        XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
+    }
+
     func testRequestCorrelatorFailsSuspensionAfterFailAllEvenIfNotPending() async throws {
         let correlator = RequestCorrelator()
         let requestID = await correlator.makeRequestID()

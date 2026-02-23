@@ -17,7 +17,6 @@ public actor CodexRuntime {
     var stderrLineBuffer = Data()
     struct PendingApprovalRequest: Sendable {
         let rpcID: JSONRPCID
-        let request: RuntimeApprovalRequest
     }
 
     var pendingApprovalRequests: [Int: PendingApprovalRequest] = [:]

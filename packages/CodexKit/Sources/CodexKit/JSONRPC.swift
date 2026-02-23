@@ -31,6 +31,9 @@ enum JSONRPCID: Sendable, Codable, Hashable {
         if case let .int(value) = self {
             return value
         }
+        if case let .string(value) = self {
+            return Int(value)
+        }
         return nil
     }
 }
