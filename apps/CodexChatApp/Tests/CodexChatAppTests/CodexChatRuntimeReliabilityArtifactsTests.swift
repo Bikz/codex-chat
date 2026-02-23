@@ -160,6 +160,75 @@ final class CodexChatRuntimeReliabilityArtifactsTests: XCTestCase {
         XCTAssertTrue(invalidReport.issues.contains(where: { $0.message.contains("defaultSandboxMode=danger-full-access") }))
     }
 
+    func testLedgerBackfillIsIdempotentAndSupportsForce() throws {
+        let projectRoot = try makeTempProjectRoot(prefix: "ledger-backfill")
+        defer { try? FileManager.default.removeItem(at: projectRoot) }
+
+        let firstThreadID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000511"))
+        let secondThreadID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000512"))
+        let firstTurnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000611"))
+        let secondTurnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000612"))
+
+        _ = try ChatArchiveStore.finalizeCheckpoint(
+            projectPath: projectRoot.path,
+            threadID: firstThreadID,
+            turn: ArchivedTurnSummary(
+                turnID: firstTurnID,
+                timestamp: Date(timeIntervalSince1970: 1_700_300_001),
+                status: .completed,
+                userText: "thread a",
+                assistantText: "done",
+                actions: []
+            )
+        )
+
+        _ = try ChatArchiveStore.finalizeCheckpoint(
+            projectPath: projectRoot.path,
+            threadID: secondThreadID,
+            turn: ArchivedTurnSummary(
+                turnID: secondTurnID,
+                timestamp: Date(timeIntervalSince1970: 1_700_300_002),
+                status: .completed,
+                userText: "thread b",
+                assistantText: "done",
+                actions: []
+            )
+        )
+
+        let noiseFile = projectRoot
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+            .appendingPathComponent("not-a-thread.md", isDirectory: false)
+        try "noise".write(to: noiseFile, atomically: true, encoding: .utf8)
+
+        let initialBackfill = try CodexChatBootstrap.backfillThreadLedgers(projectPath: projectRoot.path, limit: 10)
+        XCTAssertEqual(initialBackfill.scannedThreadCount, 2)
+        XCTAssertEqual(initialBackfill.exportedThreadCount, 2)
+        XCTAssertEqual(initialBackfill.skippedThreadCount, 0)
+        XCTAssertTrue(initialBackfill.threads.allSatisfy { $0.status == "exported" })
+
+        for thread in initialBackfill.threads {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: thread.ledgerPath))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: thread.markerPath))
+        }
+
+        let secondBackfill = try CodexChatBootstrap.backfillThreadLedgers(projectPath: projectRoot.path, limit: 10)
+        XCTAssertEqual(secondBackfill.scannedThreadCount, 2)
+        XCTAssertEqual(secondBackfill.exportedThreadCount, 0)
+        XCTAssertEqual(secondBackfill.skippedThreadCount, 2)
+        XCTAssertTrue(secondBackfill.threads.allSatisfy { $0.status == "skipped" })
+
+        let forcedBackfill = try CodexChatBootstrap.backfillThreadLedgers(
+            projectPath: projectRoot.path,
+            limit: 10,
+            force: true
+        )
+        XCTAssertEqual(forcedBackfill.scannedThreadCount, 2)
+        XCTAssertEqual(forcedBackfill.exportedThreadCount, 2)
+        XCTAssertEqual(forcedBackfill.skippedThreadCount, 0)
+        XCTAssertTrue(forcedBackfill.threads.allSatisfy { $0.status == "exported" })
+    }
+
     private func makeTempProjectRoot(prefix: String) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-\(prefix)-\(UUID().uuidString)", isDirectory: true)

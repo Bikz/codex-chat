@@ -134,6 +134,84 @@ public struct CodexChatThreadLedgerExportSummary: Codable, Equatable, Sendable {
     }
 }
 
+public struct CodexChatThreadLedgerBackfillThreadResult: Codable, Equatable, Sendable {
+    public let threadID: UUID
+    public let status: String
+    public let ledgerPath: String
+    public let markerPath: String
+    public let entryCount: Int?
+    public let sha256: String?
+
+    public init(
+        threadID: UUID,
+        status: String,
+        ledgerPath: String,
+        markerPath: String,
+        entryCount: Int?,
+        sha256: String?
+    ) {
+        self.threadID = threadID
+        self.status = status
+        self.ledgerPath = ledgerPath
+        self.markerPath = markerPath
+        self.entryCount = entryCount
+        self.sha256 = sha256
+    }
+}
+
+public struct CodexChatThreadLedgerBackfillSummary: Codable, Equatable, Sendable {
+    public let projectPath: String
+    public let markerDirectoryPath: String
+    public let scannedThreadCount: Int
+    public let exportedThreadCount: Int
+    public let skippedThreadCount: Int
+    public let threads: [CodexChatThreadLedgerBackfillThreadResult]
+
+    public init(
+        projectPath: String,
+        markerDirectoryPath: String,
+        scannedThreadCount: Int,
+        exportedThreadCount: Int,
+        skippedThreadCount: Int,
+        threads: [CodexChatThreadLedgerBackfillThreadResult]
+    ) {
+        self.projectPath = projectPath
+        self.markerDirectoryPath = markerDirectoryPath
+        self.scannedThreadCount = scannedThreadCount
+        self.exportedThreadCount = exportedThreadCount
+        self.skippedThreadCount = skippedThreadCount
+        self.threads = threads
+    }
+}
+
+public struct CodexChatThreadLedgerBackfillMarker: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let generatedAt: Date
+    public let projectPath: String
+    public let threadID: UUID
+    public let ledgerPath: String
+    public let entryCount: Int
+    public let sha256: String
+
+    public init(
+        schemaVersion: Int,
+        generatedAt: Date,
+        projectPath: String,
+        threadID: UUID,
+        ledgerPath: String,
+        entryCount: Int,
+        sha256: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.generatedAt = generatedAt
+        self.projectPath = projectPath
+        self.threadID = threadID
+        self.ledgerPath = ledgerPath
+        self.entryCount = entryCount
+        self.sha256 = sha256
+    }
+}
+
 public struct CodexChatRuntimePolicyDocument: Codable, Equatable, Sendable {
     public let version: Int
     public let defaultApprovalPolicy: String
@@ -275,6 +353,91 @@ public extension CodexChatBootstrap {
             outputPath: destination.path,
             entryCount: entries.count,
             sha256: sha256Hex(data)
+        )
+    }
+
+    static func backfillThreadLedgers(
+        projectPath: String,
+        limit: Int = 100,
+        force: Bool = false,
+        fileManager: FileManager = .default
+    ) throws -> CodexChatThreadLedgerBackfillSummary {
+        guard limit > 0 else {
+            throw NSError(
+                domain: "CodexChatCLI",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Backfill limit must be a positive integer"]
+            )
+        }
+
+        let normalizedProjectPath = normalizeProjectPath(projectPath)
+        let markerDirectory = ledgerBackfillMarkerDirectory(projectPath: normalizedProjectPath)
+        try fileManager.createDirectory(at: markerDirectory, withIntermediateDirectories: true)
+
+        let threadIDs = try discoverArchivedThreadIDs(projectPath: normalizedProjectPath, fileManager: fileManager)
+        var exportedCount = 0
+        var skippedCount = 0
+        var threadResults: [CodexChatThreadLedgerBackfillThreadResult] = []
+        threadResults.reserveCapacity(threadIDs.count)
+
+        for threadID in threadIDs {
+            let markerURL = ledgerBackfillMarkerURL(projectPath: normalizedProjectPath, threadID: threadID)
+            let defaultLedgerPath = defaultLedgerURL(projectPath: normalizedProjectPath, threadID: threadID).path
+
+            if !force, fileManager.fileExists(atPath: markerURL.path) {
+                skippedCount += 1
+                threadResults.append(
+                    CodexChatThreadLedgerBackfillThreadResult(
+                        threadID: threadID,
+                        status: "skipped",
+                        ledgerPath: defaultLedgerPath,
+                        markerPath: markerURL.path,
+                        entryCount: nil,
+                        sha256: nil
+                    )
+                )
+                continue
+            }
+
+            let exportSummary = try exportThreadLedger(
+                projectPath: normalizedProjectPath,
+                threadID: threadID,
+                limit: limit,
+                outputURL: nil,
+                fileManager: fileManager
+            )
+
+            let marker = CodexChatThreadLedgerBackfillMarker(
+                schemaVersion: 1,
+                generatedAt: Date(),
+                projectPath: normalizedProjectPath,
+                threadID: threadID,
+                ledgerPath: exportSummary.outputPath,
+                entryCount: exportSummary.entryCount,
+                sha256: exportSummary.sha256
+            )
+            try writeBackfillMarker(marker, to: markerURL)
+
+            exportedCount += 1
+            threadResults.append(
+                CodexChatThreadLedgerBackfillThreadResult(
+                    threadID: threadID,
+                    status: "exported",
+                    ledgerPath: exportSummary.outputPath,
+                    markerPath: markerURL.path,
+                    entryCount: exportSummary.entryCount,
+                    sha256: exportSummary.sha256
+                )
+            )
+        }
+
+        return CodexChatThreadLedgerBackfillSummary(
+            projectPath: normalizedProjectPath,
+            markerDirectoryPath: markerDirectory.path,
+            scannedThreadCount: threadIDs.count,
+            exportedThreadCount: exportedCount,
+            skippedThreadCount: skippedCount,
+            threads: threadResults
         )
     }
 
@@ -445,6 +608,51 @@ private extension CodexChatBootstrap {
             .appendingPathComponent("chats", isDirectory: true)
             .appendingPathComponent("threads", isDirectory: true)
             .appendingPathComponent("\(threadID.uuidString).ledger.json", isDirectory: false)
+    }
+
+    static func ledgerBackfillMarkerDirectory(projectPath: String) -> URL {
+        URL(fileURLWithPath: projectPath, isDirectory: true)
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+            .appendingPathComponent(".ledger-backfill", isDirectory: true)
+    }
+
+    static func ledgerBackfillMarkerURL(projectPath: String, threadID: UUID) -> URL {
+        ledgerBackfillMarkerDirectory(projectPath: projectPath)
+            .appendingPathComponent("\(threadID.uuidString).json", isDirectory: false)
+    }
+
+    static func discoverArchivedThreadIDs(projectPath: String, fileManager: FileManager) throws -> [UUID] {
+        let threadsDirectory = URL(fileURLWithPath: projectPath, isDirectory: true)
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+
+        guard fileManager.fileExists(atPath: threadsDirectory.path) else {
+            return []
+        }
+
+        let entries = try fileManager.contentsOfDirectory(at: threadsDirectory, includingPropertiesForKeys: nil)
+        let threadIDs = entries.compactMap { entry -> UUID? in
+            guard entry.pathExtension.lowercased() == "md" else {
+                return nil
+            }
+
+            let candidate = entry.deletingPathExtension().lastPathComponent
+            return UUID(uuidString: candidate)
+        }
+
+        return threadIDs.sorted { $0.uuidString < $1.uuidString }
+    }
+
+    static func writeBackfillMarker(
+        _ marker: CodexChatThreadLedgerBackfillMarker,
+        to destination: URL
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(marker)
+        try data.write(to: destination, options: .atomic)
     }
 
     static func sha256Hex(_ data: Data) -> String {

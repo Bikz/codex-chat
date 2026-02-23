@@ -137,6 +137,24 @@ struct CodexChatCLI {
             print("Output: \(summary.outputPath)")
             print("Entries: \(summary.entryCount)")
             print("SHA256: \(summary.sha256)")
+        case let .backfill(options):
+            let summary = try CodexChatBootstrap.backfillThreadLedgers(
+                projectPath: options.projectPath,
+                limit: options.limit,
+                force: options.force
+            )
+
+            if options.asJSON {
+                try printJSON(summary)
+                return
+            }
+
+            print("Ledger backfill complete")
+            print("Project: \(summary.projectPath)")
+            print("Markers: \(summary.markerDirectoryPath)")
+            print("Threads scanned: \(summary.scannedThreadCount)")
+            print("Threads exported: \(summary.exportedThreadCount)")
+            print("Threads skipped: \(summary.skippedThreadCount)")
         }
     }
 
@@ -212,6 +230,9 @@ struct CodexChatCLI {
           ledger export --project-path <path>
                  --thread-id <uuid>         Export thread event ledger JSON.
                [--limit <n>] [--output <path>]
+          ledger backfill --project-path <path>
+               [--limit <n>] [--force]      Backfill ledgers for archived thread artifacts.
+               [--json]
           policy validate [--file <path>]   Validate runtime policy-as-code document.
           mod init --name <name>            Create a sample mod package.
                [--output <path>]

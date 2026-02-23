@@ -65,6 +65,35 @@ final class CodexChatCLICommandParserTests: XCTestCase {
         )
     }
 
+    func testParsesLedgerBackfillCommand() throws {
+        let command = try CodexChatCLICommandParser.parse(
+            arguments: [
+                "ledger",
+                "backfill",
+                "--project-path",
+                "/tmp/project",
+                "--limit",
+                "50",
+                "--force",
+                "--json",
+            ]
+        )
+
+        XCTAssertEqual(
+            command,
+            .ledger(
+                .backfill(
+                    CodexChatCLILedgerBackfillOptions(
+                        projectPath: "/tmp/project",
+                        limit: 50,
+                        force: true,
+                        asJSON: true
+                    )
+                )
+            )
+        )
+    }
+
     func testParsesPolicyValidateCommand() throws {
         let command = try CodexChatCLICommandParser.parse(
             arguments: ["policy", "validate", "--file", "/tmp/policy.json"]
@@ -170,6 +199,20 @@ final class CodexChatCLICommandParserTests: XCTestCase {
             XCTAssertEqual(
                 (error as? CodexChatCLIArgumentError)?.message,
                 "--limit must be a positive integer"
+            )
+        }
+
+        XCTAssertThrowsError(
+            try CodexChatCLICommandParser.parse(arguments: [
+                "ledger",
+                "backfill",
+                "--limit",
+                "10",
+            ])
+        ) { error in
+            XCTAssertEqual(
+                (error as? CodexChatCLIArgumentError)?.message,
+                "`ledger backfill` requires --project-path <path>"
             )
         }
     }

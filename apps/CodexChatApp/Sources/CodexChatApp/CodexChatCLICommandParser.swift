@@ -38,8 +38,23 @@ public struct CodexChatCLILedgerExportOptions: Equatable, Sendable {
     }
 }
 
+public struct CodexChatCLILedgerBackfillOptions: Equatable, Sendable {
+    public var projectPath: String
+    public var limit: Int
+    public var force: Bool
+    public var asJSON: Bool
+
+    public init(projectPath: String, limit: Int, force: Bool, asJSON: Bool) {
+        self.projectPath = projectPath
+        self.limit = limit
+        self.force = force
+        self.asJSON = asJSON
+    }
+}
+
 public enum CodexChatCLILedgerCommand: Equatable, Sendable {
     case export(CodexChatCLILedgerExportOptions)
+    case backfill(CodexChatCLILedgerBackfillOptions)
 }
 
 public struct CodexChatCLIPolicyValidateOptions: Equatable, Sendable {
@@ -209,13 +224,16 @@ public enum CodexChatCLICommandParser {
 
     private static func parseLedgerCommand(arguments: [String]) throws -> CodexChatCLILedgerCommand {
         guard let subcommand = arguments.first else {
-            throw CodexChatCLIArgumentError("`ledger` requires a subcommand: export")
+            throw CodexChatCLIArgumentError("`ledger` requires a subcommand: export, backfill")
         }
 
         switch subcommand {
         case "export":
             let options = try parseLedgerExportOptions(arguments: Array(arguments.dropFirst()))
             return .export(options)
+        case "backfill":
+            let options = try parseLedgerBackfillOptions(arguments: Array(arguments.dropFirst()))
+            return .backfill(options)
         default:
             throw CodexChatCLIArgumentError("Unknown ledger subcommand: \(subcommand)")
         }
@@ -277,6 +295,53 @@ public enum CodexChatCLICommandParser {
             threadID: threadID,
             limit: limit,
             outputPath: outputPath
+        )
+    }
+
+    private static func parseLedgerBackfillOptions(arguments: [String]) throws -> CodexChatCLILedgerBackfillOptions {
+        var projectPath: String?
+        var limit = 100
+        var force = false
+        var asJSON = false
+
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            switch argument {
+            case "--project-path":
+                guard index + 1 < arguments.count else {
+                    throw CodexChatCLIArgumentError("Missing value for --project-path")
+                }
+                projectPath = arguments[index + 1]
+                index += 2
+            case "--limit":
+                guard index + 1 < arguments.count else {
+                    throw CodexChatCLIArgumentError("Missing value for --limit")
+                }
+                limit = try parsePositiveInt(arguments[index + 1], flag: "--limit")
+                index += 2
+            case "--force":
+                force = true
+                index += 1
+            case "--json":
+                asJSON = true
+                index += 1
+            default:
+                throw CodexChatCLIArgumentError("Unknown ledger backfill option: \(argument)")
+            }
+        }
+
+        guard let projectPath,
+              !projectPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            throw CodexChatCLIArgumentError("`ledger backfill` requires --project-path <path>")
+        }
+
+        return CodexChatCLILedgerBackfillOptions(
+            projectPath: projectPath,
+            limit: limit,
+            force: force,
+            asJSON: asJSON
         )
     }
 
