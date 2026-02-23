@@ -8,19 +8,17 @@ struct PlanRunnerCapabilityEvaluation: Hashable, Sendable {
 }
 
 enum PlanRunnerCapabilityPolicy {
-    private static let privilegedCapabilities: Set<PlanRunnerCapability> = [
-        .nativeActions,
-        .filesystemWrite,
-        .network,
-        .runtimeControl,
-    ]
-
     static func evaluate(document: PlanDocument, trustState: ProjectTrustState) -> PlanRunnerCapabilityEvaluation {
         let required = requiredCapabilities(for: document)
         let undeclared = required.subtracting(document.requestedCapabilities)
-        let blocked = trustState == .untrusted
-            ? required.intersection(privilegedCapabilities)
-            : []
+        let blocked = Set(
+            ExtensibilityCapabilityPolicy
+                .blockedCapabilities(
+                    for: ExtensibilityCapabilityPolicy.planRunnerCapabilities(required),
+                    trustState: trustState
+                )
+                .compactMap(Self.planRunnerCapability)
+        )
         return PlanRunnerCapabilityEvaluation(
             requiredCapabilities: required,
             undeclaredCapabilities: undeclared,
@@ -97,5 +95,20 @@ enum PlanRunnerCapabilityPolicy {
 
     private static func containsAny(_ text: String, substrings: [String]) -> Bool {
         substrings.contains(where: { text.contains($0) })
+    }
+
+    private static func planRunnerCapability(_ capability: ExtensibilityCapability) -> PlanRunnerCapability? {
+        switch capability {
+        case .nativeActions:
+            .nativeActions
+        case .filesystemWrite:
+            .filesystemWrite
+        case .network:
+            .network
+        case .runtimeControl:
+            .runtimeControl
+        case .projectRead, .projectWrite, .runWhenAppClosed:
+            nil
+        }
     }
 }
