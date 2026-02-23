@@ -31,6 +31,7 @@ Date: 2026-02-23
 | P1 | Added advanced executable-mod lock regression tests (migration + install-time disabled behavior) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelAdvancedExecutableModsTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+AdvancedExecutableMods.swift:16`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift:296` | `2353310` |
 | P1 | Added extension artifact path-safety regression coverage + shared path helper | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ProjectPathSafety.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ProjectPathSafetyTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift` | `307aa26`, `a11f298` |
 | P0 | Added extension worker malformed-output and output-limit negative tests | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:105` | `c8ff0ca` |
+| P1 | Added scheduler retry/backoff regression coverage with deterministic sleep injection | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/ExtensionAutomationSchedulerTests.swift` | `e233543` |
 
 ### Remaining prioritized backlog
 
@@ -38,11 +39,6 @@ Date: 2026-02-23
 1. Add fuzz-style parser coverage for harness and extension-worker framing boundaries.
 - Deterministic negative tests are in place; randomized malformed framing coverage is still open.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ComputerActionHarnessServerTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift`.
-
-### P1 (high value hardening + platform clarity)
-1. Add tests for scheduler retry/backoff observability in automation runtime.
-- Launchd coverage is now present; scheduler-level assertions are still light.
-- References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:16`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`.
 
 ### P2 (platform evolution and maintainability)
 1. Unify permission policy primitives across skills/mods/extensions/native actions.
@@ -60,11 +56,9 @@ Date: 2026-02-23
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Add scheduler retry/backoff reliability assertions.
-2. Add fuzz-style malformed framing tests for harness + worker boundaries.
+1. Add fuzz-style malformed framing tests for harness + worker boundaries.
 
 Exit criteria:
-- Automation retry/backoff behavior has deterministic tests.
 - External-input parser boundaries are covered by deterministic and fuzz-style tests.
 
 ### 31-60 days
