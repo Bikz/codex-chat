@@ -12,6 +12,7 @@ extension AppModel {
     private static let runtimeAutoRecoveryBackoffEnvKey = "CODEXCHAT_RUNTIME_AUTO_RECOVERY_BACKOFF_SECONDS"
     private static let runtimeAutoRecoveryDefaultBackoffSeconds: [UInt64] = [1, 2, 4, 8]
     private static let runtimeAutoRecoveryMaxAttempts = 8
+    private static let staleRuntimeThreadRecreateRetryLimit = 1
 
     func installCodexWithHomebrew() {
         do {
@@ -147,42 +148,43 @@ extension AppModel {
                 activeModSnapshotByThreadID[threadID] = snapshot
             }
 
-            let turnID: String
-            do {
-                turnID = try await startTurnWithRuntimeFallback(
-                    threadID: runtimeThreadID,
-                    text: runtimeText,
-                    safetyConfiguration: safetyConfiguration,
-                    skillInputs: runtimeSkillInputs,
-                    inputItems: inputItems,
-                    turnOptions: turnOptions
-                )
-            } catch {
-                guard shouldRecreateRuntimeThread(after: error) else {
-                    throw error
+            var staleThreadRecreateRetryCount = 0
+            let turnID: String = try await {
+                while true {
+                    do {
+                        return try await startTurnWithRuntimeFallback(
+                            threadID: runtimeThreadID,
+                            text: runtimeText,
+                            safetyConfiguration: safetyConfiguration,
+                            skillInputs: runtimeSkillInputs,
+                            inputItems: inputItems,
+                            turnOptions: turnOptions
+                        )
+                    } catch {
+                        guard shouldRecreateRuntimeThread(after: error),
+                              Self.shouldRetryStaleRuntimeThreadRecreation(retryCount: staleThreadRecreateRetryCount)
+                        else {
+                            throw error
+                        }
+
+                        staleThreadRecreateRetryCount += 1
+                        appendLog(
+                            .warning,
+                            "Runtime thread \(runtimeThreadID) appears stale. Creating a new runtime thread and retrying (\(staleThreadRecreateRetryCount)/\(Self.staleRuntimeThreadRecreateRetryLimit))."
+                        )
+                        await invalidateRuntimeThreadID(for: threadID)
+                        runtimeThreadID = try await createAndPersistRuntimeThreadID(
+                            for: threadID,
+                            projectPath: projectPath,
+                            safetyConfiguration: safetyConfiguration
+                        )
+
+                        _ = updateActiveTurnContext(for: threadID, mutate: { context in
+                            context.runtimeThreadID = runtimeThreadID
+                        })
+                    }
                 }
-
-                appendLog(.warning, "Runtime thread \(runtimeThreadID) appears stale. Creating a new runtime thread and retrying.")
-                await invalidateRuntimeThreadID(for: threadID)
-                runtimeThreadID = try await createAndPersistRuntimeThreadID(
-                    for: threadID,
-                    projectPath: projectPath,
-                    safetyConfiguration: safetyConfiguration
-                )
-
-                _ = updateActiveTurnContext(for: threadID, mutate: { context in
-                    context.runtimeThreadID = runtimeThreadID
-                })
-
-                turnID = try await startTurnWithRuntimeFallback(
-                    threadID: runtimeThreadID,
-                    text: runtimeText,
-                    safetyConfiguration: safetyConfiguration,
-                    skillInputs: runtimeSkillInputs,
-                    inputItems: inputItems,
-                    turnOptions: turnOptions
-                )
-            }
+            }()
 
             _ = updateActiveTurnContext(for: threadID, mutate: { context in
                 context.runtimeTurnID = turnID
@@ -635,7 +637,7 @@ extension AppModel {
         appendLog(.debug, "Invalidated stale runtime thread mapping \(staleRuntimeThreadID)")
     }
 
-    private func shouldRecreateRuntimeThread(after error: Error) -> Bool {
+    func shouldRecreateRuntimeThread(after error: Error) -> Bool {
         let detail: String
         if let runtimeError = error as? CodexRuntimeError {
             switch runtimeError {
@@ -663,6 +665,15 @@ extension AppModel {
             "invalid",
         ]
         return staleIndicators.contains { lowered.contains($0) }
+    }
+
+    static func shouldRetryStaleRuntimeThreadRecreation(
+        retryCount: Int,
+        maxRetries: Int = staleRuntimeThreadRecreateRetryLimit
+    ) -> Bool {
+        let normalizedRetryCount = max(0, retryCount)
+        let normalizedMaxRetries = max(0, maxRetries)
+        return normalizedRetryCount < normalizedMaxRetries
     }
 
     private func startTurnWithRuntimeFallback(
