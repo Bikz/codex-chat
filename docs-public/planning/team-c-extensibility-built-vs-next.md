@@ -39,6 +39,7 @@ Date: 2026-02-23
 | P2 | Extended shared capability policy to mod install/update trust checks for untrusted projects | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelModsTrustPolicyTests.swift` | `c345a43` |
 | P2 | Hardened skill/mod process runners with timeout and output-cap safeguards plus package-level regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Tests/CodexSkillsTests/CodexSkillsTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Tests/CodexModsTests/ModInstallServiceTests.swift` | `49418d9` |
 | P2 | Marked background-automation capability as privileged for untrusted projects via shared policy | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityCapabilityPolicyTests.swift` | `049f2d1` |
+| P2 | Added automation health read-model + Mods UI surface for per-mod next/last/failure status | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ModViews.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensionAutomationHealthTests.swift` | `03de497` |
 
 ### Remaining prioritized backlog
 
@@ -52,14 +53,15 @@ Date: 2026-02-23
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
-- Surface unified “next run / last run / last failure” across in-app and launchd paths.
+- Phase 1 shipped: per-mod automation health summaries now surface last/next/failure status in the Mods UI.
+- Next step is wiring launchd and scheduler telemetry into a single richer status timeline and explicit failure-recovery affordances.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:48`.
 
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
 1. Draft migration and compatibility plan for consolidating now-bounded process runners into one shared adapter.
-2. Define unified automation observability state contract (next run / last run / last failure).
+2. Extend shipped automation health summary into unified launchd+scheduler status contract.
 
 Exit criteria:
 - Shared policy/process design is reviewed and approved by runtime + UX workstreams.
