@@ -36,6 +36,7 @@ Date: 2026-02-23
 | P2 (kickoff) | Extracted shared extensibility capability policy primitive and wired plan-runner policy through it | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/PlanRunner/PlanRunnerCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityCapabilityPolicyTests.swift` | `7a02738` |
 | P2 | Adopted shared capability policy in extension and native-action permission gates (with regression coverage) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelComputerActionsTests.swift` | `759c6de` |
 | P2 | Extended shared capability policy to skill-install trust checks for untrusted projects | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelSkillsTrustPolicyTests.swift` | `b0e38b2` |
+| P2 | Extended shared capability policy to mod install/update trust checks for untrusted projects | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelModsTrustPolicyTests.swift` | `c345a43` |
 
 ### Remaining prioritized backlog
 
@@ -44,9 +45,9 @@ Date: 2026-02-23
 
 ### P2 (platform evolution and maintainability)
 1. Complete capability-policy rollout to remaining install/runtime surfaces.
-- Shared policy now gates plan-runner, extension hooks/automations, native actions, and project skill installs.
-- Next step is applying policy semantics to mod install/update flows and remaining automation-control affordances.
-- References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift`.
+- Shared policy now gates plan-runner, extension hooks/automations, native actions, project skill installs, and project mod install/update.
+- Next step is applying policy semantics to remaining automation-control affordances.
+- References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`.
 
 2. Unify process execution adapters.
 - Build one common executor abstraction with per-surface limits and structured failure telemetry.
@@ -59,7 +60,7 @@ Date: 2026-02-23
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Complete policy rollout for mods install/update and automation-control edges.
+1. Complete policy rollout for remaining automation-control edges.
 2. Draft migration and compatibility plan for consolidated process execution adapter.
 
 Exit criteria:
