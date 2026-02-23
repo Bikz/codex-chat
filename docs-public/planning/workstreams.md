@@ -11,10 +11,10 @@ The current architecture is modular but still has a few high-contention files. B
 - `apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`: owned by Workstream 2 only.
 - `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppTests.swift`: no new tests here; add stream-specific test files.
 
-2. Add stream-specific extension files for new state or behaviors:
-- `AppModel+RuntimeState.swift` (Workstream 1)
-- `AppModel+UXState.swift` (Workstream 2)
-- `AppModel+ExtensibilityState.swift` (Workstream 3)
+2. Route changes through stream-specific extension surfaces for new state or behaviors:
+- Runtime/Data: `AppModel+Runtime.swift`, `AppModel+RuntimeEvents.swift`, `AppModel+Storage.swift`
+- UX: `AppModel+Search.swift`, `AppModel+VoiceCapture.swift`, view-layer files under `apps/CodexChatApp/Sources/CodexChatApp/`
+- Extensibility: `AppModel+Skills.swift`, `AppModel+Extensions.swift`, `AppModel+ComputerActions.swift`
 
 3. Contract-first change policy:
 - `packages/CodexChatCore` is owned by Workstream 1.
@@ -32,7 +32,7 @@ The current architecture is modular but still has a few high-contention files. B
 - Out of scope:
 1. Visual layout/styling and primary UI ergonomics.
 2. Mods/skills/extensions/computer-action feature expansion.
-- Owned files/dirs (exclusive):
+- Owned files/dirs (primary ownership; shared-worktree coordination required):
 1. `packages/CodexKit/**`
 2. `packages/CodexChatInfra/**`
 3. `packages/CodexChatCore/**`
@@ -76,7 +76,7 @@ The current architecture is modular but still has a few high-contention files. B
 - Out of scope:
 1. Runtime protocol logic and storage schema changes.
 2. Skills/mods/extensions/native action backend behavior.
-- Owned files/dirs (exclusive):
+- Owned files/dirs (primary ownership; shared-worktree coordination required):
 1. `apps/CodexChatHost/**`
 2. `packages/CodexChatUI/**`
 3. `apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`
@@ -127,7 +127,7 @@ The current architecture is modular but still has a few high-contention files. B
 - Out of scope:
 1. Core runtime sharding/mapping/persistence internals.
 2. Generic UI shell/layout concerns outside extensibility surfaces.
-- Owned files/dirs (exclusive):
+- Owned files/dirs (primary ownership; shared-worktree coordination required):
 1. `packages/CodexSkills/**`
 2. `packages/CodexMods/**`
 3. `packages/CodexExtensions/**`
@@ -184,7 +184,7 @@ Legend: `0` = no planned file/dir overlap, `!` = unavoidable shared contract hot
 - Mitigation: Workstream 1 owns contract changes; Workstream 3 opens contract-request PRs first, then rebases.
 
 3. `apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`
-- Mitigation: Workstream 2 is sole editor; Workstream 3 exposes toggles/actions through existing `AppModel` surface.
+- Mitigation: Workstream 2 coordinates first edits; other streams avoid overlapping edits in the same commit window and route feature wiring through `AppModel` surfaces.
 
 4. `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppTests.swift`
 - Mitigation: freeze for new test additions; create stream-specific test files to avoid merge contention.
@@ -197,7 +197,7 @@ Legend: `0` = no planned file/dir overlap, `!` = unavoidable shared contract hot
 3. Team C (Extensibility): sandboxing/automation/tooling specialists; owns stream 3.
 
 ## Recommended Merge Order
-1. Merge contract/decoupling prep (ownership freeze + extension state files).
+1. Merge contract/decoupling prep (ownership guardrails + contention-file coordination).
 2. Merge Workstream 1 foundations first (contracts/repositories/runtime guarantees).
 3. Merge Workstream 3 next (extensibility features against stable contracts).
 4. Merge Workstream 2 last for UX convergence and final cross-stream integration polish.

@@ -5,6 +5,7 @@ actor RuntimePool {
     private enum Constants {
         static let scopedDelimiter = "|"
         static let primaryWorkerID = RuntimePoolWorkerID(0)
+        static let maxConsecutiveWorkerRecoveryFailures = RuntimeRecoveryPolicy.defaultMaxConsecutiveWorkerRecoveryFailures
     }
 
     struct TurnRoute: Hashable, Sendable {
@@ -401,6 +402,10 @@ actor RuntimePool {
     private func markWorkerStarted(_ workerID: RuntimePoolWorkerID) {
         var health = healthByWorkerID[workerID] ?? WorkerHealth()
         health.state = .healthy
+        health.failureCount = Self.nextConsecutiveWorkerFailureCount(
+            previousCount: health.failureCount,
+            didRecover: true
+        )
         health.lastStartAt = Date()
         healthByWorkerID[workerID] = health
     }
@@ -408,7 +413,10 @@ actor RuntimePool {
     private func markWorkerFailed(_ workerID: RuntimePoolWorkerID) {
         var health = healthByWorkerID[workerID] ?? WorkerHealth()
         health.state = .degraded
-        health.failureCount += 1
+        health.failureCount = Self.nextConsecutiveWorkerFailureCount(
+            previousCount: health.failureCount,
+            didRecover: false
+        )
         health.lastFailureAt = Date()
         healthByWorkerID[workerID] = health
     }
@@ -443,8 +451,14 @@ actor RuntimePool {
         }
 
         let failureCount = max(1, healthByWorkerID[workerID]?.failureCount ?? 1)
-        let backoffExponent = min(3, failureCount - 1)
-        let backoffSeconds = UInt64(1 << backoffExponent)
+        guard Self.shouldAttemptWorkerRestart(forFailureCount: failureCount) else {
+            var health = healthByWorkerID[workerID] ?? WorkerHealth()
+            health.state = .degraded
+            healthByWorkerID[workerID] = health
+            return
+        }
+
+        let backoffSeconds = Self.workerRestartBackoffSeconds(forFailureCount: failureCount)
 
         var health = healthByWorkerID[workerID] ?? WorkerHealth()
         health.state = .restarting
@@ -472,6 +486,10 @@ actor RuntimePool {
             try await worker.restart()
             var health = healthByWorkerID[workerID] ?? WorkerHealth()
             health.state = .healthy
+            health.failureCount = Self.nextConsecutiveWorkerFailureCount(
+                previousCount: health.failureCount,
+                didRecover: true
+            )
             health.restartCount += 1
             health.lastStartAt = Date()
             healthByWorkerID[workerID] = health
@@ -674,6 +692,30 @@ actor RuntimePool {
         }
 
         return Constants.primaryWorkerID
+    }
+
+    static func workerRestartBackoffSeconds(forFailureCount failureCount: Int) -> UInt64 {
+        RuntimeRecoveryPolicy.workerRestartBackoffSeconds(forConsecutiveFailureCount: failureCount)
+    }
+
+    static func shouldAttemptWorkerRestart(
+        forFailureCount failureCount: Int,
+        maxConsecutiveFailures: Int = Constants.maxConsecutiveWorkerRecoveryFailures
+    ) -> Bool {
+        RuntimeRecoveryPolicy.shouldAttemptWorkerRestart(
+            forConsecutiveFailureCount: failureCount,
+            maxConsecutiveFailures: maxConsecutiveFailures
+        )
+    }
+
+    static func nextConsecutiveWorkerFailureCount(
+        previousCount: Int,
+        didRecover: Bool
+    ) -> Int {
+        RuntimeRecoveryPolicy.nextConsecutiveWorkerFailureCount(
+            previousCount: previousCount,
+            didRecover: didRecover
+        )
     }
 
     private static func deterministicHash(for localThreadID: UUID) -> UInt64 {

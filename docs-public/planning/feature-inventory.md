@@ -41,13 +41,13 @@ Notes:
 | Contributor CLI (doctor/smoke/repro/mod) | Deterministic verification and reproducibility | `CodexChatCLI` commands | `CodexChatCLICommandParser.swift`, `CodexChatBootstrap.swift`, `CodexChatCLIModRunner.swift`, `tests/fixtures/*` | Runtime bootstrap + fixtures + mod install service | No user chat data; fixture/test artifacts | Drift between CLI verification and GUI behavior |
 | Build/Release/CI Capability | Reliable delivery and quality gates | `make` targets + GH workflows | `Makefile`, `.github/workflows/ci.yml`, `.github/workflows/release-dmg.yml`, `scripts/*` | Swift toolchain, pnpm, signing/notarization pipeline | Build artifacts, release DMGs | Broken release pipeline despite local green tests |
 
-## Test-Inferred Assumptions
-1. Assumption: Runtime thread mappings are recreated and retried once when stale IDs are detected.
-   - Evidence: runtime mapping tests and dispatch fallback paths (`ActiveTurnContextMappingTests`, runtime dispatch logic).
+## Behavior Notes and Remaining Assumptions
+1. Runtime thread stale-ID recovery is explicit behavior: stale mappings are recreated and retried once.
+   - Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift`.
 2. Assumption: Approval queue continuity is thread-scoped first, with explicit handling for unscoped requests.
    - Evidence: `SidebarSelectionTests`, approval queue tests in `CodexChatAppTests`.
-3. Assumption: Archive checkpointing is intended to be append-safe and update-safe across partial turn lifecycle.
-   - Evidence: `ChatArchiveStoreCheckpointTests`.
+3. Archive checkpointing behavior is explicit and directly tested for begin/finalize/fail and failure cleanup paths.
+   - Evidence: `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift`.
 4. Assumption: General project “draft chat” behavior is a deliberate UX invariant to avoid empty-canvas dead ends.
    - Evidence: `GeneralDraftThreadFallbackTests`, onboarding completion tests.
 5. Assumption: Shell workspace state is intentionally non-persistent across fresh model instances.

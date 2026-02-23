@@ -169,7 +169,7 @@ public extension CodexRuntime {
         let type = accountObject["type"]?.stringValue ?? "unknown"
         let summary = RuntimeAccountSummary(
             type: type,
-            name: accountObject["name"]?.stringValue,
+            name: accountObject["name"]?.stringValue ?? accountObject["fullName"]?.stringValue,
             email: accountObject["email"]?.stringValue,
             planType: accountObject["planType"]?.stringValue
         )
