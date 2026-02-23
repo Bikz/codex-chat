@@ -611,8 +611,7 @@ struct InstallModSheet: View {
                 .foregroundStyle(.secondary)
         case .loading:
             HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
+                ActivityIndicatorGlyph(size: .small)
                 Text("Reviewing package…")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -43,7 +43,7 @@ public struct LoadingStateView: View {
 
     public var body: some View {
         VStack(spacing: 12) {
-            ProgressView()
+            ActivityIndicatorGlyph(size: .regular)
             Text(title)
                 .foregroundStyle(.secondary)
                 .opacity(Self.pulsingOpacity(isPulsing: isPulsing, reduceMotion: reduceMotion))

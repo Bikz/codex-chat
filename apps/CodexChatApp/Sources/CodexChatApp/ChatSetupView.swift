@@ -109,8 +109,7 @@ struct OnboardingView: View {
         return SetupCard(title: "Codex Runtime", subtitle: statusText) {
             if model.runtimeStatus == .starting {
                 HStack(spacing: 10) {
-                    ProgressView()
-                        .controlSize(.small)
+                    ActivityIndicatorGlyph(size: .small)
                     Text("Connecting to the local runtime…")
                         .font(.callout)
                         .foregroundStyle(.secondary)

@@ -23,8 +23,7 @@ struct NewProjectSheet: View {
 
             if isBusy {
                 HStack(spacing: 10) {
-                    ProgressView()
-                        .controlSize(.small)
+                    ActivityIndicatorGlyph(size: .small)
                     Text("Working…")
                         .font(.callout)
                         .foregroundStyle(.secondary)

@@ -430,8 +430,7 @@ struct SidebarView: View {
             }
         } else if projectThreadLoadInFlightIDs.contains(project.id) {
             HStack(spacing: SidebarLayoutSpec.iconTextGap) {
-                ProgressView()
-                    .controlSize(.small)
+                ActivityIndicatorGlyph(size: .small)
                     .frame(minWidth: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 Text("Loading…")
                     .font(sidebarMetaFont)
@@ -696,8 +695,7 @@ struct SidebarView: View {
                 .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 .accessibilityLabel("Awaiting input")
         } else if model.isThreadWorking(threadID) {
-            ProgressView()
-                .controlSize(.small)
+            ActivityIndicatorGlyph(size: .small)
                 .frame(minWidth: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 .accessibilityLabel("Working")
         } else if model.isThreadUnread(threadID) {
