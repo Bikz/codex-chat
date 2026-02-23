@@ -766,7 +766,6 @@ extension AppModel {
     }
 
     private func applyArtifacts(_ artifacts: [ExtensionArtifactInstruction], projectPath: String) {
-        let rootURL = URL(fileURLWithPath: projectPath, isDirectory: true).standardizedFileURL
         let fileManager = FileManager.default
 
         for artifact in artifacts {
@@ -774,9 +773,10 @@ extension AppModel {
             let relative = artifact.path.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !relative.isEmpty else { continue }
 
-            let destinationURL = URL(fileURLWithPath: relative, relativeTo: rootURL).standardizedFileURL
-            let destinationPath = destinationURL.path
-            guard destinationPath.hasPrefix(rootURL.path + "/") else {
+            guard let destinationURL = ProjectPathSafety.destinationURL(
+                for: relative,
+                projectPath: projectPath
+            ) else {
                 appendLog(.warning, "Skipped extension artifact outside project root: \(relative)")
                 continue
             }
