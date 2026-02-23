@@ -51,6 +51,53 @@ final class PersistenceBatcherTests: XCTestCase {
         }
     }
 
+    func testBatchedJobsFlushAtThresholdWithoutWaitingForTimer() async throws {
+        let recorder = PersistenceBatchRecorder()
+        let batcher = PersistenceBatcher { jobs in
+            await recorder.record(jobs)
+        }
+
+        for _ in 0 ..< 8 {
+            await batcher.enqueue(
+                context: sampleContext(threadID: UUID()),
+                completion: sampleCompletion(status: "completed"),
+                durability: .batched
+            )
+        }
+
+        try await eventually(timeoutSeconds: 0.5) {
+            await recorder.totalJobs() == 8
+        }
+        let batchCount = await recorder.batchCount()
+        XCTAssertEqual(batchCount, 1)
+    }
+
+    func testShutdownFlushesPendingJobsImmediately() async throws {
+        let recorder = PersistenceBatchRecorder()
+        let batcher = PersistenceBatcher { jobs in
+            await recorder.record(jobs)
+        }
+
+        await batcher.enqueue(
+            context: sampleContext(threadID: UUID()),
+            completion: sampleCompletion(status: "completed"),
+            durability: .batched
+        )
+        await batcher.enqueue(
+            context: sampleContext(threadID: UUID()),
+            completion: sampleCompletion(status: "completed"),
+            durability: .batched
+        )
+
+        await batcher.shutdown()
+
+        try await eventually(timeoutSeconds: 0.5) {
+            await recorder.totalJobs() == 2
+        }
+        let batchCount = await recorder.batchCount()
+        XCTAssertEqual(batchCount, 1)
+    }
+
     private func sampleContext(threadID: UUID) -> AppModel.ActiveTurnContext {
         AppModel.ActiveTurnContext(
             localTurnID: UUID(),
