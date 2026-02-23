@@ -21,6 +21,24 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
         XCTAssertEqual(state.account?.planType, "pro")
     }
 
+    func testReadAccountFallsBackToLegacyFullNameField() async throws {
+        let fakeCodexPath = try Self.makeAccountFixtureExecutable(
+            account: [
+                "type": "chatgpt",
+                "fullName": "Legacy Full Name",
+                "email": "legacy@example.com",
+                "planType": "plus",
+            ]
+        )
+        let runtime = CodexRuntime(executableResolver: { fakeCodexPath })
+        defer { Task { await runtime.stop() } }
+
+        let state = try await runtime.readAccount(refreshToken: true)
+        XCTAssertEqual(state.account?.name, "Legacy Full Name")
+        XCTAssertEqual(state.account?.email, "legacy@example.com")
+        XCTAssertEqual(state.account?.planType, "plus")
+    }
+
     func testLegacyFixtureReportsNoCapabilities() async throws {
         let fakeCodexPath = try Self.resolveFakeCodexPath()
         guard FileManager.default.isExecutableFile(atPath: fakeCodexPath) else {
