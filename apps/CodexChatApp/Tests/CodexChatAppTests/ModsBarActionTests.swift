@@ -546,6 +546,46 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(model.hasModsBarQuickSwitchChoices)
     }
 
+    func testToggleModsBarOpensThreadInPeekModeByDefault() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.selectedThreadID = threadID
+
+        model.toggleModsBar()
+
+        XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .peek)
+        XCTAssertEqual(model.extensionModsBarPresentationModeByThreadID[threadID], .peek)
+    }
+
+    func testCycleModsBarPresentationModeOpensHiddenModsBarInPeekMode() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.selectedThreadID = UUID()
+
+        model.cycleModsBarPresentationMode()
+
+        XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .peek)
+    }
+
+    func testCycleModsBarPresentationModeLoopsRailPeekExpanded() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.selectedThreadID = UUID()
+        model.setModsBarPresentationMode(.rail)
+
+        XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .rail)
+
+        model.cycleModsBarPresentationMode()
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .peek)
+
+        model.cycleModsBarPresentationMode()
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .expanded)
+
+        model.cycleModsBarPresentationMode()
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .rail)
+    }
+
     private func makeTempDirectory(prefix: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)

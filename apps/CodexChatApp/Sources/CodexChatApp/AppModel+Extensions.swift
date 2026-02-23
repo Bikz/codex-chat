@@ -61,7 +61,37 @@ extension AppModel {
         guard let selectedThreadID else { return }
         let next = !(extensionModsBarVisibilityByThreadID[selectedThreadID] ?? false)
         extensionModsBarVisibilityByThreadID[selectedThreadID] = next
+        if next, extensionModsBarPresentationModeByThreadID[selectedThreadID] == nil {
+            extensionModsBarPresentationModeByThreadID[selectedThreadID] = .peek
+        }
         Task { try? await persistModsBarVisibilityPreference() }
+    }
+
+    func setModsBarPresentationMode(_ mode: ModsBarPresentationMode) {
+        guard let selectedThreadID else { return }
+        extensionModsBarPresentationModeByThreadID[selectedThreadID] = mode
+        if extensionModsBarVisibilityByThreadID[selectedThreadID] != true {
+            extensionModsBarVisibilityByThreadID[selectedThreadID] = true
+            Task { try? await persistModsBarVisibilityPreference() }
+        }
+    }
+
+    func cycleModsBarPresentationMode() {
+        guard selectedThreadID != nil else { return }
+        guard isModsBarVisibleForSelectedThread else {
+            setModsBarPresentationMode(.peek)
+            return
+        }
+
+        let nextMode: ModsBarPresentationMode = switch selectedModsBarPresentationMode {
+        case .rail:
+            .peek
+        case .peek:
+            .expanded
+        case .expanded:
+            .rail
+        }
+        setModsBarPresentationMode(nextMode)
     }
 
     func restoreModsBarVisibility() async {
@@ -839,6 +869,9 @@ extension AppModel {
                extensionModsBarVisibilityByThreadID[threadID] != true
             {
                 extensionModsBarVisibilityByThreadID[threadID] = true
+                if extensionModsBarPresentationModeByThreadID[threadID] == nil {
+                    extensionModsBarPresentationModeByThreadID[threadID] = .peek
+                }
                 try? await persistModsBarVisibilityPreference()
             }
         }

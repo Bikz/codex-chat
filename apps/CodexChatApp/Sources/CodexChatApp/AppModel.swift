@@ -700,6 +700,23 @@ final class AppModel: ObservableObject {
         case failed(String)
     }
 
+    enum ModsBarPresentationMode: String, CaseIterable, Codable, Sendable {
+        case rail
+        case peek
+        case expanded
+
+        var symbolName: String {
+            switch self {
+            case .rail:
+                "sidebar.trailing"
+            case .peek:
+                "rectangle.righthalf.inset.filled"
+            case .expanded:
+                "rectangle.split.3x1"
+            }
+        }
+    }
+
     enum RuntimeIssue: Equatable {
         case installCodex
         case recoverable(String)
@@ -904,6 +921,7 @@ final class AppModel: ObservableObject {
     @Published var extensionModsBarByThreadID: [UUID: ExtensionModsBarState] = [:]
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
     @Published var extensionModsBarVisibilityByThreadID: [UUID: Bool] = [:]
+    @Published var extensionModsBarPresentationModeByThreadID: [UUID: ModsBarPresentationMode] = [:]
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
     @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
     @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []
@@ -1502,6 +1520,11 @@ final class AppModel: ObservableObject {
     var isModsBarVisibleForSelectedThread: Bool {
         guard let selectedThreadID else { return false }
         return extensionModsBarVisibilityByThreadID[selectedThreadID, default: false]
+    }
+
+    var selectedModsBarPresentationMode: ModsBarPresentationMode {
+        guard let selectedThreadID else { return .peek }
+        return extensionModsBarPresentationModeByThreadID[selectedThreadID, default: .peek]
     }
 
     var canToggleModsBarForSelectedThread: Bool {
