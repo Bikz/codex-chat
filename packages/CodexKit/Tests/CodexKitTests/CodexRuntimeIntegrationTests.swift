@@ -137,8 +137,9 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
                 switch event {
                 case let .action(action) where action.method == "runtime/stderr":
                     lines.append(action.detail)
-                case .turnCompleted:
-                    return lines
+                    if lines.count == 2 {
+                        return lines
+                    }
                 default:
                     continue
                 }
