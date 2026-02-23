@@ -531,12 +531,24 @@ extension AppModel {
     }
 
     func refreshGeneralThreads(generalProjectID: UUID? = nil) async throws {
-        guard let threadRepository else { return }
+        guard let threadRepository else {
+            generalThreadsState = .failed("Thread repository is unavailable.")
+            return
+        }
         let projectID = generalProjectID ?? generalProject?.id
-        guard let projectID else { return }
+        guard let projectID else {
+            generalThreadsState = .loaded([])
+            return
+        }
 
-        let threads = try await threadRepository.listThreads(projectID: projectID)
-        generalThreadsState = .loaded(threads)
+        generalThreadsState = .loading
+        do {
+            let threads = try await threadRepository.listThreads(projectID: projectID)
+            generalThreadsState = .loaded(threads)
+        } catch {
+            generalThreadsState = .failed(error.localizedDescription)
+            throw error
+        }
     }
 
     func toggleProjectExpanded(_ projectID: UUID) {
