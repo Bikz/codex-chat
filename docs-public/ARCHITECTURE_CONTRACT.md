@@ -1,5 +1,8 @@
 # Architecture Contract
 
+Related contract:
+- Runtime/data reliability invariants: `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md`
+
 ## Canonical Entry Points
 
 - `apps/CodexChatHost` is the canonical GUI app and release source.

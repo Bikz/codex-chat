@@ -42,8 +42,8 @@ Notes:
 | Build/Release/CI Capability | Reliable delivery and quality gates | `make` targets + GH workflows | `Makefile`, `.github/workflows/ci.yml`, `.github/workflows/release-dmg.yml`, `scripts/*` | Swift toolchain, pnpm, signing/notarization pipeline | Build artifacts, release DMGs | Broken release pipeline despite local green tests |
 
 ## Test-Inferred Assumptions
-1. Assumption: Runtime thread mappings are recreated and retried once when stale IDs are detected.
-   - Evidence: runtime mapping tests and dispatch fallback paths (`ActiveTurnContextMappingTests`, runtime dispatch logic).
+1. Runtime thread stale-ID recovery is explicit behavior (not an assumption): stale mappings are recreated and retried once.
+   - Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift`.
 2. Assumption: Approval queue continuity is thread-scoped first, with explicit handling for unscoped requests.
    - Evidence: `SidebarSelectionTests`, approval queue tests in `CodexChatAppTests`.
 3. Assumption: Archive checkpointing is intended to be append-safe and update-safe across partial turn lifecycle.
