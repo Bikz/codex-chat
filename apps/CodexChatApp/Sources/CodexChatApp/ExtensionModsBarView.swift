@@ -42,16 +42,24 @@ struct ExtensionModsBarView: View {
 
                 if !showsCloseToRailControl, model.hasModsBarQuickSwitchChoices {
                     Menu {
-                        ForEach(model.modsBarQuickSwitchOptions) { option in
-                            Button {
-                                model.activateModsBarQuickSwitchOption(option)
-                            } label: {
-                                HStack {
-                                    Text("\(option.mod.definition.manifest.name) (\(option.scope.label))")
-                                    if option.isSelected {
-                                        Spacer(minLength: 6)
-                                        Image(systemName: "checkmark")
+                        ForEach(model.modsBarQuickSwitchSections) { section in
+                            Section(section.title) {
+                                ForEach(section.options) { option in
+                                    Button {
+                                        model.activateModsBarQuickSwitchOption(option)
+                                    } label: {
+                                        HStack {
+                                            Label(
+                                                model.modsBarQuickSwitchTitle(for: option),
+                                                systemImage: model.modsBarQuickSwitchSymbolName(for: option)
+                                            )
+                                            if option.isSelected {
+                                                Spacer(minLength: 6)
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
                                     }
+                                    .help(model.modsBarQuickSwitchTooltip(for: option))
                                 }
                             }
                         }
@@ -61,7 +69,7 @@ struct ExtensionModsBarView: View {
                             .frame(width: 22, height: 22)
                     }
                     .menuStyle(.borderlessButton)
-                    .help("Switch active mod")
+                    .help(selectedQuickSwitchHelpText)
                     .accessibilityLabel("Switch active mod")
                 }
 
@@ -166,6 +174,13 @@ struct ExtensionModsBarView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Extension modsBar")
+    }
+
+    private var selectedQuickSwitchHelpText: String {
+        if let selected = model.selectedModsBarQuickSwitchOption {
+            return "Switch active mod (currently \(model.modsBarQuickSwitchTooltip(for: selected)))"
+        }
+        return "Switch active mod"
     }
 }
 

@@ -64,6 +64,7 @@ Legacy keys are rejected:
 - reopening from `hidden` restores the last open non-rail mode (`peek` or `expanded`)
 - `rail` mode is an icon launcher strip intended for quick extension switching
 - duplicate entries are deduplicated in `rail` when the same mod id is installed in both project/global roots
+- quick switch entries are grouped by `Project`/`Global` scope with icon identity and per-entry tooltips
 - output may be `thread`, `project`, or `global` scope
 - output may include typed action buttons (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`, `native.action`)
 

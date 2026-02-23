@@ -625,6 +625,30 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(model.hasModsBarQuickSwitchChoices)
     }
 
+    func testModsBarQuickSwitchSectionsGroupByScopeOrder() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectMod = makeModsBarMod(id: "acme.project", name: "Project Prompt Book", scope: .project, directorySuffix: "project")
+        let globalMod = makeModsBarMod(id: "acme.global", name: "Global Notes", scope: .global, directorySuffix: "global")
+
+        model.modsState = .loaded(
+            AppModel.ModsSurfaceModel(
+                globalMods: [globalMod],
+                projectMods: [projectMod],
+                selectedGlobalModPath: globalMod.directoryPath,
+                selectedProjectModPath: nil,
+                enabledGlobalModIDs: [globalMod.definition.manifest.id],
+                enabledProjectModIDs: [projectMod.definition.manifest.id]
+            )
+        )
+
+        let sections = model.modsBarQuickSwitchSections
+        XCTAssertEqual(sections.map(\.scope), [.project, .global])
+        XCTAssertEqual(sections[0].options.count, 1)
+        XCTAssertEqual(sections[1].options.count, 1)
+        XCTAssertEqual(sections[0].options[0].mod.definition.manifest.id, "acme.project")
+        XCTAssertEqual(sections[1].options[0].mod.definition.manifest.id, "acme.global")
+    }
+
     func testModsBarQuickSwitchDeduplicatesSameModIDAcrossScopes() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let modID = "acme.shared-mod"
@@ -647,6 +671,8 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(options[0].mod.definition.manifest.id, modID)
         XCTAssertEqual(options[0].scope, .global)
         XCTAssertTrue(options[0].isSelected)
+        XCTAssertEqual(model.modsBarQuickSwitchSections.map(\.scope), [.global])
+        XCTAssertEqual(model.selectedModsBarQuickSwitchOption?.mod.definition.manifest.id, modID)
     }
 
     func testSyncActiveExtensionsIncludesMultipleEnabledGlobalMods() {

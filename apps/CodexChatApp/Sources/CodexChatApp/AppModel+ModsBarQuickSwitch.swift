@@ -71,6 +71,19 @@ extension AppModel {
         modsBarQuickSwitchOptions.count > 1
     }
 
+    var modsBarQuickSwitchSections: [ModsBarQuickSwitchSection] {
+        let grouped = Dictionary(grouping: modsBarQuickSwitchOptions, by: \.scope)
+        let orderedScopes: [ModsBarQuickSwitchOption.Scope] = [.project, .global]
+        return orderedScopes.compactMap { scope in
+            guard let options = grouped[scope], !options.isEmpty else { return nil }
+            return ModsBarQuickSwitchSection(scope: scope, options: options)
+        }
+    }
+
+    var selectedModsBarQuickSwitchOption: ModsBarQuickSwitchOption? {
+        modsBarQuickSwitchOptions.first(where: \.isSelected)
+    }
+
     func modsBarIconPresetSymbols() -> [String] {
         [
             "puzzlepiece.extension",

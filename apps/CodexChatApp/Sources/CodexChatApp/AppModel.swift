@@ -511,6 +511,14 @@ final class AppModel: ObservableObject {
         let isSelected: Bool
     }
 
+    struct ModsBarQuickSwitchSection: Identifiable, Hashable, Sendable {
+        let scope: ModsBarQuickSwitchOption.Scope
+        let options: [ModsBarQuickSwitchOption]
+
+        var id: ModsBarQuickSwitchOption.Scope { scope }
+        var title: String { scope.label }
+    }
+
     struct PendingModReview: Identifiable, Hashable {
         let id: UUID
         let threadID: UUID
