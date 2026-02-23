@@ -5,6 +5,7 @@ actor RuntimePool {
     private enum Constants {
         static let scopedDelimiter = "|"
         static let primaryWorkerID = RuntimePoolWorkerID(0)
+        static let maxConsecutiveWorkerRecoveryFailures = 4
     }
 
     struct TurnRoute: Hashable, Sendable {
@@ -401,6 +402,7 @@ actor RuntimePool {
     private func markWorkerStarted(_ workerID: RuntimePoolWorkerID) {
         var health = healthByWorkerID[workerID] ?? WorkerHealth()
         health.state = .healthy
+        health.failureCount = 0
         health.lastStartAt = Date()
         healthByWorkerID[workerID] = health
     }
@@ -443,8 +445,14 @@ actor RuntimePool {
         }
 
         let failureCount = max(1, healthByWorkerID[workerID]?.failureCount ?? 1)
-        let backoffExponent = min(3, failureCount - 1)
-        let backoffSeconds = UInt64(1 << backoffExponent)
+        guard Self.shouldAttemptWorkerRestart(forFailureCount: failureCount) else {
+            var health = healthByWorkerID[workerID] ?? WorkerHealth()
+            health.state = .degraded
+            healthByWorkerID[workerID] = health
+            return
+        }
+
+        let backoffSeconds = Self.workerRestartBackoffSeconds(forFailureCount: failureCount)
 
         var health = healthByWorkerID[workerID] ?? WorkerHealth()
         health.state = .restarting
@@ -674,6 +682,19 @@ actor RuntimePool {
         }
 
         return Constants.primaryWorkerID
+    }
+
+    static func workerRestartBackoffSeconds(forFailureCount failureCount: Int) -> UInt64 {
+        let normalizedFailureCount = max(1, failureCount)
+        let backoffExponent = min(3, normalizedFailureCount - 1)
+        return UInt64(1 << backoffExponent)
+    }
+
+    static func shouldAttemptWorkerRestart(
+        forFailureCount failureCount: Int,
+        maxConsecutiveFailures: Int = Constants.maxConsecutiveWorkerRecoveryFailures
+    ) -> Bool {
+        max(1, failureCount) <= max(1, maxConsecutiveFailures)
     }
 
     private static func deterministicHash(for localThreadID: UUID) -> UInt64 {

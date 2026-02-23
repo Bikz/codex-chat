@@ -111,4 +111,18 @@ final class RuntimePoolTests: XCTestCase {
             }
         }
     }
+
+    func testWorkerRestartBackoffSecondsGrowsAndCapsAtEightSeconds() {
+        XCTAssertEqual(RuntimePool.workerRestartBackoffSeconds(forFailureCount: 1), 1)
+        XCTAssertEqual(RuntimePool.workerRestartBackoffSeconds(forFailureCount: 2), 2)
+        XCTAssertEqual(RuntimePool.workerRestartBackoffSeconds(forFailureCount: 3), 4)
+        XCTAssertEqual(RuntimePool.workerRestartBackoffSeconds(forFailureCount: 4), 8)
+        XCTAssertEqual(RuntimePool.workerRestartBackoffSeconds(forFailureCount: 9), 8)
+    }
+
+    func testWorkerRestartAttemptsAreBoundedByConsecutiveFailureCount() {
+        XCTAssertTrue(RuntimePool.shouldAttemptWorkerRestart(forFailureCount: 1))
+        XCTAssertTrue(RuntimePool.shouldAttemptWorkerRestart(forFailureCount: 4))
+        XCTAssertFalse(RuntimePool.shouldAttemptWorkerRestart(forFailureCount: 5))
+    }
 }
