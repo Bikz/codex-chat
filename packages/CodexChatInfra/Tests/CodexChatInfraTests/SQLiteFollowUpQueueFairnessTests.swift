@@ -63,7 +63,7 @@ final class SQLiteFollowUpQueueFairnessTests: XCTestCase {
         XCTAssertEqual(batch.count, 8)
         XCTAssertEqual(batch.first?.threadID, preferredThread.id)
         XCTAssertEqual(Set(batch.map(\.threadID)).count, 8)
-        XCTAssertEqual(batch.filter { $0.threadID == preferredThread.id }.count, 1)
+        XCTAssertEqual(batch.count(where: { $0.threadID == preferredThread.id }), 1)
     }
 
     func testRepeatedBatchesDoNotStarveNonPreferredThreads() async throws {
@@ -127,7 +127,7 @@ final class SQLiteFollowUpQueueFairnessTests: XCTestCase {
 
             XCTAssertEqual(batch.count, 4)
             XCTAssertEqual(Set(batch.map(\.threadID)).count, 4)
-            XCTAssertEqual(batch.filter { $0.threadID == preferredThread.id }.count, 1)
+            XCTAssertEqual(batch.count(where: { $0.threadID == preferredThread.id }), 1)
 
             for candidate in batch where candidate.threadID != preferredThread.id {
                 servedSiblingThreadIDs.insert(candidate.threadID)
