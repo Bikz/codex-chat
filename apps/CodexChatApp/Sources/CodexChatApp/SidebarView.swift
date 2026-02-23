@@ -695,9 +695,10 @@ struct SidebarView: View {
                 .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 .accessibilityLabel("Awaiting input")
         } else if model.isThreadWorking(threadID) {
-            ActivityIndicatorGlyph(size: .small)
-                .frame(minWidth: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
-                .accessibilityLabel("Working")
+            // Working state is represented by the trailing meta spinner for both project and general chats.
+            Color.clear
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, height: 8, alignment: .leading)
+                .accessibilityHidden(true)
         } else if model.isThreadUnread(threadID) {
             Circle()
                 .fill(Color(hex: tokens.palette.accentHex).opacity(0.9))
