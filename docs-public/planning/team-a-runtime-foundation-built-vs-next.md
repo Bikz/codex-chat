@@ -19,7 +19,7 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Worker-level recovery boundedness | RuntimePool has consecutive-failure cap and reset-on-recovery semantics. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:454`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:701`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129` |
 | RuntimePool repeated degradation/recovery coverage | Non-primary worker crash/restart behavior is tested across repeated cycles and post-recovery routing. | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171` |
 | Approval continuity | Pending approvals reset with explicit UX messaging on communication failure and restart. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:884`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeApprovalContinuityTests.swift:8`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:306` |
-| Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial failures and crash-leftover temp artifacts. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` |
+| Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial, replace-boundary failure, and crash-leftover temp artifacts. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` |
 | Completion persistence pressure handling | Batcher threshold, shutdown, and max-pending spill are directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` |
 | Runtime option compatibility fallback | Retry-without-turn-options heuristics are codified and directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:671`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7` |
 | Runtime/data reliability contract | Dedicated runtime/data invariants contract is published and cross-linked from architecture and contributor docs. | `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:1`, `docs-public/ARCHITECTURE_CONTRACT.md:4`, `AGENTS.md:46` |
@@ -28,18 +28,15 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 
 ### P0
 
-1. Add deterministic crash-boundary durability harness for transcript writes around `replaceItemAt`.
-Evidence gap: current tests cover permission denial and stale temp artifacts, but do not simulate abrupt interruption during the replacement boundary (`apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`).
-
-### P1
-
 1. Add fairness/starvation regression coverage for follow-up auto-drain under high thread fan-out.
 Evidence gap: follow-up logic exists, but targeted high-fan-out fairness tests are missing (`apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`).
 
-2. Publish storage repair operator runbook for codex-home normalization/quarantine outcomes.
+### P1
+
+1. Publish storage repair operator runbook for codex-home normalization/quarantine outcomes.
 Evidence gap: repair logic is implemented, but there is no dedicated troubleshooting runbook (`apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`).
 
-3. Reconcile `workstreams.md` ownership language with active multi-agent collaboration contract.
+2. Reconcile `workstreams.md` ownership language with active multi-agent collaboration contract.
 Evidence gap: stream ownership is documented as exclusive in places that conflict with current shared-worktree process (`docs-public/planning/workstreams.md:39`, `AGENTS.md:92`).
 
 ### P2
@@ -54,12 +51,11 @@ Evidence seed: fallback behavior currently lives in app layer dispatch path (`ap
 
 ### Day 0-30
 
-1. Land deterministic crash-boundary harness for transcript replacement path.
-2. Add first pass follow-up fairness/starvation load tests.
-3. Update `workstreams.md` ownership language and stale prep-file references.
+1. Add first pass follow-up fairness/starvation load tests.
+2. Update `workstreams.md` ownership language and stale prep-file references.
+3. Draft storage repair operator runbook skeleton.
 
 Dependencies:
-- Existing transcript write seam and checkpoint tests: `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`.
 - Existing follow-up scheduler flow: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`.
 
 ### Day 31-60
@@ -69,7 +65,7 @@ Dependencies:
 3. Add shared acceptance criteria snippets to planning docs referencing reliability contract.
 
 Dependencies:
-- P0 crash-boundary baseline in place.
+- P0 follow-up fairness baseline in place.
 - Reliability contract remains canonical (`docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:1`).
 
 ### Day 61-90

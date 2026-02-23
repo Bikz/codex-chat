@@ -98,6 +98,7 @@ Primary implementation surfaces:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101`
 - Checkpoint durability + temp cleanup:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`
+  - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`
   - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:299`
   - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362`
 - Runtime degradation behavior on checkpoint begin failure:
