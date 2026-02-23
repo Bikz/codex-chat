@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ShellWorkspaceDrawer: View {
     @ObservedObject var model: AppModel
+    @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -131,22 +132,22 @@ struct ShellWorkspaceDrawer: View {
     }
 
     private var shellSurfaceColor: Color {
-        colorScheme == .dark ? .black : .white
+        Color(hex: tokens.palette.panelHex)
     }
 
     private var borderColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+        Color.primary.opacity(tokens.surfaces.hairlineOpacity * (colorScheme == .dark ? 1.4 : 1.1))
     }
 
     private var iconBackgroundColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04)
+        Color.primary.opacity(tokens.surfaces.baseOpacity * 1.2)
     }
 
     private var selectedIconBackgroundColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.10)
+        Color.primary.opacity(tokens.surfaces.activeOpacity * 1.05)
     }
 
     private var selectedIconColor: Color {
-        colorScheme == .dark ? .white : .black
+        Color.primary.opacity(0.92)
     }
 }

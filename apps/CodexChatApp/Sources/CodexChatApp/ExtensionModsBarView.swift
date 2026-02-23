@@ -310,8 +310,8 @@ private struct PromptBookInlineEditor: View {
                 .padding(10)
                 .tokenCard(style: .panel, radius: tokens.radius.small, strokeOpacity: 0.06)
 
-                ForEach(Array(prompts.indices), id: \.self) { index in
-                    promptCard(index: index)
+                ForEach(prompts) { prompt in
+                    promptCard(promptID: prompt.id)
                 }
             }
             .padding(.bottom, tokens.spacing.small)
@@ -332,22 +332,16 @@ private struct PromptBookInlineEditor: View {
         newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || prompts.count >= maxPrompts
     }
 
-    private func promptCard(index: Int) -> some View {
+    private func promptCard(promptID: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField(
                 "Prompt title",
-                text: Binding(
-                    get: { prompts[index].title },
-                    set: { prompts[index].title = $0 }
-                )
+                text: promptTitleBinding(promptID: promptID)
             )
             .textFieldStyle(.roundedBorder)
 
             TextEditor(
-                text: Binding(
-                    get: { prompts[index].text },
-                    set: { prompts[index].text = $0 }
-                )
+                text: promptTextBinding(promptID: promptID)
             )
             .font(.body)
             .frame(minHeight: 90)
@@ -363,13 +357,13 @@ private struct PromptBookInlineEditor: View {
 
             HStack(spacing: 8) {
                 Button("Send") {
-                    sendPrompt(at: index)
+                    sendPrompt(promptID: promptID)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
                 Button("Save") {
-                    savePrompt(at: index)
+                    savePrompt(promptID: promptID)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -377,7 +371,7 @@ private struct PromptBookInlineEditor: View {
                 Spacer(minLength: 0)
 
                 Button("Delete", role: .destructive) {
-                    deletePrompt(at: index)
+                    deletePrompt(promptID: promptID)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -398,25 +392,55 @@ private struct PromptBookInlineEditor: View {
         scheduleRefreshFromModel()
     }
 
-    private func savePrompt(at index: Int) {
-        guard prompts.indices.contains(index) else { return }
+    private func savePrompt(promptID: String) {
+        guard let index = promptIndex(for: promptID) else { return }
         let prompt = prompts[index]
         model.upsertPromptBookEntryInline(index: index, title: prompt.title, text: prompt.text)
         scheduleRefreshFromModel()
     }
 
-    private func deletePrompt(at index: Int) {
-        guard prompts.indices.contains(index) else { return }
+    private func deletePrompt(promptID: String) {
+        guard let index = promptIndex(for: promptID) else { return }
         model.deletePromptBookEntryInline(index: index)
         scheduleRefreshFromModel()
     }
 
-    private func sendPrompt(at index: Int) {
-        guard prompts.indices.contains(index) else { return }
+    private func sendPrompt(promptID: String) {
+        guard let index = promptIndex(for: promptID) else { return }
         let text = prompts[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         model.composerText = text
         model.sendMessage()
+    }
+
+    private func promptTitleBinding(promptID: String) -> Binding<String> {
+        Binding(
+            get: {
+                guard let index = promptIndex(for: promptID) else { return "" }
+                return prompts[index].title
+            },
+            set: { newValue in
+                guard let index = promptIndex(for: promptID) else { return }
+                prompts[index].title = newValue
+            }
+        )
+    }
+
+    private func promptTextBinding(promptID: String) -> Binding<String> {
+        Binding(
+            get: {
+                guard let index = promptIndex(for: promptID) else { return "" }
+                return prompts[index].text
+            },
+            set: { newValue in
+                guard let index = promptIndex(for: promptID) else { return }
+                prompts[index].text = newValue
+            }
+        )
+    }
+
+    private func promptIndex(for promptID: String) -> Int? {
+        prompts.firstIndex(where: { $0.id == promptID })
     }
 
     private func reloadPrompts(from entries: [AppModel.PromptBookEntry]) {

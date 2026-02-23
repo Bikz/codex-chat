@@ -242,25 +242,36 @@ enum MarkdownMessageProcessor {
 struct MarkdownMessageView: View {
     @Environment(\.designTokens) private var tokens
 
+    struct IndexedSegment: Identifiable, Hashable {
+        let id: Int
+        let segment: MarkdownMessageSegment
+    }
+
     let text: String
     let allowsExternalContent: Bool
+    private let safetyPolicy: MarkdownSafetyPolicy
+    private let indexedSegments: [IndexedSegment]
 
-    private var safetyPolicy: MarkdownSafetyPolicy {
-        allowsExternalContent ? .trusted : .untrusted
+    init(text: String, allowsExternalContent: Bool) {
+        self.text = text
+        self.allowsExternalContent = allowsExternalContent
+        let policy: MarkdownSafetyPolicy = allowsExternalContent ? .trusted : .untrusted
+        safetyPolicy = policy
+        indexedSegments = Self.buildIndexedSegments(text: text, policy: policy)
     }
 
-    private var renderedText: String {
-        MarkdownMessageProcessor.sanitize(text, policy: safetyPolicy)
-    }
-
-    private var segments: [MarkdownMessageSegment] {
-        MarkdownMessageProcessor.parseSegments(renderedText)
+    nonisolated static func buildIndexedSegments(text: String, policy: MarkdownSafetyPolicy) -> [IndexedSegment] {
+        let renderedText = MarkdownMessageProcessor.sanitize(text, policy: policy)
+        let segments = MarkdownMessageProcessor.parseSegments(renderedText)
+        return segments.enumerated().map { offset, segment in
+            IndexedSegment(id: offset, segment: segment)
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                switch segment {
+            ForEach(indexedSegments) { indexedSegment in
+                switch indexedSegment.segment {
                 case let .markdown(markdown):
                     markdownText(markdown)
                 case let .mermaid(source):

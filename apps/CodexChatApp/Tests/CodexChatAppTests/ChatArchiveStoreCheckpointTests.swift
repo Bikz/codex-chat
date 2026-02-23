@@ -1,5 +1,6 @@
 import CodexChatCore
 @testable import CodexChatShared
+import Darwin
 import Foundation
 import XCTest
 
@@ -150,6 +151,332 @@ final class ChatArchiveStoreCheckpointTests: XCTestCase {
         XCTAssertTrue(content.contains("_Turn failed before assistant output._"))
     }
 
+    func testFinalizeCheckpointWriteFailurePreservesExistingArchiveContent() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-write-failure")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000104"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_300)
+
+        let archiveURL = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Question before failure",
+                assistantText: "",
+                actions: []
+            )
+        )
+        let before = try String(contentsOf: archiveURL, encoding: .utf8)
+
+        let fileManager = FileManager.default
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.finalizeCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before failure",
+                    assistantText: "This write should fail",
+                    actions: []
+                )
+            )
+        )
+
+        let after = try String(contentsOf: archiveURL, encoding: .utf8)
+        XCTAssertEqual(after, before)
+        XCTAssertFalse(after.contains("This write should fail"))
+    }
+
+    func testFinalizeCheckpointReplaceBoundaryFailurePreservesArchiveAndCleansTempArtifacts() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-replace-boundary-failure")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000109"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_350)
+
+        let archiveURL = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Question before replace failure",
+                assistantText: "",
+                actions: []
+            )
+        )
+        let before = try String(contentsOf: archiveURL, encoding: .utf8)
+
+        try setUserImmutableFlag(path: archiveURL.path)
+        defer { clearUserImmutableFlag(path: archiveURL.path) }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.finalizeCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before replace failure",
+                    assistantText: "This replacement should fail",
+                    actions: []
+                )
+            )
+        )
+
+        let after = try String(contentsOf: archiveURL, encoding: .utf8)
+        XCTAssertEqual(after, before)
+        XCTAssertFalse(after.contains("This replacement should fail"))
+
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        let directoryEntries = try FileManager.default.contentsOfDirectory(
+            at: threadsDirectory,
+            includingPropertiesForKeys: nil
+        )
+        let tempArtifacts = directoryEntries.filter { $0.lastPathComponent.contains(".tmp-") }
+        XCTAssertTrue(tempArtifacts.isEmpty)
+    }
+
+    func testBeginCheckpointWriteFailureDoesNotCreatePartialArchive() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-begin-write-failure")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000105"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_400)
+
+        let fileManager = FileManager.default
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        try fileManager.createDirectory(at: threadsDirectory, withIntermediateDirectories: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.beginCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before denied begin write",
+                    assistantText: "",
+                    actions: []
+                )
+            )
+        )
+
+        let archiveURL = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+            .appendingPathComponent("\(threadID.uuidString).md", isDirectory: false)
+        XCTAssertFalse(fileManager.fileExists(atPath: archiveURL.path))
+    }
+
+    func testFailCheckpointWriteFailurePreservesExistingArchiveContent() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-fail-write-failure")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000106"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_500)
+
+        let archiveURL = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Question before fail write denial",
+                assistantText: "",
+                actions: []
+            )
+        )
+        let before = try String(contentsOf: archiveURL, encoding: .utf8)
+
+        let fileManager = FileManager.default
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.failCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before fail write denial",
+                    assistantText: "",
+                    actions: []
+                )
+            )
+        )
+
+        let after = try String(contentsOf: archiveURL, encoding: .utf8)
+        XCTAssertEqual(after, before)
+        XCTAssertTrue(after.contains("status=pending"))
+        XCTAssertFalse(after.contains("status=failed"))
+    }
+
+    func testFailedCheckpointWriteCleansUpTemporaryArtifacts() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-temp-artifact-cleanup")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000107"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_600)
+
+        _ = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Question before temp cleanup check",
+                assistantText: "",
+                actions: []
+            )
+        )
+
+        let fileManager = FileManager.default
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.finalizeCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before temp cleanup check",
+                    assistantText: "This write should fail and cleanup temp files",
+                    actions: []
+                )
+            )
+        )
+
+        let directoryEntries = try fileManager.contentsOfDirectory(
+            at: threadsDirectory,
+            includingPropertiesForKeys: nil
+        )
+        let tempArtifacts = directoryEntries.filter { $0.lastPathComponent.contains(".tmp-") }
+        XCTAssertTrue(tempArtifacts.isEmpty)
+    }
+
+    func testLoadRecentTurnsIgnoresCrashLeftoverTemporaryArchiveArtifacts() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-crash-leftover-temp")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000108"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_700)
+
+        let canonicalURL = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Canonical user text",
+                assistantText: "",
+                actions: []
+            )
+        )
+
+        let crashLeftoverTempURL = canonicalURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(canonicalURL.lastPathComponent).tmp-crash-leftover", isDirectory: false)
+        let fakeTempContent = """
+        # Thread Transcript for \(threadID.uuidString)
+
+        <!-- CODEXCHAT_FORMAT_VERSION: 2 -->
+
+        <!-- CODEXCHAT_TURN_BEGIN id=\(UUID().uuidString) timestamp=2026-01-01T00:00:00Z status=completed -->
+        ## Turn 2026-01-01T00:00:00Z
+
+        ### User
+
+        Temp artifact should not be loaded
+
+        ### Assistant
+
+        Temp artifact assistant
+
+        ### Actions
+
+        ```json
+        []
+        ```
+
+        <!-- CODEXCHAT_TURN_END -->
+
+        ---
+        """
+        try fakeTempContent.write(to: crashLeftoverTempURL, atomically: true, encoding: .utf8)
+
+        let turns = try ChatArchiveStore.loadRecentTurns(
+            projectPath: root.path,
+            threadID: threadID,
+            limit: 10
+        )
+        XCTAssertEqual(turns.count, 1)
+        XCTAssertEqual(turns.first?.userText, "Canonical user text")
+        XCTAssertFalse(turns.first?.assistantText.contains("Temp artifact") ?? false)
+
+        let latestURL = try XCTUnwrap(ChatArchiveStore.latestArchiveURL(projectPath: root.path, threadID: threadID))
+        XCTAssertEqual(latestURL.path, canonicalURL.path)
+    }
+
     func testLoadRecentTurnsReturnsOnlyLastFiftyTurns() throws {
         let root = try makeTempProjectRoot(prefix: "checkpoint-limit")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -268,5 +595,20 @@ final class ChatArchiveStoreCheckpointTests: XCTestCase {
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
+    }
+
+    private func setUserImmutableFlag(path: String) throws {
+        let result = path.withCString { pointer in
+            chflags(pointer, UInt32(UF_IMMUTABLE))
+        }
+        if result != 0 {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    private func clearUserImmutableFlag(path: String) {
+        _ = path.withCString { pointer in
+            chflags(pointer, 0)
+        }
     }
 }

@@ -77,18 +77,18 @@ actor PerformanceTracer {
     }
 
     @discardableResult
-    func measure<T>(
+    nonisolated func measure<T>(
         name: String,
         metadata: [String: String] = [:],
-        operation: @Sendable () async throws -> T
+        operation: () async throws -> T
     ) async rethrows -> T {
-        let span = begin(name: name, metadata: metadata)
+        let span = await begin(name: name, metadata: metadata)
         do {
             let value = try await operation()
-            end(span)
+            await end(span)
             return value
         } catch {
-            end(span, status: "error", extraMetadata: ["error": String(describing: error)])
+            await end(span, status: "error", extraMetadata: ["error": String(describing: error)])
             throw error
         }
     }

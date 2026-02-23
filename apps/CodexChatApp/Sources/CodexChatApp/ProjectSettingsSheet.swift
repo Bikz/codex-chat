@@ -10,6 +10,9 @@ struct ProjectSettingsSafetyDraft: Equatable {
 }
 
 struct ProjectSettingsSheet: View {
+    static let minimumWindowSize = CGSize(width: 760, height: 620)
+    static let detailMaxContentWidth: CGFloat = 980
+
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
 
@@ -27,14 +30,13 @@ struct ProjectSettingsSheet: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: tokens.spacing.small) {
-                HStack(alignment: .top, spacing: tokens.spacing.small) {
-                    SettingsInlineHeader(
-                        eyebrow: "Settings",
-                        title: "Project",
-                        subtitle: "Project-specific trust, safety, memory, and archived chat controls."
-                    )
-                    Spacer(minLength: tokens.spacing.small)
+            LazyVStack(alignment: .leading, spacing: tokens.spacing.medium) {
+                SettingsHeroHeader(
+                    eyebrow: "Settings",
+                    title: projectHeaderTitle,
+                    subtitle: projectHeaderSubtitle,
+                    symbolName: projectHeaderSymbol
+                ) {
                     Button {
                         model.closeProjectSettings()
                     } label: {
@@ -64,20 +66,25 @@ struct ProjectSettingsSheet: View {
                 }
 
                 if let status = model.projectStatusMessage {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 2)
+                    statusBanner(status)
                 }
             }
+            .frame(maxWidth: Self.detailMaxContentWidth, alignment: .leading)
             .padding(tokens.spacing.medium)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .navigationTitle("")
         .tint(Color(hex: tokens.palette.accentHex))
-        .background(Color(hex: tokens.palette.backgroundHex))
-        .frame(minWidth: 760, minHeight: 620)
+        .background(
+            settingsDetailBackground
+                .ignoresSafeArea(.container, edges: SettingsLiquidGlassStyle.safeAreaExtensionEdges)
+        )
+        .frame(
+            minWidth: Self.minimumWindowSize.width,
+            minHeight: Self.minimumWindowSize.height
+        )
+        .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.selectedProject?.id)
         .onAppear {
             syncStateFromSelectedProject()
             Task {
@@ -132,6 +139,34 @@ struct ProjectSettingsSheet: View {
                 Text("This project will be disconnected from CodexChat. Project files stay on disk.")
             }
         }
+    }
+
+    private var projectHeaderTitle: String {
+        model.selectedProject?.name ?? "Project Settings"
+    }
+
+    private var projectHeaderSubtitle: String {
+        if model.selectedProject?.isGeneralProject == true {
+            return "General project trust, safety, memory, and archived chat controls."
+        }
+        return "Project-specific trust, safety, memory, and archived chat controls."
+    }
+
+    private var projectHeaderSymbol: String {
+        if model.selectedProject?.isGeneralProject == true {
+            return "globe.americas.fill"
+        }
+        return "folder.badge.gearshape"
+    }
+
+    private var settingsDetailBackground: some View {
+        let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
+        return themedBackground(
+            baseHex: isCustomThemeEnabled
+                ? (model.userThemeCustomization.backgroundHex ?? tokens.palette.backgroundHex)
+                : tokens.palette.backgroundHex,
+            gradientHex: isCustomThemeEnabled ? model.userThemeCustomization.chatGradientHex : nil
+        )
     }
 
     private func projectSummaryCard(_ project: ProjectRecord) -> some View {
@@ -449,5 +484,38 @@ struct ProjectSettingsSheet: View {
             return "\(seconds / day)d"
         }
         return "\(seconds / week)w"
+    }
+
+    private func statusBanner(_ message: String) -> some View {
+        Label(message, systemImage: "checkmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .tokenCard(
+                style: .panel,
+                radius: tokens.radius.medium,
+                strokeOpacity: 0.08
+            )
+    }
+
+    @ViewBuilder
+    private func themedBackground(baseHex: String, gradientHex: String?) -> some View {
+        if model.userThemeCustomization.isEnabled {
+            ZStack {
+                Color(hex: baseHex)
+                    .opacity(model.isTransparentThemeMode ? 0.58 : 1)
+                if let gradientHex, model.userThemeCustomization.gradientStrength > 0 {
+                    LinearGradient(
+                        colors: [Color(hex: baseHex), Color(hex: gradientHex)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .opacity(model.userThemeCustomization.gradientStrength)
+                }
+            }
+        } else {
+            Color(hex: baseHex)
+        }
     }
 }

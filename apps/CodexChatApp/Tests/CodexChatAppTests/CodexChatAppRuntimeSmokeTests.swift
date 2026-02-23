@@ -303,6 +303,73 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         }
     }
 
+    func testRuntimeRestartResetsPendingApprovalWithExplicitMessage() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        harness.model.composerText = "Needs approval before restart"
+        harness.model.sendMessage()
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        await harness.model.restartRuntimeSession()
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.runtimeStatus == .connected
+                && harness.model.activeApprovalRequest == nil
+                && harness.model.pendingApprovalForSelectedThread == nil
+        }
+
+        XCTAssertTrue(harness.model.approvalStatusMessage?.contains("Approval request was reset") ?? false)
+        XCTAssertTrue(harness.model.approvalStatusMessage?.contains("runtime restarted") ?? false)
+
+        let entries = harness.model.transcriptStore[harness.thread.id, default: []]
+        let approvalResetCardExists = entries.contains { entry in
+            guard case let .actionCard(card) = entry else {
+                return false
+            }
+            return card.method == "approval/reset" && card.title == "Approval reset"
+        }
+        XCTAssertTrue(approvalResetCardExists)
+    }
+
+    func testCheckpointWriteFailureLogsWarningButTurnStillStarts() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+
+        let fileManager = FileManager.default
+        let threadsDirectory = URL(fileURLWithPath: harness.project.path, isDirectory: true)
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        try fileManager.createDirectory(at: threadsDirectory, withIntermediateDirectories: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        harness.model.composerText = "Checkpoint should fail but turn should start"
+        harness.model.sendMessage()
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        let didLogCheckpointWarning = harness.model.logs.contains { entry in
+            entry.message.contains("Failed to checkpoint turn start")
+        }
+        XCTAssertTrue(didLogCheckpointWarning)
+    }
+
     func testBusyComposerSubmissionQueuesAndAutoDrains() async throws {
         let harness = try await Harness.make(trustState: .trusted)
         defer { harness.cleanup() }

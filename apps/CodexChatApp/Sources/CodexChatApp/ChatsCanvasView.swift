@@ -4,6 +4,37 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ChatsCanvasView: View {
+    struct ComposerSurfaceStyle: Equatable {
+        let fillOpacity: Double
+        let strokeMultiplier: Double
+        let shadowOpacity: Double
+        let shadowRadius: CGFloat
+        let shadowYOffset: CGFloat
+    }
+
+    static func composerSurfaceStyle(
+        isTransparentThemeMode: Bool,
+        colorScheme: ColorScheme
+    ) -> ComposerSurfaceStyle {
+        if isTransparentThemeMode {
+            return ComposerSurfaceStyle(
+                fillOpacity: colorScheme == .dark ? 0.62 : 0.72,
+                strokeMultiplier: 0.78,
+                shadowOpacity: 0,
+                shadowRadius: 0,
+                shadowYOffset: 0
+            )
+        }
+
+        return ComposerSurfaceStyle(
+            fillOpacity: 0.95,
+            strokeMultiplier: 0.95,
+            shadowOpacity: colorScheme == .dark ? 0.12 : 0.05,
+            shadowRadius: 8,
+            shadowYOffset: 2
+        )
+    }
+
     @ObservedObject var model: AppModel
     @Binding var isInsertMemorySheetVisible: Bool
     @Environment(\.designTokens) private var tokens
@@ -84,12 +115,6 @@ struct ChatsCanvasView: View {
                 composerContextStrip {
                     ForEach(model.composerAttachments) { attachment in
                         composerAttachmentChip(attachment)
-                    }
-                }
-            } else if model.shouldShowComposerStarterPrompts {
-                composerContextStrip {
-                    ForEach(model.composerStarterPrompts, id: \.self) { prompt in
-                        composerStarterPromptChip(prompt)
                     }
                 }
             }
@@ -240,7 +265,11 @@ struct ChatsCanvasView: View {
                     )
             }
         }
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.16 : 0.06), radius: 10, y: 2)
+        .shadow(
+            color: composerSurfaceShadowColor,
+            radius: composerSurfaceShadowRadius,
+            y: composerSurfaceShadowYOffset
+        )
         .onDrop(
             of: [UTType.fileURL.identifier],
             isTargeted: $isComposerDropTargeted,
@@ -251,12 +280,30 @@ struct ChatsCanvasView: View {
     }
 
     private var panelSurfaceFillColor: Color {
-        Color(hex: tokens.palette.panelHex)
-            .opacity(model.isTransparentThemeMode ? 0.78 : 0.96)
+        Color(hex: tokens.palette.panelHex).opacity(composerSurfaceStyle.fillOpacity)
     }
 
     private var panelSurfaceStrokeColor: Color {
-        Color.primary.opacity(tokens.surfaces.hairlineOpacity * (model.isTransparentThemeMode ? 1.15 : 0.95))
+        Color.primary.opacity(tokens.surfaces.hairlineOpacity * composerSurfaceStyle.strokeMultiplier)
+    }
+
+    private var composerSurfaceShadowColor: Color {
+        .black.opacity(composerSurfaceStyle.shadowOpacity)
+    }
+
+    private var composerSurfaceShadowRadius: CGFloat {
+        composerSurfaceStyle.shadowRadius
+    }
+
+    private var composerSurfaceShadowYOffset: CGFloat {
+        composerSurfaceStyle.shadowYOffset
+    }
+
+    private var composerSurfaceStyle: ComposerSurfaceStyle {
+        Self.composerSurfaceStyle(
+            isTransparentThemeMode: model.isTransparentThemeMode,
+            colorScheme: colorScheme
+        )
     }
 
     private var chipSurfaceFillColor: Color {
@@ -434,26 +481,6 @@ struct ChatsCanvasView: View {
                 .strokeBorder(chipSurfaceStrokeColor)
         )
         .help(attachment.path)
-    }
-
-    private func composerStarterPromptChip(_ starterPrompt: AppModel.ComposerStarterPrompt) -> some View {
-        Button(starterPrompt.label) {
-            model.insertStarterPrompt(starterPrompt.prompt)
-            isComposerFocused = true
-        }
-        .buttonStyle(.plain)
-        .font(.caption.weight(.medium))
-        .lineLimit(1)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule(style: .continuous)
-                .fill(chipSurfaceFillColor)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(chipSurfaceStrokeColor)
-        )
     }
 
     @ViewBuilder

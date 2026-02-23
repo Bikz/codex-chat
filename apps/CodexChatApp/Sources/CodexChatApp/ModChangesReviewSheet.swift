@@ -4,11 +4,24 @@ import SwiftUI
 
 @MainActor
 struct ModChangesReviewSheet: View {
+    struct IndexedRuntimeFileChange: Identifiable, Hashable {
+        let id: Int
+        let change: RuntimeFileChange
+    }
+
     @ObservedObject var model: AppModel
     let review: AppModel.PendingModReview
     @Environment(\.designTokens) private var tokens
 
+    nonisolated static func indexedChanges(_ changes: [RuntimeFileChange]) -> [IndexedRuntimeFileChange] {
+        changes.enumerated().map { offset, change in
+            IndexedRuntimeFileChange(id: offset, change: change)
+        }
+    }
+
     var body: some View {
+        let indexedChanges = Self.indexedChanges(review.changes)
+
         VStack(alignment: .leading, spacing: 14) {
             Text("Review Mod Changes")
                 .font(.title3.weight(.semibold))
@@ -20,7 +33,8 @@ struct ModChangesReviewSheet: View {
             Text("Changed files")
                 .font(.headline)
 
-            List(review.changes, id: \.self) { change in
+            List(indexedChanges) { indexedChange in
+                let change = indexedChange.change
                 VStack(alignment: .leading, spacing: 6) {
                     Text(change.path)
                         .font(.system(.caption, design: .monospaced))

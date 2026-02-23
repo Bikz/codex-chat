@@ -1,51 +1,6 @@
 import Foundation
 
 extension AppModel {
-    struct ComposerStarterPrompt: Hashable {
-        let label: String
-        let prompt: String
-    }
-
-    var composerStarterPrompts: [ComposerStarterPrompt] {
-        [
-            ComposerStarterPrompt(
-                label: "Calendar today",
-                prompt: "Show what's on my calendar today and call out any conflicts. $macos-calendar-assistant"
-            ),
-            ComposerStarterPrompt(
-                label: "Desktop cleanup",
-                prompt: "Organize my desktop files safely with a preview and undo manifest. $macos-desktop-cleanup"
-            ),
-            ComposerStarterPrompt(
-                label: "Send a message",
-                prompt: "Help me send a message safely: gather recipient and message text, then preview before sending. $macos-send-message"
-            ),
-            ComposerStarterPrompt(
-                label: "Risk review",
-                prompt: "Review this repository for risky code paths and suggest concrete fixes with file references."
-            ),
-            ComposerStarterPrompt(
-                label: "Plan next steps",
-                prompt: "Help me plan the next steps for this project with a short prioritized checklist."
-            ),
-        ]
-    }
-
-    var shouldShowComposerStarterPrompts: Bool {
-        let hasNoConversationEntries: Bool = {
-            guard case let .loaded(entries) = conversationState else {
-                return false
-            }
-            return entries.isEmpty
-        }()
-
-        return composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && composerAttachments.isEmpty
-            && canSubmitComposer
-            && !isVoiceCaptureInProgress
-            && hasNoConversationEntries
-    }
-
     var isVoiceCaptureInProgress: Bool {
         switch voiceCaptureState {
         case .requestingPermission, .recording, .transcribing:
@@ -86,16 +41,6 @@ extension AppModel {
         case let .failed(message):
             message
         }
-    }
-
-    func insertStarterPrompt(_ prompt: String) {
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return
-        }
-
-        composerText = trimmed
-        sendMessage()
     }
 
     func toggleVoiceCapture() {

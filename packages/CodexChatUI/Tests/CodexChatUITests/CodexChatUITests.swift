@@ -43,4 +43,23 @@ final class CodexChatUITests: XCTestCase {
     func testDefaultTokensAliasSystemLightForCompatibility() {
         XCTAssertEqual(DesignTokens.default, DesignTokens.systemLight)
     }
+
+    func testLoadingStateOpacityRespectsReduceMotion() {
+        XCTAssertEqual(
+            LoadingStateView.pulsingOpacity(isPulsing: true, reduceMotion: true),
+            1.0
+        )
+        XCTAssertEqual(
+            LoadingStateView.pulsingOpacity(isPulsing: false, reduceMotion: true),
+            1.0
+        )
+        XCTAssertEqual(
+            LoadingStateView.pulsingOpacity(isPulsing: true, reduceMotion: false),
+            0.5
+        )
+        XCTAssertEqual(
+            LoadingStateView.pulsingOpacity(isPulsing: false, reduceMotion: false),
+            1.0
+        )
+    }
 }

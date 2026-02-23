@@ -1837,6 +1837,47 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshGeneralThreadsSetsFailedStateWhenThreadRepositoryIsUnavailable() async throws {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        try await model.refreshGeneralThreads()
+
+        guard case let .failed(message) = model.generalThreadsState else {
+            XCTFail("Expected failed state when thread repository is unavailable")
+            return
+        }
+        XCTAssertEqual(message, "Thread repository is unavailable.")
+    }
+
+    @MainActor
+    func testRefreshGeneralThreadsLoadsEmptyStateWhenGeneralProjectIsMissing() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-general-threads-empty-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        _ = try await repositories.projectRepository.createProject(
+            named: "Work Project",
+            path: root.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        try await model.refreshProjects()
+        try await model.refreshGeneralThreads()
+
+        guard case let .loaded(threads) = model.generalThreadsState else {
+            XCTFail("Expected loaded state when there is no General project")
+            return
+        }
+        XCTAssertTrue(threads.isEmpty)
+    }
+
+    @MainActor
     func testCreateGlobalNewChatClearsExistingConversationImmediately() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-global-chat-conversation-\(UUID().uuidString)", isDirectory: true)

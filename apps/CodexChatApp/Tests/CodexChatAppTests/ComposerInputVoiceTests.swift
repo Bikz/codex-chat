@@ -4,59 +4,7 @@ import CodexKit
 import XCTest
 
 @MainActor
-final class ComposerStarterPromptTests: XCTestCase {
-    func testStarterPromptsAreGenericAndSkillGuided() {
-        let model = makeReadyModel()
-        let prompts = model.composerStarterPrompts
-
-        XCTAssertEqual(prompts.count, 5)
-        XCTAssertTrue(prompts.allSatisfy { !$0.label.contains("$") })
-        XCTAssertFalse(prompts.contains(where: {
-            $0.label.localizedCaseInsensitiveContains("alex")
-                || $0.prompt.localizedCaseInsensitiveContains("alex")
-        }))
-        XCTAssertTrue(prompts.contains(where: { $0.prompt.contains("$macos-calendar-assistant") }))
-        XCTAssertTrue(prompts.contains(where: { $0.prompt.contains("$macos-desktop-cleanup") }))
-        XCTAssertTrue(prompts.contains(where: { $0.prompt.contains("$macos-send-message") }))
-    }
-
-    func testStarterPromptsVisibleOnlyWhenComposerIsEmpty() {
-        let model = makeReadyModel()
-        XCTAssertTrue(model.shouldShowComposerStarterPrompts)
-
-        model.composerText = "Need help with this project"
-        XCTAssertFalse(model.shouldShowComposerStarterPrompts)
-
-        model.composerText = "   "
-        XCTAssertTrue(model.shouldShowComposerStarterPrompts)
-    }
-
-    func testStarterPromptsHideWhenComposerHasAttachments() {
-        let model = makeReadyModel()
-        model.composerAttachments = [
-            AppModel.ComposerAttachment(
-                path: "/tmp/screenshot.png",
-                name: "screenshot.png",
-                kind: .localImage
-            ),
-        ]
-
-        XCTAssertFalse(model.shouldShowComposerStarterPrompts)
-    }
-
-    func testStarterPromptsHideWhenConversationHasEntries() {
-        let model = makeReadyModel()
-        let threadID = model.selectedThreadID ?? UUID()
-        let existingMessage = ChatMessage(
-            threadId: threadID,
-            role: .user,
-            text: "Existing conversation context"
-        )
-        model.conversationState = .loaded([.message(existingMessage)])
-
-        XCTAssertFalse(model.shouldShowComposerStarterPrompts)
-    }
-
+final class ComposerInputVoiceTests: XCTestCase {
     func testCanSubmitComposerInputRequiresDraftContent() {
         let model = makeReadyModel()
         XCTAssertFalse(model.canSubmitComposerInput)
@@ -187,15 +135,6 @@ final class ComposerStarterPromptTests: XCTestCase {
 
         XCTAssertEqual(model.composerAttachments.count, 1)
         XCTAssertEqual(model.composerAttachments.first?.kind, .mentionFile)
-    }
-
-    func testInsertStarterPromptSendsImmediately() {
-        let model = makeReadyModel()
-        let prompt = model.composerStarterPrompts.first?.prompt ?? "Fallback prompt"
-        model.insertStarterPrompt(prompt)
-
-        XCTAssertEqual(model.composerText, "")
-        XCTAssertFalse(model.hasComposerDraftContent)
     }
 
     func testHandleVoiceTranscriptionResultPreservesExistingComposerText() {

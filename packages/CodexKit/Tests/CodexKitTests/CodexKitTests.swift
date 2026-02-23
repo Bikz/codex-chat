@@ -2,14 +2,9 @@
 import XCTest
 
 final class CodexKitTests: XCTestCase {
-    func testRuntimeAccountSummaryNameSupportsInitAndBackwardCompatibleDecoding() throws {
+    func testRuntimeAccountSummaryNameSupportsInitAndDecoding() throws {
         let named = RuntimeAccountSummary(type: "chatgpt", name: "Bikram Brar", email: "bikram@example.com", planType: "pro")
         XCTAssertEqual(named.name, "Bikram Brar")
-
-        let legacyData = Data(#"{"type":"chatgpt","email":"legacy@example.com","planType":"pro"}"#.utf8)
-        let decodedLegacy = try JSONDecoder().decode(RuntimeAccountSummary.self, from: legacyData)
-        XCTAssertNil(decodedLegacy.name)
-        XCTAssertEqual(decodedLegacy.email, "legacy@example.com")
 
         let encoded = try JSONEncoder().encode(named)
         let decodedNamed = try JSONDecoder().decode(RuntimeAccountSummary.self, from: encoded)

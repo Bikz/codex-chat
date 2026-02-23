@@ -19,6 +19,7 @@ struct SidebarView: View {
     @State private var threadSelectionSuppressionGeneration = 0
     @State private var expandedProjectThreadsByProjectID: [UUID: [ThreadRecord]] = [:]
     @State private var projectThreadLoadInFlightIDs: Set<UUID> = []
+    @State private var projectThreadLoadErrorsByProjectID: [UUID: String] = [:]
 
     private let projectsPreviewCount = 3
 
@@ -187,16 +188,19 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .environment(\.defaultMinListHeaderHeight, 18)
         .scrollContentBackground(.hidden)
-        .background(sidebarBackground)
         .listRowInsets(EdgeInsets(
             top: 0,
             leading: SidebarLayoutSpec.listHorizontalInset,
             bottom: 0,
             trailing: SidebarLayoutSpec.listHorizontalInset
         ))
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             accountRow
         }
+        .background(
+            sidebarBackground
+                .ignoresSafeArea(.container, edges: .top)
+        )
         .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.expandedProjectIDs)
         .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.showAllProjects)
     }
@@ -218,7 +222,6 @@ struct SidebarView: View {
             .textFieldStyle(.plain)
             .font(sidebarBodyFont)
             .focused($isSearchFocused)
-            .focusEffectDisabled()
             .accessibilityLabel("Search")
             .accessibilityHint("Searches thread titles and message history")
 
@@ -232,6 +235,8 @@ struct SidebarView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .accessibilityHint("Clears the current sidebar search query")
                 .transition(.opacity)
             }
         }
@@ -306,6 +311,7 @@ struct SidebarView: View {
         let isSelected = model.isProjectSidebarVisuallySelected(project.id)
         let isHovered = hoveredProjectID == project.id
         let isFlashed = flashedProjectID == project.id
+        let projectControlsVisible = Self.trailingControlsVisible(isHovered: isHovered, isSelected: isSelected)
 
         return ZStack(alignment: .trailing) {
             Button {
@@ -319,6 +325,7 @@ struct SidebarView: View {
                 } else {
                     expandedProjectThreadsByProjectID.removeValue(forKey: project.id)
                     projectThreadLoadInFlightIDs.remove(project.id)
+                    projectThreadLoadErrorsByProjectID.removeValue(forKey: project.id)
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
                     if flashedProjectID == project.id {
@@ -373,8 +380,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .help("New thread")
                 .accessibilityLabel("New thread in \(project.name)")
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                .opacity(projectControlsVisible ? 1 : 0)
+                .allowsHitTesting(projectControlsVisible)
 
                 Button {
                     if model.selectedProjectID != project.id {
@@ -391,8 +398,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .help("Project settings")
                 .accessibilityLabel("Open settings for \(project.name)")
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                .opacity(projectControlsVisible ? 1 : 0)
+                .allowsHitTesting(projectControlsVisible)
             }
             .frame(width: SidebarLayoutSpec.projectTrailingWidth, alignment: .trailing)
             .padding(.trailing, SidebarLayoutSpec.rowHorizontalPadding)
@@ -411,7 +418,7 @@ struct SidebarView: View {
     @ViewBuilder
     private func projectThreadRows(for project: ProjectRecord) -> some View {
         if model.selectedProjectID == project.id {
-            let projectThreads = model.threads.filter { $0.projectId == project.id }
+            let projectThreads = groupedThreadsByProjectID[project.id] ?? []
             ForEach(projectThreads) { thread in
                 threadRow(thread, isGeneralThread: false)
             }
@@ -432,6 +439,8 @@ struct SidebarView: View {
             .padding(.horizontal, SidebarLayoutSpec.threadRowHorizontalPadding + SidebarLayoutSpec.selectedRowInset)
             .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
             .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
+        } else if let message = projectThreadLoadErrorsByProjectID[project.id] {
+            projectThreadLoadErrorRow(projectID: project.id, message: message)
         } else {
             EmptyView()
         }
@@ -440,8 +449,20 @@ struct SidebarView: View {
     @ViewBuilder
     private var generalThreadRows: some View {
         switch model.generalThreadsState {
-        case .idle, .loading, .failed:
-            EmptyView()
+        case .idle:
+            sidebarStatusRow(systemImage: "clock", title: "Preparing chats…")
+        case .loading:
+            sidebarStatusRow(systemImage: "hourglass", title: "Loading chats…")
+        case let .failed(message):
+            sidebarRetryRow(
+                systemImage: "exclamationmark.triangle.fill",
+                title: "General chats unavailable",
+                message: message
+            ) {
+                retryGeneralThreads()
+            }
+        case let .loaded(threads) where threads.isEmpty:
+            sidebarStatusRow(systemImage: "bubble.left", title: "No chats yet")
         case let .loaded(threads):
             ForEach(threads) { thread in
                 threadRow(thread, isGeneralThread: true)
@@ -449,9 +470,82 @@ struct SidebarView: View {
         }
     }
 
+    private func sidebarStatusRow(systemImage: String, title: String) -> some View {
+        HStack(spacing: SidebarLayoutSpec.iconTextGap) {
+            Image(systemName: systemImage)
+                .font(sidebarMetaIconFont)
+                .foregroundStyle(.secondary)
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
+
+            Text(title)
+                .font(sidebarMetaFont)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, SidebarLayoutSpec.threadRowHorizontalPadding)
+        .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
+        .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
+        .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func sidebarRetryRow(
+        systemImage: String,
+        title: String,
+        message: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: SidebarLayoutSpec.iconTextGap) {
+            Image(systemName: systemImage)
+                .font(sidebarMetaIconFont)
+                .foregroundStyle(.orange)
+                .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(sidebarMetaFont.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(message)
+                    .font(sidebarMetaFont)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Button("Retry", action: action)
+                .buttonStyle(.plain)
+                .font(sidebarMetaFont.weight(.semibold))
+                .foregroundStyle(Color(hex: tokens.palette.accentHex))
+                .accessibilityLabel("Retry loading chats")
+        }
+        .padding(.horizontal, SidebarLayoutSpec.threadRowHorizontalPadding)
+        .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
+        .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
+        .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
+    }
+
+    private func projectThreadLoadErrorRow(projectID: UUID, message: String) -> some View {
+        sidebarRetryRow(
+            systemImage: "exclamationmark.triangle.fill",
+            title: "Unable to load threads",
+            message: message
+        ) {
+            retryExpandedProjectThreads(projectID: projectID)
+        }
+    }
+
     private func threadRow(_ thread: ThreadRecord, isGeneralThread: Bool) -> some View {
         let isSelected = model.selectedThreadID == thread.id
         let isHovered = hoveredThreadID == thread.id
+        let controlsVisible = Self.threadTrailingControlsVisible(
+            isHovered: isHovered,
+            isSelected: isSelected,
+            isSelectionSuppressed: isThreadSelectionSuppressed
+        )
         let rowSpacing = isGeneralThread ? 0 : SidebarLayoutSpec.iconTextGap
 
         return ZStack(alignment: .trailing) {
@@ -570,8 +664,8 @@ struct SidebarView: View {
                     .help("Archive chat")
                     .accessibilityLabel("Archive \(thread.title)")
                 }
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                .opacity(controlsVisible ? 1 : 0)
+                .allowsHitTesting(controlsVisible)
             }
             .frame(width: SidebarLayoutSpec.threadTrailingWidth, alignment: .trailing)
             .padding(.trailing, SidebarLayoutSpec.threadRowHorizontalPadding)
@@ -692,36 +786,30 @@ struct SidebarView: View {
     }
 
     private var accountRow: some View {
-        VStack(spacing: 0) {
-            Divider()
-                .opacity(0.4)
+        Button {
+            openSettingsWindow()
+        } label: {
+            HStack(spacing: 10) {
+                UserInitialCircle(sidebarAccountDisplayName, size: 28)
 
-            Button {
-                openSettingsWindow()
-            } label: {
-                HStack(spacing: 10) {
-                    UserInitialCircle(sidebarAccountDisplayName, size: 28)
+                Text(sidebarAccountDisplayName)
+                    .font(sidebarBodyFont.weight(.medium))
+                    .lineLimit(1)
 
-                    Text(sidebarAccountDisplayName)
-                        .font(sidebarBodyFont.weight(.medium))
-                        .lineLimit(1)
+                Spacer()
 
-                    Spacer()
-
-                    Image(systemName: "gearshape")
-                        .foregroundStyle(sidebarControlIconColor)
-                        .font(sidebarMetaIconFont)
-                        .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
-                }
-                .frame(minHeight: SidebarLayoutSpec.footerHeight - (SidebarLayoutSpec.footerVerticalInset * 2))
-                .padding(.horizontal, SidebarLayoutSpec.footerHorizontalInset)
-                .padding(.vertical, SidebarLayoutSpec.footerVerticalInset)
+                Image(systemName: "gearshape")
+                    .foregroundStyle(sidebarControlIconColor)
+                    .font(sidebarMetaIconFont)
+                    .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Account and settings")
-            .accessibilityHint("Opens global CodexChat settings and General project controls")
+            .frame(minHeight: SidebarLayoutSpec.footerHeight - (SidebarLayoutSpec.footerVerticalInset * 2))
+            .padding(.horizontal, SidebarLayoutSpec.footerHorizontalInset)
+            .padding(.vertical, SidebarLayoutSpec.footerVerticalInset)
         }
-        .background(sidebarBackground)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Account and settings")
+        .accessibilityHint("Opens global CodexChat settings and General project controls")
     }
 
     private func openSettingsWindow() {
@@ -767,6 +855,37 @@ struct SidebarView: View {
         SidebarProjectIconResolver.leadingSymbolName(isExpanded: isExpanded, isHovered: isHovered)
     }
 
+    private var groupedThreadsByProjectID: [UUID: [ThreadRecord]] {
+        Dictionary(grouping: model.threads, by: \.projectId)
+    }
+
+    static func trailingControlsVisible(isHovered: Bool, isSelected: Bool) -> Bool {
+        isHovered || isSelected
+    }
+
+    static func threadTrailingControlsVisible(
+        isHovered: Bool,
+        isSelected _: Bool,
+        isSelectionSuppressed: Bool
+    ) -> Bool {
+        guard !isSelectionSuppressed else { return false }
+        return isHovered
+    }
+
+    private func retryGeneralThreads() {
+        Task {
+            do {
+                try await model.refreshGeneralThreads()
+            } catch {
+                // State is already updated by refreshGeneralThreads.
+            }
+        }
+    }
+
+    private func retryExpandedProjectThreads(projectID: UUID) {
+        loadExpandedProjectThreads(projectID: projectID)
+    }
+
     private func loadExpandedProjectThreads(projectID: UUID) {
         guard model.selectedProjectID != projectID else {
             return
@@ -776,6 +895,7 @@ struct SidebarView: View {
         }
 
         projectThreadLoadInFlightIDs.insert(projectID)
+        projectThreadLoadErrorsByProjectID.removeValue(forKey: projectID)
         Task {
             do {
                 let threads = try await model.listThreadsForProject(projectID)
@@ -786,6 +906,7 @@ struct SidebarView: View {
                     else {
                         return
                     }
+                    projectThreadLoadErrorsByProjectID.removeValue(forKey: projectID)
                     expandedProjectThreadsByProjectID[projectID] = threads
                 }
             } catch {
@@ -796,7 +917,7 @@ struct SidebarView: View {
                     else {
                         return
                     }
-                    expandedProjectThreadsByProjectID[projectID] = []
+                    projectThreadLoadErrorsByProjectID[projectID] = error.localizedDescription
                 }
             }
         }

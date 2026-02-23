@@ -9,6 +9,9 @@ private enum RuntimeThreadEnsureSource: String, Sendable {
 }
 
 extension AppModel {
+    private static let runtimeAutoRecoveryBackoffEnvKey = "CODEXCHAT_RUNTIME_AUTO_RECOVERY_BACKOFF_SECONDS"
+    private static let staleRuntimeThreadRecreateRetryLimit = 1
+
     func installCodexWithHomebrew() {
         do {
             try CodexRuntime.launchCodexInstallInTerminal()
@@ -143,42 +146,43 @@ extension AppModel {
                 activeModSnapshotByThreadID[threadID] = snapshot
             }
 
-            let turnID: String
-            do {
-                turnID = try await startTurnWithRuntimeFallback(
-                    threadID: runtimeThreadID,
-                    text: runtimeText,
-                    safetyConfiguration: safetyConfiguration,
-                    skillInputs: runtimeSkillInputs,
-                    inputItems: inputItems,
-                    turnOptions: turnOptions
-                )
-            } catch {
-                guard shouldRecreateRuntimeThread(after: error) else {
-                    throw error
+            var staleThreadRecreateRetryCount = 0
+            let turnID: String = try await {
+                while true {
+                    do {
+                        return try await startTurnWithRuntimeFallback(
+                            threadID: runtimeThreadID,
+                            text: runtimeText,
+                            safetyConfiguration: safetyConfiguration,
+                            skillInputs: runtimeSkillInputs,
+                            inputItems: inputItems,
+                            turnOptions: turnOptions
+                        )
+                    } catch {
+                        guard shouldRecreateRuntimeThread(after: error),
+                              Self.shouldRetryStaleRuntimeThreadRecreation(retryCount: staleThreadRecreateRetryCount)
+                        else {
+                            throw error
+                        }
+
+                        staleThreadRecreateRetryCount += 1
+                        appendLog(
+                            .warning,
+                            "Runtime thread \(runtimeThreadID) appears stale. Creating a new runtime thread and retrying (\(staleThreadRecreateRetryCount)/\(Self.staleRuntimeThreadRecreateRetryLimit))."
+                        )
+                        await invalidateRuntimeThreadID(for: threadID)
+                        runtimeThreadID = try await createAndPersistRuntimeThreadID(
+                            for: threadID,
+                            projectPath: projectPath,
+                            safetyConfiguration: safetyConfiguration
+                        )
+
+                        _ = updateActiveTurnContext(for: threadID, mutate: { context in
+                            context.runtimeThreadID = runtimeThreadID
+                        })
+                    }
                 }
-
-                appendLog(.warning, "Runtime thread \(runtimeThreadID) appears stale. Creating a new runtime thread and retrying.")
-                await invalidateRuntimeThreadID(for: threadID)
-                runtimeThreadID = try await createAndPersistRuntimeThreadID(
-                    for: threadID,
-                    projectPath: projectPath,
-                    safetyConfiguration: safetyConfiguration
-                )
-
-                _ = updateActiveTurnContext(for: threadID, mutate: { context in
-                    context.runtimeThreadID = runtimeThreadID
-                })
-
-                turnID = try await startTurnWithRuntimeFallback(
-                    threadID: runtimeThreadID,
-                    text: runtimeText,
-                    safetyConfiguration: safetyConfiguration,
-                    skillInputs: runtimeSkillInputs,
-                    inputItems: inputItems,
-                    turnOptions: turnOptions
-                )
-            }
+            }()
 
             _ = updateActiveTurnContext(for: threadID, mutate: { context in
                 context.runtimeTurnID = turnID
@@ -349,7 +353,7 @@ extension AppModel {
         guard runtimePool != nil else { return }
         guard runtimeAutoRecoveryTask == nil else { return }
 
-        let backoffSeconds: [UInt64] = [1, 2, 4, 8]
+        let backoffSeconds = Self.runtimeAutoRecoveryBackoffSeconds()
         runtimeAutoRecoveryTask = Task {
             defer { runtimeAutoRecoveryTask = nil }
 
@@ -385,6 +389,41 @@ extension AppModel {
                 "Runtime stopped and automatic recovery failed. Use Restart Runtime to retry."
             )
         }
+    }
+
+    private static func runtimeAutoRecoveryBackoffSeconds() -> [UInt64] {
+        RuntimeRecoveryPolicy.appAutoRecoveryBackoffSeconds(
+            environmentValue: ProcessInfo.processInfo.environment[runtimeAutoRecoveryBackoffEnvKey]
+        )
+    }
+
+    private func cacheRuntimeThreadMapping(
+        localThreadID: UUID,
+        runtimeThreadID: String,
+        removeAliases: [String] = []
+    ) {
+        if let previous = runtimeThreadIDByLocalThreadID.updateValue(runtimeThreadID, forKey: localThreadID),
+           previous != runtimeThreadID
+        {
+            localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
+        }
+        for alias in removeAliases where alias != runtimeThreadID {
+            localThreadIDByRuntimeThreadID.removeValue(forKey: alias)
+        }
+        localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
+    }
+
+    private func clearCachedRuntimeThreadMapping(for localThreadID: UUID) -> String? {
+        guard let staleRuntimeThreadID = runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID) else {
+            return nil
+        }
+        localThreadIDByRuntimeThreadID.removeValue(forKey: staleRuntimeThreadID)
+        return staleRuntimeThreadID
+    }
+
+    private func pinRuntimeThreadMapping(localThreadID: UUID, runtimeThreadID: String) async {
+        guard let runtimePool else { return }
+        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
     }
 
     private func ensureRuntimeThreadID(
@@ -426,23 +465,15 @@ extension AppModel {
                     return migratedCached
                 }
 
-                runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID)
-                localThreadIDByRuntimeThreadID.removeValue(forKey: cached)
+                _ = clearCachedRuntimeThreadMapping(for: localThreadID)
             }
 
             if let persisted = try await runtimeThreadMappingRepository?.getRuntimeThreadID(localThreadID: localThreadID),
                !persisted.isEmpty
             {
                 if RuntimePool.parseScopedID(persisted) != nil {
-                    if let previous = runtimeThreadIDByLocalThreadID.updateValue(persisted, forKey: localThreadID),
-                       previous != persisted
-                    {
-                        localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
-                    }
-                    localThreadIDByRuntimeThreadID[persisted] = localThreadID
-                    if let runtimePool {
-                        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: persisted)
-                    }
+                    cacheRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: persisted)
+                    await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: persisted)
                     appendLog(.debug, "Loaded persisted runtime thread mapping for local thread \(localThreadID.uuidString)")
                     await PerformanceTracer.shared.end(
                         span,
@@ -483,15 +514,8 @@ extension AppModel {
                 return createdRuntimeThreadID
             }
 
-            if let previous = runtimeThreadIDByLocalThreadID.updateValue(runtimeThreadID, forKey: localThreadID),
-               previous != runtimeThreadID
-            {
-                localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
-            }
-            localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
-            if let runtimePool {
-                await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
-            }
+            cacheRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+            await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
             appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
             await PerformanceTracer.shared.end(
                 span,
@@ -528,13 +552,11 @@ extension AppModel {
             id: trimmedRuntimeThreadID,
             workerID: RuntimePoolWorkerID(0)
         )
-        if let previous = runtimeThreadIDByLocalThreadID.updateValue(migratedRuntimeThreadID, forKey: localThreadID),
-           previous != migratedRuntimeThreadID
-        {
-            localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
-        }
-        localThreadIDByRuntimeThreadID.removeValue(forKey: trimmedRuntimeThreadID)
-        localThreadIDByRuntimeThreadID[migratedRuntimeThreadID] = localThreadID
+        cacheRuntimeThreadMapping(
+            localThreadID: localThreadID,
+            runtimeThreadID: migratedRuntimeThreadID,
+            removeAliases: [trimmedRuntimeThreadID]
+        )
 
         do {
             try await runtimeThreadMappingRepository?.setRuntimeThreadID(
@@ -548,9 +570,7 @@ extension AppModel {
             )
         }
 
-        if let runtimePool {
-            await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: migratedRuntimeThreadID)
-        }
+        await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: migratedRuntimeThreadID)
 
         appendLog(
             .info,
@@ -590,9 +610,8 @@ extension AppModel {
             localThreadID: localThreadID,
             runtimeThreadID: runtimeThreadID
         )
-        runtimeThreadIDByLocalThreadID[localThreadID] = runtimeThreadID
-        localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
-        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+        cacheRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+        await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
 
         appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
         return runtimeThreadID
@@ -604,14 +623,13 @@ extension AppModel {
             await runtimePool.unpin(localThreadID: localThreadID)
         }
 
-        guard let staleRuntimeThreadID = runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID) else {
+        guard let staleRuntimeThreadID = clearCachedRuntimeThreadMapping(for: localThreadID) else {
             return
         }
-        localThreadIDByRuntimeThreadID.removeValue(forKey: staleRuntimeThreadID)
         appendLog(.debug, "Invalidated stale runtime thread mapping \(staleRuntimeThreadID)")
     }
 
-    private func shouldRecreateRuntimeThread(after error: Error) -> Bool {
+    func shouldRecreateRuntimeThread(after error: Error) -> Bool {
         let detail: String
         if let runtimeError = error as? CodexRuntimeError {
             switch runtimeError {
@@ -639,6 +657,15 @@ extension AppModel {
             "invalid",
         ]
         return staleIndicators.contains { lowered.contains($0) }
+    }
+
+    static func shouldRetryStaleRuntimeThreadRecreation(
+        retryCount: Int,
+        maxRetries: Int = staleRuntimeThreadRecreateRetryLimit
+    ) -> Bool {
+        let normalizedRetryCount = max(0, retryCount)
+        let normalizedMaxRetries = max(0, maxRetries)
+        return normalizedRetryCount < normalizedMaxRetries
     }
 
     private func startTurnWithRuntimeFallback(
@@ -681,32 +708,7 @@ extension AppModel {
     }
 
     func shouldRetryWithoutTurnOptions(_ error: Error) -> Bool {
-        let detail: String
-        if let runtimeError = error as? CodexRuntimeError {
-            switch runtimeError {
-            case let .rpcError(_, message):
-                detail = message
-            case let .invalidResponse(message):
-                detail = message
-            default:
-                return false
-            }
-        } else {
-            detail = error.localizedDescription
-        }
-
-        let lowered = detail.lowercased()
-        let indicatesUnsupported = lowered.contains("unknown")
-            || lowered.contains("invalid")
-            || lowered.contains("unsupported value")
-            || lowered.contains("unsupported")
-        let referencesTurnOptions = lowered.contains("model")
-            || lowered.contains("reasoning")
-            || lowered.contains("reasoningeffort")
-            || lowered.contains("reasoning_effort")
-            || lowered.contains("reasoning.effort")
-            || lowered.contains("effort")
-        return indicatesUnsupported && referencesTurnOptions
+        RuntimeTurnOptionsCompatibilityPolicy.shouldRetryWithoutTurnOptions(for: error)
     }
 
     private func captureModSnapshot(

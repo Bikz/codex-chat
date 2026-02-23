@@ -3,6 +3,30 @@ import CodexKit
 import SwiftUI
 
 struct ContentView: View {
+    enum ToolbarIcon: String, CaseIterable {
+        case reviewChanges = "doc.text.magnifyingglass"
+        case revealChatFile = "doc.text"
+        case shellWorkspace = "terminal"
+        case planRunner = "list.number"
+        case modsBar = "sidebar.right"
+    }
+
+    static let splitBackgroundExtensionEdges: Edge.Set = .top
+    static let usesCustomSidebarToolbarButton = false
+
+    static func primaryToolbarSystemImages(canToggleModsBar: Bool) -> [String] {
+        var images = [
+            ToolbarIcon.reviewChanges.rawValue,
+            ToolbarIcon.revealChatFile.rawValue,
+            ToolbarIcon.shellWorkspace.rawValue,
+            ToolbarIcon.planRunner.rawValue,
+        ]
+        if canToggleModsBar {
+            images.append(ToolbarIcon.modsBar.rawValue)
+        }
+        return images
+    }
+
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
     @State private var isInstallSkillSheetVisible = false
@@ -15,29 +39,23 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
         } detail: {
             detailSurface
-                .background(detailBackground)
+                .background(
+                    detailBackground
+                        .ignoresSafeArea(.container, edges: Self.splitBackgroundExtensionEdges)
+                )
         }
+        .background(
+            detailBackground
+                .ignoresSafeArea(.container, edges: Self.splitBackgroundExtensionEdges)
+        )
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .toolbar(removing: .sidebarToggle)
         .toolbar {
             if !model.isOnboardingActive {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        toggleSidebarVisibility()
-                    } label: {
-                        Label("Toggle Sidebar", systemImage: "sidebar.left")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Toggle sidebar")
-                    .help("Toggle sidebar")
-                    .keyboardShortcut("s", modifiers: [.command, .option])
-                }
-
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
                         model.openReviewChanges()
                     } label: {
-                        Label("Review Changes", systemImage: "doc.text.magnifyingglass")
+                        Label("Review Changes", systemImage: ToolbarIcon.reviewChanges.rawValue)
                             .labelStyle(.iconOnly)
                     }
                     .accessibilityLabel("Review pending changes")
@@ -47,7 +65,7 @@ struct ContentView: View {
                     Button {
                         model.revealSelectedThreadArchiveInFinder()
                     } label: {
-                        Label("Reveal Chat File", systemImage: "doc.text")
+                        Label("Reveal Chat File", systemImage: ToolbarIcon.revealChatFile.rawValue)
                             .labelStyle(.iconOnly)
                     }
                     .accessibilityLabel("Reveal thread transcript file in Finder")
@@ -57,7 +75,7 @@ struct ContentView: View {
                     Button {
                         model.toggleShellWorkspace()
                     } label: {
-                        Label("Shell Workspace", systemImage: "terminal")
+                        Label("Shell Workspace", systemImage: ToolbarIcon.shellWorkspace.rawValue)
                             .labelStyle(.iconOnly)
                     }
                     .accessibilityLabel("Toggle shell workspace")
@@ -66,7 +84,7 @@ struct ContentView: View {
                     Button {
                         model.openPlanRunnerSheet()
                     } label: {
-                        Label("Plan Runner", systemImage: "list.number")
+                        Label("Plan Runner", systemImage: ToolbarIcon.planRunner.rawValue)
                             .labelStyle(.iconOnly)
                     }
                     .accessibilityLabel("Open plan runner")
@@ -77,7 +95,7 @@ struct ContentView: View {
                         Button {
                             model.toggleModsBar()
                         } label: {
-                            Label("Mods bar", systemImage: "sidebar.right")
+                            Label("Mods bar", systemImage: ToolbarIcon.modsBar.rawValue)
                                 .labelStyle(.iconOnly)
                         }
                         .accessibilityLabel("Toggle mods bar")

@@ -43,6 +43,7 @@ The bar is production-quality, reliability-first software.
 - Preserve two-pane IA and established design-system patterns.
 
 ## Reliability Standards
+- Detailed invariant reference: `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md`
 - Runtime resilience:
   - Automatic runtime recovery must use bounded backoff.
   - Runtime reconnect/restart must reconcile transient state (turns, approvals, thread caches).
