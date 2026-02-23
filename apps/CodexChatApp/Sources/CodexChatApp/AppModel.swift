@@ -315,6 +315,34 @@ final class AppModel: ObservableObject {
         }
     }
 
+    struct ExtensibilityDiagnosticEvent: Identifiable, Hashable, Sendable {
+        let id: UUID
+        let timestamp: Date
+        let surface: String
+        let operation: String
+        let kind: String
+        let command: String
+        let summary: String
+
+        init(
+            id: UUID = UUID(),
+            timestamp: Date = Date(),
+            surface: String,
+            operation: String,
+            kind: String,
+            command: String,
+            summary: String
+        ) {
+            self.id = id
+            self.timestamp = timestamp
+            self.surface = surface
+            self.operation = operation
+            self.kind = kind
+            self.command = command
+            self.summary = summary
+        }
+    }
+
     struct PendingComputerActionPreview: Identifiable, Hashable {
         let id: String
         let threadID: UUID
@@ -636,6 +664,7 @@ final class AppModel: ObservableObject {
     @Published var extensionModsBarVisibilityByThreadID: [UUID: Bool] = [:]
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
     @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
+    @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []
     @Published var activeModsBarSlot: ModUISlots.ModsBar?
     @Published var activeModsBarModID: String?
     @Published var activeModsBarModDirectoryPath: String?

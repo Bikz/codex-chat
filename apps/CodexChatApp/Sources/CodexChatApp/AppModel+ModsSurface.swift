@@ -337,6 +337,7 @@ extension AppModel {
                 appendLog(.info, "Installed mod \(installResult.definition.manifest.id) from \(trimmedSource)")
             } catch {
                 if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "mods", operation: "install", details: details)
                     modStatusMessage = "Mod install failed (\(details.kind.label)): \(details.summary)"
                     appendLog(
                         .error,
@@ -416,6 +417,7 @@ extension AppModel {
                 refreshModsSurface()
             } catch {
                 if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "mods", operation: "update", details: details)
                     modStatusMessage = "Mod update failed (\(details.kind.label)): \(details.summary)"
                     appendLog(
                         .error,

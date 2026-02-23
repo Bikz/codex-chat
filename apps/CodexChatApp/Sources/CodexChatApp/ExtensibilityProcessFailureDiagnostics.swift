@@ -4,6 +4,8 @@ import CodexSkills
 import Foundation
 
 extension AppModel {
+    private static let extensibilityDiagnosticsLimit = 100
+
     struct ExtensibilityProcessFailureDetails: Hashable, Sendable {
         enum Kind: String, Hashable, Sendable {
             case timeout
@@ -88,6 +90,26 @@ extension AppModel {
             )
         default:
             return nil
+        }
+    }
+
+    func recordExtensibilityDiagnostic(
+        surface: String,
+        operation: String,
+        details: ExtensibilityProcessFailureDetails
+    ) {
+        extensibilityDiagnostics.insert(
+            ExtensibilityDiagnosticEvent(
+                surface: surface,
+                operation: operation,
+                kind: details.kind.rawValue,
+                command: details.command,
+                summary: details.summary
+            ),
+            at: 0
+        )
+        if extensibilityDiagnostics.count > Self.extensibilityDiagnosticsLimit {
+            extensibilityDiagnostics.removeLast(extensibilityDiagnostics.count - Self.extensibilityDiagnosticsLimit)
         }
     }
 

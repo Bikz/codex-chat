@@ -98,6 +98,7 @@ extension AppModel {
                 appendLog(.info, "Installed skill from \(source)")
             } catch {
                 if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "skills", operation: "install", details: details)
                     skillStatusMessage = "Skill install failed (\(details.kind.label)): \(details.summary)"
                     appendLog(
                         .error,
@@ -147,6 +148,7 @@ extension AppModel {
                 await refreshSkillsCatalog()
             } catch {
                 if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "skills", operation: "update", details: details)
                     skillStatusMessage = "Skill update failed (\(details.kind.label)): \(details.summary)"
                     appendLog(
                         .error,
