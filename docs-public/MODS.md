@@ -63,8 +63,16 @@ Legacy keys are rejected:
 - visibility and presentation mode are persisted globally across chats/new threads (`hidden`/`rail`/`peek`/`expanded`)
 - reopening from `hidden` restores the last open non-rail mode (`peek` or `expanded`)
 - `rail` mode is an icon launcher strip intended for quick extension switching
+- duplicate entries are deduplicated in `rail` when the same mod id is installed in both project/global roots
 - output may be `thread` or `global` scope
 - output may include typed action buttons (`emitEvent`, `promptThenEmitEvent`, `composer.insert`, `composer.insertAndSend`, `native.action`)
+
+`uiSlots.modsBar` fields:
+
+- `enabled` (required): whether the mod exposes a mods bar surface
+- `title` (optional): display title
+- `requiresThread` (optional, default `true`): if `false`, the mod can run in draft mode without a selected thread
+- `source` (optional): handler output binding
 
 ## Hook Events
 

@@ -76,6 +76,7 @@ Precedence:
     "modsBar": {
       "enabled": true,
       "title": "Thread Summary",
+      "requiresThread": true,
       "source": { "type": "handlerOutput", "hookId": "turn-summary" }
     }
   }
@@ -151,6 +152,7 @@ Rules:
 - Content comes from `uiSlots.modsBar` + worker output.
 - `Mods bar` is docked in the conversation pane and pushes chat content inward (no persistent third pane).
 - UI presentation is global, not thread-scoped: visibility and mode are shared across existing chats and new drafts.
+- To support draft mode usage, set `uiSlots.modsBar.requiresThread` to `false` (for example Prompt Book style global launchers).
 - Presentation modes are `rail`, `peek`, and `expanded`:
   - `rail`: compact icon launcher strip for quick extension switching
   - `peek`: standard panel width

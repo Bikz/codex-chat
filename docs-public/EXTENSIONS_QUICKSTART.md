@@ -100,6 +100,8 @@ If your extension requests privileged permissions (`projectWrite`, `network`, `r
   - `peek`: standard docked panel
   - `expanded`: wider docked panel for dense extension UIs
 - Closing from `rail` hides the panel fully; reopening restores the last open non-rail mode.
+- When the same mod id exists in both project and global scope, rail quick-switch deduplicates to one entry.
+- Add `uiSlots.modsBar.requiresThread: false` for mods that should work in draft mode without a selected thread.
 
 ## Patterns For Common Extensions
 
