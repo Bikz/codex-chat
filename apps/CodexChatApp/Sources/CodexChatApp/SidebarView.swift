@@ -863,11 +863,11 @@ struct SidebarView: View {
 
     static func threadTrailingControlsVisible(
         isHovered: Bool,
-        isSelected: Bool,
+        isSelected _: Bool,
         isSelectionSuppressed: Bool
     ) -> Bool {
         guard !isSelectionSuppressed else { return false }
-        return trailingControlsVisible(isHovered: isHovered, isSelected: isSelected)
+        return isHovered
     }
 
     private func retryGeneralThreads() {
