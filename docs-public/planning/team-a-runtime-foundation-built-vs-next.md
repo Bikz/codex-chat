@@ -1,126 +1,116 @@
 # Team A Runtime Foundation: Built vs Next
 
 Date: 2026-02-23  
-Scope: Runtime reliability + data foundation planning for CodexChat’s two-pane, local-first product constraints.
+Scope: Runtime reliability + data foundation planning for CodexChat’s macOS-native, two-pane, local-first constraints.
 
-Assumption: Prioritization below optimizes for reliability risk reduction and merge safety, not net-new feature breadth.
+Assumption: Priorities below optimize for reliability risk reduction and merge safety before feature breadth.
+Assumption: P0 means "blocks confidence in runtime/data invariants under failure," not "customer-visible feature gap."
 
 ## 1) What Is Already Built
 
 | Area | Already Built | Evidence |
 |---|---|---|
-| Local-first storage foundation | Managed root with explicit `projects/global/system` layout and required subfolders. | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:15`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:23`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:43`, `docs-public/ARCHITECTURE_CONTRACT.md:27` |
-| Metadata data layer | GRDB metadata database with versioned migrations and repository composition. | `packages/CodexChatInfra/Sources/CodexChatInfra/MetadataDatabase.swift:32`, `packages/CodexChatInfra/Sources/CodexChatInfra/MetadataRepositories.swift:22`, `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:9` |
-| Runtime-thread mapping persistence | Runtime thread IDs are persisted, rehydrated, and reverse-resolved through repository. | `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteRuntimeThreadMappingRepository.swift:34`, `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteRuntimeThreadMappingRepository.swift:53` |
-| Turn dispatch reliability path | Dispatch reserves concurrency, checkpoints transcript, then starts runtime turn with compatibility fallback behavior. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:88`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:114`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:644` |
-| Stale mapping recovery | On likely stale-thread errors, mapping is invalidated, recreated, and retried in-place. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:157`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:601`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:153` |
-| Runtime reconnect state reconciliation | Restart/connect reconciles approvals, active turns, runtime caches, model/account state. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:325`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:328`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:329` |
-| App-level runtime auto-recovery | Unexpected runtime termination schedules bounded auto-restart attempts `[1,2,4,8]`. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:352`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:384` |
-| Approval continuity and explicit reset UX | Pending approvals are cleared on runtime interruptions with warning message + transcript action card. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:856`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:874`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppTests.swift:874` |
-| Transcript durability pattern | Checkpoint states (`pending/completed/failed`) + atomic replace writes + legacy archive backfill path. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:114`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:333` |
-| Completion persistence batching | Turn completions are batched for throughput; failures flush immediately. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift:174`, `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:39`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:32` |
-| Startup health repair | Launch validates project paths, repairs folder structure, and clears stale selected thread IDs. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Projects.swift:29`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Projects.swift:90`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppTests.swift:203` |
-| Storage migration durability | Managed-root migration rewrites metadata paths and syncs SQLite + WAL/SHM sidecars. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:137`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:347`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:366` |
+| Local-first storage foundation | Managed root with explicit `projects/global/system` boundaries and required structure. | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:15`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:43`, `docs-public/ARCHITECTURE_CONTRACT.md:27` |
+| Metadata durability foundation | GRDB metadata migrations and repository boundary split across Core/Infra. | `packages/CodexChatInfra/Sources/CodexChatInfra/MetadataDatabase.swift:32`, `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:9`, `packages/CodexChatInfra/Sources/CodexChatInfra/MetadataRepositories.swift:22` |
+| Stale runtime-thread recovery policy | Detection + recreate logic is explicit and bounded to one retry. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:640`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:670`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift:34` |
+| App-level auto-recovery boundedness | Backoff attempts are bounded, env-configurable, and capped in implementation and tests. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:354`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:413`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:40` |
+| Worker-level recovery boundedness | RuntimePool has consecutive failure cap and reset-on-recovery semantics. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:454`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:710`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129` |
+| Approval continuity | Pending approvals reset with explicit UX messaging on communication failure and restart. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:884`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeApprovalContinuityTests.swift:8`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:306` |
+| Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial failures. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207` |
+| Runtime degradation explicitness | Turn-start checkpoint failures log explicit warning while runtime turn still starts. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:114`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:339` |
+| Completion persistence pressure handling | Batcher threshold, shutdown, and max-pending spill are now tested. | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` |
+| Runtime option compatibility fallback | Retry-without-turn-options heuristics are codified and directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:689`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
 
-### P0 (Reliability invariants to lock first)
+### P0
 
-1. Add explicit tests for app-level auto-recovery attempt bounds and terminal failure messaging.
-Evidence of current gap: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:352` has bounded attempts, while current smoke test checks eventual reconnect only (`apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:292`).
+1. Add event-driven RuntimePool resilience tests for non-primary worker `runtime/terminated` behavior (event suppression, pin reassignment, restart sequencing).
+Evidence gap: `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:376`, no direct test assertion for this path.
 
-2. Add RuntimePool worker-failure resilience tests (degrade, pin reassignment, restart retry behavior).
-Evidence of current gap: restart logic exists in `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:376` and `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:440`, but `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:5` currently focuses on ID routing/selection helpers.
+2. Publish a single runtime/data reliability contract document in `docs-public/` (thread mapping invariants, approval reset invariants, recovery policy invariants, durability invariants).
+Evidence gap: invariants currently spread across `AGENTS.md:45`, `docs-public/ARCHITECTURE_CONTRACT.md:27`, planning docs.
 
-3. Add fault-injection durability tests for transcript atomic replace failure and partial-write scenarios.
-Evidence of current gap: atomic write path in `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`; current checkpoint tests validate state transitions but not injected file-system failures (`apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:7`).
+3. Add crash-boundary durability harness beyond write-denial fault injection for transcript replace semantics.
+Evidence gap: current tests validate permission/write-denial failure, not simulated crash-mid-replace semantics (`apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`).
 
-4. Publish a dedicated runtime/data reliability contract doc (RuntimePool routing rules, thread-mapping invariants, recovery policies).
-Evidence of current gap: runtime reliability details are spread across `AGENTS.md:45`, `docs-public/ARCHITECTURE_CONTRACT.md:27`, and planning docs, without a single runtime contract page.
+### P1
 
-### P1 (Policy consistency and maintainability)
+1. Introduce shared `RuntimeRecoveryPolicy` used by AppModel and RuntimePool to prevent policy drift.
+Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:354` and `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:703` currently encode policy in separate places.
 
-1. Consolidate recovery policy (attempt limits/backoff schedule) across AppModel and RuntimePool to avoid drift.
-Evidence: app-level schedule in `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:352`; worker-level restart schedule in `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:446`.
+2. Consolidate runtime-thread mapping updates (cache + repo + pin/unpin) into one internal coordinator path.
+Evidence: mapping mutations are spread in `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:433`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:601`.
 
-2. Consolidate failure classification logic used in turn completion handling and persistence.
-Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift:591` and `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimePersistence.swift:20`.
+3. Remove stale assumption markers in planning docs now that reliability behavior is explicit and tested.
+Evidence: `docs-public/planning/feature-inventory.md:45`.
 
-3. Update planning docs to remove stale "Assumption" labels where behavior is now explicit and tested.
-Evidence: `docs-public/planning/feature-inventory.md:45` vs explicit runtime behavior/tests at `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:157` and `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:153`.
+### P2
 
-### P2 (Throughput and observability hardening)
+1. Extend RuntimePool load harness into repeated degradation/recovery soak tests.
+Evidence seed: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`.
 
-1. Add deterministic load tests for long-running RuntimePool worker degradation/recovery loops.
-Evidence base to extend: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`.
+2. Add fairness/starvation tests for follow-up auto-drain under high thread fan-out.
+Evidence seed: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`.
 
-2. Add targeted metrics/assertions around follow-up auto-drain starvation across many active threads.
-Evidence path: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`.
+3. Publish operator runbook for codex-home normalization/quarantine interpretation.
+Evidence seed: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`.
 
-3. Add explicit contributor-facing runbook for codex-home normalization and quarantine recovery interpretation.
-Evidence path: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:292`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:180`.
+## 3) 30/60/90 Day Roadmap Slices
 
-## 3) 30/60/90 Day Roadmap
+### Day 0-30
 
-### Day 0-30 (Stabilize invariants)
-
-1. Ship P0 tests for backoff bounds, worker recovery, and transcript write fault paths.
-2. Create runtime/data reliability contract doc in `docs-public/`.
-3. Gate merges on new reliability suite in `make quick` where practical.
+1. Land P0 RuntimePool event-driven resilience tests.
+2. Draft and merge dedicated runtime/data reliability contract doc.
+3. Add crash-boundary transcript durability test harness design and first deterministic checks.
 
 Dependencies:
-- Existing harnesses: `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:292`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`.
-- Existing persistence seams: `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:4`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`.
+- Existing RuntimePool + harness infrastructure: `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:376`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolLoadHarnessTests.swift:11`.
+- Existing transcript write seam: `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`.
 
-### Day 31-60 (Unify policy and reduce drift)
+### Day 31-60
 
-1. Refactor to shared recovery policy object and shared turn-failure classifier.
-2. Expand test assertions to enforce identical behavior before/after refactor.
-3. Update planning docs for assumption cleanup and ownership reality.
-
-Dependencies:
-- P0 tests in place to guard behavior.
-- Contract doc accepted so refactors target explicit invariants.
-
-### Day 61-90 (Scale and operational readiness)
-
-1. Extend RuntimePool load harness into repeated-failure soak scenarios.
-2. Add follow-up auto-drain fairness/starvation stress tests.
-3. Publish storage-repair operator runbook and troubleshooting checklist.
+1. Implement shared `RuntimeRecoveryPolicy` and migrate AppModel + RuntimePool callers.
+2. Add regression tests that pin current behavior before/after migration.
+3. Consolidate mapping mutation paths and keep behavior fixed via smoke tests.
 
 Dependencies:
-- P1 policy unification completed.
-- CI runtime/load jobs available for longer-running suites.
+- P0 test baselines in place to guard refactor behavior.
+- Runtime/data reliability contract merged to anchor acceptance criteria.
 
-Assumption: 90-day slices assume Team A retains ownership of `packages/CodexKit/**`, `packages/CodexChatInfra/**`, `packages/CodexChatCore/**`, and runtime/data app model files per `docs-public/planning/workstreams.md:35`.
+### Day 61-90
+
+1. Add long-running RuntimePool recovery soak in CI optional lane.
+2. Add follow-up queue fairness load tests.
+3. Publish storage-repair operator runbook with concrete troubleshooting flows.
+
+Dependencies:
+- Day 31-60 policy consolidation complete.
+- CI budget allocated for longer-running reliability jobs.
 
 ## 4) Proposed Contract Changes and Migration Considerations
 
 ### Proposed contract changes
 
-1. Clarify bounded-recovery scope:
-- Add explicit wording that both app-level runtime recovery and RuntimePool worker recovery must have bounded attempts, not only bounded delay intervals.
-- Evidence driving change: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:352` (bounded attempts) vs `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:480` (retries continue).
+1. Add explicit runtime/data reliability contract page in `docs-public/` with four invariants sections:
+- Runtime lifecycle and bounded recovery.
+- Local thread <-> runtime thread mapping invariants.
+- Approval reset and user-visible messaging invariants.
+- Transcript and completion durability invariants.
 
-2. Add runtime/data invariants section to public docs:
-- Define canonical invariants for thread mapping, approval reset behavior, checkpoint semantics, and restart reconciliation.
-- Evidence driving change: invariants are currently implemented but fragmented across code/docs (`AGENTS.md:45`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:390`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`).
+2. Update `docs-public/planning/feature-inventory.md` to remove stale `Assumption` markers where behavior is now explicit and tested.
 
-3. Document codex-home normalization safety boundary as runtime-cache-only quarantine:
-- Reinforce distinction between user-owned project transcripts and quarantined runtime internals.
-- Evidence driving change: `docs-public/ARCHITECTURE_CONTRACT.md:76`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:67`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`.
+3. Clarify that bounded recovery applies at both app runtime layer and RuntimePool worker layer.
 
 ### Migration considerations
 
-1. Schema migrations:
-- No immediate SQLite schema migration required for P0/P1 test and policy-doc work.
-- If restart-attempt counters are later persisted, add a dedicated migration in `MetadataDatabase` and backfill defaults.
+1. Data migration:
+- No SQLite schema migration is required for the changes landed in this slice.
 
-2. Behavior migrations:
-- If worker-restart attempts become capped, include explicit user-facing state transition when cap is reached (parallel to existing app-level message).
-- Reference message pattern: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:384`.
+2. Behavior migration:
+- If `RuntimeRecoveryPolicy` is introduced, roll out behind equivalent tests to preserve current retry/backoff semantics.
 
-3. Data durability:
-- No transcript format migration required if checkpoint marker syntax remains unchanged.
-- Existing canonical + legacy backfill compatibility should remain stable (`apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:210`).
+3. Documentation migration:
+- Add links from `AGENTS.md` and `docs-public/ARCHITECTURE_CONTRACT.md` to the new runtime/data reliability contract page to prevent future drift.
 
+Assumption: No UI IA migration is required because all changes stay inside existing two-pane surfaces and explicit messaging paths.
