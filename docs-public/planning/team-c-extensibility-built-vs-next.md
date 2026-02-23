@@ -44,6 +44,7 @@ Date: 2026-02-23
 | P2 | Migrated extension worker execution onto shared `CodexProcess` runner and preserved strict output-limit enforcement in extension contract | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Package.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Sources/CodexProcess/BoundedProcessRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift:196` | `f0ee05c` |
 | P2 | Unified checked command-failure mapping for skills/mods through shared `CodexProcess.runChecked` API with package-level regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Sources/CodexProcess/BoundedProcessRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Tests/CodexProcessTests/CodexProcessTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift` | `98ce357` |
 | P2 | Expanded automation health summary to include launchd-specific scheduled/failing status and surfaced it in Mods UI | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ModViews.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensionAutomationHealthTests.swift` | `8d2f05e` |
+| P2 | Centralized mod package/install path traversal checks behind shared `ModPathSafety` helper with dedicated regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModPathSafety.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModPackageManifest.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Tests/CodexModsTests/ModPathSafetyTests.swift` | `2836990` |
 
 ### Remaining prioritized backlog
 
@@ -84,7 +85,7 @@ Exit criteria:
 ### 61-90 days
 1. Complete policy-aware process telemetry plumbing across skills/mods/extensions.
 2. Land unified automation observability state model and UI bindings.
-3. Complete de-duplication of path/process safety helpers across Team C packages.
+3. Continue de-duplication of path/process safety helpers across Team C packages (CodexMods helper shipped; app/project artifact path safety remains to converge).
 
 Exit criteria:
 - Fewer duplicated execution paths across skills/mods/extensions.
