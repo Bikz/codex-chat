@@ -38,6 +38,11 @@ run_suite \
   "RuntimeAutoRecoveryTests|RuntimeStaleThreadRecoveryPolicyTests|RuntimeApprovalContinuityTests|ChatArchiveStoreCheckpointTests|PersistenceBatcherTests" \
   "App runtime recovery and durability invariants"
 
+echo
+echo "==> Runtime policy-as-code validation"
+swift run --package-path "$ROOT/apps/CodexChatApp" CodexChatCLI policy validate \
+  --file "$ROOT/config/runtime-policy/default-policy.json"
+
 if [[ "$RELIABILITY_ENABLE_SOAK" == "1" ]]; then
   if [[ ! "$RELIABILITY_SOAK_LOOPS" =~ ^[1-9][0-9]*$ ]]; then
     echo "error: RELIABILITY_SOAK_LOOPS must be a positive integer" >&2

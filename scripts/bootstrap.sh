@@ -64,8 +64,10 @@ Next steps:
    make prepush-local
 3. Optional: install local pre-push hook:
    make install-local-hooks
-4. Run contributor smoke checks directly:
+4. Optional: generate reliability scorecard artifacts:
+   make reliability-scorecard
+5. Run contributor smoke checks directly:
    make oss-smoke
-5. Run full checks before opening a PR:
+6. Run full checks before opening a PR:
    pnpm -s run check
 OUT

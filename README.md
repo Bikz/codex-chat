@@ -98,6 +98,14 @@ make reliability-local
 
 Runs deterministic runtime/data reliability suites (recovery, mapping, approvals, durability).
 
+Generate a reliability scorecard artifact:
+
+```sh
+make reliability-scorecard
+```
+
+Writes markdown + JSON scorecard outputs under `.artifacts/reliability/`.
+
 ### Local pre-push gate
 
 ```sh
@@ -135,6 +143,9 @@ cd apps/CodexChatApp
 swift run CodexChatCLI doctor
 swift run CodexChatCLI smoke
 swift run CodexChatCLI repro --fixture basic-turn
+swift run CodexChatCLI replay --project-path <project-path> --thread-id <thread-uuid> --json
+swift run CodexChatCLI ledger export --project-path <project-path> --thread-id <thread-uuid>
+swift run CodexChatCLI policy validate --file ../../config/runtime-policy/default-policy.json
 ```
 
 ### Release packaging
@@ -176,6 +187,7 @@ Builds signed/notarized DMG artifacts when signing credentials are configured.
 make quick
 make oss-smoke
 make reliability-local
+make reliability-scorecard
 pnpm -s run check
 ```
 
