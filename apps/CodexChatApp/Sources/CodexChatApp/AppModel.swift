@@ -920,8 +920,8 @@ final class AppModel: ObservableObject {
     @Published var activeUntrustedShellWarning: UntrustedShellWarningContext?
     @Published var extensionModsBarByThreadID: [UUID: ExtensionModsBarState] = [:]
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
-    @Published var extensionModsBarVisibilityByThreadID: [UUID: Bool] = [:]
-    @Published var extensionModsBarPresentationModeByThreadID: [UUID: ModsBarPresentationMode] = [:]
+    @Published var extensionModsBarIsVisible = false
+    @Published var extensionModsBarPresentationMode: ModsBarPresentationMode = .peek
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
     @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
     @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []
@@ -1518,21 +1518,19 @@ final class AppModel: ObservableObject {
     }
 
     var isModsBarVisibleForSelectedThread: Bool {
-        guard let selectedThreadID else { return false }
-        return extensionModsBarVisibilityByThreadID[selectedThreadID, default: false]
+        canToggleModsBarForSelectedThread && extensionModsBarIsVisible
     }
 
     var selectedModsBarPresentationMode: ModsBarPresentationMode {
-        guard let selectedThreadID else { return .peek }
-        return extensionModsBarPresentationModeByThreadID[selectedThreadID, default: .peek]
+        extensionModsBarPresentationMode
     }
 
     var canToggleModsBarForSelectedThread: Bool {
-        selectedThreadID != nil
+        selectedProjectID != nil || selectedThreadID != nil
     }
 
     var isModsBarAvailableForSelectedThread: Bool {
-        selectedThreadID != nil && (activeModsBarSlot?.enabled ?? false)
+        activeModsBarSlot?.enabled ?? false
     }
 
     var canReviewChanges: Bool {

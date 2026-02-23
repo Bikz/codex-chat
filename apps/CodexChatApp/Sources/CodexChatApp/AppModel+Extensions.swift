@@ -6,6 +6,11 @@ import Darwin
 import Foundation
 
 extension AppModel {
+    private struct PersistedModsBarUIState: Codable, Sendable {
+        var isVisible: Bool
+        var presentationMode: ModsBarPresentationMode
+    }
+
     private enum PersonalNotesModsBarConstants {
         static let canonicalModID = "codexchat.personal-notes"
         static let actionHookID = "notes-action"
@@ -58,26 +63,26 @@ extension AppModel {
     }
 
     func toggleModsBar() {
-        guard let selectedThreadID else { return }
-        let next = !(extensionModsBarVisibilityByThreadID[selectedThreadID] ?? false)
-        extensionModsBarVisibilityByThreadID[selectedThreadID] = next
-        if next, extensionModsBarPresentationModeByThreadID[selectedThreadID] == nil {
-            extensionModsBarPresentationModeByThreadID[selectedThreadID] = .peek
+        guard canToggleModsBarForSelectedThread else { return }
+        let next = !extensionModsBarIsVisible
+        extensionModsBarIsVisible = next
+        if next {
+            extensionModsBarPresentationMode = .peek
         }
         Task { try? await persistModsBarVisibilityPreference() }
     }
 
     func setModsBarPresentationMode(_ mode: ModsBarPresentationMode) {
-        guard let selectedThreadID else { return }
-        extensionModsBarPresentationModeByThreadID[selectedThreadID] = mode
-        if extensionModsBarVisibilityByThreadID[selectedThreadID] != true {
-            extensionModsBarVisibilityByThreadID[selectedThreadID] = true
-            Task { try? await persistModsBarVisibilityPreference() }
+        guard canToggleModsBarForSelectedThread else { return }
+        extensionModsBarPresentationMode = mode
+        if !extensionModsBarIsVisible {
+            extensionModsBarIsVisible = true
         }
+        Task { try? await persistModsBarVisibilityPreference() }
     }
 
     func cycleModsBarPresentationMode() {
-        guard selectedThreadID != nil else { return }
+        guard canToggleModsBarForSelectedThread else { return }
         guard isModsBarVisibleForSelectedThread else {
             setModsBarPresentationMode(.peek)
             return
@@ -107,14 +112,31 @@ extension AppModel {
             guard let raw,
                   let data = raw.data(using: .utf8)
             else {
-                extensionModsBarVisibilityByThreadID = [:]
+                extensionModsBarIsVisible = false
+                extensionModsBarPresentationMode = .peek
                 return
             }
-            let decoded = try JSONDecoder().decode([String: Bool].self, from: data)
-            extensionModsBarVisibilityByThreadID = Dictionary(uniqueKeysWithValues: decoded.compactMap { key, value in
-                guard let id = UUID(uuidString: key) else { return nil }
-                return (id, value)
-            })
+
+            if let decoded = try? JSONDecoder().decode(PersistedModsBarUIState.self, from: data) {
+                extensionModsBarIsVisible = decoded.isVisible
+                extensionModsBarPresentationMode = decoded.presentationMode
+                return
+            }
+
+            if let decodedLegacyMap = try? JSONDecoder().decode([String: Bool].self, from: data) {
+                extensionModsBarIsVisible = decodedLegacyMap.values.contains(true)
+                extensionModsBarPresentationMode = .peek
+                return
+            }
+
+            if let decodedBool = try? JSONDecoder().decode(Bool.self, from: data) {
+                extensionModsBarIsVisible = decodedBool
+                extensionModsBarPresentationMode = .peek
+                return
+            }
+
+            extensionModsBarIsVisible = false
+            extensionModsBarPresentationMode = .peek
         } catch {
             appendLog(.warning, "Failed to restore modsBar visibility state: \(error.localizedDescription)")
         }
@@ -122,8 +144,11 @@ extension AppModel {
 
     func persistModsBarVisibilityPreference() async throws {
         guard let preferenceRepository else { return }
-        let raw = Dictionary(uniqueKeysWithValues: extensionModsBarVisibilityByThreadID.map { ($0.key.uuidString, $0.value) })
-        let data = try JSONEncoder().encode(raw)
+        let state = PersistedModsBarUIState(
+            isVisible: extensionModsBarIsVisible,
+            presentationMode: extensionModsBarPresentationMode
+        )
+        let data = try JSONEncoder().encode(state)
         let text = String(data: data, encoding: .utf8) ?? "{}"
         try await preferenceRepository.setPreference(key: .extensionsModsBarVisibilityByThread, value: text)
     }
@@ -865,13 +890,11 @@ extension AppModel {
                 appendLog(.warning, "Failed to persist extension modsBar output: \(error.localizedDescription)")
             }
 
-            if let threadID,
-               extensionModsBarVisibilityByThreadID[threadID] != true
+            if threadID != nil,
+               !extensionModsBarIsVisible
             {
-                extensionModsBarVisibilityByThreadID[threadID] = true
-                if extensionModsBarPresentationModeByThreadID[threadID] == nil {
-                    extensionModsBarPresentationModeByThreadID[threadID] = .peek
-                }
+                extensionModsBarIsVisible = true
+                extensionModsBarPresentationMode = .peek
                 try? await persistModsBarVisibilityPreference()
             }
         }

@@ -575,14 +575,28 @@ final class ModsBarActionTests: XCTestCase {
 
     func testToggleModsBarOpensThreadInPeekModeByDefault() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
-        let threadID = UUID()
-        model.selectedThreadID = threadID
+        model.selectedThreadID = UUID()
 
         model.toggleModsBar()
 
         XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
         XCTAssertEqual(model.selectedModsBarPresentationMode, .peek)
-        XCTAssertEqual(model.extensionModsBarPresentationModeByThreadID[threadID], .peek)
+    }
+
+    func testModsBarCanToggleForDraftProjectWithoutSelectedThread() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Draft Project", path: "/tmp/draft-project", trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+
+        XCTAssertTrue(model.canToggleModsBarForSelectedThread)
+
+        model.toggleModsBar()
+
+        XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
     }
 
     func testToggleModsBarFromRailFullyHidesPanel() {
