@@ -8,6 +8,10 @@ struct DiagnosticsView: View {
     let adaptiveTurnConcurrencyLimit: Int
     let logs: [LogEntry]
     let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
+    let selectedProjectID: UUID?
+    let selectedThreadID: UUID?
+    let automationTimelineFocusFilter: AppModel.AutomationTimelineFocusFilter
+    let onAutomationTimelineFocusFilterChange: @MainActor (AppModel.AutomationTimelineFocusFilter) -> Void
     let canExecuteRerunCommand: (String) -> Bool
     let rerunExecutionPolicyMessage: (String) -> String
     let onExecuteRerunCommand: (String) -> Void
@@ -194,8 +198,23 @@ struct DiagnosticsView: View {
             }
 
             GroupBox("Automation Timeline") {
+                Picker("Focus", selection: Binding(
+                    get: { automationTimelineFocusFilter },
+                    set: { nextFilter in
+                        Task { @MainActor in
+                            onAutomationTimelineFocusFilterChange(nextFilter)
+                        }
+                    }
+                )) {
+                    ForEach(AppModel.AutomationTimelineFocusFilter.allCases, id: \.self) { filter in
+                        Text(filter.label).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.bottom, 6)
+
                 if automationTimelineEvents.isEmpty {
-                    Text("No automation diagnostics events yet")
+                    Text(emptyAutomationTimelineMessage)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -332,7 +351,7 @@ struct DiagnosticsView: View {
     }
 
     private var automationTimelineEvents: [AppModel.ExtensibilityDiagnosticEvent] {
-        extensibilityDiagnostics.filter { event in
+        let scoped = extensibilityDiagnostics.filter { event in
             if event.surface == "automations" {
                 return true
             }
@@ -340,6 +359,32 @@ struct DiagnosticsView: View {
                 return true
             }
             return event.surface == "extensions" && event.operation == "automation"
+        }
+
+        switch automationTimelineFocusFilter {
+        case .all:
+            return scoped
+        case .selectedProject:
+            guard let selectedProjectID else { return [] }
+            return scoped.filter { $0.projectID == selectedProjectID }
+        case .selectedThread:
+            guard let selectedThreadID else { return [] }
+            return scoped.filter { $0.threadID == selectedThreadID }
+        }
+    }
+
+    private var emptyAutomationTimelineMessage: String {
+        switch automationTimelineFocusFilter {
+        case .all:
+            "No automation diagnostics events yet"
+        case .selectedProject:
+            selectedProjectID == nil
+                ? "Select a project to view project-scoped automation diagnostics."
+                : "No automation diagnostics events for the selected project."
+        case .selectedThread:
+            selectedThreadID == nil
+                ? "Select a thread to view thread-scoped automation diagnostics."
+                : "No automation diagnostics events for the selected thread."
         }
     }
 

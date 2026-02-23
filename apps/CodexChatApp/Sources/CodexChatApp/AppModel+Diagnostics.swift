@@ -33,6 +33,12 @@ extension AppModel {
         isDiagnosticsVisible = false
     }
 
+    func setAutomationTimelineFocusFilter(_ filter: AutomationTimelineFocusFilter) {
+        guard automationTimelineFocusFilter != filter else { return }
+        automationTimelineFocusFilter = filter
+        persistAutomationTimelineFocusFilterIfNeeded()
+    }
+
     func copyDiagnosticsBundle() {
         do {
             let snapshot = DiagnosticsBundleSnapshot(
@@ -133,6 +139,41 @@ extension AppModel {
         case let .deny(reason):
             followUpStatusMessage = "Direct rerun blocked: \(reason)"
             appendLog(.warning, "Blocked non-allowlisted rerun command: \(trimmed)")
+        }
+    }
+
+    func restoreAutomationTimelineFocusFilterIfNeeded() async {
+        guard let preferenceRepository else {
+            automationTimelineFocusFilter = .all
+            return
+        }
+        do {
+            guard let raw = try await preferenceRepository.getPreference(key: .extensibilityAutomationTimelineFocusFilterV1),
+                  let restored = AutomationTimelineFocusFilter(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            else {
+                automationTimelineFocusFilter = .all
+                return
+            }
+            automationTimelineFocusFilter = restored
+        } catch {
+            appendLog(.warning, "Failed to restore automation timeline focus filter: \(error.localizedDescription)")
+            automationTimelineFocusFilter = .all
+        }
+    }
+
+    private func persistAutomationTimelineFocusFilterIfNeeded() {
+        guard let preferenceRepository else { return }
+        let snapshot = automationTimelineFocusFilter.rawValue
+        automationTimelineFocusFilterPersistenceTask?.cancel()
+        automationTimelineFocusFilterPersistenceTask = Task { [weak self] in
+            do {
+                try await preferenceRepository.setPreference(
+                    key: .extensibilityAutomationTimelineFocusFilterV1,
+                    value: snapshot
+                )
+            } catch {
+                self?.appendLog(.warning, "Failed to persist automation timeline focus filter: \(error.localizedDescription)")
+            }
         }
     }
 

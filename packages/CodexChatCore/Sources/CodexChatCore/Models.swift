@@ -357,6 +357,7 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case workerTraceCacheByTurn = "runtime.worker_trace_cache_by_turn"
     case extensibilityDiagnosticsV1 = "extensibility.diagnostics_v1"
     case extensibilityDiagnosticsRetentionLimitV1 = "extensibility.diagnostics_retention_limit_v1"
+    case extensibilityAutomationTimelineFocusFilterV1 = "extensibility.automation_timeline_focus_filter_v1"
     case transcriptDetailLevel = "transcript_detail_level"
     case threadTitleIndexBackfillV1 = "thread_title_index_backfill_v1"
     case userThemeCustomizationV1 = "theme.user_customization_v1"

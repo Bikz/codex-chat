@@ -580,6 +580,8 @@ final class AppModel: ObservableObject {
         let kind: String
         let command: String
         let modID: String?
+        let projectID: UUID?
+        let threadID: UUID?
         let summary: String
 
         init(
@@ -590,6 +592,8 @@ final class AppModel: ObservableObject {
             kind: String,
             command: String,
             modID: String? = nil,
+            projectID: UUID? = nil,
+            threadID: UUID? = nil,
             summary: String
         ) {
             self.id = id
@@ -599,6 +603,8 @@ final class AppModel: ObservableObject {
             self.kind = kind
             self.command = command
             self.modID = modID
+            self.projectID = projectID
+            self.threadID = threadID
             self.summary = summary
         }
     }
@@ -731,6 +737,23 @@ final class AppModel: ObservableObject {
                 "rectangle.righthalf.inset.filled"
             case .expanded:
                 "rectangle.split.3x1"
+            }
+        }
+    }
+
+    enum AutomationTimelineFocusFilter: String, CaseIterable, Codable, Sendable {
+        case all
+        case selectedProject
+        case selectedThread
+
+        var label: String {
+            switch self {
+            case .all:
+                "All"
+            case .selectedProject:
+                "Project"
+            case .selectedThread:
+                "Thread"
             }
         }
     }
@@ -947,6 +970,7 @@ final class AppModel: ObservableObject {
     @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
     @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []
     @Published var extensibilityDiagnosticsRetentionLimit = 100
+    @Published var automationTimelineFocusFilter: AutomationTimelineFocusFilter = .all
     @Published var activeModsBarSlot: ModUISlots.ModsBar?
     @Published var activeModsBarModID: String?
     @Published var activeModsBarModDirectoryPath: String?
@@ -1071,6 +1095,7 @@ final class AppModel: ObservableObject {
     var userThemePersistenceTask: Task<Void, Never>?
     var savedCustomThemePresetPersistenceTask: Task<Void, Never>?
     var modsBarIconOverridesPersistenceTask: Task<Void, Never>?
+    var automationTimelineFocusFilterPersistenceTask: Task<Void, Never>?
     var voiceCaptureSessionID: UInt64 = 0
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
     let voiceElapsedClock = ContinuousClock()
@@ -1197,6 +1222,7 @@ final class AppModel: ObservableObject {
         userThemePersistenceTask?.cancel()
         savedCustomThemePresetPersistenceTask?.cancel()
         modsBarIconOverridesPersistenceTask?.cancel()
+        automationTimelineFocusFilterPersistenceTask?.cancel()
         conversationUpdateScheduler.invalidate()
         globalModsWatcher?.stop()
         globalModsWatcher = nil
@@ -1264,6 +1290,7 @@ final class AppModel: ObservableObject {
         userThemePersistenceTask?.cancel()
         savedCustomThemePresetPersistenceTask?.cancel()
         modsBarIconOverridesPersistenceTask?.cancel()
+        automationTimelineFocusFilterPersistenceTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
         computerActionHarnessServer?.stop()

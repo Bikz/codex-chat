@@ -173,6 +173,8 @@ extension AppModel {
         surface: String,
         operation: String,
         modID: String? = nil,
+        projectID: UUID? = nil,
+        threadID: UUID? = nil,
         details: ExtensibilityProcessFailureDetails
     ) {
         extensibilityDiagnostics.insert(
@@ -182,6 +184,8 @@ extension AppModel {
                 kind: details.kind.rawValue,
                 command: details.command,
                 modID: modID,
+                projectID: projectID ?? selectedProjectID,
+                threadID: threadID ?? selectedThreadID,
                 summary: details.summary
             ),
             at: 0

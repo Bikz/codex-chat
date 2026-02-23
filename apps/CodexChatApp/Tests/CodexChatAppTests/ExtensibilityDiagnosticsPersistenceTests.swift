@@ -59,6 +59,31 @@ final class ExtensibilityDiagnosticsPersistenceTests: XCTestCase {
         XCTAssertEqual(model.extensibilityDiagnosticsRetentionLimit, 500)
     }
 
+    func testPersistAndRestoreAutomationTimelineFocusFilter() async throws {
+        let repositories = try makeRepositories(prefix: "ext-diagnostics-focus-filter")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        model.setAutomationTimelineFocusFilter(.selectedProject)
+
+        let deadline = Date().addingTimeInterval(3)
+        var persisted: String?
+        repeat {
+            persisted = try await repositories.preferenceRepository.getPreference(
+                key: .extensibilityAutomationTimelineFocusFilterV1
+            )
+            if persisted == AppModel.AutomationTimelineFocusFilter.selectedProject.rawValue {
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        } while Date() < deadline
+
+        XCTAssertEqual(persisted, AppModel.AutomationTimelineFocusFilter.selectedProject.rawValue)
+
+        let restored = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        await restored.restoreAutomationTimelineFocusFilterIfNeeded()
+        XCTAssertEqual(restored.automationTimelineFocusFilter, .selectedProject)
+    }
+
     private func makeRepositories(prefix: String) throws -> MetadataRepositories {
         let root = try makeTempDirectory(prefix: prefix)
         let database = try MetadataDatabase(

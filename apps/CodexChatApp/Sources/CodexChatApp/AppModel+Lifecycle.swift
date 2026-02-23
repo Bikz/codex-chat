@@ -100,6 +100,9 @@ extension AppModel {
         await restoreExtensibilityDiagnosticsIfNeeded()
         try ensureCurrentStartupGeneration(generation)
 
+        await restoreAutomationTimelineFocusFilterIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
         await restoreUserThemeCustomizationIfNeeded()
         try ensureCurrentStartupGeneration(generation)
 
