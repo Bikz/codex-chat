@@ -61,6 +61,11 @@ Artifacts:
 - `dist/CodexChat-<version>.dmg`
 - `dist/CodexChat-<version>.dmg.sha256`
 
+DMG contents:
+
+- `CodexChat.app`
+- `Applications` shortcut (drag-and-drop install UX)
+
 ## Dry Run (No Signing/Notarization)
 
 ```sh

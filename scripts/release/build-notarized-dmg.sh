@@ -146,6 +146,7 @@ create_dmg() {
   rm -rf "$dmg_source"
   mkdir -p "$dmg_source"
   cp -R "$APP_BUNDLE_PATH" "$dmg_source/"
+  ln -s /Applications "$dmg_source/Applications"
 
   echo "Creating DMG..."
   rm -f "$DMG_PATH"
