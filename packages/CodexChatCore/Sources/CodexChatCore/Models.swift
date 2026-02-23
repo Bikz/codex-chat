@@ -354,6 +354,7 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case advancedExecutableModsUnlock = "mods.advanced_executable_unlock"
     case advancedExecutableModsMigrationV1 = "mods.advanced_executable_unlock_migration_v1"
     case workerTraceCacheByTurn = "runtime.worker_trace_cache_by_turn"
+    case extensibilityDiagnosticsV1 = "extensibility.diagnostics_v1"
     case transcriptDetailLevel = "transcript_detail_level"
     case threadTitleIndexBackfillV1 = "thread_title_index_backfill_v1"
     case userThemeCustomizationV1 = "theme.user_customization_v1"

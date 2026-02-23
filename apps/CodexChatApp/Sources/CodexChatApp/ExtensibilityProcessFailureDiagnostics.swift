@@ -111,6 +111,45 @@ extension AppModel {
         if extensibilityDiagnostics.count > Self.extensibilityDiagnosticsLimit {
             extensibilityDiagnostics.removeLast(extensibilityDiagnostics.count - Self.extensibilityDiagnosticsLimit)
         }
+
+        Task { [weak self] in
+            guard let self else { return }
+            await persistExtensibilityDiagnosticsIfNeeded()
+        }
+    }
+
+    func restoreExtensibilityDiagnosticsIfNeeded() async {
+        guard let preferenceRepository else {
+            extensibilityDiagnostics = []
+            return
+        }
+
+        do {
+            guard let raw = try await preferenceRepository.getPreference(key: .extensibilityDiagnosticsV1),
+                  let data = raw.data(using: .utf8)
+            else {
+                extensibilityDiagnostics = []
+                return
+            }
+
+            let decoded = try JSONDecoder().decode([ExtensibilityDiagnosticEvent].self, from: data)
+            extensibilityDiagnostics = Array(decoded.prefix(Self.extensibilityDiagnosticsLimit))
+        } catch {
+            appendLog(.warning, "Failed to restore extensibility diagnostics cache: \(error.localizedDescription)")
+            extensibilityDiagnostics = []
+        }
+    }
+
+    func persistExtensibilityDiagnosticsIfNeeded() async {
+        guard let preferenceRepository else { return }
+        do {
+            let snapshot = Array(extensibilityDiagnostics.prefix(Self.extensibilityDiagnosticsLimit))
+            let data = try JSONEncoder().encode(snapshot)
+            let text = String(data: data, encoding: .utf8) ?? "[]"
+            try await preferenceRepository.setPreference(key: .extensibilityDiagnosticsV1, value: text)
+        } catch {
+            appendLog(.warning, "Failed to persist extensibility diagnostics cache: \(error.localizedDescription)")
+        }
     }
 
     private static func details(command: String, output: String) -> ExtensibilityProcessFailureDetails {

@@ -315,7 +315,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    struct ExtensibilityDiagnosticEvent: Identifiable, Hashable, Sendable {
+    struct ExtensibilityDiagnosticEvent: Identifiable, Hashable, Sendable, Codable {
         let id: UUID
         let timestamp: Date
         let surface: String
