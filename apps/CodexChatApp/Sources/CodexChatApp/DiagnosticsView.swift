@@ -120,6 +120,7 @@ struct DiagnosticsView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(extensibilityDiagnostics.prefix(8)) { event in
+                            let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 8) {
                                     Text(event.timestamp.formatted(.dateTime.hour().minute().second()))
@@ -135,6 +136,10 @@ struct DiagnosticsView: View {
                                 }
                                 Text(event.summary)
                                     .font(.caption)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
+                                Text("Recovery: \(playbook.primaryStep)")
+                                    .font(.caption2)
                                     .lineLimit(2)
                                     .foregroundStyle(.secondary)
                             }

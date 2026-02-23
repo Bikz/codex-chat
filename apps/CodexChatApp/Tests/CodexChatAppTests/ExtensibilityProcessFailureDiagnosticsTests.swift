@@ -70,4 +70,58 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
         let error = SkillCatalogError.invalidSource("bad source")
         XCTAssertNil(AppModel.extensibilityProcessFailureDetails(from: error))
     }
+
+    func testBuildsTimeoutRecoveryPlaybook() {
+        let event = AppModel.ExtensibilityDiagnosticEvent(
+            surface: "extensions",
+            operation: "hook",
+            kind: "timeout",
+            command: "extension-worker",
+            summary: "Timed out after 750ms."
+        )
+
+        let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
+
+        XCTAssertEqual(playbook.headline, "Retry with a narrower scope")
+        XCTAssertEqual(
+            playbook.primaryStep,
+            "Re-run the action after reducing payload size or splitting the task."
+        )
+    }
+
+    func testBuildsLaunchdCommandRecoveryPlaybook() {
+        let event = AppModel.ExtensibilityDiagnosticEvent(
+            surface: "extensions",
+            operation: "automation",
+            kind: "command",
+            command: "launchctl bootstrap gui/501/com.example.mod",
+            summary: "launchctl failed"
+        )
+
+        let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
+
+        XCTAssertEqual(playbook.headline, "Recover background automation state")
+        XCTAssertEqual(
+            playbook.primaryStep,
+            "Re-enable background automations and confirm launchd permissions in Settings."
+        )
+    }
+
+    func testBuildsGitCommandRecoveryPlaybook() {
+        let event = AppModel.ExtensibilityDiagnosticEvent(
+            surface: "skills",
+            operation: "install",
+            kind: "command",
+            command: "git clone --depth 1 https://example.test/skill",
+            summary: "authentication failed"
+        )
+
+        let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
+
+        XCTAssertEqual(playbook.headline, "Validate install source and command access")
+        XCTAssertEqual(
+            playbook.primaryStep,
+            "Verify repository/package source trust, credentials, and network reachability."
+        )
+    }
 }

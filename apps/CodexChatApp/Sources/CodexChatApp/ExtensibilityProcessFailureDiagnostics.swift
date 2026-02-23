@@ -37,6 +37,15 @@ extension AppModel {
         let summary: String
     }
 
+    struct ExtensibilityDiagnosticPlaybook: Hashable, Sendable {
+        let headline: String
+        let steps: [String]
+
+        var primaryStep: String {
+            steps.first ?? headline
+        }
+    }
+
     static func extensibilityProcessFailureDetails(from error: Error) -> ExtensibilityProcessFailureDetails? {
         switch error {
         case let SkillCatalogError.commandFailed(command, output):
@@ -92,6 +101,55 @@ extension AppModel {
             )
         default:
             return nil
+        }
+    }
+
+    static func extensibilityDiagnosticPlaybook(
+        for event: ExtensibilityDiagnosticEvent
+    ) -> ExtensibilityDiagnosticPlaybook {
+        switch ExtensibilityProcessFailureDetails.Kind(rawValue: event.kind) {
+        case .timeout:
+            return ExtensibilityDiagnosticPlaybook(
+                headline: "Retry with a narrower scope",
+                steps: [
+                    "Re-run the action after reducing payload size or splitting the task.",
+                    "If this repeats, verify the worker command can complete locally within timeout."
+                ]
+            )
+        case .truncatedOutput:
+            return ExtensibilityDiagnosticPlaybook(
+                headline: "Inspect full process output",
+                steps: [
+                    "Run `\(event.command)` manually to capture complete output.",
+                    "Trim verbose logs in scripts so critical errors stay in the first lines."
+                ]
+            )
+        case .launch:
+            return ExtensibilityDiagnosticPlaybook(
+                headline: "Fix executable launch prerequisites",
+                steps: [
+                    "Confirm `\(event.command)` exists, is executable, and is reachable in PATH.",
+                    "For mods/extensions, verify entrypoint paths and execute permissions."
+                ]
+            )
+        case .protocolViolation:
+            return ExtensibilityDiagnosticPlaybook(
+                headline: "Repair extension output contract",
+                steps: [
+                    "Ensure the first stdout line is valid JSON matching the extension worker schema.",
+                    "Move extra diagnostics to stderr or later stdout lines."
+                ]
+            )
+        case .command:
+            return commandFailurePlaybook(for: event.command)
+        case .none:
+            return ExtensibilityDiagnosticPlaybook(
+                headline: "Collect command diagnostics",
+                steps: [
+                    "Capture the failing command output and validate permissions/source trust.",
+                    "Retry after addressing environment preconditions."
+                ]
+            )
         }
     }
 
@@ -254,5 +312,35 @@ extension AppModel {
         }
         let endIndex = firstLine.index(firstLine.startIndex, offsetBy: maxLength)
         return "\(firstLine[..<endIndex])..."
+    }
+
+    private static func commandFailurePlaybook(for command: String) -> ExtensibilityDiagnosticPlaybook {
+        if command.contains("launchctl") {
+            return ExtensibilityDiagnosticPlaybook(
+                headline: "Recover background automation state",
+                steps: [
+                    "Re-enable background automations and confirm launchd permissions in Settings.",
+                    "Re-run the automation and verify launchd health in the Mods view."
+                ]
+            )
+        }
+
+        if command.contains("git") || command.contains("npx") {
+            return ExtensibilityDiagnosticPlaybook(
+                headline: "Validate install source and command access",
+                steps: [
+                    "Verify repository/package source trust, credentials, and network reachability.",
+                    "Run `\(command)` manually to inspect the exact failure details."
+                ]
+            )
+        }
+
+        return ExtensibilityDiagnosticPlaybook(
+            headline: "Retry after validating command prerequisites",
+            steps: [
+                "Confirm command availability, permissions, and required environment variables.",
+                "Re-run the operation after correcting the reported error."
+            ]
+        )
     }
 }
