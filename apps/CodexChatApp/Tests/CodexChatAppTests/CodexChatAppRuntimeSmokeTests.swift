@@ -303,6 +303,39 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         }
     }
 
+    func testRuntimeRestartResetsPendingApprovalWithExplicitMessage() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+        harness.model.composerText = "Needs approval before restart"
+        harness.model.sendMessage()
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        await harness.model.restartRuntimeSession()
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.runtimeStatus == .connected
+                && harness.model.activeApprovalRequest == nil
+                && harness.model.pendingApprovalForSelectedThread == nil
+        }
+
+        XCTAssertTrue(harness.model.approvalStatusMessage?.contains("Approval request was reset") ?? false)
+        XCTAssertTrue(harness.model.approvalStatusMessage?.contains("runtime restarted") ?? false)
+
+        let entries = harness.model.transcriptStore[harness.thread.id, default: []]
+        let approvalResetCardExists = entries.contains { entry in
+            guard case let .actionCard(card) = entry else {
+                return false
+            }
+            return card.method == "approval/reset" && card.title == "Approval reset"
+        }
+        XCTAssertTrue(approvalResetCardExists)
+    }
+
     func testBusyComposerSubmissionQueuesAndAutoDrains() async throws {
         let harness = try await Harness.make(trustState: .trusted)
         defer { harness.cleanup() }
