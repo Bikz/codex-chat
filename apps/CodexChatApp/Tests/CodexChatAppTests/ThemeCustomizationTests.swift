@@ -42,6 +42,81 @@ final class ThemeCustomizationTests: XCTestCase {
         XCTAssertEqual(dark.resolvedPalettePanelHex, "#152238")
     }
 
+    func testResolvedColorsInLightModeFallsBackToDarkValuesWhenLightOverridesAreUnset() {
+        let customization = AppModel.UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#3366FF",
+            sidebarHex: "#112233",
+            backgroundHex: "#0D1117",
+            panelHex: "#161B22",
+            sidebarGradientHex: "#224466",
+            chatGradientHex: "#335577",
+            gradientStrength: 0.6
+        )
+
+        let light = customization.resolvedColors(for: .light)
+        XCTAssertEqual(light.accentHex, "#3366FF")
+        XCTAssertEqual(light.sidebarHex, "#112233")
+        XCTAssertEqual(light.backgroundHex, "#0D1117")
+        XCTAssertEqual(light.panelHex, "#161B22")
+        XCTAssertEqual(light.sidebarGradientHex, "#224466")
+        XCTAssertEqual(light.chatGradientHex, "#335577")
+    }
+
+    func testResolvedColorsInLightModePrefersLightOverridesWhenPresent() {
+        let customization = AppModel.UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#3366FF",
+            sidebarHex: "#112233",
+            backgroundHex: "#0D1117",
+            panelHex: "#161B22",
+            sidebarGradientHex: "#224466",
+            chatGradientHex: "#335577",
+            lightAccentHex: "#2255EE",
+            lightSidebarHex: "#E9EFFB",
+            lightBackgroundHex: "#F4F8FF",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#D4E0F6",
+            lightChatGradientHex: "#E2EBFB",
+            gradientStrength: 0.6
+        )
+
+        let light = customization.resolvedColors(for: .light)
+        XCTAssertEqual(light.accentHex, "#2255EE")
+        XCTAssertEqual(light.sidebarHex, "#E9EFFB")
+        XCTAssertEqual(light.backgroundHex, "#F4F8FF")
+        XCTAssertEqual(light.panelHex, "#FFFFFF")
+        XCTAssertEqual(light.sidebarGradientHex, "#D4E0F6")
+        XCTAssertEqual(light.chatGradientHex, "#E2EBFB")
+    }
+
+    func testResolvedColorsInDarkModeIgnoresLightOverrides() {
+        let customization = AppModel.UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#3366FF",
+            sidebarHex: "#112233",
+            backgroundHex: "#0D1117",
+            panelHex: "#161B22",
+            sidebarGradientHex: "#224466",
+            chatGradientHex: "#335577",
+            lightAccentHex: "#2255EE",
+            lightSidebarHex: "#E9EFFB",
+            lightBackgroundHex: "#F4F8FF",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#D4E0F6",
+            lightChatGradientHex: "#E2EBFB",
+            gradientStrength: 0.6
+        )
+
+        let dark = customization.resolvedColors(for: .dark)
+        XCTAssertEqual(dark.accentHex, "#3366FF")
+        XCTAssertEqual(dark.sidebarHex, "#112233")
+        XCTAssertEqual(dark.backgroundHex, "#0D1117")
+        XCTAssertEqual(dark.panelHex, "#161B22")
+        XCTAssertEqual(dark.sidebarGradientHex, "#224466")
+        XCTAssertEqual(dark.chatGradientHex, "#335577")
+    }
+
     func testSaveCurrentThemeAsCustomPresetAndReapply() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.userThemeCustomization = .auroraMint

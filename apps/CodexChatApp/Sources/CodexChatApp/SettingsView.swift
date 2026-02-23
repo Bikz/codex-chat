@@ -40,6 +40,7 @@ struct SettingsView: View {
     @State private var advancedModsUnlockInput = ""
     @State private var advancedModsUnlockError: String?
     @State private var isThemeCustomEditorExpanded = false
+    @State private var customThemeEditorAppearance: AppModel.UserThemeCustomization.Appearance = .dark
     @State private var customThemeNameDraft = "My Theme"
 
     var body: some View {
@@ -90,6 +91,7 @@ struct SettingsView: View {
             syncSafetyDefaultsFromModel()
             syncGeneralProjectFromModel(force: true)
             syncThemeDraftFromModel()
+            customThemeEditorAppearance = colorScheme == .dark ? .dark : .light
         }
         .onChange(of: model.defaultSafetySettings) { _, _ in
             syncSafetyDefaultsFromModel()
@@ -425,7 +427,11 @@ struct SettingsView: View {
                         symbolName: "slider.horizontal.3",
                         isSelected: isThemeCustomEditorExpanded && !model.isSavedCustomThemeActive
                     ) {
-                        isThemeCustomEditorExpanded.toggle()
+                        let isOpeningEditor = !isThemeCustomEditorExpanded
+                        isThemeCustomEditorExpanded = isOpeningEditor
+                        if isOpeningEditor {
+                            customThemeEditorAppearance = colorScheme == .dark ? .dark : .light
+                        }
                     }
 
                     if let savedCustomThemePreset = model.savedCustomThemePreset {
@@ -448,6 +454,20 @@ struct SettingsView: View {
                         Text("By default, light mode stays bright and dark mode stays deep black. Enable overrides only where you want changes.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                        Picker("Theme variant", selection: $customThemeEditorAppearance) {
+                            Text("Dark").tag(AppModel.UserThemeCustomization.Appearance.dark)
+                            Text("Light").tag(AppModel.UserThemeCustomization.Appearance.light)
+                        }
+                        .pickerStyle(.segmented)
+
+                        Text(
+                            customThemeEditorAppearance == .dark
+                                ? "Dark values apply when the app is in Dark appearance."
+                                : "Light values apply when the app is in Light appearance. Unset fields inherit from Dark."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                         SettingsFieldRow(label: "Custom preset") {
                             HStack(spacing: 8) {
@@ -472,15 +492,57 @@ struct SettingsView: View {
                             }
                         }
 
-                        themeColorPickerRow("Primary accent", keyPath: \.accentHex, fallback: tokens.palette.accentHex)
-                        themeColorPickerRow("Sidebar", keyPath: \.sidebarHex, fallback: tokens.palette.sidebarHex)
-                        themeColorPickerRow("Main chat panel", keyPath: \.backgroundHex, fallback: tokens.palette.backgroundHex)
-                        themeColorPickerRow("Card / input panel", keyPath: \.panelHex, fallback: tokens.palette.panelHex)
+                        themeColorPickerRow(
+                            "Primary accent",
+                            darkKeyPath: \.accentHex,
+                            lightKeyPath: \.lightAccentHex,
+                            resolvedKeyPath: \.accentHex,
+                            darkFallback: DesignTokens.systemDark.palette.accentHex,
+                            lightFallback: DesignTokens.systemLight.palette.accentHex
+                        )
+                        themeColorPickerRow(
+                            "Sidebar",
+                            darkKeyPath: \.sidebarHex,
+                            lightKeyPath: \.lightSidebarHex,
+                            resolvedKeyPath: \.sidebarHex,
+                            darkFallback: DesignTokens.systemDark.palette.sidebarHex,
+                            lightFallback: DesignTokens.systemLight.palette.sidebarHex
+                        )
+                        themeColorPickerRow(
+                            "Main chat panel",
+                            darkKeyPath: \.backgroundHex,
+                            lightKeyPath: \.lightBackgroundHex,
+                            resolvedKeyPath: \.backgroundHex,
+                            darkFallback: DesignTokens.systemDark.palette.backgroundHex,
+                            lightFallback: DesignTokens.systemLight.palette.backgroundHex
+                        )
+                        themeColorPickerRow(
+                            "Card / input panel",
+                            darkKeyPath: \.panelHex,
+                            lightKeyPath: \.lightPanelHex,
+                            resolvedKeyPath: \.panelHex,
+                            darkFallback: DesignTokens.systemDark.palette.panelHex,
+                            lightFallback: DesignTokens.systemLight.palette.panelHex
+                        )
 
                         Divider()
 
-                        themeColorPickerRow("Sidebar gradient", keyPath: \.sidebarGradientHex, fallback: tokens.palette.sidebarHex)
-                        themeColorPickerRow("Chat gradient", keyPath: \.chatGradientHex, fallback: tokens.palette.backgroundHex)
+                        themeColorPickerRow(
+                            "Sidebar gradient",
+                            darkKeyPath: \.sidebarGradientHex,
+                            lightKeyPath: \.lightSidebarGradientHex,
+                            resolvedKeyPath: \.sidebarGradientHex,
+                            darkFallback: DesignTokens.systemDark.palette.sidebarHex,
+                            lightFallback: DesignTokens.systemLight.palette.sidebarHex
+                        )
+                        themeColorPickerRow(
+                            "Chat gradient",
+                            darkKeyPath: \.chatGradientHex,
+                            lightKeyPath: \.lightChatGradientHex,
+                            resolvedKeyPath: \.chatGradientHex,
+                            darkFallback: DesignTokens.systemDark.palette.backgroundHex,
+                            lightFallback: DesignTokens.systemLight.palette.backgroundHex
+                        )
 
                         Picker(
                             "Surface mode",
@@ -524,6 +586,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Button("Edit Custom Theme") {
                         isThemeCustomEditorExpanded = true
+                        customThemeEditorAppearance = colorScheme == .dark ? .dark : .light
                     }
                     .buttonStyle(.bordered)
 
@@ -1098,19 +1161,27 @@ struct SettingsView: View {
 
     private func themeColorPickerRow(
         _ label: String,
-        keyPath: WritableKeyPath<AppModel.UserThemeCustomization, String?>,
-        fallback: String
+        darkKeyPath: WritableKeyPath<AppModel.UserThemeCustomization, String?>,
+        lightKeyPath: WritableKeyPath<AppModel.UserThemeCustomization, String?>,
+        resolvedKeyPath: KeyPath<AppModel.UserThemeCustomization.ResolvedColors, String?>,
+        darkFallback: String,
+        lightFallback: String
     ) -> some View {
-        SettingsFieldRow(label: label) {
+        let activeKeyPath = customThemeEditorAppearance == .dark ? darkKeyPath : lightKeyPath
+        let fallbackHex = customThemeEditorAppearance == .dark ? darkFallback : lightFallback
+        let resetLabel = customThemeEditorAppearance == .dark ? "System" : "Use Dark"
+        let currentValue = model.userThemeCustomization[keyPath: activeKeyPath]
+
+        return SettingsFieldRow(label: label) {
             HStack(spacing: 8) {
                 ColorPicker(
                     label,
                     selection: Binding(
-                        get: { Color(hex: themeColorForDisplay(keyPath, fallback: fallback)) },
+                        get: { Color(hex: themeColorForDisplay(resolvedKeyPath, fallback: fallbackHex)) },
                         set: { color in
                             guard let hex = color.codexHexString() else { return }
                             updateUserThemeCustomization { customization in
-                                customization[keyPath: keyPath] = hex
+                                customization[keyPath: activeKeyPath] = hex
                             }
                         }
                     ),
@@ -1118,28 +1189,28 @@ struct SettingsView: View {
                 )
                 .labelsHidden()
 
-                Text(model.userThemeCustomization[keyPath: keyPath] ?? "System")
+                Text(currentValue ?? resetLabel)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 84, alignment: .trailing)
 
-                Button("System") {
+                Button(resetLabel) {
                     updateUserThemeCustomization { customization in
-                        customization[keyPath: keyPath] = nil
+                        customization[keyPath: activeKeyPath] = nil
                     }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .disabled(model.userThemeCustomization[keyPath: keyPath] == nil)
+                .disabled(currentValue == nil)
             }
         }
     }
 
     private func themeColorForDisplay(
-        _ keyPath: KeyPath<AppModel.UserThemeCustomization, String?>,
+        _ keyPath: KeyPath<AppModel.UserThemeCustomization.ResolvedColors, String?>,
         fallback: String
     ) -> String {
-        model.userThemeCustomization[keyPath: keyPath] ?? fallback
+        model.userThemeCustomization.resolvedColors(for: customThemeEditorAppearance)[keyPath: keyPath] ?? fallback
     }
 
     @ViewBuilder
