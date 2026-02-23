@@ -117,7 +117,7 @@ final class CodexKitTests: XCTestCase {
         _ = await correlator.resolveResponse(response)
 
         let resolved = try await waiter.value
-        XCTAssertEqual(resolved.id, .int(requestID))
+        XCTAssertEqual(resolved.id, requestID)
         XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
     }
 
@@ -132,16 +132,20 @@ final class CodexKitTests: XCTestCase {
         _ = await correlator.resolveResponse(response)
 
         let resolved = try await correlator.suspendResponse(id: requestID)
-        XCTAssertEqual(resolved.id, .int(requestID))
+        XCTAssertEqual(resolved.id, requestID)
         XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
     }
 
     func testRequestCorrelatorAcceptsNumericStringResponseID() async throws {
         let correlator = RequestCorrelator()
         let requestID = await correlator.makeRequestID()
+        guard case let .string(rawID) = requestID else {
+            XCTFail("Expected string request id")
+            return
+        }
 
         let response = JSONRPCMessageEnvelope(
-            id: .string(String(requestID)),
+            id: .string(rawID),
             method: nil,
             params: nil,
             result: .object(["ok": .bool(true)]),
@@ -150,7 +154,7 @@ final class CodexKitTests: XCTestCase {
         _ = await correlator.resolveResponse(response)
 
         let resolved = try await correlator.suspendResponse(id: requestID)
-        XCTAssertEqual(resolved.id, .string(String(requestID)))
+        XCTAssertEqual(resolved.id, .string(rawID))
         XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
     }
 

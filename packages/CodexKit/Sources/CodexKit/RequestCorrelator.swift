@@ -2,18 +2,18 @@ import Foundation
 
 actor RequestCorrelator {
     private var nextID: Int
-    private var pending: [Int: CheckedContinuation<JSONRPCMessageEnvelope, Error>] = [:]
-    private var bufferedResponses: [Int: JSONRPCMessageEnvelope] = [:]
-    private var bufferedFailures: [Int: Error] = [:]
+    private var pending: [RequestKey: CheckedContinuation<JSONRPCMessageEnvelope, Error>] = [:]
+    private var bufferedResponses: [RequestKey: JSONRPCMessageEnvelope] = [:]
+    private var bufferedFailures: [RequestKey: Error] = [:]
     private var terminalError: Error?
 
     init(startingID: Int = 1) {
         nextID = startingID
     }
 
-    func makeRequestID() -> Int {
+    func makeRequestID() -> JSONRPCID {
         defer { nextID += 1 }
-        return nextID
+        return .string(String(nextID))
     }
 
     func resetTransport() {
@@ -22,49 +22,53 @@ actor RequestCorrelator {
         bufferedFailures.removeAll(keepingCapacity: false)
     }
 
-    func suspendResponse(id: Int) async throws -> JSONRPCMessageEnvelope {
+    func suspendResponse(id: JSONRPCID) async throws -> JSONRPCMessageEnvelope {
+        let key = requestKey(for: id)
+
         if let terminalError {
             throw terminalError
         }
 
-        if let failure = bufferedFailures.removeValue(forKey: id) {
+        if let failure = bufferedFailures.removeValue(forKey: key) {
             throw failure
         }
 
-        if let buffered = bufferedResponses.removeValue(forKey: id) {
+        if let buffered = bufferedResponses.removeValue(forKey: key) {
             return buffered
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            pending[id] = continuation
+            pending[key] = continuation
         }
     }
 
     @discardableResult
     func resolveResponse(_ response: JSONRPCMessageEnvelope) -> Bool {
-        guard let id = response.id?.intValue,
+        guard let id = response.id,
               terminalError == nil
         else { return false }
+        let key = requestKey(for: id)
 
-        if let continuation = pending.removeValue(forKey: id) {
+        if let continuation = pending.removeValue(forKey: key) {
             continuation.resume(returning: response)
             return true
         }
 
-        bufferedResponses[id] = response
+        bufferedResponses[key] = response
         return true
     }
 
     @discardableResult
-    func failResponse(id: Int, error: Error) -> Bool {
+    func failResponse(id: JSONRPCID, error: Error) -> Bool {
         guard terminalError == nil else { return false }
+        let key = requestKey(for: id)
 
-        if let continuation = pending.removeValue(forKey: id) {
+        if let continuation = pending.removeValue(forKey: key) {
             continuation.resume(throwing: error)
             return true
         }
 
-        bufferedFailures[id] = error
+        bufferedFailures[key] = error
         return true
     }
 
@@ -76,4 +80,21 @@ actor RequestCorrelator {
         bufferedFailures.removeAll(keepingCapacity: false)
         continuations.forEach { $0.resume(throwing: error) }
     }
+
+    private func requestKey(for id: JSONRPCID) -> RequestKey {
+        switch id {
+        case let .int(value):
+            return .numeric(String(value))
+        case let .string(value):
+            if let numeric = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return .numeric(String(numeric))
+            }
+            return .text(value)
+        }
+    }
+}
+
+private enum RequestKey: Hashable {
+    case numeric(String)
+    case text(String)
 }
