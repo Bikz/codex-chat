@@ -62,6 +62,7 @@ Date: 2026-02-23
 | P2 | Added explicit automation-timeline recovery affordances (copy steps, prepare rerun, allowlisted rerun, contextual shortcuts) inline with timeline events | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift` | `5c2da51` |
 | P2 | Added source-grouped automation timeline rollups that collapse recurring contiguous failures with deterministic coverage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1a981e7` |
 | P2 | Added inline timeline scope pivots so automation diagnostics rows can jump directly to project/thread investigation context | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelDiagnosticsActionsTests.swift` | `61fb786` |
+| P2 | Added in-place rollup expansion in Diagnostics so collapsed automation repeats can be inspected without leaving timeline context | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1e0a4b6` |
 | P1 | Added persisted user icon overrides for mods bar identity with per-mod reset and normalization coverage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsBarQuickSwitch.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ModViews.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexChatCore/Sources/CodexChatCore/Models.swift` | `dc633f7` |
 | P1 | Grouped quick-switch entries by scope and surfaced iconized menu identity for project/global switching (with regression tests) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensionModsBarView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsBarQuickSwitch.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/docs-public/MODS.md` | `4205bec` |
 
@@ -91,7 +92,8 @@ Date: 2026-02-23
 - Phase 19 shipped: automation timeline entries now provide explicit recovery affordances (copy steps, prepare rerun, allowlisted rerun, shortcuts).
 - Phase 20 shipped: automation timeline now collapses recurring contiguous failures into source-grouped rollups for noisy loops.
 - Phase 21 shipped: automation timeline rows now provide direct project/thread scope pivots to speed remediation workflows.
-- Next step is adding optional expansion for rollups to inspect individual collapsed events without leaving Diagnostics.
+- Phase 22 shipped: automation timeline rollups now support inline expansion to inspect underlying repeated events in place.
+- Next step is stabilizing timeline metadata labels (human-readable project/thread names) for faster triage.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
@@ -99,7 +101,8 @@ Date: 2026-02-23
 - Phase 3 shipped: launchd/scheduler/health telemetry is now unified in Diagnostics timeline with explicit recovery affordances per event.
 - Phase 4 shipped: recurring contiguous automation failures now collapse into rollups to reduce timeline noise.
 - Phase 5 shipped: timeline rows now include direct project/thread scope pivots for rapid investigation.
-- Next step is adding optional rollup expansion to inspect the underlying repeated events in place.
+- Phase 6 shipped: rollups can now be expanded inline to inspect repeated events without context switching.
+- Next step is stabilizing timeline metadata labels (human-readable project/thread names) for faster triage.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:48`.
 
 ## 3) 30/60/90 day roadmap (re-baselined)
