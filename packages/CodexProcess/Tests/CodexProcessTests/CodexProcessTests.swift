@@ -28,4 +28,35 @@ final class CodexProcessTests: XCTestCase {
         XCTAssertTrue(result.truncated)
         XCTAssertEqual(result.output.count, 1024)
     }
+
+    func testRunCheckedThrowsCommandErrorOnNonZeroExit() throws {
+        XCTAssertThrowsError(
+            try BoundedProcessRunner.runChecked(
+                ["sh", "-c", "echo fail >&2; exit 9"],
+                cwd: nil,
+                limits: .init(timeoutMs: 1_000, maxOutputBytes: 16_384)
+            )
+        ) { error in
+            guard case let BoundedProcessRunner.CommandError.failed(command, output) = error else {
+                return XCTFail("Expected command error, got \(error)")
+            }
+            XCTAssertEqual(command, "sh -c echo fail >&2; exit 9")
+            XCTAssertTrue(output.contains("fail"))
+        }
+    }
+
+    func testRunCheckedIncludesTimeoutNotice() throws {
+        XCTAssertThrowsError(
+            try BoundedProcessRunner.runChecked(
+                ["sh", "-c", "sleep 1"],
+                cwd: nil,
+                limits: .init(timeoutMs: 100, maxOutputBytes: 16_384)
+            )
+        ) { error in
+            guard case let BoundedProcessRunner.CommandError.failed(_, output) = error else {
+                return XCTFail("Expected command error, got \(error)")
+            }
+            XCTAssertTrue(output.contains("Timed out after 100ms"))
+        }
+    }
 }

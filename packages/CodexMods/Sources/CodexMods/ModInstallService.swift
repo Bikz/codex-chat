@@ -562,37 +562,13 @@ public final class ModInstallService: @unchecked Sendable {
 
     public static func defaultProcessRunner(_ argv: [String], _ cwd: String?) throws -> String {
         let limits = BoundedProcessRunner.Limits.fromEnvironment()
-        let command = argv.joined(separator: " ")
-
         do {
-            let result = try BoundedProcessRunner.run(argv, cwd: cwd, limits: limits)
-            var merged = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            if result.truncated {
-                let notice = "[output truncated after \(limits.maxOutputBytes) bytes]"
-                merged = merged.isEmpty ? notice : "\(merged)\n\(notice)"
-            }
-
-            guard result.terminationStatus == 0 else {
-                throw ModInstallServiceError.commandFailed(command: command, output: merged)
-            }
-
-            return merged
-        } catch let error as BoundedProcessRunner.RunnerError {
-            let output: String
+            return try BoundedProcessRunner.runChecked(argv, cwd: cwd, limits: limits)
+        } catch let error as BoundedProcessRunner.CommandError {
             switch error {
-            case let .launchFailed(message):
-                output = message
-            case let .timedOut(timeoutMs, partialOutput, truncated):
-                var merged = partialOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-                if truncated {
-                    let notice = "[output truncated after \(limits.maxOutputBytes) bytes]"
-                    merged = merged.isEmpty ? notice : "\(merged)\n\(notice)"
-                }
-                let timeoutNotice = "Timed out after \(timeoutMs)ms"
-                output = merged.isEmpty ? timeoutNotice : "\(merged)\n\(timeoutNotice)"
+            case let .failed(command, output):
+                throw ModInstallServiceError.commandFailed(command: command, output: output)
             }
-
-            throw ModInstallServiceError.commandFailed(command: command, output: output)
         } catch {
             let command = argv.joined(separator: " ")
             throw ModInstallServiceError.commandFailed(command: command, output: error.localizedDescription)

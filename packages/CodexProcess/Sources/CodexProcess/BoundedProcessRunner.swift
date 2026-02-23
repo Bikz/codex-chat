@@ -72,6 +72,20 @@ public enum BoundedProcessRunner {
         }
     }
 
+    public enum CommandError: Error, LocalizedError, Sendable {
+        case failed(command: String, output: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case let .failed(command, output):
+                if output.isEmpty {
+                    return "Command failed: \(command)"
+                }
+                return "Command failed: \(command)\n\(output)"
+            }
+        }
+    }
+
     public static func run(
         _ argv: [String],
         cwd: String?,
@@ -94,6 +108,42 @@ public enum BoundedProcessRunner {
             terminationStatus: detailed.terminationStatus,
             truncated: detailed.stdoutTruncated || detailed.stderrTruncated
         )
+    }
+
+    public static func runChecked(
+        _ argv: [String],
+        cwd: String?,
+        limits: Limits = Limits()
+    ) throws -> String {
+        let command = argv.joined(separator: " ")
+
+        do {
+            let result = try run(argv, cwd: cwd, limits: limits)
+            let merged = mergedOutput(
+                output: result.output,
+                truncated: result.truncated,
+                maxOutputBytes: limits.maxOutputBytes
+            )
+            guard result.terminationStatus == 0 else {
+                throw CommandError.failed(command: command, output: merged)
+            }
+            return merged
+        } catch let error as RunnerError {
+            let output: String
+            switch error {
+            case let .launchFailed(message):
+                output = message
+            case let .timedOut(timeoutMs, partialOutput, truncated):
+                let merged = mergedOutput(
+                    output: partialOutput,
+                    truncated: truncated,
+                    maxOutputBytes: limits.maxOutputBytes
+                )
+                let timeoutNotice = "Timed out after \(timeoutMs)ms"
+                output = merged.isEmpty ? timeoutNotice : "\(merged)\n\(timeoutNotice)"
+            }
+            throw CommandError.failed(command: command, output: output)
+        }
     }
 
     public static func runDetailed(
@@ -232,5 +282,14 @@ public enum BoundedProcessRunner {
             defer { lock.unlock() }
             return (data, truncated)
         }
+    }
+
+    private static func mergedOutput(output: String, truncated: Bool, maxOutputBytes: Int) -> String {
+        var merged = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if truncated {
+            let notice = "[output truncated after \(maxOutputBytes) bytes]"
+            merged = merged.isEmpty ? notice : "\(merged)\n\(notice)"
+        }
+        return merged
     }
 }
