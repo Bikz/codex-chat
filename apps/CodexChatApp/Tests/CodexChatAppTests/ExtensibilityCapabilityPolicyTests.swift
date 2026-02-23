@@ -2,6 +2,7 @@ import CodexChatCore
 @testable import CodexChatShared
 import XCTest
 
+@MainActor
 final class ExtensibilityCapabilityPolicyTests: XCTestCase {
     func testBlockedCapabilitiesReturnsOnlyPrivilegedForUntrustedProjects() {
         let required: Set<ExtensibilityCapability> = [
@@ -43,5 +44,39 @@ final class ExtensibilityCapabilityPolicyTests: XCTestCase {
             mapped,
             Set([.nativeActions, .filesystemWrite, .network, .runtimeControl])
         )
+    }
+
+    func testProjectTrustStateDefaultsToUntrustedForUnknownProjectID() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let selectedProjectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(
+                id: selectedProjectID,
+                name: "Trusted Project",
+                path: "/tmp/trusted",
+                trustState: .trusted
+            ),
+        ])
+        model.selectedProjectID = selectedProjectID
+
+        XCTAssertEqual(model.projectTrustState(for: UUID()), .untrusted)
+    }
+
+    func testProjectTrustStateUsesSelectedProjectWhenIDIsNil() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+
+        let selectedProjectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(
+                id: selectedProjectID,
+                name: "Trusted Project",
+                path: "/tmp/trusted",
+                trustState: .trusted
+            ),
+        ])
+        model.selectedProjectID = selectedProjectID
+
+        XCTAssertEqual(model.projectTrustState(for: nil), .trusted)
     }
 }

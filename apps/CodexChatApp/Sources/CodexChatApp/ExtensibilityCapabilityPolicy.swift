@@ -57,7 +57,7 @@ extension AppModel {
         if let project = projects.first(where: { $0.id == projectID }) {
             return project.trustState
         }
-        return selectedProject?.trustState ?? .trusted
+        return .untrusted
     }
 
     func blockedExtensibilityCapabilities(
