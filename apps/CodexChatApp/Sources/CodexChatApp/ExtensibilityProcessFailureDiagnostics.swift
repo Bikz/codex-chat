@@ -1,3 +1,4 @@
+import CodexExtensions
 import CodexMods
 import CodexSkills
 import Foundation
@@ -8,6 +9,7 @@ extension AppModel {
             case timeout
             case truncatedOutput
             case launch
+            case protocolViolation
             case command
 
             var label: String {
@@ -18,6 +20,8 @@ extension AppModel {
                     "output limit"
                 case .launch:
                     "launch"
+                case .protocolViolation:
+                    "protocol"
                 case .command:
                     "command"
                 }
@@ -30,38 +34,86 @@ extension AppModel {
     }
 
     static func extensibilityProcessFailureDetails(from error: Error) -> ExtensibilityProcessFailureDetails? {
-        let commandOutput: (command: String, output: String)?
         switch error {
         case let SkillCatalogError.commandFailed(command, output):
-            commandOutput = (command, output)
+            return details(command: command, output: output)
         case let ModInstallServiceError.commandFailed(command, output):
-            commandOutput = (command, output)
+            return details(command: command, output: output)
+        case let ExtensionWorkerRunnerError.timedOut(timeoutMs):
+            return ExtensibilityProcessFailureDetails(
+                kind: .timeout,
+                command: "extension-worker",
+                summary: "Timed out after \(timeoutMs)ms."
+            )
+        case let ExtensionWorkerRunnerError.outputTooLarge(maxBytes):
+            return ExtensibilityProcessFailureDetails(
+                kind: .truncatedOutput,
+                command: "extension-worker",
+                summary: "Output exceeded \(maxBytes) bytes."
+            )
+        case let ExtensionWorkerRunnerError.launchFailed(message):
+            return ExtensibilityProcessFailureDetails(
+                kind: .launch,
+                command: "extension-worker",
+                summary: normalizedProcessSummary(message)
+            )
+        case let ExtensionWorkerRunnerError.nonZeroExit(code, stderr):
+            let summary = normalizedProcessSummary(
+                stderr.isEmpty ? "Worker exited with status \(code)." : stderr
+            )
+            return ExtensibilityProcessFailureDetails(
+                kind: .command,
+                command: "extension-worker",
+                summary: summary
+            )
+        case let ExtensionWorkerRunnerError.malformedOutput(detail):
+            return ExtensibilityProcessFailureDetails(
+                kind: .protocolViolation,
+                command: "extension-worker",
+                summary: normalizedProcessSummary(detail)
+            )
+        case LaunchdManagerError.plistEncodingFailed:
+            return ExtensibilityProcessFailureDetails(
+                kind: .protocolViolation,
+                command: "launchctl",
+                summary: "Failed to encode launchd plist."
+            )
+        case let LaunchdManagerError.commandFailed(message):
+            return details(command: "launchctl", output: message)
+        case ExtensionWorkerRunnerError.invalidCommand:
+            return ExtensibilityProcessFailureDetails(
+                kind: .command,
+                command: "extension-worker",
+                summary: "Extension handler command is empty."
+            )
         default:
-            commandOutput = nil
-        }
-
-        guard let commandOutput else {
             return nil
         }
+    }
 
-        let lowercasedOutput = commandOutput.output.lowercased()
-        let kind: ExtensibilityProcessFailureDetails.Kind
-        if lowercasedOutput.contains("timed out after") {
-            kind = .timeout
-        } else if lowercasedOutput.contains("[output truncated after") {
-            kind = .truncatedOutput
-        } else if lowercasedOutput.contains("failed to launch process") {
-            kind = .launch
-        } else {
-            kind = .command
-        }
-
-        let summary = normalizedProcessSummary(commandOutput.output)
-        return ExtensibilityProcessFailureDetails(
-            kind: kind,
-            command: commandOutput.command,
-            summary: summary
+    private static func details(command: String, output: String) -> ExtensibilityProcessFailureDetails {
+        ExtensibilityProcessFailureDetails(
+            kind: classifyKind(for: output),
+            command: command,
+            summary: normalizedProcessSummary(output)
         )
+    }
+
+    private static func classifyKind(for output: String) -> ExtensibilityProcessFailureDetails.Kind {
+        let lowercasedOutput = output.lowercased()
+        if lowercasedOutput.contains("timed out after") {
+            return .timeout
+        }
+        if lowercasedOutput.contains("[output truncated after") {
+            return .truncatedOutput
+        }
+        if lowercasedOutput.contains("failed to launch process") {
+            return .launch
+        }
+        if lowercasedOutput.contains("malformed output") {
+            return .protocolViolation
+        }
+        return .command
     }
 
     private static func normalizedProcessSummary(_ output: String, maxLength: Int = 220) -> String {

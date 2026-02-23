@@ -571,8 +571,16 @@ extension AppModel {
                 )
                 await markHookState(resolved: resolved, status: "ok", error: nil)
             } catch {
-                let errorMessage = sanitizeExtensionLog(error.localizedDescription)
-                appendLog(.warning, "Extension hook \(resolved.definition.id) failed: \(errorMessage)")
+                let details = Self.extensibilityProcessFailureDetails(from: error)
+                let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
+                if let details {
+                    appendLog(
+                        .warning,
+                        "Extension hook \(resolved.definition.id) failed [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    appendLog(.warning, "Extension hook \(resolved.definition.id) failed: \(errorMessage)")
+                }
                 await markHookState(resolved: resolved, status: "failed", error: errorMessage)
             }
         }
@@ -647,14 +655,22 @@ extension AppModel {
             )
             return true
         } catch {
-            let errorMessage = sanitizeExtensionLog(error.localizedDescription)
+            let details = Self.extensibilityProcessFailureDetails(from: error)
+            let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
             await markAutomationState(
                 resolved: resolved,
                 status: ExtensionAutomationStatus.failed,
                 error: errorMessage,
                 nextRunAt: nil
             )
-            appendLog(.warning, "Extension automation \(resolved.definition.id) failed: \(errorMessage)")
+            if let details {
+                appendLog(
+                    .warning,
+                    "Extension automation \(resolved.definition.id) failed [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                )
+            } else {
+                appendLog(.warning, "Extension automation \(resolved.definition.id) failed: \(errorMessage)")
+            }
             return false
         }
     }
@@ -1160,8 +1176,16 @@ extension AppModel {
                     nextRunAt: nextRun
                 )
             } catch {
-                let errorMessage = sanitizeExtensionLog(error.localizedDescription)
-                appendLog(.warning, "Failed configuring launchd automation \(label): \(errorMessage)")
+                let details = Self.extensibilityProcessFailureDetails(from: error)
+                let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
+                if let details {
+                    appendLog(
+                        .warning,
+                        "Failed configuring launchd automation \(label) [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    appendLog(.warning, "Failed configuring launchd automation \(label): \(errorMessage)")
+                }
                 await markAutomationState(
                     resolved: automation,
                     status: ExtensionAutomationStatus.launchdFailed,

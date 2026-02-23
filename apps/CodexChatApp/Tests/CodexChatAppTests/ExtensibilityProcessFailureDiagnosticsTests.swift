@@ -1,3 +1,4 @@
+import CodexExtensions
 import CodexMods
 import CodexSkills
 @testable import CodexChatShared
@@ -39,6 +40,30 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
         let details = AppModel.extensibilityProcessFailureDetails(from: error)
 
         XCTAssertEqual(details?.kind, .launch)
+    }
+
+    func testClassifiesExtensionRunnerTimeoutFailures() {
+        let error = ExtensionWorkerRunnerError.timedOut(750)
+        let details = AppModel.extensibilityProcessFailureDetails(from: error)
+
+        XCTAssertEqual(details?.kind, .timeout)
+        XCTAssertEqual(details?.command, "extension-worker")
+        XCTAssertEqual(details?.summary, "Timed out after 750ms.")
+    }
+
+    func testClassifiesLaunchdCommandFailures() {
+        let error = LaunchdManagerError.commandFailed("launchctl bootstrap gui/501/foo failed (1): permission denied")
+        let details = AppModel.extensibilityProcessFailureDetails(from: error)
+
+        XCTAssertEqual(details?.kind, .command)
+        XCTAssertEqual(details?.command, "launchctl")
+        XCTAssertEqual(details?.summary, "launchctl bootstrap gui/501/foo failed (1): permission denied")
+    }
+
+    func testClassifiesMalformedExtensionOutputAsProtocolFailure() {
+        let error = ExtensionWorkerRunnerError.malformedOutput("Missing JSON line output")
+        let details = AppModel.extensibilityProcessFailureDetails(from: error)
+        XCTAssertEqual(details?.kind, .protocolViolation)
     }
 
     func testIgnoresNonProcessFailures() {
