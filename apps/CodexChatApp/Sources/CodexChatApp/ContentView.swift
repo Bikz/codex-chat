@@ -29,6 +29,7 @@ struct ContentView: View {
 
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isInstallSkillSheetVisible = false
     @State private var isInsertMemorySheetVisible = false
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
@@ -232,15 +233,17 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailBackground: some View {
+        let appearance: AppModel.UserThemeCustomization.Appearance = colorScheme == .dark ? .dark : .light
+        let resolved = model.userThemeCustomization.resolvedColors(for: appearance)
         let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
         let chatHex = isCustomThemeEnabled
-            ? (model.userThemeCustomization.backgroundHex ?? tokens.palette.backgroundHex)
+            ? (resolved.backgroundHex ?? tokens.palette.backgroundHex)
             : tokens.palette.backgroundHex
         if isCustomThemeEnabled {
             ZStack {
                 Color(hex: chatHex)
                     .opacity(model.isTransparentThemeMode ? 0.58 : 1)
-                if let gradientHex = model.userThemeCustomization.chatGradientHex,
+                if let gradientHex = resolved.chatGradientHex,
                    model.userThemeCustomization.gradientStrength > 0
                 {
                     LinearGradient(

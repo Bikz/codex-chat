@@ -124,9 +124,23 @@ final class AppModel: ObservableObject {
     }
 
     struct UserThemeCustomization: Hashable, Codable, Sendable {
+        enum Appearance: String, CaseIterable, Hashable, Codable, Sendable {
+            case light
+            case dark
+        }
+
         enum TransparencyMode: String, CaseIterable, Hashable, Codable, Sendable {
             case solid
             case glass
+        }
+
+        struct ResolvedColors: Hashable, Sendable {
+            var accentHex: String?
+            var sidebarHex: String?
+            var backgroundHex: String?
+            var panelHex: String?
+            var sidebarGradientHex: String?
+            var chatGradientHex: String?
         }
 
         var isEnabled: Bool
@@ -136,6 +150,12 @@ final class AppModel: ObservableObject {
         var panelHex: String?
         var sidebarGradientHex: String?
         var chatGradientHex: String?
+        var lightAccentHex: String?
+        var lightSidebarHex: String?
+        var lightBackgroundHex: String?
+        var lightPanelHex: String?
+        var lightSidebarGradientHex: String?
+        var lightChatGradientHex: String?
         var gradientStrength: Double
         var transparencyMode: TransparencyMode
 
@@ -147,6 +167,12 @@ final class AppModel: ObservableObject {
             case panelHex
             case sidebarGradientHex
             case chatGradientHex
+            case lightAccentHex
+            case lightSidebarHex
+            case lightBackgroundHex
+            case lightPanelHex
+            case lightSidebarGradientHex
+            case lightChatGradientHex
             case gradientStrength
             case transparencyMode
         }
@@ -159,6 +185,12 @@ final class AppModel: ObservableObject {
             panelHex: String? = nil,
             sidebarGradientHex: String? = nil,
             chatGradientHex: String? = nil,
+            lightAccentHex: String? = nil,
+            lightSidebarHex: String? = nil,
+            lightBackgroundHex: String? = nil,
+            lightPanelHex: String? = nil,
+            lightSidebarGradientHex: String? = nil,
+            lightChatGradientHex: String? = nil,
             gradientStrength: Double = 0,
             transparencyMode: TransparencyMode = .solid
         ) {
@@ -169,6 +201,12 @@ final class AppModel: ObservableObject {
             self.panelHex = panelHex
             self.sidebarGradientHex = sidebarGradientHex
             self.chatGradientHex = chatGradientHex
+            self.lightAccentHex = lightAccentHex
+            self.lightSidebarHex = lightSidebarHex
+            self.lightBackgroundHex = lightBackgroundHex
+            self.lightPanelHex = lightPanelHex
+            self.lightSidebarGradientHex = lightSidebarGradientHex
+            self.lightChatGradientHex = lightChatGradientHex
             self.gradientStrength = Self.clampedGradientStrength(gradientStrength)
             self.transparencyMode = transparencyMode
         }
@@ -182,6 +220,12 @@ final class AppModel: ObservableObject {
             let panelHex = try container.decodeIfPresent(String.self, forKey: .panelHex)
             let sidebarGradientHex = try container.decodeIfPresent(String.self, forKey: .sidebarGradientHex)
             let chatGradientHex = try container.decodeIfPresent(String.self, forKey: .chatGradientHex)
+            let lightAccentHex = try container.decodeIfPresent(String.self, forKey: .lightAccentHex)
+            let lightSidebarHex = try container.decodeIfPresent(String.self, forKey: .lightSidebarHex)
+            let lightBackgroundHex = try container.decodeIfPresent(String.self, forKey: .lightBackgroundHex)
+            let lightPanelHex = try container.decodeIfPresent(String.self, forKey: .lightPanelHex)
+            let lightSidebarGradientHex = try container.decodeIfPresent(String.self, forKey: .lightSidebarGradientHex)
+            let lightChatGradientHex = try container.decodeIfPresent(String.self, forKey: .lightChatGradientHex)
             let gradientStrength = try container.decodeIfPresent(Double.self, forKey: .gradientStrength) ?? 0
             let transparencyMode = try container.decodeIfPresent(TransparencyMode.self, forKey: .transparencyMode) ?? .solid
 
@@ -193,6 +237,12 @@ final class AppModel: ObservableObject {
                 panelHex: panelHex,
                 sidebarGradientHex: sidebarGradientHex,
                 chatGradientHex: chatGradientHex,
+                lightAccentHex: lightAccentHex,
+                lightSidebarHex: lightSidebarHex,
+                lightBackgroundHex: lightBackgroundHex,
+                lightPanelHex: lightPanelHex,
+                lightSidebarGradientHex: lightSidebarGradientHex,
+                lightChatGradientHex: lightChatGradientHex,
                 gradientStrength: gradientStrength,
                 transparencyMode: transparencyMode
             )
@@ -204,22 +254,55 @@ final class AppModel: ObservableObject {
 
         var lightOverride: ModThemeOverride {
             guard isEnabled else { return .init() }
+            let resolved = resolvedColors(for: .light)
             return ModThemeOverride(
                 palette: .init(
-                    accentHex: accentHex,
-                    backgroundHex: backgroundHex,
-                    panelHex: panelHex,
-                    sidebarHex: sidebarHex
+                    accentHex: resolved.accentHex,
+                    backgroundHex: resolved.backgroundHex,
+                    panelHex: resolved.panelHex,
+                    sidebarHex: resolved.sidebarHex
                 )
             )
         }
 
         var darkOverride: ModThemeOverride {
-            lightOverride
+            guard isEnabled else { return .init() }
+            let resolved = resolvedColors(for: .dark)
+            return ModThemeOverride(
+                palette: .init(
+                    accentHex: resolved.accentHex,
+                    backgroundHex: resolved.backgroundHex,
+                    panelHex: resolved.panelHex,
+                    sidebarHex: resolved.sidebarHex
+                )
+            )
         }
 
         var isGlassEnabled: Bool {
             isEnabled && transparencyMode == .glass
+        }
+
+        func resolvedColors(for appearance: Appearance) -> ResolvedColors {
+            switch appearance {
+            case .light:
+                .init(
+                    accentHex: lightAccentHex ?? accentHex,
+                    sidebarHex: lightSidebarHex ?? sidebarHex,
+                    backgroundHex: lightBackgroundHex ?? backgroundHex,
+                    panelHex: lightPanelHex ?? panelHex,
+                    sidebarGradientHex: lightSidebarGradientHex ?? sidebarGradientHex ?? lightSidebarHex ?? sidebarHex,
+                    chatGradientHex: lightChatGradientHex ?? chatGradientHex ?? lightBackgroundHex ?? backgroundHex
+                )
+            case .dark:
+                .init(
+                    accentHex: accentHex,
+                    sidebarHex: sidebarHex,
+                    backgroundHex: backgroundHex,
+                    panelHex: panelHex,
+                    sidebarGradientHex: sidebarGradientHex ?? sidebarHex,
+                    chatGradientHex: chatGradientHex ?? backgroundHex
+                )
+            }
         }
 
         static let `default` = UserThemeCustomization()
@@ -232,6 +315,12 @@ final class AppModel: ObservableObject {
             panelHex: "#152238",
             sidebarGradientHex: "#4E6883",
             chatGradientHex: "#6A7F9B",
+            lightAccentHex: "#3C6FA5",
+            lightSidebarHex: "#D9E6F4",
+            lightBackgroundHex: "#ECF3FB",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#BFD2E8",
+            lightChatGradientHex: "#CFDEEE",
             gradientStrength: 0.55,
             transparencyMode: .solid
         )
@@ -244,6 +333,12 @@ final class AppModel: ObservableObject {
             panelHex: "#12303B",
             sidebarGradientHex: "#1E5D64",
             chatGradientHex: "#2E6F76",
+            lightAccentHex: "#2F8F84",
+            lightSidebarHex: "#D7F0EB",
+            lightBackgroundHex: "#ECFAF7",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#B8E3DA",
+            lightChatGradientHex: "#C5ECE4",
             gradientStrength: 0.58,
             transparencyMode: .solid
         )
@@ -256,6 +351,12 @@ final class AppModel: ObservableObject {
             panelHex: "#2D2420",
             sidebarGradientHex: "#5A3B2D",
             chatGradientHex: "#714735",
+            lightAccentHex: "#A46337",
+            lightSidebarHex: "#F3E4DA",
+            lightBackgroundHex: "#FCF2E9",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#E8CEBD",
+            lightChatGradientHex: "#F1D8C5",
             gradientStrength: 0.47,
             transparencyMode: .solid
         )
@@ -268,6 +369,12 @@ final class AppModel: ObservableObject {
             panelHex: "#1A2B24",
             sidebarGradientHex: "#2A4B3F",
             chatGradientHex: "#365A4A",
+            lightAccentHex: "#4D8560",
+            lightSidebarHex: "#DCEDE3",
+            lightBackgroundHex: "#EDF7F0",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#C1DBC9",
+            lightChatGradientHex: "#D0E6D5",
             gradientStrength: 0.52,
             transparencyMode: .solid
         )
@@ -280,6 +387,12 @@ final class AppModel: ObservableObject {
             panelHex: "#252D38",
             sidebarGradientHex: "#38485B",
             chatGradientHex: "#44576F",
+            lightAccentHex: "#4F6783",
+            lightSidebarHex: "#E1E7EF",
+            lightBackgroundHex: "#F1F5FA",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#CAD5E3",
+            lightChatGradientHex: "#D8E1EC",
             gradientStrength: 0.49,
             transparencyMode: .solid
         )
@@ -292,6 +405,12 @@ final class AppModel: ObservableObject {
             panelHex: "#332431",
             sidebarGradientHex: "#5A3244",
             chatGradientHex: "#6F3E54",
+            lightAccentHex: "#9D5874",
+            lightSidebarHex: "#F2DFE8",
+            lightBackgroundHex: "#FCF0F5",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#E7C8D7",
+            lightChatGradientHex: "#F0D2E0",
             gradientStrength: 0.48,
             transparencyMode: .solid
         )
@@ -304,6 +423,12 @@ final class AppModel: ObservableObject {
             panelHex: "#17304A",
             sidebarGradientHex: "#2B4E75",
             chatGradientHex: "#3A6492",
+            lightAccentHex: "#3D6FA8",
+            lightSidebarHex: "#DCE7F7",
+            lightBackgroundHex: "#EEF4FF",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#C3D6F2",
+            lightChatGradientHex: "#D0E0F7",
             gradientStrength: 0.56,
             transparencyMode: .solid
         )
@@ -316,6 +441,12 @@ final class AppModel: ObservableObject {
             panelHex: "#3C3322",
             sidebarGradientHex: "#6B5630",
             chatGradientHex: "#836B3B",
+            lightAccentHex: "#8F753A",
+            lightSidebarHex: "#F3EBDA",
+            lightBackgroundHex: "#FCF7EA",
+            lightPanelHex: "#FFFFFF",
+            lightSidebarGradientHex: "#E7D8BA",
+            lightChatGradientHex: "#F0E2C7",
             gradientStrength: 0.44,
             transparencyMode: .solid
         )

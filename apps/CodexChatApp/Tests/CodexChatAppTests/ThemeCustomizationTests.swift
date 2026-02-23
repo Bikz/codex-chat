@@ -25,6 +25,23 @@ final class ThemeCustomizationTests: XCTestCase {
         XCTAssertEqual(presets.first(where: { $0.id == "navy" })?.customization, .navyPastel)
     }
 
+    func testNavyPresetUsesAppearanceSpecificPaletteForLightAndDarkModes() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.userThemeCustomization = .navyPastel
+
+        let light = model.resolvedLightThemeOverride
+        XCTAssertEqual(light.resolvedPaletteAccentHex, "#3C6FA5")
+        XCTAssertEqual(light.resolvedPaletteSidebarHex, "#D9E6F4")
+        XCTAssertEqual(light.resolvedPaletteBackgroundHex, "#ECF3FB")
+        XCTAssertEqual(light.resolvedPalettePanelHex, "#FFFFFF")
+
+        let dark = model.resolvedDarkThemeOverride
+        XCTAssertEqual(dark.resolvedPaletteAccentHex, "#7FA7CC")
+        XCTAssertEqual(dark.resolvedPaletteSidebarHex, "#111B2B")
+        XCTAssertEqual(dark.resolvedPaletteBackgroundHex, "#0F1725")
+        XCTAssertEqual(dark.resolvedPalettePanelHex, "#152238")
+    }
+
     func testSaveCurrentThemeAsCustomPresetAndReapply() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.userThemeCustomization = .auroraMint

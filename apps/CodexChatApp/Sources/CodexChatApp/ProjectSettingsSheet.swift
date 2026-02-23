@@ -15,6 +15,7 @@ struct ProjectSettingsSheet: View {
 
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var sandboxMode: ProjectSandboxMode = .readOnly
     @State private var approvalPolicy: ProjectApprovalPolicy = .untrusted
@@ -160,12 +161,14 @@ struct ProjectSettingsSheet: View {
     }
 
     private var settingsDetailBackground: some View {
+        let appearance: AppModel.UserThemeCustomization.Appearance = colorScheme == .dark ? .dark : .light
+        let resolved = model.userThemeCustomization.resolvedColors(for: appearance)
         let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
         return themedBackground(
             baseHex: isCustomThemeEnabled
-                ? (model.userThemeCustomization.backgroundHex ?? tokens.palette.backgroundHex)
+                ? (resolved.backgroundHex ?? tokens.palette.backgroundHex)
                 : tokens.palette.backgroundHex,
-            gradientHex: isCustomThemeEnabled ? model.userThemeCustomization.chatGradientHex : nil
+            gradientHex: isCustomThemeEnabled ? resolved.chatGradientHex : nil
         )
     }
 

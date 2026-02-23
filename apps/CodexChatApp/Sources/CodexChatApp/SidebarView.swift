@@ -53,15 +53,17 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sidebarBackground: some View {
+        let appearance: AppModel.UserThemeCustomization.Appearance = colorScheme == .dark ? .dark : .light
+        let resolved = model.userThemeCustomization.resolvedColors(for: appearance)
         let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
         let sidebarHex = isCustomThemeEnabled
-            ? (model.userThemeCustomization.sidebarHex ?? tokens.palette.sidebarHex)
+            ? (resolved.sidebarHex ?? tokens.palette.sidebarHex)
             : tokens.palette.sidebarHex
         if isCustomThemeEnabled {
             ZStack {
                 Color(hex: sidebarHex)
                     .opacity(model.isTransparentThemeMode ? 0.58 : 1)
-                if let gradientHex = model.userThemeCustomization.sidebarGradientHex,
+                if let gradientHex = resolved.sidebarGradientHex,
                    model.userThemeCustomization.gradientStrength > 0
                 {
                     LinearGradient(

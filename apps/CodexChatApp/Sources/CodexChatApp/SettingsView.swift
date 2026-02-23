@@ -6,9 +6,11 @@ import SwiftUI
 struct SettingsView: View {
     static let minimumWindowSize = CGSize(width: 940, height: 620)
     static let detailMaxContentWidth: CGFloat = 980
+    static let themePresetGridColumnCount = 5
 
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
 
     @State private var selectedSection: SettingsSection = .defaultSelection
@@ -260,22 +262,26 @@ struct SettingsView: View {
     }
 
     private var settingsSidebarBackground: some View {
+        let appearance: AppModel.UserThemeCustomization.Appearance = colorScheme == .dark ? .dark : .light
+        let resolved = model.userThemeCustomization.resolvedColors(for: appearance)
         let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
         return themedBackground(
             baseHex: isCustomThemeEnabled
-                ? themeColorForDisplay(\.sidebarHex, fallback: tokens.palette.sidebarHex)
+                ? (resolved.sidebarHex ?? tokens.palette.sidebarHex)
                 : tokens.palette.sidebarHex,
-            gradientHex: isCustomThemeEnabled ? model.userThemeCustomization.sidebarGradientHex : nil
+            gradientHex: isCustomThemeEnabled ? resolved.sidebarGradientHex : nil
         )
     }
 
     private var settingsDetailBackground: some View {
+        let appearance: AppModel.UserThemeCustomization.Appearance = colorScheme == .dark ? .dark : .light
+        let resolved = model.userThemeCustomization.resolvedColors(for: appearance)
         let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
         return themedBackground(
             baseHex: isCustomThemeEnabled
-                ? themeColorForDisplay(\.backgroundHex, fallback: tokens.palette.backgroundHex)
+                ? (resolved.backgroundHex ?? tokens.palette.backgroundHex)
                 : tokens.palette.backgroundHex,
-            gradientHex: isCustomThemeEnabled ? model.userThemeCustomization.chatGradientHex : nil
+            gradientHex: isCustomThemeEnabled ? resolved.chatGradientHex : nil
         )
     }
 
@@ -396,38 +402,42 @@ struct SettingsView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(model.themePresets) { preset in
-                            themePresetChip(
-                                title: preset.title,
-                                isSelected: activePresetID == preset.id
-                            ) {
-                                model.applyThemePreset(preset)
-                                isThemeCustomEditorExpanded = false
-                            }
-                        }
-
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(minimum: 90), spacing: 8),
+                        count: Self.themePresetGridColumnCount
+                    ),
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(model.themePresets) { preset in
                         themePresetChip(
-                            title: "Custom",
-                            symbolName: "slider.horizontal.3",
-                            isSelected: isThemeCustomEditorExpanded && !model.isSavedCustomThemeActive
+                            title: preset.title,
+                            isSelected: activePresetID == preset.id
                         ) {
-                            isThemeCustomEditorExpanded.toggle()
-                        }
-
-                        if let savedCustomThemePreset = model.savedCustomThemePreset {
-                            themePresetChip(
-                                title: savedCustomThemePreset.displayName,
-                                symbolName: "bookmark.fill",
-                                isSelected: model.isSavedCustomThemeActive
-                            ) {
-                                model.applySavedCustomThemePreset()
-                                isThemeCustomEditorExpanded = false
-                            }
+                            model.applyThemePreset(preset)
+                            isThemeCustomEditorExpanded = false
                         }
                     }
-                    .padding(.vertical, 2)
+
+                    themePresetChip(
+                        title: "Custom",
+                        symbolName: "slider.horizontal.3",
+                        isSelected: isThemeCustomEditorExpanded && !model.isSavedCustomThemeActive
+                    ) {
+                        isThemeCustomEditorExpanded.toggle()
+                    }
+
+                    if let savedCustomThemePreset = model.savedCustomThemePreset {
+                        themePresetChip(
+                            title: savedCustomThemePreset.displayName,
+                            symbolName: "bookmark.fill",
+                            isSelected: model.isSavedCustomThemeActive
+                        ) {
+                            model.applySavedCustomThemePreset()
+                            isThemeCustomEditorExpanded = false
+                        }
+                    }
                 }
                 .accessibilityLabel("Theme presets")
 
@@ -1269,21 +1279,27 @@ struct SettingsView: View {
 private struct ThemeStudioPreview: View {
     let customization: AppModel.UserThemeCustomization
     let tokens: DesignTokens
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var resolved: AppModel.UserThemeCustomization.ResolvedColors {
+        let appearance: AppModel.UserThemeCustomization.Appearance = colorScheme == .dark ? .dark : .light
+        return customization.resolvedColors(for: appearance)
+    }
 
     private var accentHex: String {
-        customization.isEnabled ? (customization.accentHex ?? tokens.palette.accentHex) : tokens.palette.accentHex
+        customization.isEnabled ? (resolved.accentHex ?? tokens.palette.accentHex) : tokens.palette.accentHex
     }
 
     private var sidebarHex: String {
-        customization.isEnabled ? (customization.sidebarHex ?? tokens.palette.sidebarHex) : tokens.palette.sidebarHex
+        customization.isEnabled ? (resolved.sidebarHex ?? tokens.palette.sidebarHex) : tokens.palette.sidebarHex
     }
 
     private var chatHex: String {
-        customization.isEnabled ? (customization.backgroundHex ?? tokens.palette.backgroundHex) : tokens.palette.backgroundHex
+        customization.isEnabled ? (resolved.backgroundHex ?? tokens.palette.backgroundHex) : tokens.palette.backgroundHex
     }
 
     private var panelHex: String {
-        customization.isEnabled ? (customization.panelHex ?? tokens.palette.panelHex) : tokens.palette.panelHex
+        customization.isEnabled ? (resolved.panelHex ?? tokens.palette.panelHex) : tokens.palette.panelHex
     }
 
     var body: some View {
@@ -1292,7 +1308,7 @@ private struct ThemeStudioPreview: View {
                 Color(hex: sidebarHex)
                     .opacity(customization.isGlassEnabled ? 0.58 : 1)
                 if customization.isEnabled {
-                    let gradientHex = customization.sidebarGradientHex ?? sidebarHex
+                    let gradientHex = resolved.sidebarGradientHex ?? sidebarHex
                     LinearGradient(
                         colors: [Color(hex: sidebarHex), Color(hex: gradientHex)],
                         startPoint: .topLeading,
@@ -1321,7 +1337,7 @@ private struct ThemeStudioPreview: View {
                 Color(hex: chatHex)
                     .opacity(customization.isGlassEnabled ? 0.58 : 1)
                 if customization.isEnabled {
-                    let gradientHex = customization.chatGradientHex ?? chatHex
+                    let gradientHex = resolved.chatGradientHex ?? chatHex
                     LinearGradient(
                         colors: [Color(hex: chatHex), Color(hex: gradientHex)],
                         startPoint: .topLeading,
