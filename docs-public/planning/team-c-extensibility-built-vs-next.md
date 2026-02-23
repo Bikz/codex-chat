@@ -48,6 +48,7 @@ Date: 2026-02-23
 | P2 | Added shared app-level process failure classifier and adopted it for skill/mod install+update status/log messaging | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `c963738` |
 | P2 | Extended shared diagnostics vocabulary to extension worker and launchd automation failures and adopted it in extension execution logging | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `e97da5c` |
 | P2 | Added unified in-memory extensibility diagnostics stream and wired skill/mod/extension/launchd failure paths into it | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsStreamTests.swift` | `ff5e5e0` |
+| P2 | Surfaced shared extensibility diagnostics stream in Diagnostics UX for cross-surface failure visibility | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift` | `ba2b54e` |
 
 ### Remaining prioritized backlog
 
@@ -61,7 +62,8 @@ Date: 2026-02-23
 - Phase 5 shipped: app-level diagnostics now normalize skill/mod process failure categories for status+logging.
 - Phase 6 shipped: extension worker and launchd automation failures now use the same diagnostics vocabulary.
 - Phase 7 shipped: normalized diagnostics now stream into one shared in-memory app model.
-- Next step is persisting and surfacing this telemetry in dedicated UX and durable audit storage.
+- Phase 8 shipped: shared diagnostics stream is now visible in Diagnostics UX.
+- Next step is durable persistence/export for audit history and cross-session analysis.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
