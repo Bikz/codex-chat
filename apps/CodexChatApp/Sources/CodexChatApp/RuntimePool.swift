@@ -402,7 +402,10 @@ actor RuntimePool {
     private func markWorkerStarted(_ workerID: RuntimePoolWorkerID) {
         var health = healthByWorkerID[workerID] ?? WorkerHealth()
         health.state = .healthy
-        health.failureCount = 0
+        health.failureCount = Self.nextConsecutiveWorkerFailureCount(
+            previousCount: health.failureCount,
+            didRecover: true
+        )
         health.lastStartAt = Date()
         healthByWorkerID[workerID] = health
     }
@@ -410,7 +413,10 @@ actor RuntimePool {
     private func markWorkerFailed(_ workerID: RuntimePoolWorkerID) {
         var health = healthByWorkerID[workerID] ?? WorkerHealth()
         health.state = .degraded
-        health.failureCount += 1
+        health.failureCount = Self.nextConsecutiveWorkerFailureCount(
+            previousCount: health.failureCount,
+            didRecover: false
+        )
         health.lastFailureAt = Date()
         healthByWorkerID[workerID] = health
     }
@@ -480,6 +486,10 @@ actor RuntimePool {
             try await worker.restart()
             var health = healthByWorkerID[workerID] ?? WorkerHealth()
             health.state = .healthy
+            health.failureCount = Self.nextConsecutiveWorkerFailureCount(
+                previousCount: health.failureCount,
+                didRecover: true
+            )
             health.restartCount += 1
             health.lastStartAt = Date()
             healthByWorkerID[workerID] = health
@@ -695,6 +705,13 @@ actor RuntimePool {
         maxConsecutiveFailures: Int = Constants.maxConsecutiveWorkerRecoveryFailures
     ) -> Bool {
         max(1, failureCount) <= max(1, maxConsecutiveFailures)
+    }
+
+    static func nextConsecutiveWorkerFailureCount(
+        previousCount: Int,
+        didRecover: Bool
+    ) -> Int {
+        didRecover ? 0 : max(0, previousCount) + 1
     }
 
     private static func deterministicHash(for localThreadID: UUID) -> UInt64 {

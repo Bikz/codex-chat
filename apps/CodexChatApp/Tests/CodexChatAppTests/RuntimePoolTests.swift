@@ -125,4 +125,17 @@ final class RuntimePoolTests: XCTestCase {
         XCTAssertTrue(RuntimePool.shouldAttemptWorkerRestart(forFailureCount: 4))
         XCTAssertFalse(RuntimePool.shouldAttemptWorkerRestart(forFailureCount: 5))
     }
+
+    func testConsecutiveWorkerFailureCountResetsAfterSuccessfulRecovery() {
+        let failedOnce = RuntimePool.nextConsecutiveWorkerFailureCount(previousCount: 0, didRecover: false)
+        XCTAssertEqual(failedOnce, 1)
+
+        let failedTwice = RuntimePool.nextConsecutiveWorkerFailureCount(previousCount: failedOnce, didRecover: false)
+        XCTAssertEqual(failedTwice, 2)
+
+        let recovered = RuntimePool.nextConsecutiveWorkerFailureCount(previousCount: failedTwice, didRecover: true)
+        XCTAssertEqual(recovered, 0)
+
+        XCTAssertTrue(RuntimePool.shouldAttemptWorkerRestart(forFailureCount: max(1, recovered)))
+    }
 }
