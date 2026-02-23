@@ -97,6 +97,7 @@ make reliability-local
 ```
 
 Runs deterministic runtime/data reliability suites (recovery, mapping, approvals, durability).
+Also includes a `ledger backfill` CLI smoke check against a temporary project artifact root.
 
 Generate a reliability scorecard artifact:
 
