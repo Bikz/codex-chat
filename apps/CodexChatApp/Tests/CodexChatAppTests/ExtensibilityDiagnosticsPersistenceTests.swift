@@ -55,7 +55,7 @@ final class ExtensibilityDiagnosticsPersistenceTests: XCTestCase {
         model.setExtensibilityDiagnosticsRetentionLimit(1)
         XCTAssertEqual(model.extensibilityDiagnosticsRetentionLimit, 25)
 
-        model.setExtensibilityDiagnosticsRetentionLimit(5_000)
+        model.setExtensibilityDiagnosticsRetentionLimit(5000)
         XCTAssertEqual(model.extensibilityDiagnosticsRetentionLimit, 500)
     }
 

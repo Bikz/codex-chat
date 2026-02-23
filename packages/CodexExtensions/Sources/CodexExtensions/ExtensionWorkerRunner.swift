@@ -1,5 +1,5 @@
-import Foundation
 import CodexProcess
+import Foundation
 
 public enum ExtensionWorkerRunnerError: LocalizedError, Sendable {
     case invalidCommand
@@ -67,11 +67,10 @@ public actor ExtensionWorkerRunner {
             arguments = command
         }
 
-        let cwdURL: URL
-        if let cwd = handler.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty {
-            cwdURL = URL(fileURLWithPath: cwd, relativeTo: workingDirectory).standardizedFileURL
+        let cwdURL: URL = if let cwd = handler.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty {
+            URL(fileURLWithPath: cwd, relativeTo: workingDirectory).standardizedFileURL
         } else {
-            cwdURL = workingDirectory
+            workingDirectory
         }
 
         var stdinData = try JSONEncoder().encode(input)

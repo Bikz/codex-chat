@@ -446,8 +446,8 @@ struct ModsCanvas: View {
                         ? "bg issues \(summary.launchdFailingAutomationCount)"
                         : "bg active \(summary.launchdScheduledAutomationCount)"
                 )
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(summary.hasLaunchdFailures ? .orange : .secondary)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(summary.hasLaunchdFailures ? .orange : .secondary)
             }
 
             Spacer(minLength: 0)

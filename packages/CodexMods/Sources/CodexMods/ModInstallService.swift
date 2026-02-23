@@ -1,5 +1,5 @@
-import Foundation
 import CodexProcess
+import Foundation
 
 public struct ModInstallResult: Hashable, Sendable {
     public let source: String

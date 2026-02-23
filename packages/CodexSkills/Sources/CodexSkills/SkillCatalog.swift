@@ -1,5 +1,5 @@
-import Foundation
 import CodexProcess
+import Foundation
 
 public enum SkillScope: String, CaseIterable, Hashable, Sendable, Codable {
     case project

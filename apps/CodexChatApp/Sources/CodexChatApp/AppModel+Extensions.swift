@@ -980,13 +980,13 @@ extension AppModel {
     ) -> ExtensionAutomationHealthSummary? {
         guard !records.isEmpty else { return nil }
 
-        let failingCount = records.filter { ExtensionAutomationStatus.failingStatuses.contains($0.lastStatus) }.count
-        let launchdScheduledCount = records.filter {
+        let failingCount = records.count(where: { ExtensionAutomationStatus.failingStatuses.contains($0.lastStatus) })
+        let launchdScheduledCount = records.count(where: {
             ExtensionAutomationStatus.launchdScheduledStatuses.contains($0.lastStatus)
-        }.count
-        let launchdFailingCount = records.filter {
+        })
+        let launchdFailingCount = records.count(where: {
             ExtensionAutomationStatus.launchdFailingStatuses.contains($0.lastStatus)
-        }.count
+        })
         let nextRunAt = records.compactMap(\.nextRunAt).min()
         let latestRecord = records.max { lhs, rhs in
             let lhsDate = lhs.lastRunAt ?? .distantPast

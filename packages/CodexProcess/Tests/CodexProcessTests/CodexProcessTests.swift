@@ -34,7 +34,7 @@ final class CodexProcessTests: XCTestCase {
             try BoundedProcessRunner.runChecked(
                 ["sh", "-c", "echo fail >&2; exit 9"],
                 cwd: nil,
-                limits: .init(timeoutMs: 1_000, maxOutputBytes: 16_384)
+                limits: .init(timeoutMs: 1000, maxOutputBytes: 16384)
             )
         ) { error in
             guard case let BoundedProcessRunner.CommandError.failed(command, output) = error else {
@@ -50,7 +50,7 @@ final class CodexProcessTests: XCTestCase {
             try BoundedProcessRunner.runChecked(
                 ["sh", "-c", "sleep 1"],
                 cwd: nil,
-                limits: .init(timeoutMs: 100, maxOutputBytes: 16_384)
+                limits: .init(timeoutMs: 100, maxOutputBytes: 16384)
             )
         ) { error in
             guard case let BoundedProcessRunner.CommandError.failed(_, output) = error else {

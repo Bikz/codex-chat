@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 public enum BoundedProcessRunner {
     public struct Limits: Hashable, Sendable {
@@ -8,7 +8,7 @@ public enum BoundedProcessRunner {
 
         public init(timeoutMs: Int = 120_000, maxOutputBytes: Int = 131_072) {
             self.timeoutMs = max(100, timeoutMs)
-            self.maxOutputBytes = max(1_024, maxOutputBytes)
+            self.maxOutputBytes = max(1024, maxOutputBytes)
         }
 
         public static func fromEnvironment(

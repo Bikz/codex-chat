@@ -115,53 +115,53 @@ extension AppModel {
     ) -> ExtensibilityDiagnosticPlaybook {
         switch ExtensibilityProcessFailureDetails.Kind(rawValue: event.kind) {
         case .timeout:
-            return ExtensibilityDiagnosticPlaybook(
+            ExtensibilityDiagnosticPlaybook(
                 headline: "Retry with a narrower scope",
                 steps: [
                     "Re-run the action after reducing payload size or splitting the task.",
-                    "If this repeats, verify the worker command can complete locally within timeout."
+                    "If this repeats, verify the worker command can complete locally within timeout.",
                 ],
                 suggestedCommand: nil,
                 shortcut: nil
             )
         case .truncatedOutput:
-            return ExtensibilityDiagnosticPlaybook(
+            ExtensibilityDiagnosticPlaybook(
                 headline: "Inspect full process output",
                 steps: [
                     "Run `\(event.command)` manually to capture complete output.",
-                    "Trim verbose logs in scripts so critical errors stay in the first lines."
+                    "Trim verbose logs in scripts so critical errors stay in the first lines.",
                 ],
                 suggestedCommand: event.command,
                 shortcut: nil
             )
         case .launch:
-            return ExtensibilityDiagnosticPlaybook(
+            ExtensibilityDiagnosticPlaybook(
                 headline: "Fix executable launch prerequisites",
                 steps: [
                     "Confirm `\(event.command)` exists, is executable, and is reachable in PATH.",
-                    "For mods/extensions, verify entrypoint paths and execute permissions."
+                    "For mods/extensions, verify entrypoint paths and execute permissions.",
                 ],
                 suggestedCommand: event.command,
                 shortcut: nil
             )
         case .protocolViolation:
-            return ExtensibilityDiagnosticPlaybook(
+            ExtensibilityDiagnosticPlaybook(
                 headline: "Repair extension output contract",
                 steps: [
                     "Ensure the first stdout line is valid JSON matching the extension worker schema.",
-                    "Move extra diagnostics to stderr or later stdout lines."
+                    "Move extra diagnostics to stderr or later stdout lines.",
                 ],
                 suggestedCommand: nil,
                 shortcut: nil
             )
         case .command:
-            return commandFailurePlaybook(for: event.command)
+            commandFailurePlaybook(for: event.command)
         case .none:
-            return ExtensibilityDiagnosticPlaybook(
+            ExtensibilityDiagnosticPlaybook(
                 headline: "Collect command diagnostics",
                 steps: [
                     "Capture the failing command output and validate permissions/source trust.",
-                    "Retry after addressing environment preconditions."
+                    "Retry after addressing environment preconditions.",
                 ],
                 suggestedCommand: nil,
                 shortcut: nil
@@ -285,7 +285,7 @@ extension AppModel {
     }
 
     private static func normalizedDiagnosticsLimit(_ limit: Int) -> Int {
-        max(Self.minExtensibilityDiagnosticsLimit, min(Self.maxExtensibilityDiagnosticsLimit, limit))
+        max(minExtensibilityDiagnosticsLimit, min(maxExtensibilityDiagnosticsLimit, limit))
     }
 
     private static func details(command: String, output: String) -> ExtensibilityProcessFailureDetails {
@@ -336,7 +336,7 @@ extension AppModel {
                 headline: "Recover background automation state",
                 steps: [
                     "Re-enable background automations and confirm launchd permissions in Settings.",
-                    "Re-run the automation and verify launchd health in the Mods view."
+                    "Re-run the automation and verify launchd health in the Mods view.",
                 ],
                 suggestedCommand: command,
                 shortcut: .openAppSettings
@@ -348,7 +348,7 @@ extension AppModel {
                 headline: "Validate install source and command access",
                 steps: [
                     "Verify repository/package source trust, credentials, and network reachability.",
-                    "Run `\(command)` manually to inspect the exact failure details."
+                    "Run `\(command)` manually to inspect the exact failure details.",
                 ],
                 suggestedCommand: command,
                 shortcut: nil
@@ -359,7 +359,7 @@ extension AppModel {
             headline: "Retry after validating command prerequisites",
             steps: [
                 "Confirm command availability, permissions, and required environment variables.",
-                "Re-run the operation after correcting the reported error."
+                "Re-run the operation after correcting the reported error.",
             ],
             suggestedCommand: command,
             shortcut: nil

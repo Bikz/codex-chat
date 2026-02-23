@@ -335,9 +335,9 @@ extension AppModel {
     ) -> Set<ExtensibilityCapability> {
         switch installer {
         case .npx:
-            return [.network, .runtimeControl]
+            [.network, .runtimeControl]
         case .git:
-            return skillInstallLikelyRequiresNetwork(source) ? [.network] : []
+            skillInstallLikelyRequiresNetwork(source) ? [.network] : []
         }
     }
 

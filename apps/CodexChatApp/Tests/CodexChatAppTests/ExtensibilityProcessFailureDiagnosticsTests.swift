@@ -1,7 +1,7 @@
+@testable import CodexChatShared
 import CodexExtensions
 import CodexMods
 import CodexSkills
-@testable import CodexChatShared
 import XCTest
 
 @MainActor
