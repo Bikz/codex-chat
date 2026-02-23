@@ -220,6 +220,7 @@ struct DiagnosticsView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(automationTimelineEvents.prefix(8)) { event in
+                            let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 8) {
                                     Text(event.timestamp.formatted(.dateTime.hour().minute().second()))
@@ -242,11 +243,53 @@ struct DiagnosticsView: View {
                                     .font(.caption)
                                     .lineLimit(3)
                                     .foregroundStyle(.secondary)
+                                Text("Recovery: \(playbook.primaryStep)")
+                                    .font(.caption2)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
                                 if !event.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                     Text("Retry policy: \(rerunExecutionPolicyMessage(event.command))")
                                         .font(.caption2)
                                         .lineLimit(2)
                                         .foregroundStyle(.secondary)
+                                }
+                                HStack(spacing: 10) {
+                                    Button("Copy recovery steps") {
+                                        copyToPasteboard(playbook.steps.joined(separator: "\n"))
+                                    }
+                                    .buttonStyle(.link)
+                                    .font(.caption2)
+                                    if let suggestedCommand = playbook.suggestedCommand {
+                                        Button("Prepare rerun in composer") {
+                                            onPrepareRerunCommand(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+
+                                        let canExecuteDirectly = canExecuteRerunCommand(suggestedCommand)
+                                        Button(
+                                            canExecuteDirectly ? "Run allowlisted rerun" : "Direct rerun blocked"
+                                        ) {
+                                            pendingAllowlistedRerunCommand = suggestedCommand
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                        .disabled(!canExecuteDirectly)
+                                        .help(rerunExecutionPolicyMessage(suggestedCommand))
+
+                                        Button("Copy rerun command") {
+                                            copyToPasteboard(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                    if let shortcut = playbook.shortcut {
+                                        Button(shortcutLabel(for: shortcut)) {
+                                            performShortcut(shortcut)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
                                 }
                             }
                         }
