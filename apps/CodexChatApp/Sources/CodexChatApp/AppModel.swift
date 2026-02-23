@@ -295,6 +295,20 @@ final class AppModel: ObservableObject {
         let definition: ModAutomationDefinition
     }
 
+    struct ExtensionAutomationHealthSummary: Hashable, Sendable {
+        let modID: String
+        let automationCount: Int
+        let failingAutomationCount: Int
+        let nextRunAt: Date?
+        let lastRunAt: Date?
+        let lastStatus: String
+        let lastError: String?
+
+        var hasFailures: Bool {
+            failingAutomationCount > 0
+        }
+    }
+
     struct PendingComputerActionPreview: Identifiable, Hashable {
         let id: String
         let threadID: UUID
@@ -615,6 +629,7 @@ final class AppModel: ObservableObject {
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
     @Published var extensionModsBarVisibilityByThreadID: [UUID: Bool] = [:]
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
+    @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
     @Published var activeModsBarSlot: ModUISlots.ModsBar?
     @Published var activeModsBarModID: String?
     @Published var activeModsBarModDirectoryPath: String?

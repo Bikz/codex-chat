@@ -855,9 +855,85 @@ extension AppModel {
                     launchdLabel: launchdLabel(for: resolved)
                 )
             )
+            await refreshAutomationHealthSummary(for: resolved.modID)
         } catch {
             appendLog(.warning, "Failed to persist extension automation state: \(error.localizedDescription)")
         }
+    }
+
+    func refreshAutomationHealthSummaries(for modIDs: [String]) async {
+        let uniqueModIDs = Array(Set(modIDs)).sorted()
+        guard !uniqueModIDs.isEmpty else {
+            extensionAutomationHealthByModID = [:]
+            return
+        }
+
+        guard let extensionAutomationStateRepository else {
+            extensionAutomationHealthByModID = [:]
+            return
+        }
+
+        var next: [String: ExtensionAutomationHealthSummary] = [:]
+        for modID in uniqueModIDs {
+            do {
+                let records = try await extensionAutomationStateRepository.list(modID: modID)
+                if let summary = Self.summarizeAutomationHealth(modID: modID, records: records) {
+                    next[modID] = summary
+                }
+            } catch {
+                appendLog(.warning, "Failed loading automation health for mod \(modID): \(error.localizedDescription)")
+            }
+        }
+
+        extensionAutomationHealthByModID = next
+    }
+
+    func refreshAutomationHealthSummary(for modID: String) async {
+        guard let extensionAutomationStateRepository else {
+            extensionAutomationHealthByModID.removeValue(forKey: modID)
+            return
+        }
+
+        do {
+            let records = try await extensionAutomationStateRepository.list(modID: modID)
+            let summary = Self.summarizeAutomationHealth(modID: modID, records: records)
+            if let summary {
+                extensionAutomationHealthByModID[modID] = summary
+            } else {
+                extensionAutomationHealthByModID.removeValue(forKey: modID)
+            }
+        } catch {
+            appendLog(.warning, "Failed refreshing automation health for mod \(modID): \(error.localizedDescription)")
+        }
+    }
+
+    static func summarizeAutomationHealth(
+        modID: String,
+        records: [ExtensionAutomationStateRecord]
+    ) -> ExtensionAutomationHealthSummary? {
+        guard !records.isEmpty else { return nil }
+
+        let failingStatuses: Set<String> = ["failed", "permission-denied"]
+        let failingCount = records.filter { failingStatuses.contains($0.lastStatus) }.count
+        let nextRunAt = records.compactMap(\.nextRunAt).min()
+        let latestRecord = records.max { lhs, rhs in
+            let lhsDate = lhs.lastRunAt ?? .distantPast
+            let rhsDate = rhs.lastRunAt ?? .distantPast
+            if lhsDate == rhsDate {
+                return lhs.automationID < rhs.automationID
+            }
+            return lhsDate < rhsDate
+        } ?? records[0]
+
+        return ExtensionAutomationHealthSummary(
+            modID: modID,
+            automationCount: records.count,
+            failingAutomationCount: failingCount,
+            nextRunAt: nextRunAt,
+            lastRunAt: latestRecord.lastRunAt,
+            lastStatus: latestRecord.lastStatus,
+            lastError: latestRecord.lastError
+        )
     }
 
     private func launchdLabel(for resolved: ResolvedExtensionAutomation) -> String {

@@ -77,6 +77,8 @@ extension AppModel {
                     selectedGlobalPath: snapshot.selectedGlobal,
                     selectedProjectPath: snapshot.selectedProject
                 )
+                let modIDs = (snapshot.globalMods + snapshot.projectMods).map(\.definition.manifest.id)
+                await refreshAutomationHealthSummaries(for: modIDs)
 
                 startModWatchersIfNeeded(globalRootPath: snapshot.globalRoot, projectRootPath: snapshot.projectRoot)
             } catch {
@@ -85,6 +87,7 @@ extension AppModel {
                 activeModsBarSlot = nil
                 activeExtensionHooks = []
                 activeExtensionAutomations = []
+                extensionAutomationHealthByModID = [:]
                 Task { await stopExtensionAutomations() }
                 appendLog(.error, "Mods refresh failed: \(error.localizedDescription)")
             }
