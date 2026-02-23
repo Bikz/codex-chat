@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: quick ci format format-check lint test-fast test periphery release-dmg host-metadata-check parity-check oss-smoke bootstrap
+.PHONY: quick ci format format-check lint test-fast test periphery release-dmg release-next-version release-tag-next host-metadata-check parity-check oss-smoke bootstrap
 
 quick: host-metadata-check parity-check format-check lint test-fast
 
@@ -26,6 +26,12 @@ periphery:
 
 release-dmg:
 	./scripts/release/build-notarized-dmg.sh
+
+release-next-version:
+	./scripts/release/next-version.sh
+
+release-tag-next:
+	./scripts/release/tag-next-release.sh
 
 host-metadata-check:
 	./scripts/check-host-app-metadata.sh

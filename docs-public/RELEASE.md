@@ -22,6 +22,22 @@ SwiftPM GUI binaries are not release inputs.
 - Tag push: `v*` (example `v0.2.0`)
 - Workflow: `.github/workflows/release-dmg.yml`
 
+## Auto-Increment Version + Build
+
+- Version auto-increment helper (patch bump, starting at `v0.0.1` when no tags exist):
+
+```sh
+make release-next-version
+```
+
+- Create + push next release tag (triggers GitHub release workflow):
+
+```sh
+make release-tag-next
+```
+
+- Build number is already auto-incremented in CI via `GITHUB_RUN_NUMBER`.
+
 ## Required Secrets
 
 - `APPLE_DEVELOPER_ID_CERT_P12_BASE64`
