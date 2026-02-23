@@ -152,6 +152,57 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(model.extensionStatusMessage?.contains("Unknown computer action: unknown.action") == true)
     }
 
+    func testPerformModsBarActionAppliesInProjectArtifactsAndRejectsTraversal() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-artifacts-safety")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let threadID = UUID()
+        let projectURL = try makeTempDirectory(prefix: "modsbar-artifacts-project")
+        let projectPath = projectURL.path
+        let outsideURL = projectURL.deletingLastPathComponent().appendingPathComponent("escape.txt", isDirectory: false)
+        let insideURL = projectURL.appendingPathComponent("artifacts/inside.md", isDirectory: false)
+        let script = try makeArtifactScript()
+
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Project", path: projectPath, trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.threadsState = .loaded([
+            ThreadRecord(id: threadID, projectId: projectID, title: "Thread"),
+        ])
+        model.selectedThreadID = threadID
+        model.activeModsBarModID = "acme.artifacts"
+        model.activeExtensionHooks = [
+            AppModel.ResolvedExtensionHook(
+                modID: "acme.artifacts",
+                modDirectoryPath: projectPath,
+                definition: ModHookDefinition(
+                    id: "artifact-hook",
+                    event: .modsBarAction,
+                    handler: .init(command: [script.path], cwd: ".")
+                )
+            ),
+        ]
+
+        model.performModsBarAction(
+            .init(
+                id: "emit",
+                label: "Emit",
+                kind: .emitEvent,
+                payload: [:]
+            )
+        )
+
+        try await eventually(timeoutSeconds: 10) {
+            FileManager.default.fileExists(atPath: insideURL.path)
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: insideURL.path))
+        XCTAssertEqual(try String(contentsOf: insideURL), "inside")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outsideURL.path))
+        XCTAssertTrue(model.logs.contains { $0.message.contains("outside project root") })
+    }
+
     func testUpsertPersonalNotesInlineEmitsModsBarAction() async throws {
         let repositories = try makeRepositories(prefix: "modsbar-personal-notes-upsert")
         let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
@@ -482,6 +533,19 @@ final class ModsBarActionTests: XCTestCase {
         #!/bin/sh
         cat > "\(outputURL.path)"
         echo '{"ok":true}'
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+        return scriptURL
+    }
+
+    private func makeArtifactScript() throws -> URL {
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("artifact-\(UUID().uuidString).sh", isDirectory: false)
+        let script = """
+        #!/bin/sh
+        cat > /dev/null
+        echo '{"ok":true,"artifacts":[{"op":"upsert","path":"artifacts/inside.md","content":"inside"},{"op":"upsert","path":"../escape.txt","content":"escape"}]}'
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
