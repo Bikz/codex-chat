@@ -24,6 +24,14 @@ final class ExtensionAutomationHealthTests: XCTestCase {
                 lastStatus: "failed",
                 lastError: "network timeout"
             ),
+            .init(
+                modID: "acme.mod",
+                automationID: "nightly-cleanup",
+                nextRunAt: now.addingTimeInterval(900),
+                lastRunAt: now.addingTimeInterval(-120),
+                lastStatus: "launchd-scheduled",
+                lastError: nil
+            ),
         ]
 
         let summary = AppModel.summarizeAutomationHealth(
@@ -32,11 +40,36 @@ final class ExtensionAutomationHealthTests: XCTestCase {
         )
 
         XCTAssertEqual(summary?.modID, "acme.mod")
-        XCTAssertEqual(summary?.automationCount, 2)
+        XCTAssertEqual(summary?.automationCount, 3)
         XCTAssertEqual(summary?.failingAutomationCount, 1)
+        XCTAssertEqual(summary?.launchdScheduledAutomationCount, 1)
+        XCTAssertEqual(summary?.launchdFailingAutomationCount, 0)
         XCTAssertEqual(summary?.lastStatus, "failed")
         XCTAssertEqual(summary?.lastError, "network timeout")
         XCTAssertEqual(summary?.nextRunAt, now.addingTimeInterval(120))
+    }
+
+    func testSummarizeAutomationHealthTracksLaunchdFailuresSeparately() {
+        let now = Date()
+        let records: [ExtensionAutomationStateRecord] = [
+            .init(
+                modID: "acme.mod",
+                automationID: "nightly-cleanup",
+                nextRunAt: nil,
+                lastRunAt: now.addingTimeInterval(-30),
+                lastStatus: "launchd-failed",
+                lastError: "bootstrap failed"
+            ),
+        ]
+
+        let summary = AppModel.summarizeAutomationHealth(
+            modID: "acme.mod",
+            records: records
+        )
+
+        XCTAssertEqual(summary?.failingAutomationCount, 1)
+        XCTAssertEqual(summary?.launchdFailingAutomationCount, 1)
+        XCTAssertTrue(summary?.hasLaunchdFailures == true)
     }
 
     func testRefreshAutomationHealthSummariesLoadsRepositoryState() async throws {
@@ -49,7 +82,7 @@ final class ExtensionAutomationHealthTests: XCTestCase {
                 automationID: "daily-sync",
                 nextRunAt: Date().addingTimeInterval(300),
                 lastRunAt: Date().addingTimeInterval(-30),
-                lastStatus: "scheduled",
+                lastStatus: "launchd-scheduled",
                 lastError: nil
             )
         )
@@ -60,7 +93,8 @@ final class ExtensionAutomationHealthTests: XCTestCase {
         XCTAssertNotNil(summary)
         XCTAssertEqual(summary?.automationCount, 1)
         XCTAssertEqual(summary?.failingAutomationCount, 0)
-        XCTAssertEqual(summary?.lastStatus, "scheduled")
+        XCTAssertEqual(summary?.launchdScheduledAutomationCount, 1)
+        XCTAssertEqual(summary?.lastStatus, "launchd-scheduled")
     }
 
     func testRefreshAutomationHealthSummariesClearsStateForEmptyModSet() async {
@@ -70,6 +104,8 @@ final class ExtensionAutomationHealthTests: XCTestCase {
                 modID: "acme.mod",
                 automationCount: 1,
                 failingAutomationCount: 0,
+                launchdScheduledAutomationCount: 0,
+                launchdFailingAutomationCount: 0,
                 nextRunAt: nil,
                 lastRunAt: nil,
                 lastStatus: "ok",

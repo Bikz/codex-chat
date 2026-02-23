@@ -440,6 +440,16 @@ struct ModsCanvas: View {
                     .foregroundStyle(.secondary)
             }
 
+            if summary.launchdScheduledAutomationCount > 0 || summary.hasLaunchdFailures {
+                Text(
+                    summary.hasLaunchdFailures
+                        ? "bg issues \(summary.launchdFailingAutomationCount)"
+                        : "bg active \(summary.launchdScheduledAutomationCount)"
+                )
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(summary.hasLaunchdFailures ? .orange : .secondary)
+            }
+
             Spacer(minLength: 0)
         }
     }

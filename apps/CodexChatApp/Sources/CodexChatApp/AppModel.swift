@@ -299,6 +299,8 @@ final class AppModel: ObservableObject {
         let modID: String
         let automationCount: Int
         let failingAutomationCount: Int
+        let launchdScheduledAutomationCount: Int
+        let launchdFailingAutomationCount: Int
         let nextRunAt: Date?
         let lastRunAt: Date?
         let lastStatus: String
@@ -306,6 +308,10 @@ final class AppModel: ObservableObject {
 
         var hasFailures: Bool {
             failingAutomationCount > 0
+        }
+
+        var hasLaunchdFailures: Bool {
+            launchdFailingAutomationCount > 0
         }
     }
 

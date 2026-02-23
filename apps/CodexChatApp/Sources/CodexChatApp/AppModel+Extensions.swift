@@ -21,6 +21,32 @@ extension AppModel {
         static let maxPrompts = 12
     }
 
+    private enum ExtensionAutomationStatus {
+        static let ok = "ok"
+        static let failed = "failed"
+        static let permissionDenied = "permission-denied"
+        static let launchdScheduled = "launchd-scheduled"
+        static let launchdFailed = "launchd-failed"
+        static let launchdPermissionDenied = "launchd-permission-denied"
+
+        static let failingStatuses: Set<String> = [
+            failed,
+            permissionDenied,
+            launchdFailed,
+            launchdPermissionDenied,
+        ]
+
+        static let launchdScheduledStatuses: Set<String> = [
+            launchdScheduled,
+            "scheduled", // Backward compatibility for pre-migration records.
+        ]
+
+        static let launchdFailingStatuses: Set<String> = [
+            launchdFailed,
+            launchdPermissionDenied,
+        ]
+    }
+
     private struct PromptBookStatePayload: Decodable {
         struct Prompt: Decodable {
             let id: String?
@@ -569,7 +595,7 @@ extension AppModel {
         guard permissionOK else {
             await markAutomationState(
                 resolved: resolved,
-                status: "permission-denied",
+                status: ExtensionAutomationStatus.permissionDenied,
                 error: "Permissions not granted",
                 nextRunAt: nil
             )
@@ -613,11 +639,21 @@ extension AppModel {
             )
 
             let nextRun = try? CronSchedule(expression: resolved.definition.schedule).nextRun(after: Date())
-            await markAutomationState(resolved: resolved, status: "ok", error: nil, nextRunAt: nextRun)
+            await markAutomationState(
+                resolved: resolved,
+                status: ExtensionAutomationStatus.ok,
+                error: nil,
+                nextRunAt: nextRun
+            )
             return true
         } catch {
             let errorMessage = sanitizeExtensionLog(error.localizedDescription)
-            await markAutomationState(resolved: resolved, status: "failed", error: errorMessage, nextRunAt: nil)
+            await markAutomationState(
+                resolved: resolved,
+                status: ExtensionAutomationStatus.failed,
+                error: errorMessage,
+                nextRunAt: nil
+            )
             appendLog(.warning, "Extension automation \(resolved.definition.id) failed: \(errorMessage)")
             return false
         }
@@ -913,8 +949,13 @@ extension AppModel {
     ) -> ExtensionAutomationHealthSummary? {
         guard !records.isEmpty else { return nil }
 
-        let failingStatuses: Set<String> = ["failed", "permission-denied"]
-        let failingCount = records.filter { failingStatuses.contains($0.lastStatus) }.count
+        let failingCount = records.filter { ExtensionAutomationStatus.failingStatuses.contains($0.lastStatus) }.count
+        let launchdScheduledCount = records.filter {
+            ExtensionAutomationStatus.launchdScheduledStatuses.contains($0.lastStatus)
+        }.count
+        let launchdFailingCount = records.filter {
+            ExtensionAutomationStatus.launchdFailingStatuses.contains($0.lastStatus)
+        }.count
         let nextRunAt = records.compactMap(\.nextRunAt).min()
         let latestRecord = records.max { lhs, rhs in
             let lhsDate = lhs.lastRunAt ?? .distantPast
@@ -929,6 +970,8 @@ extension AppModel {
             modID: modID,
             automationCount: records.count,
             failingAutomationCount: failingCount,
+            launchdScheduledAutomationCount: launchdScheduledCount,
+            launchdFailingAutomationCount: launchdFailingCount,
             nextRunAt: nextRunAt,
             lastRunAt: latestRecord.lastRunAt,
             lastStatus: latestRecord.lastStatus,
@@ -1067,7 +1110,7 @@ extension AppModel {
             guard permitted else {
                 await markAutomationState(
                     resolved: automation,
-                    status: "permission-denied",
+                    status: ExtensionAutomationStatus.launchdPermissionDenied,
                     error: "runWhenAppClosed permission denied",
                     nextRunAt: nil
                 )
@@ -1081,7 +1124,7 @@ extension AppModel {
             guard !command.isEmpty else {
                 await markAutomationState(
                     resolved: automation,
-                    status: "failed",
+                    status: ExtensionAutomationStatus.launchdFailed,
                     error: "Automation command is empty",
                     nextRunAt: nil
                 )
@@ -1112,7 +1155,7 @@ extension AppModel {
                 let nextRun = try? CronSchedule(expression: automation.definition.schedule).nextRun(after: Date())
                 await markAutomationState(
                     resolved: automation,
-                    status: "scheduled",
+                    status: ExtensionAutomationStatus.launchdScheduled,
                     error: nil,
                     nextRunAt: nextRun
                 )
@@ -1121,7 +1164,7 @@ extension AppModel {
                 appendLog(.warning, "Failed configuring launchd automation \(label): \(errorMessage)")
                 await markAutomationState(
                     resolved: automation,
-                    status: "failed",
+                    status: ExtensionAutomationStatus.launchdFailed,
                     error: errorMessage,
                     nextRunAt: nil
                 )
