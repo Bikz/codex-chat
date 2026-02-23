@@ -38,6 +38,7 @@ public struct LoadingStateView: View {
         self.title = title
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isPulsing = false
 
     public var body: some View {
@@ -45,12 +46,25 @@ public struct LoadingStateView: View {
             ProgressView()
             Text(title)
                 .foregroundStyle(.secondary)
-                .opacity(isPulsing ? 0.5 : 1.0)
-                .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isPulsing)
-                .onAppear { isPulsing = true }
+                .opacity(Self.pulsingOpacity(isPulsing: isPulsing, reduceMotion: reduceMotion))
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+                    value: isPulsing
+                )
+                .onAppear {
+                    isPulsing = !reduceMotion
+                }
+                .onChange(of: reduceMotion) { newValue in
+                    isPulsing = !newValue
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    nonisolated static func pulsingOpacity(isPulsing: Bool, reduceMotion: Bool) -> Double {
+        guard !reduceMotion else { return 1.0 }
+        return isPulsing ? 0.5 : 1.0
     }
 }
 
