@@ -58,13 +58,21 @@ When runtime proposes edits in mod roots, CodexChat enforces review:
 
 ## Native Computer Actions Safety
 
-CodexChat supports native macOS computer actions for personal workflows (desktop cleanup, calendar lookups, and message drafting/sending).
+CodexChat supports native macOS computer actions for personal workflows, including:
+
+- `desktop.cleanup`
+- `calendar.today`, `calendar.create`, `calendar.update`, `calendar.delete`
+- `reminders.today`
+- `messages.send`
+- `applescript.run`
+- `files.read`, `files.move`
 
 - Preview-first execution is mandatory for externally visible or file-changing actions.
 - Execution requires explicit confirmation from the preview sheet before the action runs.
 - Action execution is bound to the same run context as its preview artifact.
 - Desktop cleanup only performs move operations in v1 (no permanent delete) and stores undo manifests.
-- Calendar access is read-only in v1.
+- Read-only actions are allowed to execute without confirmation only when the provider is marked read-only.
+- Mutating actions (calendar create/update/delete, files move, messaging send, script execution) require explicit confirmation.
 - Messages send requires explicit draft preview and send confirmation.
 - Permission grants/denials and run outcomes are persisted locally in metadata SQLite.
 
