@@ -43,6 +43,27 @@ final class ComputerActionHarnessServerTests: XCTestCase {
         XCTAssertEqual(response.errorCode, "request_too_large")
     }
 
+    func testServerRejectsMalformedPayloadFuzzSet() throws {
+        let socketURL = try makeSocketURL()
+        defer { try? FileManager.default.removeItem(at: socketURL.deletingLastPathComponent()) }
+
+        let server = ComputerActionHarnessServer(socketPath: socketURL.path) { request in
+            HarnessInvokeResponse(
+                requestID: request.requestID,
+                status: .executed,
+                summary: "ok"
+            )
+        }
+        try server.start()
+        defer { server.stop() }
+
+        for malformed in malformedPayloadSamples(count: 24) {
+            let response = try Self.invokeRaw(socketPath: socketURL.path, payload: Data("\(malformed)\n".utf8))
+            XCTAssertEqual(response.status, .invalid)
+            XCTAssertEqual(response.errorCode, "invalid_json")
+        }
+    }
+
     private func makeSocketURL() throws -> URL {
         let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(10)
         let root = URL(fileURLWithPath: "/tmp", isDirectory: true)
@@ -165,5 +186,27 @@ final class ComputerActionHarnessServerTests: XCTestCase {
                 )
             }
         }
+    }
+
+    private func malformedPayloadSamples(count: Int) -> [String] {
+        var samples: [String] = [
+            "",
+            "not-json",
+            "{",
+            "}",
+            "[1,2",
+            "\"unterminated",
+            "{\"requestId\":",
+            "{\"requestId\":\"1\",\"sessionToken\":\"x\"",
+        ]
+
+        var state: UInt64 = 0xC0DE_F00D
+        while samples.count < count {
+            state = state &* 6364136223846793005 &+ 1
+            let token = String(state, radix: 36)
+            samples.append("malformed-\(token)")
+        }
+
+        return samples
     }
 }
