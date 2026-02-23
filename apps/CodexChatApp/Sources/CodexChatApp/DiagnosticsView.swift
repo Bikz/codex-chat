@@ -1,3 +1,4 @@
+import AppKit
 import CodexKit
 import SwiftUI
 
@@ -142,6 +143,20 @@ struct DiagnosticsView: View {
                                     .font(.caption2)
                                     .lineLimit(2)
                                     .foregroundStyle(.secondary)
+                                HStack(spacing: 10) {
+                                    Button("Copy recovery steps") {
+                                        copyToPasteboard(playbook.steps.joined(separator: "\n"))
+                                    }
+                                    .buttonStyle(.link)
+                                    .font(.caption2)
+                                    if let suggestedCommand = playbook.suggestedCommand {
+                                        Button("Copy rerun command") {
+                                            copyToPasteboard(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                }
                             }
                         }
                     }
@@ -229,5 +244,10 @@ struct DiagnosticsView: View {
                 try? await Task.sleep(nanoseconds: 750_000_000)
             }
         }
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 }

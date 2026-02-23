@@ -40,6 +40,7 @@ extension AppModel {
     struct ExtensibilityDiagnosticPlaybook: Hashable, Sendable {
         let headline: String
         let steps: [String]
+        let suggestedCommand: String?
 
         var primaryStep: String {
             steps.first ?? headline
@@ -114,7 +115,8 @@ extension AppModel {
                 steps: [
                     "Re-run the action after reducing payload size or splitting the task.",
                     "If this repeats, verify the worker command can complete locally within timeout."
-                ]
+                ],
+                suggestedCommand: nil
             )
         case .truncatedOutput:
             return ExtensibilityDiagnosticPlaybook(
@@ -122,7 +124,8 @@ extension AppModel {
                 steps: [
                     "Run `\(event.command)` manually to capture complete output.",
                     "Trim verbose logs in scripts so critical errors stay in the first lines."
-                ]
+                ],
+                suggestedCommand: event.command
             )
         case .launch:
             return ExtensibilityDiagnosticPlaybook(
@@ -130,7 +133,8 @@ extension AppModel {
                 steps: [
                     "Confirm `\(event.command)` exists, is executable, and is reachable in PATH.",
                     "For mods/extensions, verify entrypoint paths and execute permissions."
-                ]
+                ],
+                suggestedCommand: event.command
             )
         case .protocolViolation:
             return ExtensibilityDiagnosticPlaybook(
@@ -138,7 +142,8 @@ extension AppModel {
                 steps: [
                     "Ensure the first stdout line is valid JSON matching the extension worker schema.",
                     "Move extra diagnostics to stderr or later stdout lines."
-                ]
+                ],
+                suggestedCommand: nil
             )
         case .command:
             return commandFailurePlaybook(for: event.command)
@@ -148,7 +153,8 @@ extension AppModel {
                 steps: [
                     "Capture the failing command output and validate permissions/source trust.",
                     "Retry after addressing environment preconditions."
-                ]
+                ],
+                suggestedCommand: nil
             )
         }
     }
@@ -321,7 +327,8 @@ extension AppModel {
                 steps: [
                     "Re-enable background automations and confirm launchd permissions in Settings.",
                     "Re-run the automation and verify launchd health in the Mods view."
-                ]
+                ],
+                suggestedCommand: command
             )
         }
 
@@ -331,7 +338,8 @@ extension AppModel {
                 steps: [
                     "Verify repository/package source trust, credentials, and network reachability.",
                     "Run `\(command)` manually to inspect the exact failure details."
-                ]
+                ],
+                suggestedCommand: command
             )
         }
 
@@ -340,7 +348,8 @@ extension AppModel {
             steps: [
                 "Confirm command availability, permissions, and required environment variables.",
                 "Re-run the operation after correcting the reported error."
-            ]
+            ],
+            suggestedCommand: command
         )
     }
 }

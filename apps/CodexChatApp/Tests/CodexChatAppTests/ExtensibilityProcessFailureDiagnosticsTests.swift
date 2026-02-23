@@ -87,6 +87,7 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
             playbook.primaryStep,
             "Re-run the action after reducing payload size or splitting the task."
         )
+        XCTAssertNil(playbook.suggestedCommand)
     }
 
     func testBuildsLaunchdCommandRecoveryPlaybook() {
@@ -105,6 +106,10 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
             playbook.primaryStep,
             "Re-enable background automations and confirm launchd permissions in Settings."
         )
+        XCTAssertEqual(
+            playbook.suggestedCommand,
+            "launchctl bootstrap gui/501/com.example.mod"
+        )
     }
 
     func testBuildsGitCommandRecoveryPlaybook() {
@@ -122,6 +127,10 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
         XCTAssertEqual(
             playbook.primaryStep,
             "Verify repository/package source trust, credentials, and network reachability."
+        )
+        XCTAssertEqual(
+            playbook.suggestedCommand,
+            "git clone --depth 1 https://example.test/skill"
         )
     }
 }
