@@ -1022,7 +1022,11 @@ struct SettingsView: View {
     private func updateUserThemeCustomization(_ mutate: (inout AppModel.UserThemeCustomization) -> Void) {
         var next = model.userThemeCustomization
         mutate(&next)
-        model.setUserThemeCustomization(next)
+        guard next != model.userThemeCustomization else { return }
+        // Avoid publishing object changes during an in-flight view update cycle.
+        DispatchQueue.main.async {
+            model.setUserThemeCustomization(next)
+        }
     }
 
     private enum AccountStatusTone {
