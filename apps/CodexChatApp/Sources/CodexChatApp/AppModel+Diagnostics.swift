@@ -227,8 +227,10 @@ extension AppModel {
     private func persistAutomationTimelineFocusFilterIfNeeded() {
         guard let preferenceRepository else { return }
         let snapshot = automationTimelineFocusFilter.rawValue
-        automationTimelineFocusFilterPersistenceTask?.cancel()
+        let previousTask = automationTimelineFocusFilterPersistenceTask
         automationTimelineFocusFilterPersistenceTask = Task { [weak self] in
+            _ = await previousTask?.result
+            guard !Task.isCancelled else { return }
             do {
                 try await preferenceRepository.setPreference(
                     key: .extensibilityAutomationTimelineFocusFilterV1,
