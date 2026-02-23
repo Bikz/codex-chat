@@ -153,6 +153,82 @@ final class CodexExtensionsTests: XCTestCase {
         XCTAssertEqual(nativeAction?.externallyVisible, false)
     }
 
+    func testWorkerRunnerRejectsMalformedFirstOutputLine() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+        let scriptURL = tempRoot.appendingPathComponent("worker-malformed-first-line.sh")
+        let script = """
+        #!/bin/zsh
+        read line
+        echo "not-json"
+        echo '{"ok":true}'
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+        let runner = ExtensionWorkerRunner()
+        let hook = ExtensionHandlerDefinition(command: [scriptURL.path])
+        let envelope = ExtensionEventEnvelope(
+            event: .turnCompleted,
+            timestamp: Date(),
+            project: .init(id: UUID().uuidString, path: tempRoot.path),
+            thread: .init(id: UUID().uuidString),
+            turn: .init(id: UUID().uuidString, status: "completed"),
+            payload: [:]
+        )
+
+        do {
+            _ = try await runner.run(
+                handler: hook,
+                input: ExtensionWorkerInput(envelope: envelope),
+                workingDirectory: tempRoot,
+                timeoutMs: 5000
+            )
+            XCTFail("Expected malformed output error")
+        } catch let error as ExtensionWorkerRunnerError {
+            guard case .malformedOutput = error else {
+                return XCTFail("Unexpected runner error: \(error)")
+            }
+        }
+    }
+
+    func testWorkerRunnerRejectsOutputOverConfiguredLimit() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+        let runner = ExtensionWorkerRunner()
+        let hook = ExtensionHandlerDefinition(command: [
+            "sh",
+            "-c",
+            "read line; echo '{\"ok\":true,\"log\":\"1234567890\"}'",
+        ])
+        let envelope = ExtensionEventEnvelope(
+            event: .turnCompleted,
+            timestamp: Date(),
+            project: .init(id: UUID().uuidString, path: tempRoot.path),
+            thread: .init(id: UUID().uuidString),
+            turn: .init(id: UUID().uuidString, status: "completed"),
+            payload: [:]
+        )
+
+        do {
+            _ = try await runner.run(
+                handler: hook,
+                input: ExtensionWorkerInput(envelope: envelope),
+                workingDirectory: tempRoot,
+                timeoutMs: 5000,
+                maxOutputBytes: 8
+            )
+            XCTFail("Expected output size error")
+        } catch let error as ExtensionWorkerRunnerError {
+            guard case let .outputTooLarge(maxBytes) = error else {
+                return XCTFail("Unexpected runner error: \(error)")
+            }
+            XCTAssertEqual(maxBytes, 8)
+        }
+    }
+
     func testExtensionStateStorePersistsThreadAndGlobalModsBarOutputs() async throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
