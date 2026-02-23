@@ -9,6 +9,7 @@ extension AppModel {
     private struct PersistedModsBarUIState: Codable, Sendable {
         var isVisible: Bool
         var presentationMode: ModsBarPresentationMode
+        var lastOpenPresentationMode: ModsBarPresentationMode?
     }
 
     private enum PersonalNotesModsBarConstants {
@@ -67,7 +68,11 @@ extension AppModel {
         let next = !extensionModsBarIsVisible
         extensionModsBarIsVisible = next
         if next {
-            extensionModsBarPresentationMode = .peek
+            if extensionModsBarPresentationMode == .rail {
+                extensionModsBarPresentationMode = restoredOpenPresentationMode()
+            } else {
+                rememberOpenPresentationMode(extensionModsBarPresentationMode)
+            }
         }
         Task { try? await persistModsBarVisibilityPreference() }
     }
@@ -75,6 +80,7 @@ extension AppModel {
     func setModsBarPresentationMode(_ mode: ModsBarPresentationMode) {
         guard canToggleModsBarForSelectedThread else { return }
         extensionModsBarPresentationMode = mode
+        rememberOpenPresentationMode(mode)
         if !extensionModsBarIsVisible {
             extensionModsBarIsVisible = true
         }
@@ -114,29 +120,38 @@ extension AppModel {
             else {
                 extensionModsBarIsVisible = false
                 extensionModsBarPresentationMode = .peek
+                extensionModsBarLastOpenPresentationMode = .peek
                 return
             }
 
             if let decoded = try? JSONDecoder().decode(PersistedModsBarUIState.self, from: data) {
                 extensionModsBarIsVisible = decoded.isVisible
                 extensionModsBarPresentationMode = decoded.presentationMode
+                if let lastOpenPresentationMode = decoded.lastOpenPresentationMode {
+                    rememberOpenPresentationMode(lastOpenPresentationMode)
+                } else {
+                    rememberOpenPresentationMode(decoded.presentationMode)
+                }
                 return
             }
 
             if let decodedLegacyMap = try? JSONDecoder().decode([String: Bool].self, from: data) {
                 extensionModsBarIsVisible = decodedLegacyMap.values.contains(true)
                 extensionModsBarPresentationMode = .peek
+                extensionModsBarLastOpenPresentationMode = .peek
                 return
             }
 
             if let decodedBool = try? JSONDecoder().decode(Bool.self, from: data) {
                 extensionModsBarIsVisible = decodedBool
                 extensionModsBarPresentationMode = .peek
+                extensionModsBarLastOpenPresentationMode = .peek
                 return
             }
 
             extensionModsBarIsVisible = false
             extensionModsBarPresentationMode = .peek
+            extensionModsBarLastOpenPresentationMode = .peek
         } catch {
             appendLog(.warning, "Failed to restore modsBar visibility state: \(error.localizedDescription)")
         }
@@ -146,7 +161,8 @@ extension AppModel {
         guard let preferenceRepository else { return }
         let state = PersistedModsBarUIState(
             isVisible: extensionModsBarIsVisible,
-            presentationMode: extensionModsBarPresentationMode
+            presentationMode: extensionModsBarPresentationMode,
+            lastOpenPresentationMode: extensionModsBarLastOpenPresentationMode
         )
         let data = try JSONEncoder().encode(state)
         let text = String(data: data, encoding: .utf8) ?? "{}"
@@ -894,7 +910,7 @@ extension AppModel {
                !extensionModsBarIsVisible
             {
                 extensionModsBarIsVisible = true
-                extensionModsBarPresentationMode = .peek
+                extensionModsBarPresentationMode = restoredOpenPresentationMode()
                 try? await persistModsBarVisibilityPreference()
             }
         }
@@ -1400,6 +1416,16 @@ extension AppModel {
             .lowercased()
             .replacingOccurrences(of: "_", with: "-")
             .replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
+    }
+
+    private func rememberOpenPresentationMode(_ mode: ModsBarPresentationMode) {
+        guard mode != .rail else { return }
+        extensionModsBarLastOpenPresentationMode = mode
+    }
+
+    private func restoredOpenPresentationMode() -> ModsBarPresentationMode {
+        let remembered = extensionModsBarLastOpenPresentationMode
+        return remembered == .rail ? .peek : remembered
     }
 
     private func promptBookDefaultEntries() -> [PromptBookEntry] {

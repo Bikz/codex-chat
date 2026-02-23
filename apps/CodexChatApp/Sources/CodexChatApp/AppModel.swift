@@ -922,6 +922,7 @@ final class AppModel: ObservableObject {
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
     @Published var extensionModsBarIsVisible = false
     @Published var extensionModsBarPresentationMode: ModsBarPresentationMode = .peek
+    @Published var extensionModsBarLastOpenPresentationMode: ModsBarPresentationMode = .peek
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
     @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
     @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []

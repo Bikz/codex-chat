@@ -614,6 +614,35 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertFalse(model.isModsBarVisibleForSelectedThread)
     }
 
+    func testToggleModsBarReopenRestoresExpandedMode() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.selectedThreadID = UUID()
+        model.setModsBarPresentationMode(.expanded)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .expanded)
+
+        model.toggleModsBar()
+        XCTAssertFalse(model.isModsBarVisibleForSelectedThread)
+
+        model.toggleModsBar()
+        XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .expanded)
+    }
+
+    func testToggleModsBarReopenFromRailRestoresLastOpenNonRailMode() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.selectedThreadID = UUID()
+        model.setModsBarPresentationMode(.expanded)
+        model.setModsBarPresentationMode(.rail)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .rail)
+
+        model.toggleModsBar()
+        XCTAssertFalse(model.isModsBarVisibleForSelectedThread)
+
+        model.toggleModsBar()
+        XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+        XCTAssertEqual(model.selectedModsBarPresentationMode, .expanded)
+    }
+
     func testCycleModsBarPresentationModeOpensHiddenModsBarInPeekMode() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.selectedThreadID = UUID()
