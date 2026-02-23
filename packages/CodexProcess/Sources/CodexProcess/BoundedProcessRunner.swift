@@ -36,6 +36,28 @@ public enum BoundedProcessRunner {
         }
     }
 
+    public struct DetailedResult: Hashable, Sendable {
+        public let stdoutData: Data
+        public let stderrData: Data
+        public let terminationStatus: Int32
+        public let stdoutTruncated: Bool
+        public let stderrTruncated: Bool
+
+        public init(
+            stdoutData: Data,
+            stderrData: Data,
+            terminationStatus: Int32,
+            stdoutTruncated: Bool,
+            stderrTruncated: Bool
+        ) {
+            self.stdoutData = stdoutData
+            self.stderrData = stderrData
+            self.terminationStatus = terminationStatus
+            self.stdoutTruncated = stdoutTruncated
+            self.stderrTruncated = stderrTruncated
+        }
+    }
+
     public enum RunnerError: Error, LocalizedError {
         case launchFailed(String)
         case timedOut(timeoutMs: Int, partialOutput: String, truncated: Bool)
@@ -55,21 +77,49 @@ public enum BoundedProcessRunner {
         cwd: String?,
         limits: Limits = Limits()
     ) throws -> Result {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = argv
-        if let cwd {
-            process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-        }
+        let detailed = try runDetailed(
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: argv,
+            cwd: cwd.map { URL(fileURLWithPath: $0, isDirectory: true) },
+            stdinData: nil,
+            limits: limits
+        )
+        let stdout = String(data: detailed.stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(data: detailed.stderrData, encoding: .utf8) ?? ""
+        let merged = [stdout, stderr]
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .newlines)
+        return Result(
+            output: merged,
+            terminationStatus: detailed.terminationStatus,
+            truncated: detailed.stdoutTruncated || detailed.stderrTruncated
+        )
+    }
 
+    public static func runDetailed(
+        executableURL: URL,
+        arguments: [String],
+        cwd: URL?,
+        stdinData: Data?,
+        limits: Limits = Limits()
+    ) throws -> DetailedResult {
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.currentDirectoryURL = cwd
+
+        let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
+        process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        let collector = CappedOutputCollector(maxBytes: limits.maxOutputBytes)
+        let stdoutCollector = CappedOutputCollector(maxBytes: limits.maxOutputBytes)
+        let stderrCollector = CappedOutputCollector(maxBytes: limits.maxOutputBytes)
         let stdoutHandle = stdoutPipe.fileHandleForReading
         let stderrHandle = stderrPipe.fileHandleForReading
+        let stdinHandle = stdinPipe.fileHandleForWriting
 
         stdoutHandle.readabilityHandler = { handle in
             let data = handle.availableData
@@ -77,7 +127,7 @@ public enum BoundedProcessRunner {
                 handle.readabilityHandler = nil
                 return
             }
-            collector.append(data)
+            stdoutCollector.append(data)
         }
 
         stderrHandle.readabilityHandler = { handle in
@@ -86,7 +136,7 @@ public enum BoundedProcessRunner {
                 handle.readabilityHandler = nil
                 return
             }
-            collector.append(data)
+            stderrCollector.append(data)
         }
 
         let completion = DispatchSemaphore(value: 0)
@@ -99,8 +149,14 @@ public enum BoundedProcessRunner {
         } catch {
             stdoutHandle.readabilityHandler = nil
             stderrHandle.readabilityHandler = nil
+            try? stdinHandle.close()
             throw RunnerError.launchFailed(error.localizedDescription)
         }
+
+        if let stdinData {
+            try? stdinHandle.write(contentsOf: stdinData)
+        }
+        try? stdinHandle.close()
 
         if completion.wait(timeout: .now() + .milliseconds(limits.timeoutMs)) == .timedOut {
             stdoutHandle.readabilityHandler = nil
@@ -110,28 +166,35 @@ public enum BoundedProcessRunner {
             if process.isRunning {
                 kill(process.processIdentifier, SIGKILL)
             }
-            collector.append(stdoutHandle.readDataToEndOfFile())
-            collector.append(stderrHandle.readDataToEndOfFile())
-            let snapshot = collector.snapshot()
-            let partialOutput = String(bytes: snapshot.data, encoding: .utf8) ?? ""
+            stdoutCollector.append(stdoutHandle.readDataToEndOfFile())
+            stderrCollector.append(stderrHandle.readDataToEndOfFile())
+            let stdoutSnapshot = stdoutCollector.snapshot()
+            let stderrSnapshot = stderrCollector.snapshot()
+            let partialStdout = String(data: stdoutSnapshot.data, encoding: .utf8) ?? ""
+            let partialStderr = String(data: stderrSnapshot.data, encoding: .utf8) ?? ""
+            let partialOutput = [partialStdout, partialStderr]
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .newlines)
             throw RunnerError.timedOut(
                 timeoutMs: limits.timeoutMs,
                 partialOutput: partialOutput,
-                truncated: snapshot.truncated
+                truncated: stdoutSnapshot.truncated || stderrSnapshot.truncated
             )
         }
 
         stdoutHandle.readabilityHandler = nil
         stderrHandle.readabilityHandler = nil
-        collector.append(stdoutHandle.readDataToEndOfFile())
-        collector.append(stderrHandle.readDataToEndOfFile())
+        stdoutCollector.append(stdoutHandle.readDataToEndOfFile())
+        stderrCollector.append(stderrHandle.readDataToEndOfFile())
 
-        let snapshot = collector.snapshot()
-        let merged = String(bytes: snapshot.data, encoding: .utf8) ?? ""
-        return Result(
-            output: merged,
+        let stdoutSnapshot = stdoutCollector.snapshot()
+        let stderrSnapshot = stderrCollector.snapshot()
+        return DetailedResult(
+            stdoutData: stdoutSnapshot.data,
+            stderrData: stderrSnapshot.data,
             terminationStatus: process.terminationStatus,
-            truncated: snapshot.truncated
+            stdoutTruncated: stdoutSnapshot.truncated,
+            stderrTruncated: stderrSnapshot.truncated
         )
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import CodexProcess
 
 public enum ExtensionWorkerRunnerError: LocalizedError, Sendable {
     case invalidCommand
@@ -50,62 +51,64 @@ public actor ExtensionWorkerRunner {
         timeoutMs: Int,
         maxOutputBytes: Int = 256 * 1024
     ) async throws -> ExtensionWorkerRunResult {
+        let configuredOutputLimit = max(1, maxOutputBytes)
         let command = handler.command.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         guard let executable = command.first else {
             throw ExtensionWorkerRunnerError.invalidCommand
         }
 
-        let process = Process()
-        let stdinPipe = Pipe()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-
-        process.standardInput = stdinPipe
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
+        let executableURL: URL
+        let arguments: [String]
         if executable.hasPrefix("/") {
-            process.executableURL = URL(fileURLWithPath: executable)
-            if command.count > 1 {
-                process.arguments = Array(command.dropFirst())
-            }
+            executableURL = URL(fileURLWithPath: executable)
+            arguments = command.count > 1 ? Array(command.dropFirst()) : []
         } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = command
+            executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            arguments = command
         }
 
+        let cwdURL: URL
         if let cwd = handler.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty {
-            process.currentDirectoryURL = URL(fileURLWithPath: cwd, relativeTo: workingDirectory).standardizedFileURL
+            cwdURL = URL(fileURLWithPath: cwd, relativeTo: workingDirectory).standardizedFileURL
         } else {
-            process.currentDirectoryURL = workingDirectory
+            cwdURL = workingDirectory
         }
 
-        let encodedInput = try JSONEncoder().encode(input)
+        var stdinData = try JSONEncoder().encode(input)
+        stdinData.append(Data("\n".utf8))
+        let limits = BoundedProcessRunner.Limits(
+            timeoutMs: timeoutMs,
+            maxOutputBytes: configuredOutputLimit
+        )
 
+        let detailed: BoundedProcessRunner.DetailedResult
         do {
-            try process.run()
+            detailed = try BoundedProcessRunner.runDetailed(
+                executableURL: executableURL,
+                arguments: arguments,
+                cwd: cwdURL,
+                stdinData: stdinData,
+                limits: limits
+            )
+        } catch let error as BoundedProcessRunner.RunnerError {
+            switch error {
+            case let .launchFailed(message):
+                throw ExtensionWorkerRunnerError.launchFailed(message)
+            case let .timedOut(timeoutMs, _, _):
+                throw ExtensionWorkerRunnerError.timedOut(timeoutMs)
+            }
         } catch {
             throw ExtensionWorkerRunnerError.launchFailed(error.localizedDescription)
         }
 
-        if let handle = Optional(stdinPipe.fileHandleForWriting) {
-            try? handle.write(contentsOf: encodedInput)
-            try? handle.write(contentsOf: Data("\n".utf8))
-            try? handle.close()
+        let observedBytes = detailed.stdoutData.count + detailed.stderrData.count
+        if observedBytes > configuredOutputLimit || detailed.stdoutTruncated || detailed.stderrTruncated {
+            throw ExtensionWorkerRunnerError.outputTooLarge(configuredOutputLimit)
         }
 
-        let stdoutDataTask = Task { stdoutPipe.fileHandleForReading.readDataToEndOfFile() }
-        let stderrDataTask = Task { stderrPipe.fileHandleForReading.readDataToEndOfFile() }
-
-        let exitCode = try await waitForExit(process: process, timeoutMs: timeoutMs)
-
-        let stdoutData = await stdoutDataTask.value
-        let stderrData = await stderrDataTask.value
-
-        if stdoutData.count > maxOutputBytes || stderrData.count > maxOutputBytes {
-            throw ExtensionWorkerRunnerError.outputTooLarge(maxOutputBytes)
-        }
-
+        let exitCode = detailed.terminationStatus
+        let stdoutData = detailed.stdoutData
+        let stderrData = detailed.stderrData
         let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
         let stderr = String(data: stderrData, encoding: .utf8) ?? ""
 
@@ -135,33 +138,5 @@ public actor ExtensionWorkerRunner {
         }
 
         return ExtensionWorkerRunResult(output: decoded, stdout: stdout, stderr: stderr, exitCode: exitCode)
-    }
-
-    private func waitForExit(process: Process, timeoutMs: Int) async throws -> Int32 {
-        try await withThrowingTaskGroup(of: Int32.self) { group in
-            group.addTask {
-                await withCheckedContinuation { continuation in
-                    process.terminationHandler = { terminated in
-                        continuation.resume(returning: terminated.terminationStatus)
-                    }
-                }
-            }
-
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(max(1, timeoutMs)) * 1_000_000)
-                if process.isRunning {
-                    process.terminate()
-                    throw ExtensionWorkerRunnerError.timedOut(timeoutMs)
-                }
-                return process.terminationStatus
-            }
-
-            guard let first = try await group.next() else {
-                throw ExtensionWorkerRunnerError.launchFailed("Process exit wait failed")
-            }
-
-            group.cancelAll()
-            return first
-        }
     }
 }
