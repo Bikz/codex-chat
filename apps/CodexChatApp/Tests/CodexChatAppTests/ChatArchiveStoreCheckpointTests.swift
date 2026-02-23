@@ -303,6 +303,62 @@ final class ChatArchiveStoreCheckpointTests: XCTestCase {
         XCTAssertFalse(after.contains("status=failed"))
     }
 
+    func testFailedCheckpointWriteCleansUpTemporaryArtifacts() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-temp-artifact-cleanup")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000107"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_600)
+
+        _ = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Question before temp cleanup check",
+                assistantText: "",
+                actions: []
+            )
+        )
+
+        let fileManager = FileManager.default
+        let threadsDirectory = root
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        XCTAssertThrowsError(
+            try ChatArchiveStore.finalizeCheckpoint(
+                projectPath: root.path,
+                threadID: threadID,
+                turn: ArchivedTurnSummary(
+                    turnID: turnID,
+                    timestamp: timestamp,
+                    userText: "Question before temp cleanup check",
+                    assistantText: "This write should fail and cleanup temp files",
+                    actions: []
+                )
+            )
+        )
+
+        let directoryEntries = try fileManager.contentsOfDirectory(
+            at: threadsDirectory,
+            includingPropertiesForKeys: nil
+        )
+        let tempArtifacts = directoryEntries.filter { $0.lastPathComponent.contains(".tmp-") }
+        XCTAssertTrue(tempArtifacts.isEmpty)
+    }
+
     func testLoadRecentTurnsReturnsOnlyLastFiftyTurns() throws {
         let root = try makeTempProjectRoot(prefix: "checkpoint-limit")
         defer { try? FileManager.default.removeItem(at: root) }
