@@ -12,6 +12,8 @@ struct DiagnosticsView: View {
     let selectedThreadID: UUID?
     let automationTimelineFocusFilter: AppModel.AutomationTimelineFocusFilter
     let onAutomationTimelineFocusFilterChange: @MainActor (AppModel.AutomationTimelineFocusFilter) -> Void
+    let onFocusTimelineProject: @MainActor (UUID) -> Void
+    let onFocusTimelineThread: @MainActor (UUID) -> Void
     let canExecuteRerunCommand: (String) -> Bool
     let rerunExecutionPolicyMessage: (String) -> String
     let onExecuteRerunCommand: (String) -> Void
@@ -239,6 +241,26 @@ struct DiagnosticsView: View {
                                     Text("Mod: \(modID)")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
+                                }
+                                HStack(spacing: 10) {
+                                    if let projectID = event.projectID {
+                                        Button("Open project scope") {
+                                            Task { @MainActor in
+                                                onFocusTimelineProject(projectID)
+                                            }
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                    if let threadID = event.threadID {
+                                        Button("Open thread scope") {
+                                            Task { @MainActor in
+                                                onFocusTimelineThread(threadID)
+                                            }
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
                                 }
                                 if rollup.occurrenceCount > 1 {
                                     Text(repeatedEventSummary(for: rollup))

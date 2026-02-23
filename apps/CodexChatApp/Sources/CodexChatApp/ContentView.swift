@@ -121,6 +121,8 @@ struct ContentView: View {
                 selectedThreadID: model.selectedThreadID,
                 automationTimelineFocusFilter: model.automationTimelineFocusFilter,
                 onAutomationTimelineFocusFilterChange: model.setAutomationTimelineFocusFilter,
+                onFocusTimelineProject: model.focusAutomationTimelineProject,
+                onFocusTimelineThread: model.focusAutomationTimelineThread,
                 canExecuteRerunCommand: model.isExtensibilityRerunCommandAllowlisted,
                 rerunExecutionPolicyMessage: model.extensibilityRerunCommandPolicyMessage,
                 onExecuteRerunCommand: model.executeAllowlistedExtensibilityRerunCommand,

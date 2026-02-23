@@ -89,6 +89,16 @@ extension AppModel {
         persistAutomationTimelineFocusFilterIfNeeded()
     }
 
+    func focusAutomationTimelineProject(_ projectID: UUID) {
+        selectProject(projectID)
+        setAutomationTimelineFocusFilter(.selectedProject)
+    }
+
+    func focusAutomationTimelineThread(_ threadID: UUID) {
+        selectThread(threadID)
+        setAutomationTimelineFocusFilter(.selectedThread)
+    }
+
     func copyDiagnosticsBundle() {
         do {
             let snapshot = DiagnosticsBundleSnapshot(

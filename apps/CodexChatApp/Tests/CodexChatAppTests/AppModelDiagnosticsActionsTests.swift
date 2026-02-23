@@ -72,4 +72,23 @@ final class AppModelDiagnosticsActionsTests: XCTestCase {
             "Direct rerun blocked: Command class is not allowlisted."
         )
     }
+
+    func testFocusAutomationTimelineProjectSelectsProjectScope() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+
+        model.focusAutomationTimelineProject(projectID)
+
+        XCTAssertEqual(model.automationTimelineFocusFilter, .selectedProject)
+    }
+
+    func testFocusAutomationTimelineThreadSelectsThreadScope() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+
+        model.focusAutomationTimelineThread(threadID)
+
+        XCTAssertEqual(model.selectedThreadID, threadID)
+        XCTAssertEqual(model.automationTimelineFocusFilter, .selectedThread)
+    }
 }
