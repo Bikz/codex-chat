@@ -32,6 +32,8 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Replay + ledger prototype | CLI supports replaying persisted thread artifacts and exporting deterministic event-ledger JSON. | `apps/CodexChatApp/Sources/CodexChatCLI/main.swift:22`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:178`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:227`, `docs-public/RUNTIME_LEDGER_REPLAY.md:1` |
 | Runtime policy-as-code validation | Tracked runtime policy defaults are validated via CLI and included in local reliability harness flow. | `config/runtime-policy/default-policy.json:1`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:256`, `scripts/runtime-reliability-local.sh:41`, `docs-public/RUNTIME_POLICY_AS_CODE.md:1` |
 | Lean hosted CI | Hosted CI path is minimized to required quick checks plus targeted smoke to reduce minute consumption. | `.github/workflows/ci.yml:1`, `.github/workflows/ci.yml:54` |
+| Reliability diagnostics bundle | One-command local diagnostics bundle captures doctor/smoke/policy checks plus scorecard artifacts into a portable archive. | `scripts/runtime-reliability-bundle.sh:1`, `Makefile:46`, `README.md:103`, `docs-public/RUNTIME_RELIABILITY_BUNDLE.md:1` |
+| Ledger migration/backfill planning | A migration-safe backfill plan now specifies dual-write rollout, idempotent markers, fallback read semantics, and crash-safe requirements. | `docs-public/planning/runtime-ledger-migration-backfill-plan.md:1` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
 
@@ -45,8 +47,8 @@ Evidence: former P0 gaps (archive replacement-boundary durability and follow-up 
 1. Expand reliability harness with additional deterministic fault-injection fixtures (runtime termination + stale mapping edge combinations).
 Evidence seed: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:40`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift:34`.
 
-2. Add migration/backfill plan for future event-sourced ledger model from existing transcript artifacts.
-Evidence gap: v1 replay/ledger prototype exists, but migration contract is still planning-only (`docs-public/RUNTIME_LEDGER_REPLAY.md:1`).
+2. Implement dual-write ledger persistence and migration markers from the published backfill plan.
+Evidence seed: plan exists (`docs-public/planning/runtime-ledger-migration-backfill-plan.md:1`) but runtime write-path implementation is not landed yet.
 
 ### P2
 

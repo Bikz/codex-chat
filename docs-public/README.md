@@ -20,6 +20,7 @@ This folder contains contributor-facing documentation tracked in git.
 - `RUNTIME_LEDGER_REPLAY.md` — deterministic local replay and thread-ledger export workflow.
 - `RUNTIME_POLICY_AS_CODE.md` — tracked runtime safety policy validation workflow.
 - `RUNTIME_RELIABILITY_SLO_DRAFT.md` — draft SLI/SLO targets for runtime/data reliability.
+- `RUNTIME_RELIABILITY_BUNDLE.md` — one-command local reliability diagnostics bundle workflow.
 - `EXTENSIONS.md` — compatibility landing page linking to canonical `MODS_SHARING.md` sections.
 - `ADR-EXTENSIONS-RUNTIME.md` — extension runtime architecture decision.
 - `EXTENSIONS_SPEC_VNEXT.md` — proposed package/runtime extension spec for ecosystem scaling.

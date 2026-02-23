@@ -54,3 +54,9 @@ Each `entries[]` record contains:
 
 Ledger export returns a SHA-256 digest of the exported JSON payload.
 Use this digest in incident notes or reliability scorecards to verify artifact integrity.
+
+## Migration Path
+
+The migration and backfill sequence from transcript artifacts to authoritative event-ledger storage is tracked in:
+
+`docs-public/planning/runtime-ledger-migration-backfill-plan.md`
