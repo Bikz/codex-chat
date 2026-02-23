@@ -344,6 +344,10 @@ struct ModsCanvas: View {
                 Spacer(minLength: 0)
             }
 
+            if let summary = model.extensionAutomationHealthByModID[mod.definition.manifest.id] {
+                automationHealthRow(summary)
+            }
+
             Text(SkillsModsPresentation.modDirectoryName(mod))
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
@@ -404,6 +408,50 @@ struct ModsCanvas: View {
             .padding(.vertical, 3)
             .background(SkillsModsTheme.headerBackground(tokens: tokens), in: Capsule())
             .overlay(Capsule().strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens)))
+    }
+
+    private func automationHealthRow(_ summary: AppModel.ExtensionAutomationHealthSummary) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: summary.hasFailures ? "exclamationmark.triangle.fill" : "clock.arrow.circlepath")
+                .font(.caption2)
+                .foregroundStyle(summary.hasFailures ? .orange : .secondary)
+
+            Text("Automations \(summary.automationCount)")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(summary.hasFailures ? .orange : .secondary)
+
+            if summary.hasFailures {
+                Text("(\(summary.failingAutomationCount) failing)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            } else if let nextRunAt = summary.nextRunAt {
+                Text("next")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(nextRunAt, style: .relative)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if let lastRunAt = summary.lastRunAt {
+                Text("last")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(lastRunAt, style: .relative)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if summary.launchdScheduledAutomationCount > 0 || summary.hasLaunchdFailures {
+                Text(
+                    summary.hasLaunchdFailures
+                        ? "bg issues \(summary.launchdFailingAutomationCount)"
+                        : "bg active \(summary.launchdScheduledAutomationCount)"
+                )
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(summary.hasLaunchdFailures ? .orange : .secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
     }
 
     private func compactEmpty(title: String, message: String, systemImage: String) -> some View {

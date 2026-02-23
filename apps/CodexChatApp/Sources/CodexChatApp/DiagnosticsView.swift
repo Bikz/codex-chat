@@ -1,3 +1,4 @@
+import AppKit
 import CodexKit
 import SwiftUI
 
@@ -6,6 +7,8 @@ struct DiagnosticsView: View {
     let runtimePoolSnapshot: RuntimePoolSnapshot
     let adaptiveTurnConcurrencyLimit: Int
     let logs: [LogEntry]
+    let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
+    let onPrepareRerunCommand: (String) -> Void
     let onClose: () -> Void
     @State private var performanceSnapshot = PerformanceSnapshot(
         generatedAt: .distantPast,
@@ -111,6 +114,69 @@ struct DiagnosticsView: View {
                 }
             }
 
+            GroupBox("Extensibility") {
+                if extensibilityDiagnostics.isEmpty {
+                    Text("No extensibility diagnostics yet")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(extensibilityDiagnostics.prefix(8)) { event in
+                            let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 8) {
+                                    Text(event.timestamp.formatted(.dateTime.hour().minute().second()))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text("\(event.surface)/\(event.operation)")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(event.kind.uppercased())
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(color(forDiagnosticKind: event.kind))
+                                    Spacer(minLength: 0)
+                                }
+                                Text(event.summary)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
+                                Text("Recovery: \(playbook.primaryStep)")
+                                    .font(.caption2)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
+                                HStack(spacing: 10) {
+                                    Button("Copy recovery steps") {
+                                        copyToPasteboard(playbook.steps.joined(separator: "\n"))
+                                    }
+                                    .buttonStyle(.link)
+                                    .font(.caption2)
+                                    if let suggestedCommand = playbook.suggestedCommand {
+                                        Button("Prepare rerun in composer") {
+                                            onPrepareRerunCommand(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                        Button("Copy rerun command") {
+                                            copyToPasteboard(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                    if let shortcut = playbook.shortcut {
+                                        Button(shortcutLabel(for: shortcut)) {
+                                            performShortcut(shortcut)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
             GroupBox("Logs") {
                 if logs.isEmpty {
                     Text("No logs yet")
@@ -165,6 +231,21 @@ struct DiagnosticsView: View {
         }
     }
 
+    private func color(forDiagnosticKind kind: String) -> Color {
+        switch kind {
+        case "timeout":
+            .orange
+        case "truncatedOutput":
+            .orange
+        case "launch":
+            .red
+        case "protocolViolation":
+            .orange
+        default:
+            .secondary
+        }
+    }
+
     private func startRefreshingPerformanceSnapshot() {
         refreshTask?.cancel()
         refreshTask = Task {
@@ -175,6 +256,29 @@ struct DiagnosticsView: View {
                 }
                 try? await Task.sleep(nanoseconds: 750_000_000)
             }
+        }
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func shortcutLabel(
+        for shortcut: AppModel.ExtensibilityDiagnosticPlaybook.Shortcut
+    ) -> String {
+        switch shortcut {
+        case .openAppSettings:
+            "Open app settings"
+        }
+    }
+
+    private func performShortcut(
+        _ shortcut: AppModel.ExtensibilityDiagnosticPlaybook.Shortcut
+    ) {
+        switch shortcut {
+        case .openAppSettings:
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         }
     }
 }

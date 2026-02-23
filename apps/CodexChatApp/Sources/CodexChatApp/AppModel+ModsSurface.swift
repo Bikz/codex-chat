@@ -77,6 +77,8 @@ extension AppModel {
                     selectedGlobalPath: snapshot.selectedGlobal,
                     selectedProjectPath: snapshot.selectedProject
                 )
+                let modIDs = (snapshot.globalMods + snapshot.projectMods).map(\.definition.manifest.id)
+                await refreshAutomationHealthSummaries(for: modIDs)
 
                 startModWatchersIfNeeded(globalRootPath: snapshot.globalRoot, projectRootPath: snapshot.projectRoot)
             } catch {
@@ -85,6 +87,7 @@ extension AppModel {
                 activeModsBarSlot = nil
                 activeExtensionHooks = []
                 activeExtensionAutomations = []
+                extensionAutomationHealthByModID = [:]
                 Task { await stopExtensionAutomations() }
                 appendLog(.error, "Mods refresh failed: \(error.localizedDescription)")
             }
@@ -239,6 +242,14 @@ extension AppModel {
             return
         }
 
+        let blockedCapabilities = blockedCapabilitiesForModInstall(source: trimmedSource, scope: scope)
+        if !blockedCapabilities.isEmpty {
+            let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+            modStatusMessage = "Mod install blocked in untrusted project: \(blockedList)."
+            appendLog(.warning, "Mod install blocked in untrusted project (\(blockedList)) for source \(trimmedSource)")
+            return
+        }
+
         isModOperationInProgress = true
         modStatusMessage = nil
 
@@ -325,8 +336,17 @@ extension AppModel {
                 }
                 appendLog(.info, "Installed mod \(installResult.definition.manifest.id) from \(trimmedSource)")
             } catch {
-                modStatusMessage = "Mod install failed: \(error.localizedDescription)"
-                appendLog(.error, "Mod install failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "mods", operation: "install", details: details)
+                    modStatusMessage = "Mod install failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Mod install process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    modStatusMessage = "Mod install failed: \(error.localizedDescription)"
+                    appendLog(.error, "Mod install failed: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -374,6 +394,14 @@ extension AppModel {
                     )
                 }
 
+                let blockedCapabilities = blockedCapabilitiesForModInstall(source: source, scope: scope)
+                if !blockedCapabilities.isEmpty {
+                    let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+                    modStatusMessage = "Mod update blocked in untrusted project: \(blockedList)."
+                    appendLog(.warning, "Mod update blocked in untrusted project (\(blockedList)) for source \(source)")
+                    return
+                }
+
                 let installService = ModInstallService()
                 let result = try installService.update(
                     source: source,
@@ -388,10 +416,65 @@ extension AppModel {
                 modStatusMessage = "Updated mod: \(result.definition.manifest.name)."
                 refreshModsSurface()
             } catch {
-                modStatusMessage = "Mod update failed: \(error.localizedDescription)"
-                appendLog(.error, "Mod update failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "mods", operation: "update", details: details)
+                    modStatusMessage = "Mod update failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Mod update process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    modStatusMessage = "Mod update failed: \(error.localizedDescription)"
+                    appendLog(.error, "Mod update failed: \(error.localizedDescription)")
+                }
             }
         }
+    }
+
+    func blockedCapabilitiesForModInstall(
+        source: String,
+        scope: ExtensionInstallScope
+    ) -> Set<ExtensibilityCapability> {
+        guard scope == .project else {
+            return []
+        }
+        return blockedExtensibilityCapabilities(
+            for: requiredExtensibilityCapabilitiesForModInstall(source: source),
+            projectID: selectedProjectID
+        )
+    }
+
+    func requiredExtensibilityCapabilitiesForModInstall(source: String) -> Set<ExtensibilityCapability> {
+        var required: Set<ExtensibilityCapability> = [.filesystemWrite]
+        if modInstallLikelyRequiresNetwork(source) {
+            required.insert(.network)
+        }
+        return required
+    }
+
+    func modInstallLikelyRequiresNetwork(_ source: String) -> Bool {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return true
+        }
+
+        if FileManager.default.fileExists(atPath: trimmed) {
+            return false
+        }
+
+        if trimmed.hasPrefix("/") || trimmed.hasPrefix("./") || trimmed.hasPrefix("../") || trimmed.hasPrefix("~/") {
+            return false
+        }
+
+        if trimmed.hasPrefix("file://") {
+            return false
+        }
+
+        if trimmed.hasPrefix("git@") || trimmed.contains("://") {
+            return true
+        }
+
+        return !trimmed.hasPrefix(".")
     }
 
     func uninstallInstalledMod(_ mod: DiscoveredUIMod, scope: ExtensionInstallScope) {

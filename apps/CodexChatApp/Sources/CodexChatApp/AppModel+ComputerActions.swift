@@ -603,6 +603,22 @@ extension AppModel {
         displayName: String,
         safetyLevel: ComputerActionSafetyLevel
     ) async throws -> Bool {
+        let blockedCapabilities = blockedExtensibilityCapabilities(
+            for: requiredExtensibilityCapabilities(
+                actionID: actionID,
+                safetyLevel: safetyLevel
+            ),
+            projectID: projectID
+        )
+        if !blockedCapabilities.isEmpty {
+            let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+            appendLog(
+                .warning,
+                "Computer action blocked in untrusted project for \(actionID): \(blockedList)"
+            )
+            return false
+        }
+
         if safetyLevel == .readOnly {
             return true
         }
@@ -644,6 +660,21 @@ extension AppModel {
 
     func shouldPersistComputerActionPermissionDecision(actionID: String) -> Bool {
         !requiresPerRunComputerActionPermissionPrompt(actionID: actionID)
+    }
+
+    private func requiredExtensibilityCapabilities(
+        actionID: String,
+        safetyLevel: ComputerActionSafetyLevel
+    ) -> Set<ExtensibilityCapability> {
+        guard safetyLevel != .readOnly else {
+            return []
+        }
+
+        var required: Set<ExtensibilityCapability> = [.nativeActions]
+        if safetyLevel == .destructive || actionID == "files.move" || actionID == "desktop.cleanup" {
+            required.insert(.filesystemWrite)
+        }
+        return required
     }
 
     private func promptForComputerActionPermission(

@@ -43,7 +43,7 @@ extension AppModel {
     }
 
     private func stripANSIEscapeCodes(from text: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"\u{001B}\[[0-9;?]*[ -/]*[@-~]"#) else {
+        guard let regex = try? NSRegularExpression(pattern: "\u{001B}\\[[0-9;?]*[ -/]*[@-~]") else {
             return text
         }
         let range = NSRange(text.startIndex..., in: text)

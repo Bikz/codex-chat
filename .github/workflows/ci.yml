@@ -106,6 +106,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Swift 6 toolchain
+        run: |
+          set -euo pipefail
+          CANDIDATES=(
+            "/Applications/Xcode_16.4.app/Contents/Developer"
+            "/Applications/Xcode_16.3.app/Contents/Developer"
+            "/Applications/Xcode_16.2.app/Contents/Developer"
+            "/Applications/Xcode_16.1.app/Contents/Developer"
+            "/Applications/Xcode_16.0.app/Contents/Developer"
+            "$(xcode-select -p)"
+          )
+          SELECTED=""
+          for CANDIDATE in "${CANDIDATES[@]}"; do
+            if [[ -d "$CANDIDATE" ]] && DEVELOPER_DIR="$CANDIDATE" swift --version | grep -q "Swift version 6"; then
+              SELECTED="$CANDIDATE"
+              break
+            fi
+          done
+          if [[ -n "$SELECTED" ]]; then
+            echo "DEVELOPER_DIR=$SELECTED" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="$SELECTED"
+          fi
+          xcodebuild -version || true
+          swift --version || true
+          if ! swift --version | grep -q "Swift version 6"; then
+            ls -1 /Applications | grep '^Xcode' || true
+            echo "Swift 6 toolchain required for host artifact build." >&2
+            exit 1
+          fi
+
       - name: Build unsigned host app
         run: |
           DERIVED_DATA="$RUNNER_TEMP/DerivedData"
@@ -138,6 +168,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select Swift 6 toolchain
+        run: |
+          set -euo pipefail
+          CANDIDATES=(
+            "/Applications/Xcode_16.4.app/Contents/Developer"
+            "/Applications/Xcode_16.3.app/Contents/Developer"
+            "/Applications/Xcode_16.2.app/Contents/Developer"
+            "/Applications/Xcode_16.1.app/Contents/Developer"
+            "/Applications/Xcode_16.0.app/Contents/Developer"
+            "$(xcode-select -p)"
+          )
+          SELECTED=""
+          for CANDIDATE in "${CANDIDATES[@]}"; do
+            if [[ -d "$CANDIDATE" ]] && DEVELOPER_DIR="$CANDIDATE" swift --version | grep -q "Swift version 6"; then
+              SELECTED="$CANDIDATE"
+              break
+            fi
+          done
+          if [[ -n "$SELECTED" ]]; then
+            echo "DEVELOPER_DIR=$SELECTED" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="$SELECTED"
+          fi
+          xcodebuild -version || true
+          swift --version || true
+          if ! swift --version | grep -q "Swift version 6"; then
+            ls -1 /Applications | grep '^Xcode' || true
+            echo "Swift 6 toolchain required for release dry-run." >&2
+            exit 1
+          fi
 
       - name: Verify Apple Silicon runner
         run: |
@@ -172,6 +232,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select Swift 6 toolchain
+        run: |
+          set -euo pipefail
+          CANDIDATES=(
+            "/Applications/Xcode_16.4.app/Contents/Developer"
+            "/Applications/Xcode_16.3.app/Contents/Developer"
+            "/Applications/Xcode_16.2.app/Contents/Developer"
+            "/Applications/Xcode_16.1.app/Contents/Developer"
+            "/Applications/Xcode_16.0.app/Contents/Developer"
+            "$(xcode-select -p)"
+          )
+          SELECTED=""
+          for CANDIDATE in "${CANDIDATES[@]}"; do
+            if [[ -d "$CANDIDATE" ]] && DEVELOPER_DIR="$CANDIDATE" swift --version | grep -q "Swift version 6"; then
+              SELECTED="$CANDIDATE"
+              break
+            fi
+          done
+          if [[ -n "$SELECTED" ]]; then
+            echo "DEVELOPER_DIR=$SELECTED" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="$SELECTED"
+          fi
+          xcodebuild -version || true
+          swift --version || true
+          if ! swift --version | grep -q "Swift version 6"; then
+            ls -1 /Applications | grep '^Xcode' || true
+            echo "Swift 6 toolchain required for host archive job." >&2
+            exit 1
+          fi
 
       - name: Verify host metadata parity
         run: |

@@ -863,7 +863,30 @@ struct SettingsView: View {
                 .buttonStyle(.bordered)
                 .disabled(model.isAccountOperationInProgress)
 
+                Button {
+                    model.copyExtensibilityDiagnostics()
+                } label: {
+                    Label("Copy extensibility diagnostics", systemImage: "doc.badge.gearshape")
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isAccountOperationInProgress)
+
+                Stepper(
+                    value: Binding(
+                        get: { model.extensibilityDiagnosticsRetentionLimit },
+                        set: { model.setExtensibilityDiagnosticsRetentionLimit($0) }
+                    ),
+                    in: 25 ... 500,
+                    step: 25
+                ) {
+                    Text("Retain up to \(model.extensibilityDiagnosticsRetentionLimit) extensibility events")
+                }
+
                 Text("Exports non-sensitive runtime state and logs as a zip archive, then copies the saved file path to clipboard.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("Extensibility diagnostics export includes normalized skill/mod/extension/launchd failure events for support and audit workflows.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

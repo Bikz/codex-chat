@@ -295,6 +295,54 @@ final class AppModel: ObservableObject {
         let definition: ModAutomationDefinition
     }
 
+    struct ExtensionAutomationHealthSummary: Hashable, Sendable {
+        let modID: String
+        let automationCount: Int
+        let failingAutomationCount: Int
+        let launchdScheduledAutomationCount: Int
+        let launchdFailingAutomationCount: Int
+        let nextRunAt: Date?
+        let lastRunAt: Date?
+        let lastStatus: String
+        let lastError: String?
+
+        var hasFailures: Bool {
+            failingAutomationCount > 0
+        }
+
+        var hasLaunchdFailures: Bool {
+            launchdFailingAutomationCount > 0
+        }
+    }
+
+    struct ExtensibilityDiagnosticEvent: Identifiable, Hashable, Sendable, Codable {
+        let id: UUID
+        let timestamp: Date
+        let surface: String
+        let operation: String
+        let kind: String
+        let command: String
+        let summary: String
+
+        init(
+            id: UUID = UUID(),
+            timestamp: Date = Date(),
+            surface: String,
+            operation: String,
+            kind: String,
+            command: String,
+            summary: String
+        ) {
+            self.id = id
+            self.timestamp = timestamp
+            self.surface = surface
+            self.operation = operation
+            self.kind = kind
+            self.command = command
+            self.summary = summary
+        }
+    }
+
     struct PendingComputerActionPreview: Identifiable, Hashable {
         let id: String
         let threadID: UUID
@@ -615,6 +663,9 @@ final class AppModel: ObservableObject {
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
     @Published var extensionModsBarVisibilityByThreadID: [UUID: Bool] = [:]
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
+    @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
+    @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []
+    @Published var extensibilityDiagnosticsRetentionLimit = 100
     @Published var activeModsBarSlot: ModUISlots.ModsBar?
     @Published var activeModsBarModID: String?
     @Published var activeModsBarModDirectoryPath: String?

@@ -1,3 +1,4 @@
+import CodexChatCore
 @testable import CodexChatShared
 import XCTest
 
@@ -100,5 +101,47 @@ final class PlanRunnerTests: XCTestCase {
             }
             XCTAssertEqual(taskIDs, ["1.0", "1.1"])
         }
+    }
+
+    func testParserExtractsCapabilityDirectives() throws {
+        let text = """
+        Capabilities: native-actions, filesystem-writes
+        @capability network
+
+        - Task 1.0 Send a messages.send native action
+        - Task 1.1 Write file summary
+          Dependencies: 1.0
+        """
+
+        let document = try PlanParser.parse(text)
+        XCTAssertEqual(
+            document.requestedCapabilities,
+            Set([.nativeActions, .filesystemWrite, .network])
+        )
+    }
+
+    func testCapabilityPolicyFlagsUndeclaredCapabilities() throws {
+        let text = """
+        - Task 1.0 Call messages.send native action
+        """
+
+        let document = try PlanParser.parse(text)
+        let evaluation = PlanRunnerCapabilityPolicy.evaluate(document: document, trustState: .trusted)
+        XCTAssertEqual(evaluation.requiredCapabilities, Set([.nativeActions]))
+        XCTAssertEqual(evaluation.undeclaredCapabilities, Set([.nativeActions]))
+        XCTAssertTrue(evaluation.blockedForTrustState.isEmpty)
+    }
+
+    func testCapabilityPolicyBlocksPrivilegedCapabilitiesForUntrustedProjects() throws {
+        let text = """
+        Capabilities: native-actions
+        - Task 1.0 Use calendar.today native action
+        """
+
+        let document = try PlanParser.parse(text)
+        let evaluation = PlanRunnerCapabilityPolicy.evaluate(document: document, trustState: .untrusted)
+        XCTAssertEqual(evaluation.requiredCapabilities, Set([.nativeActions]))
+        XCTAssertTrue(evaluation.undeclaredCapabilities.isEmpty)
+        XCTAssertEqual(evaluation.blockedForTrustState, Set([.nativeActions]))
     }
 }

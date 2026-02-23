@@ -55,10 +55,24 @@ extension AppModel {
     func installSkill(
         source: String,
         scope: SkillInstallScope,
-        installer: SkillInstallerKind
+        installer: SkillInstallerKind,
+        allowUntrustedSource: Bool = false,
+        pinnedRef: String? = nil
     ) {
         if scope == .project, selectedProject == nil {
             skillStatusMessage = "Select a project to install a project-scoped skill."
+            return
+        }
+
+        let blockedCapabilities = blockedCapabilitiesForSkillInstall(
+            source: source,
+            scope: scope,
+            installer: installer
+        )
+        if !blockedCapabilities.isEmpty {
+            let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+            skillStatusMessage = "Skill install blocked in untrusted project: \(blockedList)."
+            appendLog(.warning, "Skill install blocked in untrusted project (\(blockedList)) for source \(source)")
             return
         }
 
@@ -69,7 +83,9 @@ extension AppModel {
             source: source,
             scope: mapSkillScope(scope),
             projectPath: selectedProject?.path,
-            installer: installer
+            installer: installer,
+            pinnedRef: pinnedRef,
+            allowUntrustedSource: allowUntrustedSource
         )
 
         Task {
@@ -81,8 +97,17 @@ extension AppModel {
                 skillStatusMessage = "Installed skill to \(result.installedPath)."
                 appendLog(.info, "Installed skill from \(source)")
             } catch {
-                skillStatusMessage = "Skill install failed: \(error.localizedDescription)"
-                appendLog(.error, "Skill install failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "skills", operation: "install", details: details)
+                    skillStatusMessage = "Skill install failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Skill install process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    skillStatusMessage = "Skill install failed: \(error.localizedDescription)"
+                    appendLog(.error, "Skill install failed: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -122,8 +147,17 @@ extension AppModel {
                 try await refreshSkills()
                 await refreshSkillsCatalog()
             } catch {
-                skillStatusMessage = "Skill update failed: \(error.localizedDescription)"
-                appendLog(.error, "Skill update failed: \(error.localizedDescription)")
+                if let details = Self.extensibilityProcessFailureDetails(from: error) {
+                    recordExtensibilityDiagnostic(surface: "skills", operation: "update", details: details)
+                    skillStatusMessage = "Skill update failed (\(details.kind.label)): \(details.summary)"
+                    appendLog(
+                        .error,
+                        "Skill update process failure [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    skillStatusMessage = "Skill update failed: \(error.localizedDescription)"
+                    appendLog(.error, "Skill update failed: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -275,6 +309,57 @@ extension AppModel {
         case .global:
             .global
         }
+    }
+
+    func blockedCapabilitiesForSkillInstall(
+        source: String,
+        scope: SkillInstallScope,
+        installer: SkillInstallerKind
+    ) -> Set<ExtensibilityCapability> {
+        guard scope == .project else {
+            return []
+        }
+
+        return blockedExtensibilityCapabilities(
+            for: requiredExtensibilityCapabilitiesForSkillInstall(
+                source: source,
+                installer: installer
+            ),
+            projectID: selectedProjectID
+        )
+    }
+
+    func requiredExtensibilityCapabilitiesForSkillInstall(
+        source: String,
+        installer: SkillInstallerKind
+    ) -> Set<ExtensibilityCapability> {
+        switch installer {
+        case .npx:
+            [.network, .runtimeControl]
+        case .git:
+            skillInstallLikelyRequiresNetwork(source) ? [.network] : []
+        }
+    }
+
+    func skillInstallLikelyRequiresNetwork(_ source: String) -> Bool {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return true
+        }
+
+        if trimmed.hasPrefix("/") || trimmed.hasPrefix("./") || trimmed.hasPrefix("../") || trimmed.hasPrefix("~/") {
+            return false
+        }
+
+        if trimmed.hasPrefix("file://") {
+            return false
+        }
+
+        if trimmed.hasPrefix("git@") || trimmed.contains("://") {
+            return true
+        }
+
+        return !trimmed.hasPrefix(".")
     }
 
     private func composerSkillTokenMatch(in text: String) -> ComposerSkillTokenMatch? {

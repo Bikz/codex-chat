@@ -81,7 +81,7 @@ extension AppModel {
         }
     }
 
-    private func handleHarnessInvokeRequest(_ request: HarnessInvokeRequest) async -> HarnessInvokeResponse {
+    func handleHarnessInvokeRequest(_ request: HarnessInvokeRequest) async -> HarnessInvokeResponse {
         if request.protocolVersion != ComputerActionHarnessConstants.protocolVersion {
             return HarnessInvokeResponse(
                 requestID: request.requestID,

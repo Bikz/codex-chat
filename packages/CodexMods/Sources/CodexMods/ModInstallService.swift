@@ -1,3 +1,4 @@
+import CodexProcess
 import Foundation
 
 public struct ModInstallResult: Hashable, Sendable {
@@ -323,7 +324,7 @@ public final class ModInstallService: @unchecked Sendable {
             let preferredURL = normalizedRoot
                 .appendingPathComponent(preferredSubpath, isDirectory: true)
                 .standardizedFileURL
-            guard preferredURL.path.hasPrefix(normalizedRoot.path + "/"),
+            guard ModPathSafety.isWithinRoot(candidateURL: preferredURL, rootURL: normalizedRoot),
                   hasPackageDefinition(in: preferredURL)
             else {
                 throw ModInstallServiceError.packageRootNotFound
@@ -525,15 +526,7 @@ public final class ModInstallService: @unchecked Sendable {
     }
 
     private func normalizedPreferredSubpath(_ subpath: String?) -> String? {
-        let trimmed = (subpath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard !trimmed.hasPrefix("/") else { return nil }
-
-        let components = NSString(string: trimmed).pathComponents
-        if components.contains("..") {
-            return nil
-        }
-        return trimmed
+        ModPathSafety.normalizedSafeRelativePath(subpath)
     }
 
     private func sanitizedDirectoryName(from packageID: String) -> String {
@@ -560,33 +553,17 @@ public final class ModInstallService: @unchecked Sendable {
     }
 
     public static func defaultProcessRunner(_ argv: [String], _ cwd: String?) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = argv
-        if let cwd {
-            process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-        }
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        let stdout = String(bytes: stdoutData, encoding: .utf8) ?? ""
-        let stderr = String(bytes: stderrData, encoding: .utf8) ?? ""
-        let merged = ([stdout, stderr].joined(separator: "\n"))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard process.terminationStatus == 0 else {
+        let limits = BoundedProcessRunner.Limits.fromEnvironment()
+        do {
+            return try BoundedProcessRunner.runChecked(argv, cwd: cwd, limits: limits)
+        } catch let error as BoundedProcessRunner.CommandError {
+            switch error {
+            case let .failed(command, output):
+                throw ModInstallServiceError.commandFailed(command: command, output: output)
+            }
+        } catch {
             let command = argv.joined(separator: " ")
-            throw ModInstallServiceError.commandFailed(command: command, output: merged)
+            throw ModInstallServiceError.commandFailed(command: command, output: error.localizedDescription)
         }
-
-        return merged
     }
 }

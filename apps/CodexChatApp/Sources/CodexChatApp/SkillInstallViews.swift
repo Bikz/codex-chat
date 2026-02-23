@@ -257,6 +257,7 @@ struct InstallSkillSheet: View {
     @Binding var isPresented: Bool
 
     @State private var source = ""
+    @State private var pinnedRef = ""
     @State private var scope: SkillInstallScope = .project
     @State private var installer: SkillInstallerKind = .git
     @State private var trustConfirmed = false
@@ -282,6 +283,10 @@ struct InstallSkillSheet: View {
 
             TextField("https://github.com/org/skill-repo.git", text: $source)
                 .textFieldStyle(.roundedBorder)
+
+            TextField("Optional git pin (branch/tag/commit)", text: $pinnedRef)
+                .textFieldStyle(.roundedBorder)
+                .disabled(installer != .git)
 
             Picker("Scope", selection: $scope) {
                 Text("Project").tag(SkillInstallScope.project)
@@ -329,7 +334,9 @@ struct InstallSkillSheet: View {
                     model.installSkill(
                         source: source,
                         scope: scope,
-                        installer: installer
+                        installer: installer,
+                        allowUntrustedSource: !isTrustedSource && trustConfirmed,
+                        pinnedRef: installer == .git ? pinnedRef.trimmingCharacters(in: .whitespacesAndNewlines) : nil
                     )
                 }
                 .buttonStyle(.borderedProminent)

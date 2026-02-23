@@ -21,6 +21,32 @@ extension AppModel {
         static let maxPrompts = 12
     }
 
+    private enum ExtensionAutomationStatus {
+        static let ok = "ok"
+        static let failed = "failed"
+        static let permissionDenied = "permission-denied"
+        static let launchdScheduled = "launchd-scheduled"
+        static let launchdFailed = "launchd-failed"
+        static let launchdPermissionDenied = "launchd-permission-denied"
+
+        static let failingStatuses: Set<String> = [
+            failed,
+            permissionDenied,
+            launchdFailed,
+            launchdPermissionDenied,
+        ]
+
+        static let launchdScheduledStatuses: Set<String> = [
+            launchdScheduled,
+            "scheduled", // Backward compatibility for pre-migration records.
+        ]
+
+        static let launchdFailingStatuses: Set<String> = [
+            launchdFailed,
+            launchdPermissionDenied,
+        ]
+    }
+
     private struct PromptBookStatePayload: Decodable {
         struct Prompt: Decodable {
             let id: String?
@@ -518,6 +544,7 @@ extension AppModel {
             let permitted = await ensurePermissions(
                 modID: resolved.modID,
                 permissions: resolved.definition.permissions,
+                projectID: UUID(uuidString: envelope.project.id),
                 contextHint: "Hook \(resolved.definition.id)"
             )
             guard permitted else {
@@ -544,8 +571,17 @@ extension AppModel {
                 )
                 await markHookState(resolved: resolved, status: "ok", error: nil)
             } catch {
-                let errorMessage = sanitizeExtensionLog(error.localizedDescription)
-                appendLog(.warning, "Extension hook \(resolved.definition.id) failed: \(errorMessage)")
+                let details = Self.extensibilityProcessFailureDetails(from: error)
+                let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
+                if let details {
+                    recordExtensibilityDiagnostic(surface: "extensions", operation: "hook", details: details)
+                    appendLog(
+                        .warning,
+                        "Extension hook \(resolved.definition.id) failed [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    appendLog(.warning, "Extension hook \(resolved.definition.id) failed: \(errorMessage)")
+                }
                 await markHookState(resolved: resolved, status: "failed", error: errorMessage)
             }
         }
@@ -562,12 +598,13 @@ extension AppModel {
         let permissionOK = await ensurePermissions(
             modID: resolved.modID,
             permissions: resolved.definition.permissions,
+            projectID: project.id,
             contextHint: "Automation \(resolved.definition.id)"
         )
         guard permissionOK else {
             await markAutomationState(
                 resolved: resolved,
-                status: "permission-denied",
+                status: ExtensionAutomationStatus.permissionDenied,
                 error: "Permissions not granted",
                 nextRunAt: nil
             )
@@ -611,12 +648,31 @@ extension AppModel {
             )
 
             let nextRun = try? CronSchedule(expression: resolved.definition.schedule).nextRun(after: Date())
-            await markAutomationState(resolved: resolved, status: "ok", error: nil, nextRunAt: nextRun)
+            await markAutomationState(
+                resolved: resolved,
+                status: ExtensionAutomationStatus.ok,
+                error: nil,
+                nextRunAt: nextRun
+            )
             return true
         } catch {
-            let errorMessage = sanitizeExtensionLog(error.localizedDescription)
-            await markAutomationState(resolved: resolved, status: "failed", error: errorMessage, nextRunAt: nil)
-            appendLog(.warning, "Extension automation \(resolved.definition.id) failed: \(errorMessage)")
+            let details = Self.extensibilityProcessFailureDetails(from: error)
+            let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
+            await markAutomationState(
+                resolved: resolved,
+                status: ExtensionAutomationStatus.failed,
+                error: errorMessage,
+                nextRunAt: nil
+            )
+            if let details {
+                recordExtensibilityDiagnostic(surface: "extensions", operation: "automation", details: details)
+                appendLog(
+                    .warning,
+                    "Extension automation \(resolved.definition.id) failed [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                )
+            } else {
+                appendLog(.warning, "Extension automation \(resolved.definition.id) failed: \(errorMessage)")
+            }
             return false
         }
     }
@@ -641,9 +697,23 @@ extension AppModel {
         return requested
     }
 
+    private func requestedExtensibilityCapabilities(_ permissions: ModExtensionPermissions) -> Set<ExtensibilityCapability> {
+        var required = Set<ExtensibilityCapability>()
+        if permissions.projectRead { required.insert(.projectRead) }
+        if permissions.projectWrite {
+            required.insert(.projectWrite)
+            required.insert(.filesystemWrite)
+        }
+        if permissions.network { required.insert(.network) }
+        if permissions.runtimeControl { required.insert(.runtimeControl) }
+        if permissions.runWhenAppClosed { required.insert(.runWhenAppClosed) }
+        return required
+    }
+
     private func ensurePermissions(
         modID: String,
         permissions: ModExtensionPermissions,
+        projectID: UUID?,
         contextHint: String
     ) async -> Bool {
         guard let extensionPermissionRepository else {
@@ -653,6 +723,19 @@ extension AppModel {
         let requested = requestedCorePermissions(permissions)
         guard !requested.isEmpty else {
             return true
+        }
+
+        let blockedCapabilities = blockedExtensibilityCapabilities(
+            for: requestedExtensibilityCapabilities(permissions),
+            projectID: projectID
+        )
+        if !blockedCapabilities.isEmpty {
+            let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+            appendLog(
+                .warning,
+                "Extension capabilities blocked in untrusted project for mod \(modID): \(blockedList)"
+            )
+            return false
         }
 
         do {
@@ -766,7 +849,6 @@ extension AppModel {
     }
 
     private func applyArtifacts(_ artifacts: [ExtensionArtifactInstruction], projectPath: String) {
-        let rootURL = URL(fileURLWithPath: projectPath, isDirectory: true).standardizedFileURL
         let fileManager = FileManager.default
 
         for artifact in artifacts {
@@ -774,9 +856,10 @@ extension AppModel {
             let relative = artifact.path.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !relative.isEmpty else { continue }
 
-            let destinationURL = URL(fileURLWithPath: relative, relativeTo: rootURL).standardizedFileURL
-            let destinationPath = destinationURL.path
-            guard destinationPath.hasPrefix(rootURL.path + "/") else {
+            guard let destinationURL = ProjectPathSafety.destinationURL(
+                for: relative,
+                projectPath: projectPath
+            ) else {
                 appendLog(.warning, "Skipped extension artifact outside project root: \(relative)")
                 continue
             }
@@ -826,15 +909,144 @@ extension AppModel {
                     launchdLabel: launchdLabel(for: resolved)
                 )
             )
+            await refreshAutomationHealthSummary(for: resolved.modID)
         } catch {
             appendLog(.warning, "Failed to persist extension automation state: \(error.localizedDescription)")
         }
+    }
+
+    func refreshAutomationHealthSummaries(for modIDs: [String]) async {
+        let uniqueModIDs = Array(Set(modIDs)).sorted()
+        guard !uniqueModIDs.isEmpty else {
+            extensionAutomationHealthByModID = [:]
+            return
+        }
+
+        guard let extensionAutomationStateRepository else {
+            extensionAutomationHealthByModID = [:]
+            return
+        }
+
+        let previousByModID = extensionAutomationHealthByModID
+        var next: [String: ExtensionAutomationHealthSummary] = [:]
+        for modID in uniqueModIDs {
+            do {
+                let records = try await extensionAutomationStateRepository.list(modID: modID)
+                let summary = Self.summarizeAutomationHealth(modID: modID, records: records)
+                if let summary {
+                    next[modID] = summary
+                }
+                emitAutomationHealthDiagnosticIfNeeded(
+                    modID: modID,
+                    previous: previousByModID[modID],
+                    current: summary
+                )
+            } catch {
+                appendLog(.warning, "Failed loading automation health for mod \(modID): \(error.localizedDescription)")
+            }
+        }
+
+        extensionAutomationHealthByModID = next
+    }
+
+    func refreshAutomationHealthSummary(for modID: String) async {
+        guard let extensionAutomationStateRepository else {
+            extensionAutomationHealthByModID.removeValue(forKey: modID)
+            return
+        }
+
+        let previous = extensionAutomationHealthByModID[modID]
+        do {
+            let records = try await extensionAutomationStateRepository.list(modID: modID)
+            let summary = Self.summarizeAutomationHealth(modID: modID, records: records)
+            if let summary {
+                extensionAutomationHealthByModID[modID] = summary
+            } else {
+                extensionAutomationHealthByModID.removeValue(forKey: modID)
+            }
+            emitAutomationHealthDiagnosticIfNeeded(
+                modID: modID,
+                previous: previous,
+                current: summary
+            )
+        } catch {
+            appendLog(.warning, "Failed refreshing automation health for mod \(modID): \(error.localizedDescription)")
+        }
+    }
+
+    static func summarizeAutomationHealth(
+        modID: String,
+        records: [ExtensionAutomationStateRecord]
+    ) -> ExtensionAutomationHealthSummary? {
+        guard !records.isEmpty else { return nil }
+
+        let failingCount = records.count(where: { ExtensionAutomationStatus.failingStatuses.contains($0.lastStatus) })
+        let launchdScheduledCount = records.count(where: {
+            ExtensionAutomationStatus.launchdScheduledStatuses.contains($0.lastStatus)
+        })
+        let launchdFailingCount = records.count(where: {
+            ExtensionAutomationStatus.launchdFailingStatuses.contains($0.lastStatus)
+        })
+        let nextRunAt = records.compactMap(\.nextRunAt).min()
+        let latestRecord = records.max { lhs, rhs in
+            let lhsDate = lhs.lastRunAt ?? .distantPast
+            let rhsDate = rhs.lastRunAt ?? .distantPast
+            if lhsDate == rhsDate {
+                return lhs.automationID < rhs.automationID
+            }
+            return lhsDate < rhsDate
+        } ?? records[0]
+
+        return ExtensionAutomationHealthSummary(
+            modID: modID,
+            automationCount: records.count,
+            failingAutomationCount: failingCount,
+            launchdScheduledAutomationCount: launchdScheduledCount,
+            launchdFailingAutomationCount: launchdFailingCount,
+            nextRunAt: nextRunAt,
+            lastRunAt: latestRecord.lastRunAt,
+            lastStatus: latestRecord.lastStatus,
+            lastError: latestRecord.lastError
+        )
     }
 
     private func launchdLabel(for resolved: ResolvedExtensionAutomation) -> String {
         let safeMod = resolved.modID.replacingOccurrences(of: "[^A-Za-z0-9_.-]", with: "-", options: .regularExpression)
         let safeAutomation = resolved.definition.id.replacingOccurrences(of: "[^A-Za-z0-9_.-]", with: "-", options: .regularExpression)
         return "app.codexchat.\(safeMod).\(safeAutomation)"
+    }
+
+    private func emitAutomationHealthDiagnosticIfNeeded(
+        modID: String,
+        previous: ExtensionAutomationHealthSummary?,
+        current: ExtensionAutomationHealthSummary?
+    ) {
+        guard let current else { return }
+
+        let wasFailing = (previous?.hasFailures ?? false) || (previous?.hasLaunchdFailures ?? false)
+        let isFailing = current.hasFailures || current.hasLaunchdFailures
+        guard isFailing else { return }
+
+        let changedStatus = previous?.lastStatus != current.lastStatus
+        let changedError = previous?.lastError != current.lastError
+        guard !wasFailing || changedStatus || changedError else { return }
+
+        var summary = "Mod \(modID) automation health reported \(current.lastStatus)."
+        if let lastError = current.lastError, !lastError.isEmpty {
+            summary += " \(lastError)"
+        }
+
+        let kind: ExtensibilityProcessFailureDetails.Kind = current.hasLaunchdFailures ? .launch : .command
+        let details = ExtensibilityProcessFailureDetails(
+            kind: kind,
+            command: "automation-health",
+            summary: summary
+        )
+        recordExtensibilityDiagnostic(
+            surface: "automations",
+            operation: "health",
+            details: details
+        )
     }
 
     private func shouldApplyModsBarOutput(sourceHookID: String?) -> Bool {
@@ -956,12 +1168,13 @@ extension AppModel {
             let permitted = await ensurePermissions(
                 modID: automation.modID,
                 permissions: runWhenClosedPermission,
+                projectID: selectedProjectID,
                 contextHint: "Background automation \(automation.definition.id)"
             )
             guard permitted else {
                 await markAutomationState(
                     resolved: automation,
-                    status: "permission-denied",
+                    status: ExtensionAutomationStatus.launchdPermissionDenied,
                     error: "runWhenAppClosed permission denied",
                     nextRunAt: nil
                 )
@@ -975,7 +1188,7 @@ extension AppModel {
             guard !command.isEmpty else {
                 await markAutomationState(
                     resolved: automation,
-                    status: "failed",
+                    status: ExtensionAutomationStatus.launchdFailed,
                     error: "Automation command is empty",
                     nextRunAt: nil
                 )
@@ -1006,16 +1219,25 @@ extension AppModel {
                 let nextRun = try? CronSchedule(expression: automation.definition.schedule).nextRun(after: Date())
                 await markAutomationState(
                     resolved: automation,
-                    status: "scheduled",
+                    status: ExtensionAutomationStatus.launchdScheduled,
                     error: nil,
                     nextRunAt: nextRun
                 )
             } catch {
-                let errorMessage = sanitizeExtensionLog(error.localizedDescription)
-                appendLog(.warning, "Failed configuring launchd automation \(label): \(errorMessage)")
+                let details = Self.extensibilityProcessFailureDetails(from: error)
+                let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
+                if let details {
+                    recordExtensibilityDiagnostic(surface: "launchd", operation: "configure", details: details)
+                    appendLog(
+                        .warning,
+                        "Failed configuring launchd automation \(label) [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
+                    )
+                } else {
+                    appendLog(.warning, "Failed configuring launchd automation \(label): \(errorMessage)")
+                }
                 await markAutomationState(
                     resolved: automation,
-                    status: "failed",
+                    status: ExtensionAutomationStatus.launchdFailed,
                     error: errorMessage,
                     nextRunAt: nil
                 )

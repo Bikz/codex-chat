@@ -1,4 +1,5 @@
 @testable import CodexSkills
+import Darwin
 import XCTest
 
 final class CodexSkillsTests: XCTestCase {
@@ -167,6 +168,171 @@ final class CodexSkillsTests: XCTestCase {
         XCTAssertTrue(service.isTrustedSource("/tmp/local-skill"))
         XCTAssertFalse(service.isTrustedSource("https://unknown.example.com/skill"))
         XCTAssertFalse(service.isTrustedSource("git@unknown.example.com:owner/skill.git"))
+    }
+
+    func testInstallSkillRejectsUntrustedSourceWithoutConfirmation() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-untrusted-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let service = SkillCatalogService(
+            codexHomeURL: root.appendingPathComponent(".codex", isDirectory: true),
+            agentsHomeURL: root.appendingPathComponent(".agents", isDirectory: true),
+            processRunner: { _, _ in
+                XCTFail("Process runner should not execute for untrusted source without confirmation")
+                return ""
+            }
+        )
+
+        XCTAssertThrowsError(
+            try service.installSkill(
+                SkillInstallRequest(
+                    source: "https://unknown.example.com/skill.git",
+                    scope: .global,
+                    projectPath: nil,
+                    installer: .git
+                )
+            )
+        ) { error in
+            guard case SkillCatalogError.untrustedSourceRequiresConfirmation = error else {
+                return XCTFail("Expected untrusted source confirmation error, got \(error)")
+            }
+        }
+    }
+
+    func testGitInstallSupportsPinnedRefAndPersistsMetadata() throws {
+        final class InvocationCapture: @unchecked Sendable {
+            private let lock = NSLock()
+            private var invocations: [[String]] = []
+
+            func append(_ argv: [String]) {
+                lock.lock()
+                invocations.append(argv)
+                lock.unlock()
+            }
+
+            func all() -> [[String]] {
+                lock.lock()
+                defer { lock.unlock() }
+                return invocations
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-pin-install-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let capture = InvocationCapture()
+        let service = SkillCatalogService(
+            codexHomeURL: codexHome,
+            agentsHomeURL: root.appendingPathComponent(".agents", isDirectory: true),
+            processRunner: { argv, _ in
+                capture.append(argv)
+                if argv.prefix(4) == ["git", "clone", "--depth", "1"], let destination = argv.last {
+                    try FileManager.default.createDirectory(
+                        at: URL(fileURLWithPath: destination, isDirectory: true),
+                        withIntermediateDirectories: true
+                    )
+                }
+                return "ok"
+            }
+        )
+
+        let result = try service.installSkill(
+            SkillInstallRequest(
+                source: "https://github.com/example/pinned-skill.git#v1.2.3",
+                scope: .global,
+                projectPath: nil,
+                installer: .git
+            )
+        )
+
+        let invocations = capture.all()
+        XCTAssertEqual(invocations.count, 2)
+        XCTAssertEqual(invocations[0], [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "https://github.com/example/pinned-skill.git",
+            result.installedPath,
+        ])
+        XCTAssertEqual(invocations[1], [
+            "git",
+            "-C",
+            result.installedPath,
+            "checkout",
+            "--detach",
+            "v1.2.3",
+        ])
+
+        let metadataURL = URL(fileURLWithPath: result.installedPath, isDirectory: true)
+            .appendingPathComponent(".codexchat-install.json", isDirectory: false)
+        let metadataText = try String(contentsOf: metadataURL, encoding: .utf8)
+        XCTAssertTrue(metadataText.contains("\"pinnedRef\" : \"v1.2.3\""))
+    }
+
+    func testUpdateSkillWithPinnedRefUsesFetchAndDetachedCheckout() throws {
+        final class InvocationCapture: @unchecked Sendable {
+            private let lock = NSLock()
+            private var invocations: [[String]] = []
+
+            func append(_ argv: [String]) {
+                lock.lock()
+                invocations.append(argv)
+                lock.unlock()
+            }
+
+            func all() -> [[String]] {
+                lock.lock()
+                defer { lock.unlock() }
+                return invocations
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-pin-update-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let skillDirectory = root.appendingPathComponent("skill", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: skillDirectory.appendingPathComponent(".git", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try """
+        {
+          "source" : "https://github.com/example/pinned-skill.git",
+          "installer" : "git",
+          "pinnedRef" : "release-2026",
+          "installedAt" : "2026-02-20T00:00:00Z",
+          "updatedAt" : null
+        }
+        """.write(
+            to: skillDirectory.appendingPathComponent(".codexchat-install.json", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let capture = InvocationCapture()
+        let service = SkillCatalogService(
+            codexHomeURL: root.appendingPathComponent(".codex", isDirectory: true),
+            agentsHomeURL: root.appendingPathComponent(".agents", isDirectory: true),
+            processRunner: { argv, _ in
+                capture.append(argv)
+                return "ok"
+            }
+        )
+
+        _ = try service.updateSkill(at: skillDirectory.path)
+        let invocations = capture.all()
+        XCTAssertEqual(invocations.count, 2)
+        XCTAssertEqual(invocations[0], ["git", "-C", skillDirectory.path, "fetch", "--depth", "1", "origin", "release-2026"])
+        XCTAssertEqual(invocations[1], ["git", "-C", skillDirectory.path, "checkout", "--detach", "FETCH_HEAD"])
     }
 
     func testInstallSkillSanitizesDestinationName() throws {
@@ -474,6 +640,50 @@ final class CodexSkillsTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertEqual(restoredContent, "old-content")
+    }
+
+    func testDefaultProcessRunnerTimesOutWhenConfigured() throws {
+        try withEnvironment("CODEX_PROCESS_TIMEOUT_MS", "100") {
+            XCTAssertThrowsError(
+                try SkillCatalogService.defaultProcessRunner(
+                    ["sh", "-c", "sleep 1"],
+                    nil
+                )
+            ) { error in
+                guard case let SkillCatalogError.commandFailed(_, output) = error else {
+                    return XCTFail("Expected commandFailed, got \(error)")
+                }
+                XCTAssertTrue(output.contains("Timed out"))
+            }
+        }
+    }
+
+    func testDefaultProcessRunnerTruncatesOutputWhenConfigured() throws {
+        try withEnvironment("CODEX_PROCESS_MAX_OUTPUT_BYTES", "1024") {
+            let output = try SkillCatalogService.defaultProcessRunner(
+                ["perl", "-e", "print 'x' x 5000"],
+                nil
+            )
+
+            XCTAssertTrue(output.contains("[output truncated after 1024 bytes]"))
+        }
+    }
+
+    private func withEnvironment(
+        _ key: String,
+        _ value: String,
+        body: () throws -> Void
+    ) rethrows {
+        let previous = getenv(key).map { String(cString: $0) }
+        setenv(key, value, 1)
+        defer {
+            if let previous {
+                setenv(key, previous, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+        try body()
     }
 
     private func createSkill(at directoryURL: URL, body: String, includeScripts: Bool = false) throws {
