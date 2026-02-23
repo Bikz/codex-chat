@@ -119,6 +119,14 @@ struct ContentView: View {
                 extensibilityDiagnostics: model.extensibilityDiagnostics,
                 selectedProjectID: model.selectedProjectID,
                 selectedThreadID: model.selectedThreadID,
+                projectLabelsByID: Dictionary(
+                    uniqueKeysWithValues: model.projects.map { ($0.id, $0.name) }
+                ),
+                threadLabelsByID: Dictionary(
+                    model.threads
+                        .map { ($0.id, $0.title) } + model.generalThreads.map { ($0.id, $0.title) },
+                    uniquingKeysWith: { first, _ in first }
+                ),
                 automationTimelineFocusFilter: model.automationTimelineFocusFilter,
                 onAutomationTimelineFocusFilterChange: model.setAutomationTimelineFocusFilter,
                 onFocusTimelineProject: model.focusAutomationTimelineProject,

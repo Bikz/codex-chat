@@ -10,6 +10,8 @@ struct DiagnosticsView: View {
     let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
     let selectedProjectID: UUID?
     let selectedThreadID: UUID?
+    let projectLabelsByID: [UUID: String]
+    let threadLabelsByID: [UUID: String]
     let automationTimelineFocusFilter: AppModel.AutomationTimelineFocusFilter
     let onAutomationTimelineFocusFilterChange: @MainActor (AppModel.AutomationTimelineFocusFilter) -> Void
     let onFocusTimelineProject: @MainActor (UUID) -> Void
@@ -240,6 +242,16 @@ struct DiagnosticsView: View {
                                 }
                                 if let modID = event.modID, !modID.isEmpty {
                                     Text("Mod: \(modID)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let projectID = event.projectID {
+                                    Text("Project: \(projectLabel(for: projectID))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let threadID = event.threadID {
+                                    Text("Thread: \(threadLabel(for: threadID))")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -514,6 +526,20 @@ struct DiagnosticsView: View {
 
         let hours = minutes / 60
         return "Repeated \(rollup.occurrenceCount)x over \(hours)h"
+    }
+
+    private func projectLabel(for projectID: UUID) -> String {
+        if let label = projectLabelsByID[projectID], !label.isEmpty {
+            return label
+        }
+        return projectID.uuidString
+    }
+
+    private func threadLabel(for threadID: UUID) -> String {
+        if let label = threadLabelsByID[threadID], !label.isEmpty {
+            return label
+        }
+        return threadID.uuidString
     }
 
     private func toggleAutomationRollupExpansion(_ rollupID: String) {
