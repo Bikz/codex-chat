@@ -10,8 +10,6 @@ private enum RuntimeThreadEnsureSource: String, Sendable {
 
 extension AppModel {
     private static let runtimeAutoRecoveryBackoffEnvKey = "CODEXCHAT_RUNTIME_AUTO_RECOVERY_BACKOFF_SECONDS"
-    private static let runtimeAutoRecoveryDefaultBackoffSeconds: [UInt64] = [1, 2, 4, 8]
-    private static let runtimeAutoRecoveryMaxAttempts = 8
     private static let staleRuntimeThreadRecreateRetryLimit = 1
 
     func installCodexWithHomebrew() {
@@ -394,23 +392,9 @@ extension AppModel {
     }
 
     private static func runtimeAutoRecoveryBackoffSeconds() -> [UInt64] {
-        guard let raw = ProcessInfo.processInfo.environment[runtimeAutoRecoveryBackoffEnvKey]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !raw.isEmpty
-        else {
-            return runtimeAutoRecoveryDefaultBackoffSeconds
-        }
-
-        let parsed = raw
-            .split(separator: ",")
-            .compactMap { chunk -> UInt64? in
-                let trimmed = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-                return UInt64(trimmed)
-            }
-        guard !parsed.isEmpty else {
-            return runtimeAutoRecoveryDefaultBackoffSeconds
-        }
-        return Array(parsed.prefix(runtimeAutoRecoveryMaxAttempts))
+        RuntimeRecoveryPolicy.appAutoRecoveryBackoffSeconds(
+            environmentValue: ProcessInfo.processInfo.environment[runtimeAutoRecoveryBackoffEnvKey]
+        )
     }
 
     private func ensureRuntimeThreadID(

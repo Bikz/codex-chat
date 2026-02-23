@@ -5,7 +5,7 @@ actor RuntimePool {
     private enum Constants {
         static let scopedDelimiter = "|"
         static let primaryWorkerID = RuntimePoolWorkerID(0)
-        static let maxConsecutiveWorkerRecoveryFailures = 4
+        static let maxConsecutiveWorkerRecoveryFailures = RuntimeRecoveryPolicy.defaultMaxConsecutiveWorkerRecoveryFailures
     }
 
     struct TurnRoute: Hashable, Sendable {
@@ -695,23 +695,27 @@ actor RuntimePool {
     }
 
     static func workerRestartBackoffSeconds(forFailureCount failureCount: Int) -> UInt64 {
-        let normalizedFailureCount = max(1, failureCount)
-        let backoffExponent = min(3, normalizedFailureCount - 1)
-        return UInt64(1 << backoffExponent)
+        RuntimeRecoveryPolicy.workerRestartBackoffSeconds(forConsecutiveFailureCount: failureCount)
     }
 
     static func shouldAttemptWorkerRestart(
         forFailureCount failureCount: Int,
         maxConsecutiveFailures: Int = Constants.maxConsecutiveWorkerRecoveryFailures
     ) -> Bool {
-        max(1, failureCount) <= max(1, maxConsecutiveFailures)
+        RuntimeRecoveryPolicy.shouldAttemptWorkerRestart(
+            forConsecutiveFailureCount: failureCount,
+            maxConsecutiveFailures: maxConsecutiveFailures
+        )
     }
 
     static func nextConsecutiveWorkerFailureCount(
         previousCount: Int,
         didRecover: Bool
     ) -> Int {
-        didRecover ? 0 : max(0, previousCount) + 1
+        RuntimeRecoveryPolicy.nextConsecutiveWorkerFailureCount(
+            previousCount: previousCount,
+            didRecover: didRecover
+        )
     }
 
     private static func deterministicHash(for localThreadID: UUID) -> UInt64 {
