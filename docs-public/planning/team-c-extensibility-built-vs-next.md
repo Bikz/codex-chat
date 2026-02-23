@@ -43,6 +43,7 @@ Date: 2026-02-23
 | P2 | Extracted shared bounded process-runner package and adopted it in skills/mods installers | `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Sources/CodexProcess/BoundedProcessRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Tests/CodexProcessTests/CodexProcessTests.swift` | `77aa36c` |
 | P2 | Migrated extension worker execution onto shared `CodexProcess` runner and preserved strict output-limit enforcement in extension contract | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Package.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Sources/CodexProcess/BoundedProcessRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift:196` | `f0ee05c` |
 | P2 | Unified checked command-failure mapping for skills/mods through shared `CodexProcess.runChecked` API with package-level regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Sources/CodexProcess/BoundedProcessRunner.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexProcess/Tests/CodexProcessTests/CodexProcessTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift` | `98ce357` |
+| P2 | Expanded automation health summary to include launchd-specific scheduled/failing status and surfaced it in Mods UI | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ModViews.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensionAutomationHealthTests.swift` | `8d2f05e` |
 
 ### Remaining prioritized backlog
 
@@ -57,8 +58,8 @@ Date: 2026-02-23
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
-- Phase 1 shipped: per-mod automation health summaries now surface last/next/failure status in the Mods UI.
-- Next step is wiring launchd and scheduler telemetry into a single richer status timeline and explicit failure-recovery affordances.
+- Phase 2 shipped: per-mod automation health summaries now include launchd scheduled/failure signal alongside scheduler health in the Mods UI.
+- Next step is wiring launchd and scheduler telemetry into a richer event timeline with explicit failure-recovery affordances.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:48`.
 
 ## 3) 30/60/90 day roadmap (re-baselined)
