@@ -238,6 +238,29 @@ Then map each to distinct rendering primitives (iconography, tint, verbosity, co
 2. Use `item.type`-driven icons and labels.
 - Example: `reasoning`, `webSearch`, `toolCall`, `fileChange`, `commandExecution` each get dedicated visual treatment.
 
+## Implemented in CodexChat (2026-02-23)
+
+The following UX changes are now shipped in `CodexChatApp`:
+
+1. Typed runtime state classification now drives transcript and live activity labeling.
+- `RuntimeVisualStateClassifier` maps runtime actions to dedicated visual states (`reasoning`, `webSearch`, `toolCall`, `commandExecution`, approvals, stderr warning/error, completion/failure, etc.).
+- Action rows use state-specific iconography + tone instead of generic method heuristics.
+- Live activity status labels now derive from typed state classification.
+
+2. Inline terminal preview for active command runs is rendered directly in chat.
+- Active live-activity rows include a scrollable monospaced output surface fed from thread runtime logs.
+- Large command output streams remain scrollable within the chat timeline.
+
+3. Assistant file references are now first-class clickable links.
+- Backticked file references in assistant markdown are linkified into `codexchat-file://` links.
+- File links resolve safely against the selected project root (`ProjectPathSafety`) and open locally.
+
+Primary implementation references:
+- `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/RuntimeVisualState.swift`
+- `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/TranscriptPresentation.swift`
+- `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ConversationComponents.swift`
+- `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/MarkdownMessageView.swift`
+
 3. Replace heuristic status labeling with typed status.
 - Keep heuristic fallback only for unknown/new item types.
 
@@ -255,4 +278,3 @@ Then map each to distinct rendering primitives (iconography, tint, verbosity, co
 - Active-turn status formatter: `apps/CodexChatApp/Sources/CodexChatApp/LiveActivityTraceFormatter.swift`
 - Row components: `apps/CodexChatApp/Sources/CodexChatApp/ConversationComponents.swift`
 - Canvas composition and drawers: `apps/CodexChatApp/Sources/CodexChatApp/ChatsCanvasView.swift`
-
