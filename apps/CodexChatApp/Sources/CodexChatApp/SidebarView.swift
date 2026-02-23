@@ -432,7 +432,7 @@ struct SidebarView: View {
             HStack(spacing: SidebarLayoutSpec.iconTextGap) {
                 ProgressView()
                     .controlSize(.small)
-                    .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
+                    .frame(minWidth: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 Text("Loading…")
                     .font(sidebarMetaFont)
                     .foregroundStyle(.secondary)
@@ -698,8 +698,7 @@ struct SidebarView: View {
         } else if model.isThreadWorking(threadID) {
             ProgressView()
                 .controlSize(.small)
-                .scaleEffect(0.72)
-                .frame(width: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
+                .frame(minWidth: SidebarLayoutSpec.iconColumnWidth, alignment: .leading)
                 .accessibilityLabel("Working")
         } else if model.isThreadUnread(threadID) {
             Circle()

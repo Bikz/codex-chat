@@ -118,22 +118,37 @@ private struct MainAppRoot: View {
 private struct WindowAccessor: NSViewRepresentable {
     let isTransparent: Bool
 
-    func makeNSView(context _: Context) -> NSView {
+    final class Coordinator {
+        weak var configuredWindow: NSWindow?
+        var lastTransparentValue: Bool?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
-            configureWindow(for: view)
+            // The NSWindow is often attached after makeNSView; defer and configure once attached.
+            configureWindow(for: view, coordinator: context.coordinator)
         }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context _: Context) {
+    func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
-            configureWindow(for: nsView)
+            configureWindow(for: nsView, coordinator: context.coordinator)
         }
     }
 
-    private func configureWindow(for view: NSView) {
+    private func configureWindow(for view: NSView, coordinator: Coordinator) {
         guard let window = view.window else { return }
+        let hasWindowChanged = coordinator.configuredWindow !== window
+        let hasTransparencyChanged = coordinator.lastTransparentValue != isTransparent
+        guard hasWindowChanged || hasTransparencyChanged else { return }
+        coordinator.configuredWindow = window
+        coordinator.lastTransparentValue = isTransparent
         configureDesktopWindow(window, isTransparent: isTransparent)
     }
 }
@@ -141,22 +156,37 @@ private struct WindowAccessor: NSViewRepresentable {
 private struct SettingsWindowAccessor: NSViewRepresentable {
     let isTransparent: Bool
 
-    func makeNSView(context _: Context) -> NSView {
+    final class Coordinator {
+        weak var configuredWindow: NSWindow?
+        var lastTransparentValue: Bool?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
-            configureWindow(for: view)
+            // The NSWindow is often attached after makeNSView; defer and configure once attached.
+            configureWindow(for: view, coordinator: context.coordinator)
         }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context _: Context) {
+    func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
-            configureWindow(for: nsView)
+            configureWindow(for: nsView, coordinator: context.coordinator)
         }
     }
 
-    private func configureWindow(for view: NSView) {
+    private func configureWindow(for view: NSView, coordinator: Coordinator) {
         guard let window = view.window else { return }
+        let hasWindowChanged = coordinator.configuredWindow !== window
+        let hasTransparencyChanged = coordinator.lastTransparentValue != isTransparent
+        guard hasWindowChanged || hasTransparencyChanged else { return }
+        coordinator.configuredWindow = window
+        coordinator.lastTransparentValue = isTransparent
         configureSettingsWindow(window, isTransparent: isTransparent)
     }
 }

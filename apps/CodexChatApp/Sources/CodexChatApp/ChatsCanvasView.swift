@@ -225,8 +225,9 @@ struct ChatsCanvasView: View {
                 }
 
                 Button {
-                    // Defer state mutation until after the current AppKit layout cycle.
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
+                        // Yield once to avoid mutating SwiftUI state from the active AppKit layout pass.
+                        await Task.yield()
                         model.toggleVoiceCapture()
                     }
                 } label: {
@@ -235,9 +236,8 @@ struct ChatsCanvasView: View {
                             Image(systemName: "stop.fill")
                                 .font(.system(size: 12, weight: .bold))
                         } else if case .transcribing = model.voiceCaptureState {
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                                .controlSize(.mini)
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 12, weight: .semibold))
                         } else {
                             Image(systemName: "mic.fill")
                                 .font(.system(size: 14, weight: .semibold))
@@ -291,8 +291,9 @@ struct ChatsCanvasView: View {
                             .fill(.red)
                             .frame(width: 7, height: 7)
                     case .transcribing:
-                        ProgressView()
-                            .controlSize(.small)
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     case .failed:
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
