@@ -40,7 +40,7 @@ struct ExtensionModsBarView: View {
 
                 Spacer(minLength: 0)
 
-                if model.hasModsBarQuickSwitchChoices {
+                if !showsCloseToRailControl, model.hasModsBarQuickSwitchChoices {
                     Menu {
                         ForEach(model.modsBarQuickSwitchOptions) { option in
                             Button {
@@ -78,7 +78,9 @@ struct ExtensionModsBarView: View {
                     .accessibilityLabel("Close extension panel")
                 }
 
-                if let updatedAt = model.selectedExtensionModsBarState?.updatedAt {
+                if !showsCloseToRailControl,
+                   let updatedAt = model.selectedExtensionModsBarState?.updatedAt
+                {
                     Text(updatedAt, style: .relative)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
