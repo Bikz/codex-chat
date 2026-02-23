@@ -397,6 +397,35 @@ extension AppModel {
         )
     }
 
+    private func cacheRuntimeThreadMapping(
+        localThreadID: UUID,
+        runtimeThreadID: String,
+        removeAliases: [String] = []
+    ) {
+        if let previous = runtimeThreadIDByLocalThreadID.updateValue(runtimeThreadID, forKey: localThreadID),
+           previous != runtimeThreadID
+        {
+            localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
+        }
+        for alias in removeAliases where alias != runtimeThreadID {
+            localThreadIDByRuntimeThreadID.removeValue(forKey: alias)
+        }
+        localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
+    }
+
+    private func clearCachedRuntimeThreadMapping(for localThreadID: UUID) -> String? {
+        guard let staleRuntimeThreadID = runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID) else {
+            return nil
+        }
+        localThreadIDByRuntimeThreadID.removeValue(forKey: staleRuntimeThreadID)
+        return staleRuntimeThreadID
+    }
+
+    private func pinRuntimeThreadMapping(localThreadID: UUID, runtimeThreadID: String) async {
+        guard let runtimePool else { return }
+        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+    }
+
     private func ensureRuntimeThreadID(
         for localThreadID: UUID,
         projectPath: String,
@@ -436,23 +465,15 @@ extension AppModel {
                     return migratedCached
                 }
 
-                runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID)
-                localThreadIDByRuntimeThreadID.removeValue(forKey: cached)
+                _ = clearCachedRuntimeThreadMapping(for: localThreadID)
             }
 
             if let persisted = try await runtimeThreadMappingRepository?.getRuntimeThreadID(localThreadID: localThreadID),
                !persisted.isEmpty
             {
                 if RuntimePool.parseScopedID(persisted) != nil {
-                    if let previous = runtimeThreadIDByLocalThreadID.updateValue(persisted, forKey: localThreadID),
-                       previous != persisted
-                    {
-                        localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
-                    }
-                    localThreadIDByRuntimeThreadID[persisted] = localThreadID
-                    if let runtimePool {
-                        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: persisted)
-                    }
+                    cacheRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: persisted)
+                    await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: persisted)
                     appendLog(.debug, "Loaded persisted runtime thread mapping for local thread \(localThreadID.uuidString)")
                     await PerformanceTracer.shared.end(
                         span,
@@ -493,15 +514,8 @@ extension AppModel {
                 return createdRuntimeThreadID
             }
 
-            if let previous = runtimeThreadIDByLocalThreadID.updateValue(runtimeThreadID, forKey: localThreadID),
-               previous != runtimeThreadID
-            {
-                localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
-            }
-            localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
-            if let runtimePool {
-                await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
-            }
+            cacheRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+            await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
             appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
             await PerformanceTracer.shared.end(
                 span,
@@ -538,13 +552,11 @@ extension AppModel {
             id: trimmedRuntimeThreadID,
             workerID: RuntimePoolWorkerID(0)
         )
-        if let previous = runtimeThreadIDByLocalThreadID.updateValue(migratedRuntimeThreadID, forKey: localThreadID),
-           previous != migratedRuntimeThreadID
-        {
-            localThreadIDByRuntimeThreadID.removeValue(forKey: previous)
-        }
-        localThreadIDByRuntimeThreadID.removeValue(forKey: trimmedRuntimeThreadID)
-        localThreadIDByRuntimeThreadID[migratedRuntimeThreadID] = localThreadID
+        cacheRuntimeThreadMapping(
+            localThreadID: localThreadID,
+            runtimeThreadID: migratedRuntimeThreadID,
+            removeAliases: [trimmedRuntimeThreadID]
+        )
 
         do {
             try await runtimeThreadMappingRepository?.setRuntimeThreadID(
@@ -558,9 +570,7 @@ extension AppModel {
             )
         }
 
-        if let runtimePool {
-            await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: migratedRuntimeThreadID)
-        }
+        await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: migratedRuntimeThreadID)
 
         appendLog(
             .info,
@@ -600,9 +610,8 @@ extension AppModel {
             localThreadID: localThreadID,
             runtimeThreadID: runtimeThreadID
         )
-        runtimeThreadIDByLocalThreadID[localThreadID] = runtimeThreadID
-        localThreadIDByRuntimeThreadID[runtimeThreadID] = localThreadID
-        await runtimePool.pin(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+        cacheRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
+        await pinRuntimeThreadMapping(localThreadID: localThreadID, runtimeThreadID: runtimeThreadID)
 
         appendLog(.info, "Mapped local thread \(localThreadID.uuidString) to runtime thread \(runtimeThreadID)")
         return runtimeThreadID
@@ -614,10 +623,9 @@ extension AppModel {
             await runtimePool.unpin(localThreadID: localThreadID)
         }
 
-        guard let staleRuntimeThreadID = runtimeThreadIDByLocalThreadID.removeValue(forKey: localThreadID) else {
+        guard let staleRuntimeThreadID = clearCachedRuntimeThreadMapping(for: localThreadID) else {
             return
         }
-        localThreadIDByRuntimeThreadID.removeValue(forKey: staleRuntimeThreadID)
         appendLog(.debug, "Invalidated stale runtime thread mapping \(staleRuntimeThreadID)")
     }
 
