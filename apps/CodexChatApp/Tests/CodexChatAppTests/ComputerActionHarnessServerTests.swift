@@ -139,7 +139,7 @@ final class ComputerActionHarnessServerTests: XCTestCase {
                     userInfo: [NSLocalizedDescriptionKey: "Failed to connect to harness socket."]
                 )
             }
-            usleep(25_000)
+            usleep(25000)
         }
     }
 

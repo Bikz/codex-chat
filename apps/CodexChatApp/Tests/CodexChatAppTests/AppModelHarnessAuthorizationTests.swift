@@ -94,8 +94,14 @@ final class AppModelHarnessAuthorizationTests: XCTestCase {
 }
 
 private final class StubVoiceCaptureService: VoiceCaptureService, @unchecked Sendable {
-    func requestAuthorization() async -> VoiceCaptureAuthorizationStatus { .authorized }
+    func requestAuthorization() async -> VoiceCaptureAuthorizationStatus {
+        .authorized
+    }
+
     func startCapture() async throws {}
-    func stopCapture() async throws -> String { "" }
+    func stopCapture() async throws -> String {
+        ""
+    }
+
     func cancelCapture() async {}
 }

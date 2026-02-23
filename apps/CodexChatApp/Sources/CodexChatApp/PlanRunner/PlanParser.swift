@@ -3,7 +3,7 @@ import Foundation
 enum PlanRunnerCapability: String, CaseIterable, Hashable, Sendable {
     case nativeActions = "native-actions"
     case filesystemWrite = "filesystem-write"
-    case network = "network"
+    case network
     case runtimeControl = "runtime-control"
 }
 
