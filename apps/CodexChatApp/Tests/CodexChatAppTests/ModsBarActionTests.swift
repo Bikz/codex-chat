@@ -592,6 +592,28 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(model.hasModsBarQuickSwitchChoices)
     }
 
+    func testModsBarQuickSwitchDeduplicatesSameModIDAcrossScopes() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let modID = "acme.shared-mod"
+        let projectMod = makeModsBarMod(id: modID, name: "Shared Mod", scope: .project, directorySuffix: "project-shared")
+        let globalMod = makeModsBarMod(id: modID, name: "Shared Mod", scope: .global, directorySuffix: "global-shared")
+
+        model.modsState = .loaded(
+            AppModel.ModsSurfaceModel(
+                globalMods: [globalMod],
+                projectMods: [projectMod],
+                selectedGlobalModPath: globalMod.directoryPath,
+                selectedProjectModPath: nil
+            )
+        )
+
+        let options = model.modsBarQuickSwitchOptions
+        XCTAssertEqual(options.count, 1)
+        XCTAssertEqual(options[0].mod.definition.manifest.id, modID)
+        XCTAssertEqual(options[0].scope, .global)
+        XCTAssertTrue(options[0].isSelected)
+    }
+
     func testModsBarQuickSwitchSymbolUsesPromptBookIconForPromptTitles() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let promptMod = makeModsBarMod(
@@ -616,7 +638,7 @@ final class ModsBarActionTests: XCTestCase {
         )
         let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
 
-        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "puzzlepiece.extension")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "tray.full")
     }
 
     func testToggleModsBarOpensThreadInPeekModeByDefault() {

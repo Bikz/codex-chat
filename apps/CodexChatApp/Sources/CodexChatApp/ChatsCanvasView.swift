@@ -905,7 +905,7 @@ struct ChatsCanvasView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .help(model.modsBarQuickSwitchTitle(for: option))
+                        .help(model.modsBarQuickSwitchTooltip(for: option))
                         .accessibilityLabel("Open \(model.modsBarQuickSwitchTitle(for: option)) extension")
                     }
 

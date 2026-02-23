@@ -5,7 +5,7 @@ extension AppModel {
     var modsBarQuickSwitchOptions: [ModsBarQuickSwitchOption] {
         guard case let .loaded(surface) = modsState else { return [] }
 
-        var options: [ModsBarQuickSwitchOption] = []
+        var candidates: [ModsBarQuickSwitchOption] = []
 
         let projectOptions = surface.projectMods
             .filter { $0.definition.uiSlots?.modsBar?.enabled == true }
@@ -27,9 +27,25 @@ extension AppModel {
                 )
             }
 
-        options.append(contentsOf: projectOptions)
-        options.append(contentsOf: globalOptions)
-        return options
+        candidates.append(contentsOf: projectOptions)
+        candidates.append(contentsOf: globalOptions)
+
+        var deduped: [ModsBarQuickSwitchOption] = []
+        var indexByModID: [String: Int] = [:]
+
+        for option in candidates {
+            let modID = option.mod.definition.manifest.id.lowercased()
+            if let existingIndex = indexByModID[modID] {
+                if !deduped[existingIndex].isSelected, option.isSelected {
+                    deduped[existingIndex] = option
+                }
+                continue
+            }
+            indexByModID[modID] = deduped.count
+            deduped.append(option)
+        }
+
+        return deduped
     }
 
     var hasModsBarQuickSwitchChoices: Bool {
@@ -51,6 +67,10 @@ extension AppModel {
             return explicitTitle
         }
         return option.mod.definition.manifest.name
+    }
+
+    func modsBarQuickSwitchTooltip(for option: ModsBarQuickSwitchOption) -> String {
+        "\(modsBarQuickSwitchTitle(for: option)) (\(option.scope.label))"
     }
 
     func modsBarQuickSwitchSymbolName(for option: ModsBarQuickSwitchOption) -> String {
@@ -75,6 +95,22 @@ extension AppModel {
         if title.contains("summary") || id.contains("summary") {
             return "text.alignleft"
         }
-        return "puzzlepiece.extension"
+
+        let fallbackSymbols = [
+            "puzzlepiece.extension",
+            "bookmark",
+            "wand.and.stars",
+            "square.and.pencil",
+            "tray.full",
+            "doc.on.doc",
+            "magnifyingglass",
+            "sparkles",
+            "list.bullet.rectangle",
+            "slider.horizontal.3",
+        ]
+        let seed = id.unicodeScalars.reduce(0) { partial, scalar in
+            ((partial &* 33) &+ Int(scalar.value)) & 0x7fffffff
+        }
+        return fallbackSymbols[seed % fallbackSymbols.count]
     }
 }
