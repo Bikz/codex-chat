@@ -9,6 +9,7 @@ This contract defines non-negotiable runtime and persistence invariants for Code
 
 Primary implementation surfaces:
 - `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift`
+- `apps/CodexChatApp/Sources/CodexChatApp/RuntimeRecoveryPolicy.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift`
@@ -23,20 +24,20 @@ Primary implementation surfaces:
 
 2. App-level automatic runtime recovery must be bounded.
 - Required behavior: attempt restart on bounded schedule and stop with explicit recoverable error if exhausted.
-- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:354`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:413`.
+- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:352`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:394`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimeRecoveryPolicy.swift:8`.
 
 3. Worker-level recovery must be bounded by consecutive failures.
 - Required behavior: non-primary worker restart attempts stop after configured consecutive-failure limit; successful recovery resets consecutive failure count.
-- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:454`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:710`.
+- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:454`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:701`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimeRecoveryPolicy.swift:37`.
 
 ## Runtime Thread Mapping Invariants
 
 1. Local thread to runtime thread mapping must be persisted and rehydrated.
-- Evidence: `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteRuntimeThreadMappingRepository.swift:34`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:433`.
+- Evidence: `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteRuntimeThreadMappingRepository.swift:34`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:429`.
 
 2. Stale runtime thread IDs must be detected and retried with a new runtime thread mapping.
 - Required behavior: detect stale/missing thread errors, invalidate mapping, recreate runtime thread mapping, retry exactly once.
-- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:164`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:640`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:670`.
+- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:164`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:632`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:662`.
 
 ## Approval Continuity Invariants
 
@@ -46,16 +47,16 @@ Primary implementation surfaces:
 
 2. Approval reset must be explicit to the user.
 - Required behavior: set explicit status message and append transcript action card (`approval/reset`) when local thread context is known.
-- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:904`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:918`.
+- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:906`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:920`.
 
 ## Turn Persistence Invariants
 
 1. Turn start should checkpoint as `pending` before runtime turn execution.
-- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:114`.
+- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:112`.
 
 2. Checkpoint begin failure must degrade safely.
 - Required behavior: log warning and continue runtime turn dispatch instead of silently dropping the turn.
-- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:129`.
+- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:127`.
 
 3. Completion durability policy:
 - Required behavior: failed turns persist with immediate durability; non-failed completions may be batched.
@@ -76,6 +77,8 @@ Primary implementation surfaces:
 - Runtime auto-recovery bounds:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:7`
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:40`
+- Shared recovery policy parsing and worker bounds:
+  - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeRecoveryPolicyTests.swift:4`
 - Stale mapping classification + retry bound:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift:7`
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeStaleThreadRecoveryPolicyTests.swift:34`
@@ -86,6 +89,8 @@ Primary implementation surfaces:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:7`
 - RuntimePool non-primary recovery resumes pinned routing after restart:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:82`
+- RuntimePool repeated crash/recovery cycles preserve post-recovery routing:
+  - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`
 - Worker recovery bound/reset:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:119`
   - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129`
