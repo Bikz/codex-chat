@@ -53,6 +53,7 @@ Date: 2026-02-23
 | P2 | Added extensibility diagnostics export action plus persisted, clamped retention controls in Settings | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityDiagnosticsExporter.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/SettingsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsExporterTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `2bb01b1` |
 | P2 | Added diagnostics recovery playbooks and surfaced per-event recovery guidance in Diagnostics UI | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `c598a9f` |
 | P2 | Added one-click remediation actions for diagnostics playbooks (copy recovery steps and copy rerun command) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1c9c156` |
+| P2 | Added contextual Diagnostics shortcut to open app settings for launchd-related remediation paths | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `5c346cc` |
 
 ### Remaining prioritized backlog
 
@@ -71,7 +72,8 @@ Date: 2026-02-23
 - Phase 10 shipped: diagnostics now support JSON export plus persisted/clamped retention controls for audit workflows.
 - Phase 11 shipped: diagnostics now include category-specific recovery playbooks surfaced inline in Diagnostics UI.
 - Phase 12 shipped: diagnostics playbooks now include one-click copy actions for recovery steps and rerun commands.
-- Next step is adding contextual deep links and safe inline rerun dispatch where command surfaces permit it.
+- Phase 13 shipped: diagnostics now provide contextual app-settings deep links for launchd remediation flows.
+- Next step is adding safe inline rerun dispatch where command surfaces permit it.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
@@ -82,7 +84,7 @@ Date: 2026-02-23
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Add contextual deep-link targets and safe inline rerun dispatch contracts keyed by diagnostics category.
+1. Add safe inline rerun dispatch contracts keyed by diagnostics category, with strict guardrails for privileged commands.
 2. Extend shipped automation health summary into unified launchd+scheduler status contract.
 
 Exit criteria:
