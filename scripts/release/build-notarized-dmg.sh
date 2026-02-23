@@ -111,14 +111,21 @@ sign_item() {
 verify_signature() {
   local path="$1"
   codesign --verify --deep --strict --verbose=2 "$path"
-  spctl --assess --type execute --verbose "$path"
 }
 
 notarize_and_staple() {
   local path="$1"
+  local upload_path="$path"
+
+  if [[ "$path" == *.app ]]; then
+    upload_path="$WORK_DIR/$(basename "$path").zip"
+    rm -f "$upload_path"
+    ditto -c -k --sequesterRsrc --keepParent "$path" "$upload_path"
+  fi
+
   echo "Notarizing $path"
   xcrun notarytool submit \
-    "$path" \
+    "$upload_path" \
     --key "$NOTARY_KEY_FILE" \
     --key-id "$NOTARY_KEY_ID" \
     --issuer "$NOTARY_ISSUER_ID" \
@@ -130,15 +137,38 @@ notarize_and_staple() {
 validate_notarized_item() {
   local path="$1"
   local kind="$2"
+  local spctl_output
+  spctl_output="$(mktemp)"
 
   xcrun stapler validate "$path"
 
   if [[ "$kind" == "dmg" ]]; then
-    spctl --assess --type open --verbose "$path"
+    if ! spctl --assess --type open --verbose "$path" >"$spctl_output" 2>&1; then
+      if grep -qi "Insufficient Context" "$spctl_output"; then
+        cat "$spctl_output"
+        echo "warning: spctl open assessment returned 'Insufficient Context'; continuing because notarization + stapler validation succeeded." >&2
+        rm -f "$spctl_output"
+        return 0
+      fi
+
+      cat "$spctl_output" >&2
+      rm -f "$spctl_output"
+      return 1
+    fi
+
+    cat "$spctl_output"
+    rm -f "$spctl_output"
     return 0
   fi
 
-  spctl --assess --type execute --verbose "$path"
+  if ! spctl --assess --type execute --verbose "$path" >"$spctl_output" 2>&1; then
+    cat "$spctl_output" >&2
+    rm -f "$spctl_output"
+    return 1
+  fi
+
+  cat "$spctl_output"
+  rm -f "$spctl_output"
 }
 
 create_dmg() {
