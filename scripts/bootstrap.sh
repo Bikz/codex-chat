@@ -66,8 +66,10 @@ Next steps:
    make install-local-hooks
 4. Optional: generate reliability scorecard artifacts:
    make reliability-scorecard
-5. Run contributor smoke checks directly:
+5. Optional: generate a reliability diagnostics bundle:
+   make reliability-bundle
+6. Run contributor smoke checks directly:
    make oss-smoke
-6. Run full checks before opening a PR:
+7. Run full checks before opening a PR:
    pnpm -s run check
 OUT

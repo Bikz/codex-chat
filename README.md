@@ -107,6 +107,15 @@ make reliability-scorecard
 Writes markdown + JSON scorecard outputs under `.artifacts/reliability/`.
 Includes deterministic repro fixtures for `basic-turn`, runtime-termination recovery, and stale-thread remap.
 
+Create a one-command reliability diagnostics bundle:
+
+```sh
+make reliability-bundle
+```
+
+Writes bundle directory + `.tgz` archive under `.artifacts/reliability/bundles/`.
+Set `RELIABILITY_BUNDLE_SKIP_SCORECARD=1` to skip rerunning scorecard generation.
+
 ### Local pre-push gate
 
 ```sh
@@ -191,6 +200,7 @@ make quick
 make oss-smoke
 make reliability-local
 make reliability-scorecard
+make reliability-bundle
 pnpm -s run check
 ```
 
