@@ -2,6 +2,17 @@ import AppKit
 import Foundation
 
 extension AppModel {
+    struct AutomationTimelineEventRollup: Identifiable, Hashable, Sendable {
+        let id: String
+        let latestEvent: ExtensibilityDiagnosticEvent
+        let earliestTimestamp: Date
+        let occurrenceCount: Int
+
+        var durationSeconds: TimeInterval {
+            max(0, latestEvent.timestamp.timeIntervalSince(earliestTimestamp))
+        }
+    }
+
     private enum ExtensibilityRerunCommandClass: String, Sendable {
         case git
         case npxSkillsAdd
@@ -22,6 +33,45 @@ extension AppModel {
     private enum ExtensibilityRerunPolicyDecision: Sendable {
         case allow(ExtensibilityRerunCommandClass)
         case deny(String)
+    }
+
+    static func rollupAutomationTimelineEvents(
+        _ events: [ExtensibilityDiagnosticEvent],
+        collapseWindowSeconds: TimeInterval = 180
+    ) -> [AutomationTimelineEventRollup] {
+        guard !events.isEmpty else { return [] }
+
+        var rollups: [AutomationTimelineEventRollup] = []
+        rollups.reserveCapacity(events.count)
+
+        for event in events {
+            let eventFingerprint = automationTimelineFingerprint(for: event)
+            if let lastIndex = rollups.indices.last {
+                let lastRollup = rollups[lastIndex]
+                let lastFingerprint = automationTimelineFingerprint(for: lastRollup.latestEvent)
+                let isWithinCollapseWindow = lastRollup.latestEvent.timestamp.timeIntervalSince(event.timestamp) <= collapseWindowSeconds
+                if eventFingerprint == lastFingerprint, isWithinCollapseWindow {
+                    rollups[lastIndex] = AutomationTimelineEventRollup(
+                        id: lastRollup.id,
+                        latestEvent: lastRollup.latestEvent,
+                        earliestTimestamp: min(lastRollup.earliestTimestamp, event.timestamp),
+                        occurrenceCount: lastRollup.occurrenceCount + 1
+                    )
+                    continue
+                }
+            }
+
+            rollups.append(
+                AutomationTimelineEventRollup(
+                    id: event.id.uuidString,
+                    latestEvent: event,
+                    earliestTimestamp: event.timestamp,
+                    occurrenceCount: 1
+                )
+            )
+        }
+
+        return rollups
     }
 
     func toggleDiagnostics() {
@@ -175,6 +225,19 @@ extension AppModel {
                 self?.appendLog(.warning, "Failed to persist automation timeline focus filter: \(error.localizedDescription)")
             }
         }
+    }
+
+    private static func automationTimelineFingerprint(for event: ExtensibilityDiagnosticEvent) -> String {
+        [
+            event.surface,
+            event.operation,
+            event.kind,
+            event.modID ?? "",
+            event.projectID?.uuidString ?? "",
+            event.threadID?.uuidString ?? "",
+            event.command,
+            event.summary,
+        ].joined(separator: "|")
     }
 
     private func extensibilityRerunPolicy(for command: String) -> ExtensibilityRerunPolicyDecision {

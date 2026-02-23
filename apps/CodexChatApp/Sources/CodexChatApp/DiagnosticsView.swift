@@ -213,13 +213,14 @@ struct DiagnosticsView: View {
                 .pickerStyle(.segmented)
                 .padding(.bottom, 6)
 
-                if automationTimelineEvents.isEmpty {
+                if automationTimelineRollups.isEmpty {
                     Text(emptyAutomationTimelineMessage)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(automationTimelineEvents.prefix(8)) { event in
+                        ForEach(automationTimelineRollups.prefix(8)) { rollup in
+                            let event = rollup.latestEvent
                             let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 8) {
@@ -236,6 +237,11 @@ struct DiagnosticsView: View {
                                 }
                                 if let modID = event.modID, !modID.isEmpty {
                                     Text("Mod: \(modID)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if rollup.occurrenceCount > 1 {
+                                    Text(repeatedEventSummary(for: rollup))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -393,7 +399,7 @@ struct DiagnosticsView: View {
         }
     }
 
-    private var automationTimelineEvents: [AppModel.ExtensibilityDiagnosticEvent] {
+    private var automationTimelineRollups: [AppModel.AutomationTimelineEventRollup] {
         let scoped = extensibilityDiagnostics.filter { event in
             if event.surface == "automations" {
                 return true
@@ -406,13 +412,17 @@ struct DiagnosticsView: View {
 
         switch automationTimelineFocusFilter {
         case .all:
-            return scoped
+            return AppModel.rollupAutomationTimelineEvents(scoped)
         case .selectedProject:
             guard let selectedProjectID else { return [] }
-            return scoped.filter { $0.projectID == selectedProjectID }
+            return AppModel.rollupAutomationTimelineEvents(
+                scoped.filter { $0.projectID == selectedProjectID }
+            )
         case .selectedThread:
             guard let selectedThreadID else { return [] }
-            return scoped.filter { $0.threadID == selectedThreadID }
+            return AppModel.rollupAutomationTimelineEvents(
+                scoped.filter { $0.threadID == selectedThreadID }
+            )
         }
     }
 
@@ -442,6 +452,21 @@ struct DiagnosticsView: View {
         default:
             "\(event.surface)/\(event.operation)"
         }
+    }
+
+    private func repeatedEventSummary(for rollup: AppModel.AutomationTimelineEventRollup) -> String {
+        let seconds = Int(rollup.durationSeconds.rounded(.down))
+        if seconds < 60 {
+            return "Repeated \(rollup.occurrenceCount)x in the last \(max(1, seconds))s"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "Repeated \(rollup.occurrenceCount)x over \(minutes)m"
+        }
+
+        let hours = minutes / 60
+        return "Repeated \(rollup.occurrenceCount)x over \(hours)h"
     }
 
     private func startRefreshingPerformanceSnapshot() {
