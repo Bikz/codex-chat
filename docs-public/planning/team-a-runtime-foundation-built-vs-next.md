@@ -25,6 +25,7 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial, replace-boundary failure, and crash-leftover temp artifacts. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` |
 | Completion persistence pressure handling | Batcher threshold, shutdown, and max-pending spill are directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` |
 | Runtime option compatibility fallback | Retry-without-turn-options heuristics are codified and directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:671`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7` |
+| Turn-options compatibility policy seam | Compatibility fallback heuristics now live in a dedicated policy type with direct unit coverage. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimeTurnOptionsCompatibilityPolicy.swift:4`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:693`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsCompatibilityPolicyTests.swift:4` |
 | Runtime/data reliability contract | Dedicated runtime/data invariants contract is published and cross-linked from architecture and contributor docs. | `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:1`, `docs-public/ARCHITECTURE_CONTRACT.md:4`, `AGENTS.md:46` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
@@ -44,8 +45,8 @@ Evidence: runbook + workstream coordination updates landed in `docs-public/STORA
 1. Add optional longer-running RuntimePool recovery soak lane in CI once budget is allocated.
 Evidence seed: deterministic resilience fixtures now exist (`apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`).
 
-2. Extract runtime compatibility fallback heuristics into a shared policy seam with CodexKit alignment.
-Evidence seed: fallback behavior currently lives in app layer dispatch path (`apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:671`).
+2. Align app-level turn-options compatibility policy with CodexKit request/schema contracts.
+Evidence gap: fallback heuristic has been extracted in app code, but cross-package contract linkage remains implicit (`apps/CodexChatApp/Sources/CodexChatApp/RuntimeTurnOptionsCompatibilityPolicy.swift:4`, `packages/CodexKit/Sources/CodexKit/CodexRuntime+Params.swift:177`).
 
 ## 3) 30/60/90 Day Roadmap Slices
 
@@ -53,7 +54,7 @@ Evidence seed: fallback behavior currently lives in app layer dispatch path (`ap
 
 1. Propose optional CI soak lane design for repeated runtime-pool recovery cycles.
 2. Draft app-level high-fanout auto-drain fairness integration test plan (runtime + repository path).
-3. Prepare runtime compatibility fallback policy extraction design note.
+3. Prepare CodexKit alignment note for the extracted compatibility policy seam.
 
 Dependencies:
 - Existing resilience and fairness baselines: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`, `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6`.
@@ -61,7 +62,7 @@ Dependencies:
 ### Day 31-60
 
 1. Add shared acceptance criteria snippets to planning docs referencing reliability contract.
-2. Start runtime compatibility fallback policy seam proposal.
+2. Start CodexKit alignment implementation for turn-options compatibility policy.
 3. Land first optional CI soak lane implementation if budget is approved.
 
 Dependencies:

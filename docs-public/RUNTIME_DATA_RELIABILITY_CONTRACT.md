@@ -13,6 +13,7 @@ Primary implementation surfaces:
 - `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift`
+- `apps/CodexChatApp/Sources/CodexChatApp/RuntimeTurnOptionsCompatibilityPolicy.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift`
 - `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteRuntimeThreadMappingRepository.swift`
@@ -65,6 +66,10 @@ Primary implementation surfaces:
 - Required behavior: failed turns persist with immediate durability; non-failed completions may be batched.
 - Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift:174`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift:177`.
 
+4. Turn-options compatibility fallback must be explicit and bounded.
+- Required behavior: retry turn start without optional model/reasoning options only when runtime errors indicate unsupported turn-option fields.
+- Evidence: `apps/CodexChatApp/Sources/CodexChatApp/RuntimeTurnOptionsCompatibilityPolicy.swift:4`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:693`.
+
 ## Archive Durability Invariants
 
 1. Transcript writes must use crash-safe replace strategy.
@@ -116,6 +121,9 @@ Primary implementation surfaces:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362`
 - Runtime degradation behavior on checkpoint begin failure:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:339`
+- Turn-options compatibility fallback policy:
+  - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsCompatibilityPolicyTests.swift:4`
+  - `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7`
 - Follow-up auto-drain fairness under high fan-out:
   - `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6`
   - `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:66`
