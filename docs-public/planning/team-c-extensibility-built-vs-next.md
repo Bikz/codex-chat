@@ -33,6 +33,7 @@ Date: 2026-02-23
 | P0 | Added extension worker malformed-output and output-limit negative tests | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:105` | `c8ff0ca` |
 | P1 | Added scheduler retry/backoff regression coverage with deterministic sleep injection | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/ExtensionAutomationSchedulerTests.swift` | `e233543` |
 | P0 | Added fuzz-style malformed framing tests across harness and extension worker boundaries | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ComputerActionHarnessServerTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift` | `bd501b8` |
+| P2 (kickoff) | Extracted shared extensibility capability policy primitive and wired plan-runner policy through it | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/PlanRunner/PlanRunnerCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityCapabilityPolicyTests.swift` | `7a02738` |
 
 ### Remaining prioritized backlog
 
@@ -41,7 +42,7 @@ Date: 2026-02-23
 
 ### P2 (platform evolution and maintainability)
 1. Unify permission policy primitives across skills/mods/extensions/native actions.
-- Replace split policy logic with a shared capability-policy module.
+- Shared primitive now exists; next step is adopting it in extensions and native-action permission decisions.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:644`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActions.swift:600`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:518`.
 
 2. Unify process execution adapters.
@@ -55,7 +56,7 @@ Date: 2026-02-23
 ## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Start P2 architecture work for unified capability-policy primitives across Team C surfaces.
+1. Adopt the new shared capability-policy primitive in extension and native-action gate checks.
 2. Draft migration and compatibility plan for consolidated process execution adapter.
 
 Exit criteria:
