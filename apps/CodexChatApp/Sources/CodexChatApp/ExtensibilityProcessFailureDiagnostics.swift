@@ -172,6 +172,7 @@ extension AppModel {
     func recordExtensibilityDiagnostic(
         surface: String,
         operation: String,
+        modID: String? = nil,
         details: ExtensibilityProcessFailureDetails
     ) {
         extensibilityDiagnostics.insert(
@@ -180,6 +181,7 @@ extension AppModel {
                 operation: operation,
                 kind: details.kind.rawValue,
                 command: details.command,
+                modID: modID,
                 summary: details.summary
             ),
             at: 0

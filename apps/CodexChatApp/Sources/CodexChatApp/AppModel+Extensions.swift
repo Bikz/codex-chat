@@ -729,7 +729,12 @@ extension AppModel {
                 let details = Self.extensibilityProcessFailureDetails(from: error)
                 let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
                 if let details {
-                    recordExtensibilityDiagnostic(surface: "extensions", operation: "hook", details: details)
+                    recordExtensibilityDiagnostic(
+                        surface: "extensions",
+                        operation: "hook",
+                        modID: resolved.modID,
+                        details: details
+                    )
                     appendLog(
                         .warning,
                         "Extension hook \(resolved.definition.id) failed [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
@@ -820,7 +825,12 @@ extension AppModel {
                 nextRunAt: nil
             )
             if let details {
-                recordExtensibilityDiagnostic(surface: "extensions", operation: "automation", details: details)
+                recordExtensibilityDiagnostic(
+                    surface: "extensions",
+                    operation: "automation",
+                    modID: resolved.modID,
+                    details: details
+                )
                 appendLog(
                     .warning,
                     "Extension automation \(resolved.definition.id) failed [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"
@@ -1207,6 +1217,7 @@ extension AppModel {
         recordExtensibilityDiagnostic(
             surface: "automations",
             operation: "health",
+            modID: modID,
             details: details
         )
     }
@@ -1414,7 +1425,12 @@ extension AppModel {
                 let details = Self.extensibilityProcessFailureDetails(from: error)
                 let errorMessage = details?.summary ?? sanitizeExtensionLog(error.localizedDescription)
                 if let details {
-                    recordExtensibilityDiagnostic(surface: "launchd", operation: "configure", details: details)
+                    recordExtensibilityDiagnostic(
+                        surface: "launchd",
+                        operation: "configure",
+                        modID: automation.modID,
+                        details: details
+                    )
                     appendLog(
                         .warning,
                         "Failed configuring launchd automation \(label) [\(details.kind.rawValue)] (\(details.command)): \(details.summary)"

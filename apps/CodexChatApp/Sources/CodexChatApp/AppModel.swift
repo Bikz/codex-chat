@@ -579,6 +579,7 @@ final class AppModel: ObservableObject {
         let operation: String
         let kind: String
         let command: String
+        let modID: String?
         let summary: String
 
         init(
@@ -588,6 +589,7 @@ final class AppModel: ObservableObject {
             operation: String,
             kind: String,
             command: String,
+            modID: String? = nil,
             summary: String
         ) {
             self.id = id
@@ -596,6 +598,7 @@ final class AppModel: ObservableObject {
             self.operation = operation
             self.kind = kind
             self.command = command
+            self.modID = modID
             self.summary = summary
         }
     }

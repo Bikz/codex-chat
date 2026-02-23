@@ -193,6 +193,49 @@ struct DiagnosticsView: View {
                 }
             }
 
+            GroupBox("Automation Timeline") {
+                if automationTimelineEvents.isEmpty {
+                    Text("No automation diagnostics events yet")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(automationTimelineEvents.prefix(8)) { event in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 8) {
+                                    Text(event.timestamp.formatted(.dateTime.hour().minute().second()))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text(automationSourceLabel(for: event))
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(event.kind.uppercased())
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(color(forDiagnosticKind: event.kind))
+                                    Spacer(minLength: 0)
+                                }
+                                if let modID = event.modID, !modID.isEmpty {
+                                    Text("Mod: \(modID)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(event.summary)
+                                    .font(.caption)
+                                    .lineLimit(3)
+                                    .foregroundStyle(.secondary)
+                                if !event.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text("Retry policy: \(rerunExecutionPolicyMessage(event.command))")
+                                        .font(.caption2)
+                                        .lineLimit(2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
             GroupBox("Logs") {
                 if logs.isEmpty {
                     Text("No logs yet")
@@ -285,6 +328,31 @@ struct DiagnosticsView: View {
             .orange
         default:
             .secondary
+        }
+    }
+
+    private var automationTimelineEvents: [AppModel.ExtensibilityDiagnosticEvent] {
+        extensibilityDiagnostics.filter { event in
+            if event.surface == "automations" {
+                return true
+            }
+            if event.surface == "launchd" {
+                return true
+            }
+            return event.surface == "extensions" && event.operation == "automation"
+        }
+    }
+
+    private func automationSourceLabel(for event: AppModel.ExtensibilityDiagnosticEvent) -> String {
+        switch (event.surface, event.operation) {
+        case ("extensions", "automation"):
+            "Scheduler"
+        case ("launchd", _):
+            "Launchd"
+        case ("automations", "health"):
+            "Health"
+        default:
+            "\(event.surface)/\(event.operation)"
         }
     }
 
