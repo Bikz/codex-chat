@@ -673,6 +673,103 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testUnscopedApprovalIsShownInlineWhenNoThreadIsSelected() {
+        let model = makeConnectedModel()
+        model.selectedProjectID = UUID()
+        model.selectedThreadID = nil
+
+        let request = makeUnscopedApprovalRequest(id: 203)
+        model.handleRuntimeEvent(.approvalRequested(request))
+
+        guard case let .runtimeApproval(inlineRequest)? = model.pendingUserApprovalForComposerSurface else {
+            XCTFail("Expected unscoped approval to be surfaced inline")
+            return
+        }
+
+        XCTAssertEqual(inlineRequest.id, request.id)
+        XCTAssertNil(model.pendingUserApprovalForSelectedThread)
+    }
+
+    @MainActor
+    func testUnscopedApprovalIsShownInlineWhenSingleActiveTurnMatchesSelectedThread() {
+        let model = makeConnectedModel()
+        let selectedThreadID = UUID()
+        let projectID = UUID()
+        model.selectedProjectID = projectID
+        model.selectedThreadID = selectedThreadID
+        model.upsertActiveTurnContext(
+            AppModel.ActiveTurnContext(
+                localTurnID: UUID(),
+                localThreadID: selectedThreadID,
+                projectID: projectID,
+                projectPath: "/tmp",
+                runtimeThreadID: "w0|thr_selected",
+                runtimeTurnID: nil,
+                memoryWriteMode: .off,
+                userText: "review",
+                assistantText: "",
+                actions: [],
+                startedAt: Date()
+            )
+        )
+
+        let request = RuntimeApprovalRequest(
+            id: 204,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: nil,
+            turnID: "w0|turn_unmapped",
+            itemID: nil,
+            reason: "test",
+            risk: nil,
+            cwd: "/tmp",
+            command: ["echo", "hello"],
+            changes: [],
+            detail: "{}"
+        )
+        model.handleRuntimeEvent(.approvalRequested(request))
+
+        guard case let .runtimeApproval(inlineRequest)? = model.pendingUserApprovalForComposerSurface else {
+            XCTFail("Expected unscoped approval fallback for single selected active turn")
+            return
+        }
+
+        XCTAssertEqual(inlineRequest.id, request.id)
+        XCTAssertNil(model.pendingUserApprovalForSelectedThread)
+    }
+
+    @MainActor
+    func testUnscopedApprovalIsNotShownInlineWhenSingleActiveTurnDiffersFromSelectedThread() {
+        let model = makeConnectedModel()
+        let selectedThreadID = UUID()
+        let otherThreadID = UUID()
+        let projectID = UUID()
+        model.selectedProjectID = projectID
+        model.selectedThreadID = selectedThreadID
+        model.upsertActiveTurnContext(
+            AppModel.ActiveTurnContext(
+                localTurnID: UUID(),
+                localThreadID: otherThreadID,
+                projectID: projectID,
+                projectPath: "/tmp",
+                runtimeThreadID: "w0|thr_other",
+                runtimeTurnID: nil,
+                memoryWriteMode: .off,
+                userText: "other",
+                assistantText: "",
+                actions: [],
+                startedAt: Date()
+            )
+        )
+
+        let request = makeUnscopedApprovalRequest(id: 205)
+        model.handleRuntimeEvent(.approvalRequested(request))
+
+        XCTAssertNil(model.pendingUserApprovalForComposerSurface)
+        XCTAssertNil(model.pendingUserApprovalForSelectedThread)
+    }
+
+    @MainActor
     func testPermissionRecoveryNoticeFromPreviewFailureIsThreadScoped() async {
         let registry = ComputerActionRegistry(
             calendarToday: CalendarTodayAction(
