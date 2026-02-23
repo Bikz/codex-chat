@@ -235,7 +235,118 @@ final class AppModel: ObservableObject {
             gradientStrength: 0.55,
             transparencyMode: .solid
         )
+
+        static let auroraMint = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#5DD5C4",
+            sidebarHex: "#082024",
+            backgroundHex: "#0B1F25",
+            panelHex: "#12303B",
+            sidebarGradientHex: "#1E5D64",
+            chatGradientHex: "#2E6F76",
+            gradientStrength: 0.58,
+            transparencyMode: .solid
+        )
+
+        static let sunsetCopper = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#D48B5B",
+            sidebarHex: "#1F1614",
+            backgroundHex: "#241B18",
+            panelHex: "#2D2420",
+            sidebarGradientHex: "#5A3B2D",
+            chatGradientHex: "#714735",
+            gradientStrength: 0.47,
+            transparencyMode: .solid
+        )
+
+        static let forestSlate = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#86C08F",
+            sidebarHex: "#101C17",
+            backgroundHex: "#12211B",
+            panelHex: "#1A2B24",
+            sidebarGradientHex: "#2A4B3F",
+            chatGradientHex: "#365A4A",
+            gradientStrength: 0.52,
+            transparencyMode: .solid
+        )
+
+        static let graphiteIce = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#9AB4D0",
+            sidebarHex: "#1A1F26",
+            backgroundHex: "#1D232B",
+            panelHex: "#252D38",
+            sidebarGradientHex: "#38485B",
+            chatGradientHex: "#44576F",
+            gradientStrength: 0.49,
+            transparencyMode: .solid
+        )
+
+        static let roseNoir = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#D191A8",
+            sidebarHex: "#261821",
+            backgroundHex: "#2B1C25",
+            panelHex: "#332431",
+            sidebarGradientHex: "#5A3244",
+            chatGradientHex: "#6F3E54",
+            gradientStrength: 0.48,
+            transparencyMode: .solid
+        )
+
+        static let oceanDawn = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#6EA2E6",
+            sidebarHex: "#0E1826",
+            backgroundHex: "#102032",
+            panelHex: "#17304A",
+            sidebarGradientHex: "#2B4E75",
+            chatGradientHex: "#3A6492",
+            gradientStrength: 0.56,
+            transparencyMode: .solid
+        )
+
+        static let solarSand = UserThemeCustomization(
+            isEnabled: true,
+            accentHex: "#C6A76B",
+            sidebarHex: "#2B2417",
+            backgroundHex: "#322A1B",
+            panelHex: "#3C3322",
+            sidebarGradientHex: "#6B5630",
+            chatGradientHex: "#836B3B",
+            gradientStrength: 0.44,
+            transparencyMode: .solid
+        )
     }
+
+    struct ThemePreset: Identifiable, Hashable, Sendable {
+        let id: String
+        let title: String
+        let customization: UserThemeCustomization
+    }
+
+    struct SavedCustomThemePreset: Hashable, Codable, Sendable {
+        var name: String
+        var customization: UserThemeCustomization
+
+        var displayName: String {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "My Theme" : trimmed
+        }
+    }
+
+    static let builtInThemePresets: [ThemePreset] = [
+        .init(id: "navy", title: "Navy", customization: .navyPastel),
+        .init(id: "aurora-mint", title: "Aurora Mint", customization: .auroraMint),
+        .init(id: "sunset-copper", title: "Sunset Copper", customization: .sunsetCopper),
+        .init(id: "forest-slate", title: "Forest Slate", customization: .forestSlate),
+        .init(id: "graphite-ice", title: "Graphite Ice", customization: .graphiteIce),
+        .init(id: "rose-noir", title: "Rose Noir", customization: .roseNoir),
+        .init(id: "ocean-dawn", title: "Ocean Dawn", customization: .oceanDawn),
+        .init(id: "solar-sand", title: "Solar Sand", customization: .solarSand),
+    ]
 
     struct PromptBookEntry: Identifiable, Hashable, Sendable {
         var id: String
@@ -677,6 +788,7 @@ final class AppModel: ObservableObject {
     @Published var activeWorkerTraceEntry: WorkerTraceEntry?
     @Published var areAdvancedExecutableModsUnlocked = false
     @Published var userThemeCustomization: UserThemeCustomization = .default
+    @Published var savedCustomThemePreset: SavedCustomThemePreset?
     @Published var isPlanRunnerSheetVisible = false
     @Published var planRunnerSourcePath = ""
     @Published var planRunnerDraftText = ""
@@ -787,6 +899,7 @@ final class AppModel: ObservableObject {
     var voiceAutoStopTask: Task<Void, Never>?
     var voiceElapsedTickerTask: Task<Void, Never>?
     var userThemePersistenceTask: Task<Void, Never>?
+    var savedCustomThemePresetPersistenceTask: Task<Void, Never>?
     var voiceCaptureSessionID: UInt64 = 0
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
     let voiceElapsedClock = ContinuousClock()
@@ -911,6 +1024,7 @@ final class AppModel: ObservableObject {
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
+        savedCustomThemePresetPersistenceTask?.cancel()
         conversationUpdateScheduler.invalidate()
         globalModsWatcher?.stop()
         globalModsWatcher = nil
@@ -976,6 +1090,7 @@ final class AppModel: ObservableObject {
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
+        savedCustomThemePresetPersistenceTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
         computerActionHarnessServer?.stop()
@@ -1238,6 +1353,19 @@ final class AppModel: ObservableObject {
 
     var isTransparentThemeMode: Bool {
         userThemeCustomization.isGlassEnabled
+    }
+
+    var themePresets: [ThemePreset] {
+        Self.builtInThemePresets
+    }
+
+    var activeThemePresetID: String? {
+        Self.builtInThemePresets.first(where: { $0.customization == userThemeCustomization })?.id
+    }
+
+    var isSavedCustomThemeActive: Bool {
+        guard let savedCustomThemePreset else { return false }
+        return savedCustomThemePreset.customization == userThemeCustomization
     }
 
     var isModsBarVisibleForSelectedThread: Bool {

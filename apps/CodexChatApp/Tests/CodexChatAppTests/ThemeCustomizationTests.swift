@@ -6,6 +6,48 @@ import XCTest
 
 @MainActor
 final class ThemeCustomizationTests: XCTestCase {
+    func testThemePresetCatalogIncludesEightBuiltInPresets() {
+        let presets = AppModel.builtInThemePresets
+
+        XCTAssertEqual(presets.count, 8)
+        XCTAssertEqual(presets.map(\.id), [
+            "navy",
+            "aurora-mint",
+            "sunset-copper",
+            "forest-slate",
+            "graphite-ice",
+            "rose-noir",
+            "ocean-dawn",
+            "solar-sand",
+        ])
+        XCTAssertEqual(Set(presets.map(\.id)).count, presets.count)
+        XCTAssertEqual(Set(presets.map(\.title)).count, presets.count)
+        XCTAssertEqual(presets.first(where: { $0.id == "navy" })?.customization, .navyPastel)
+    }
+
+    func testSaveCurrentThemeAsCustomPresetAndReapply() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.userThemeCustomization = .auroraMint
+
+        model.saveCurrentThemeAsCustomPreset(named: "  My    Mint   Theme  ")
+        XCTAssertEqual(model.savedCustomThemePreset?.name, "My Mint Theme")
+        XCTAssertEqual(model.savedCustomThemePreset?.displayName, "My Mint Theme")
+        XCTAssertEqual(model.savedCustomThemePreset?.customization, .auroraMint)
+
+        model.setUserThemeCustomization(.navyPastel)
+        model.applySavedCustomThemePreset()
+        XCTAssertEqual(model.userThemeCustomization, .auroraMint)
+    }
+
+    func testSaveCurrentThemeAsCustomPresetUsesFallbackNameWhenBlank() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.userThemeCustomization = .forestSlate
+
+        model.saveCurrentThemeAsCustomPreset(named: "   ")
+        XCTAssertEqual(model.savedCustomThemePreset?.name, "My Theme")
+        XCTAssertEqual(model.savedCustomThemePreset?.displayName, "My Theme")
+    }
+
     func testResolvedThemeOverridePrefersUserCustomizationWhenEnabled() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.effectiveThemeOverride = ModThemeOverride(
@@ -203,5 +245,31 @@ final class ThemeCustomizationTests: XCTestCase {
 
         await model.restoreUserThemeCustomizationIfNeeded()
         XCTAssertEqual(model.userThemeCustomization, .default)
+    }
+
+    func testRestoreSavedCustomThemePresetReadsPreference() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-theme-saved-custom-\(UUID().uuidString)", isDirectory: true)
+        let dbURL = root.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try MetadataDatabase(databaseURL: dbURL)
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        let expected = AppModel.SavedCustomThemePreset(
+            name: " Studio    Blue ",
+            customization: .oceanDawn
+        )
+        let encoded = try JSONEncoder().encode(expected)
+        try await repositories.preferenceRepository.setPreference(
+            key: .savedCustomThemePresetV1,
+            value: String(data: encoded, encoding: .utf8) ?? "{}"
+        )
+
+        await model.restoreSavedCustomThemePresetIfNeeded()
+        XCTAssertEqual(model.savedCustomThemePreset?.name, "Studio Blue")
+        XCTAssertEqual(model.savedCustomThemePreset?.customization, .oceanDawn)
     }
 }

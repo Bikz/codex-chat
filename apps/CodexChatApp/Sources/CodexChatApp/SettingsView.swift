@@ -37,6 +37,8 @@ struct SettingsView: View {
     @State private var isAdvancedModsUnlockConfirmationVisible = false
     @State private var advancedModsUnlockInput = ""
     @State private var advancedModsUnlockError: String?
+    @State private var isThemeCustomEditorExpanded = false
+    @State private var customThemeNameDraft = "My Theme"
 
     var body: some View {
         NavigationSplitView {
@@ -85,6 +87,7 @@ struct SettingsView: View {
             runtimeModelDraft = model.isUsingRuntimeDefaultModel ? "" : model.defaultModel
             syncSafetyDefaultsFromModel()
             syncGeneralProjectFromModel(force: true)
+            syncThemeDraftFromModel()
         }
         .onChange(of: model.defaultSafetySettings) { _, _ in
             syncSafetyDefaultsFromModel()
@@ -104,6 +107,9 @@ struct SettingsView: View {
                 return
             }
             syncGeneralProjectFromModel()
+        }
+        .onChange(of: model.savedCustomThemePreset) { _, _ in
+            syncThemeDraftFromModel()
         }
         .confirmationDialog(
             "Apply global safety defaults",
@@ -379,71 +385,141 @@ struct SettingsView: View {
     }
 
     private var appearanceCard: some View {
-        SettingsSectionCard(
+        let activePresetID = model.activeThemePresetID
+
+        return SettingsSectionCard(
             title: "Theme Studio",
             subtitle: "Customize accent, sidebar, and chat surfaces. Changes apply instantly."
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("Enable custom theme", isOn: userThemeEnabledBinding)
-
-                Text("By default, light mode stays bright and dark mode stays deep black. Enable overrides only where you want changes.")
-                    .font(.caption)
+                Text("Presets")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                themeColorPickerRow("Primary accent", keyPath: \.accentHex, fallback: tokens.palette.accentHex)
-                themeColorPickerRow("Sidebar", keyPath: \.sidebarHex, fallback: tokens.palette.sidebarHex)
-                themeColorPickerRow("Main chat panel", keyPath: \.backgroundHex, fallback: tokens.palette.backgroundHex)
-                themeColorPickerRow("Card / input panel", keyPath: \.panelHex, fallback: tokens.palette.panelHex)
-
-                Divider()
-
-                themeColorPickerRow("Sidebar gradient", keyPath: \.sidebarGradientHex, fallback: tokens.palette.sidebarHex)
-                themeColorPickerRow("Chat gradient", keyPath: \.chatGradientHex, fallback: tokens.palette.backgroundHex)
-
-                Picker(
-                    "Surface mode",
-                    selection: Binding(
-                        get: { model.userThemeCustomization.transparencyMode },
-                        set: { mode in
-                            updateUserThemeCustomization { customization in
-                                customization.transparencyMode = mode
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.themePresets) { preset in
+                            themePresetChip(
+                                title: preset.title,
+                                isSelected: activePresetID == preset.id
+                            ) {
+                                model.applyThemePreset(preset)
+                                isThemeCustomEditorExpanded = false
                             }
                         }
-                    )
-                ) {
-                    Text("Solid").tag(AppModel.UserThemeCustomization.TransparencyMode.solid)
-                    Text("Glass (Experimental)").tag(AppModel.UserThemeCustomization.TransparencyMode.glass)
-                }
-                .pickerStyle(.segmented)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Gradient intensity")
-                            .font(.subheadline)
-                        Spacer(minLength: 0)
-                        Text("\(Int((model.userThemeCustomization.gradientStrength * 100).rounded()))%")
+                        themePresetChip(
+                            title: "Custom",
+                            symbolName: "slider.horizontal.3",
+                            isSelected: isThemeCustomEditorExpanded && !model.isSavedCustomThemeActive
+                        ) {
+                            isThemeCustomEditorExpanded.toggle()
+                        }
+
+                        if let savedCustomThemePreset = model.savedCustomThemePreset {
+                            themePresetChip(
+                                title: savedCustomThemePreset.displayName,
+                                symbolName: "bookmark.fill",
+                                isSelected: model.isSavedCustomThemeActive
+                            ) {
+                                model.applySavedCustomThemePreset()
+                                isThemeCustomEditorExpanded = false
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .accessibilityLabel("Theme presets")
+
+                if isThemeCustomEditorExpanded {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle("Enable custom theme", isOn: userThemeEnabledBinding)
+
+                        Text("By default, light mode stays bright and dark mode stays deep black. Enable overrides only where you want changes.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                        SettingsFieldRow(label: "Custom preset") {
+                            HStack(spacing: 8) {
+                                TextField("My Theme", text: $customThemeNameDraft)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(maxWidth: 220)
+                                    .accessibilityLabel("Custom theme name")
+
+                                Button(model.savedCustomThemePreset == nil ? "Save" : "Update") {
+                                    model.saveCurrentThemeAsCustomPreset(named: customThemeNameDraft)
+                                    syncThemeDraftFromModel()
+                                }
+                                .buttonStyle(.borderedProminent)
+
+                                if model.savedCustomThemePreset != nil {
+                                    Button("Clear") {
+                                        model.clearSavedCustomThemePreset()
+                                        syncThemeDraftFromModel()
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
+                        }
+
+                        themeColorPickerRow("Primary accent", keyPath: \.accentHex, fallback: tokens.palette.accentHex)
+                        themeColorPickerRow("Sidebar", keyPath: \.sidebarHex, fallback: tokens.palette.sidebarHex)
+                        themeColorPickerRow("Main chat panel", keyPath: \.backgroundHex, fallback: tokens.palette.backgroundHex)
+                        themeColorPickerRow("Card / input panel", keyPath: \.panelHex, fallback: tokens.palette.panelHex)
+
+                        Divider()
+
+                        themeColorPickerRow("Sidebar gradient", keyPath: \.sidebarGradientHex, fallback: tokens.palette.sidebarHex)
+                        themeColorPickerRow("Chat gradient", keyPath: \.chatGradientHex, fallback: tokens.palette.backgroundHex)
+
+                        Picker(
+                            "Surface mode",
+                            selection: Binding(
+                                get: { model.userThemeCustomization.transparencyMode },
+                                set: { mode in
+                                    updateUserThemeCustomization { customization in
+                                        customization.transparencyMode = mode
+                                    }
+                                }
+                            )
+                        ) {
+                            Text("Solid").tag(AppModel.UserThemeCustomization.TransparencyMode.solid)
+                            Text("Glass (Experimental)").tag(AppModel.UserThemeCustomization.TransparencyMode.glass)
+                        }
+                        .pickerStyle(.segmented)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Gradient intensity")
+                                    .font(.subheadline)
+                                Spacer(minLength: 0)
+                                Text("\(Int((model.userThemeCustomization.gradientStrength * 100).rounded()))%")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Slider(value: userThemeGradientStrengthBinding, in: 0 ... 1)
+                                .accessibilityLabel("Gradient intensity")
+                        }
+
+                        if model.userThemeCustomization.transparencyMode == .glass {
+                            Text("Glass mode applies transparent backgrounds to major app surfaces for a desktop-through effect.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-
-                    Slider(value: userThemeGradientStrengthBinding, in: 0 ... 1)
-                        .accessibilityLabel("Gradient intensity")
-                }
-
-                if model.userThemeCustomization.transparencyMode == .glass {
-                    Text("Glass mode applies transparent backgrounds to major app surfaces for a desktop-through effect.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .padding(.top, 4)
                 }
 
                 HStack(spacing: 8) {
-                    Button("Apply Navy Pastel Preset") {
-                        model.setUserThemeCustomization(.navyPastel)
+                    Button("Edit Custom Theme") {
+                        isThemeCustomEditorExpanded = true
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
 
                     Button("Reset to Default") {
                         model.resetUserThemeCustomization()
+                        isThemeCustomEditorExpanded = false
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.userThemeCustomization == .default)
@@ -965,6 +1041,40 @@ struct SettingsView: View {
         )
     }
 
+    private func themePresetChip(
+        title: String,
+        symbolName: String? = nil,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let symbolName {
+                    Image(systemName: symbolName)
+                        .font(.caption.weight(.semibold))
+                }
+
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? .primary : .secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(isSelected ? 0.12 : 0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isSelected ? 0.26 : 0.14))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
     private var userThemeGradientStrengthBinding: Binding<Double> {
         Binding(
             get: { model.userThemeCustomization.gradientStrength },
@@ -1126,6 +1236,14 @@ struct SettingsView: View {
         safetyApprovalPolicy = model.defaultSafetySettings.approvalPolicy
         safetyNetworkAccess = model.defaultSafetySettings.networkAccess
         safetyWebSearchMode = model.defaultSafetySettings.webSearch
+    }
+
+    private func syncThemeDraftFromModel() {
+        if let savedCustomThemePreset = model.savedCustomThemePreset {
+            customThemeNameDraft = savedCustomThemePreset.displayName
+        } else if customThemeNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            customThemeNameDraft = "My Theme"
+        }
     }
 
     private func syncGeneralProjectFromModel(force: Bool = false) {
