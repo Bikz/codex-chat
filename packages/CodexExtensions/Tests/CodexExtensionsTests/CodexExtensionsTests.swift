@@ -327,9 +327,9 @@ final class CodexExtensionsTests: XCTestCase {
             "{\"modsBar\":",
         ]
 
-        var state: UInt64 = 0xBAD5_EED
+        var state: UInt64 = 0xBAD5EED
         while samples.count < count {
-            state = state &* 2862933555777941757 &+ 3037000493
+            state = state &* 2_862_933_555_777_941_757 &+ 3_037_000_493
             let token = String(state, radix: 36)
             samples.append("malformed-\(token)")
         }

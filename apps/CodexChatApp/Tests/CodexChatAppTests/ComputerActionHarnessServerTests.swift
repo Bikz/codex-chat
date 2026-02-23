@@ -202,7 +202,7 @@ final class ComputerActionHarnessServerTests: XCTestCase {
 
         var state: UInt64 = 0xC0DE_F00D
         while samples.count < count {
-            state = state &* 6364136223846793005 &+ 1
+            state = state &* 6_364_136_223_846_793_005 &+ 1
             let token = String(state, radix: 36)
             samples.append("malformed-\(token)")
         }
