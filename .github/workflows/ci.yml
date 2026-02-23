@@ -100,7 +100,7 @@ jobs:
 
   pr-host-app-artifact:
     if: github.event_name == 'pull_request'
-    runs-on: macos-14
+    runs-on: macos-latest
     needs: fast-checks
     steps:
       - name: Checkout
@@ -163,7 +163,7 @@ jobs:
           path: ${{ runner.temp }}/CodexChatHost-unsigned.zip
 
   release-dry-run:
-    runs-on: macos-14
+    runs-on: macos-latest
     needs: fast-checks
     steps:
       - name: Checkout
@@ -228,7 +228,7 @@ jobs:
 
   host-archive-nightly:
     if: github.event_name == 'schedule' || startsWith(github.ref, 'refs/heads/release/')
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
