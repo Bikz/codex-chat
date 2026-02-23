@@ -61,7 +61,7 @@ final class ChatsCanvasViewStyleTests: XCTestCase {
         let peekWidth = ChatsCanvasView.modsBarOverlayWidth(for: .peek)
         let expandedWidth = ChatsCanvasView.modsBarOverlayWidth(for: .expanded)
 
-        XCTAssertEqual(railWidth, 56, accuracy: 0.0001)
+        XCTAssertEqual(railWidth, 64, accuracy: 0.0001)
         XCTAssertEqual(peekWidth, 332, accuracy: 0.0001)
         XCTAssertEqual(expandedWidth, 446, accuracy: 0.0001)
         XCTAssertLessThan(railWidth, peekWidth)

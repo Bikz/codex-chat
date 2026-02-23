@@ -44,4 +44,37 @@ extension AppModel {
             setProjectMod(option.mod)
         }
     }
+
+    func modsBarQuickSwitchTitle(for option: ModsBarQuickSwitchOption) -> String {
+        let explicitTitle = option.mod.definition.uiSlots?.modsBar?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let explicitTitle, !explicitTitle.isEmpty {
+            return explicitTitle
+        }
+        return option.mod.definition.manifest.name
+    }
+
+    func modsBarQuickSwitchSymbolName(for option: ModsBarQuickSwitchOption) -> String {
+        let title = modsBarQuickSwitchTitle(for: option).lowercased()
+        let id = option.mod.definition.manifest.id.lowercased()
+
+        if title.contains("prompt") || id.contains("prompt") {
+            return "text.book.closed"
+        }
+        if title.contains("note") || id.contains("note") {
+            return "note.text"
+        }
+        if title.contains("calendar") || id.contains("calendar") {
+            return "calendar"
+        }
+        if title.contains("risk") || id.contains("risk") {
+            return "shield.lefthalf.filled"
+        }
+        if title.contains("ship") || id.contains("ship") {
+            return "checklist"
+        }
+        if title.contains("summary") || id.contains("summary") {
+            return "text.alignleft"
+        }
+        return "puzzlepiece.extension"
+    }
 }

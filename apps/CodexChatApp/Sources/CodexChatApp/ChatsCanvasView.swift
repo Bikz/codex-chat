@@ -44,7 +44,7 @@ struct ChatsCanvasView: View {
     }
 
     static let modsBarOverlayStyle = ModsBarOverlayStyle(
-        railWidth: 56,
+        railWidth: 64,
         peekWidth: 332,
         expandedWidth: 446,
         cornerRadius: 16,
@@ -792,18 +792,16 @@ struct ChatsCanvasView: View {
         @ViewBuilder _ content: () -> some View
     ) -> some View {
         if model.canToggleModsBarForSelectedThread {
-            ZStack(alignment: .topTrailing) {
+            HStack(alignment: .top, spacing: tokens.spacing.small) {
                 content()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if model.isModsBarVisibleForSelectedThread {
-                    modsBarOverlay
-                        .padding(.top, tokens.spacing.small)
-                        .padding(.trailing, tokens.spacing.small)
-                        .padding(.bottom, tokens.spacing.small)
+                    modsBarDockedSurface
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.isModsBarVisibleForSelectedThread)
             .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.selectedModsBarPresentationMode)
         } else {
@@ -812,7 +810,7 @@ struct ChatsCanvasView: View {
     }
 
     @ViewBuilder
-    private var modsBarOverlay: some View {
+    private var modsBarDockedSurface: some View {
         switch model.selectedModsBarPresentationMode {
         case .rail:
             modsBarRail
@@ -825,25 +823,44 @@ struct ChatsCanvasView: View {
         let style = Self.modsBarOverlayStyle
 
         return VStack(spacing: 8) {
-            Button {
-                model.setModsBarPresentationMode(.peek)
-            } label: {
-                Image(systemName: AppModel.ModsBarPresentationMode.peek.symbolName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 30, height: 30)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Expand extension panel")
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 6) {
+                    ForEach(model.modsBarQuickSwitchOptions) { option in
+                        Button {
+                            model.activateModsBarQuickSwitchOption(option)
+                            model.setModsBarPresentationMode(.peek)
+                        } label: {
+                            Image(systemName: model.modsBarQuickSwitchSymbolName(for: option))
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.primary.opacity(option.isSelected ? 0.16 : 0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help(model.modsBarQuickSwitchTitle(for: option))
+                        .accessibilityLabel("Open \(model.modsBarQuickSwitchTitle(for: option)) extension")
+                    }
 
-            Button {
-                model.setModsBarPresentationMode(.expanded)
-            } label: {
-                Image(systemName: AppModel.ModsBarPresentationMode.expanded.symbolName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 30, height: 30)
+                    if model.modsBarQuickSwitchOptions.isEmpty {
+                        Button {
+                            model.setModsBarPresentationMode(.peek)
+                        } label: {
+                            Image(systemName: AppModel.ModsBarPresentationMode.peek.symbolName)
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.primary.opacity(0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open extension panel")
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Expand extension panel to full width")
 
             Spacer(minLength: 0)
 
@@ -884,7 +901,7 @@ struct ChatsCanvasView: View {
             ExtensionModsBarView(
                 model: model,
                 drawsBackground: false,
-                showsPresentationControls: true
+                showsCloseToRailControl: true
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(overlayPanelLayer(offset: 0))
@@ -895,7 +912,7 @@ struct ChatsCanvasView: View {
             .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         }
         .frame(width: width)
-        .frame(maxHeight: .infinity, alignment: .topTrailing)
+        .frame(maxHeight: .infinity, alignment: .top)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Extension panel")
     }

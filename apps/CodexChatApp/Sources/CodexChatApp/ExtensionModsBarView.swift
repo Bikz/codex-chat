@@ -4,17 +4,17 @@ import SwiftUI
 struct ExtensionModsBarView: View {
     @ObservedObject var model: AppModel
     let drawsBackground: Bool
-    let showsPresentationControls: Bool
+    let showsCloseToRailControl: Bool
     @Environment(\.designTokens) private var tokens
 
     init(
         model: AppModel,
         drawsBackground: Bool = true,
-        showsPresentationControls: Bool = false
+        showsCloseToRailControl: Bool = false
     ) {
         self.model = model
         self.drawsBackground = drawsBackground
-        self.showsPresentationControls = showsPresentationControls
+        self.showsCloseToRailControl = showsCloseToRailControl
     }
 
     private var modsBarTitle: String {
@@ -40,37 +40,6 @@ struct ExtensionModsBarView: View {
 
                 Spacer(minLength: 0)
 
-                if showsPresentationControls, model.canToggleModsBarForSelectedThread {
-                    HStack(spacing: 4) {
-                        ForEach(AppModel.ModsBarPresentationMode.allCases, id: \.self) { mode in
-                            Button {
-                                model.setModsBarPresentationMode(mode)
-                            } label: {
-                                Image(systemName: mode.symbolName)
-                                    .font(.caption.weight(.semibold))
-                                    .frame(width: 22, height: 22)
-                                    .background(
-                                        Circle()
-                                            .fill(Color.primary.opacity(model.selectedModsBarPresentationMode == mode ? 0.16 : 0.06))
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Set extension panel to \(mode.label)")
-                        }
-
-                        Button {
-                            model.toggleModsBar()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption.weight(.bold))
-                                .frame(width: 22, height: 22)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Close extension panel")
-                    }
-                    .foregroundStyle(.secondary)
-                }
-
                 if model.hasModsBarQuickSwitchChoices {
                     Menu {
                         ForEach(model.modsBarQuickSwitchOptions) { option in
@@ -94,6 +63,19 @@ struct ExtensionModsBarView: View {
                     .menuStyle(.borderlessButton)
                     .help("Switch active mod")
                     .accessibilityLabel("Switch active mod")
+                }
+
+                if showsCloseToRailControl, model.canToggleModsBarForSelectedThread {
+                    Button {
+                        model.setModsBarPresentationMode(.rail)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Close extension panel")
                 }
 
                 if let updatedAt = model.selectedExtensionModsBarState?.updatedAt {
@@ -183,19 +165,6 @@ struct ExtensionModsBarView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Extension modsBar")
-    }
-}
-
-private extension AppModel.ModsBarPresentationMode {
-    var label: String {
-        switch self {
-        case .rail:
-            "rail"
-        case .peek:
-            "peek"
-        case .expanded:
-            "expanded"
-        }
     }
 }
 

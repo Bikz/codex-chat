@@ -546,6 +546,33 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(model.hasModsBarQuickSwitchChoices)
     }
 
+    func testModsBarQuickSwitchSymbolUsesPromptBookIconForPromptTitles() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let promptMod = makeModsBarMod(
+            id: "acme.prompt-book",
+            name: "Prompt Book",
+            scope: .project,
+            directorySuffix: "prompt"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .project, mod: promptMod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchTitle(for: option), "Prompt Book")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "text.book.closed")
+    }
+
+    func testModsBarQuickSwitchSymbolFallsBackToPuzzlePieceForUnknownMods() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let unknownMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .global,
+            directorySuffix: "custom"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "puzzlepiece.extension")
+    }
+
     func testToggleModsBarOpensThreadInPeekModeByDefault() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let threadID = UUID()
