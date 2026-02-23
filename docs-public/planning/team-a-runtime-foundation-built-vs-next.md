@@ -19,6 +19,8 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Worker-level recovery boundedness | RuntimePool has consecutive-failure cap and reset-on-recovery semantics. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:454`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:701`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129` |
 | RuntimePool repeated degradation/recovery coverage | Non-primary worker crash/restart behavior is tested across repeated cycles and post-recovery routing. | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171` |
 | Follow-up queue fairness under high fan-out | Candidate selection now has direct fairness/starvation regression coverage across high fan-out thread sets. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`, `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:81`, `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6` |
+| Storage repair operator runbook | Codex Home normalization/quarantine behavior now has an explicit operator runbook with troubleshooting and escalation steps. | `docs-public/STORAGE_REPAIR_RUNBOOK.md:1`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:260`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:127` |
+| Workstream coordination contract refresh | Planning workstreams now align with multi-agent shared-worktree collaboration (no stale prep-file references, no exclusive ownership wording). | `docs-public/planning/workstreams.md:14`, `docs-public/planning/workstreams.md:35`, `AGENTS.md:92` |
 | Approval continuity | Pending approvals reset with explicit UX messaging on communication failure and restart. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:884`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeApprovalContinuityTests.swift:8`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:306` |
 | Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial, replace-boundary failure, and crash-leftover temp artifacts. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` |
 | Completion persistence pressure handling | Batcher threshold, shutdown, and max-pending spill are directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` |
@@ -34,11 +36,8 @@ Evidence: former P0 gaps (archive replacement-boundary durability and follow-up 
 
 ### P1
 
-1. Publish storage repair operator runbook for codex-home normalization/quarantine outcomes.
-Evidence gap: repair logic is implemented, but there is no dedicated troubleshooting runbook (`apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`).
-
-2. Reconcile `workstreams.md` ownership language with active multi-agent collaboration contract.
-Evidence gap: stream ownership is documented as exclusive in places that conflict with current shared-worktree process (`docs-public/planning/workstreams.md:39`, `AGENTS.md:92`).
+1. No open P1 documentation/coordination gaps in the current Team A slice.
+Evidence: runbook + workstream coordination updates landed in `docs-public/STORAGE_REPAIR_RUNBOOK.md:1` and `docs-public/planning/workstreams.md:14`.
 
 ### P2
 
@@ -52,18 +51,18 @@ Evidence seed: fallback behavior currently lives in app layer dispatch path (`ap
 
 ### Day 0-30
 
-1. Update `workstreams.md` ownership language and stale prep-file references.
-2. Draft storage repair operator runbook skeleton.
-3. Propose optional CI soak lane design for repeated runtime-pool recovery cycles.
+1. Propose optional CI soak lane design for repeated runtime-pool recovery cycles.
+2. Draft app-level high-fanout auto-drain fairness integration test plan (runtime + repository path).
+3. Prepare runtime compatibility fallback policy extraction design note.
 
 Dependencies:
-- Existing storage repair and resilience implementation surfaces: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`.
+- Existing resilience and fairness baselines: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`, `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6`.
 
 ### Day 31-60
 
-1. Publish codex-home normalization/quarantine operator runbook.
-2. Add shared acceptance criteria snippets to planning docs referencing reliability contract.
-3. Start runtime compatibility fallback policy seam proposal.
+1. Add shared acceptance criteria snippets to planning docs referencing reliability contract.
+2. Start runtime compatibility fallback policy seam proposal.
+3. Land first optional CI soak lane implementation if budget is approved.
 
 Dependencies:
 - P0 reliability baseline remains green.
@@ -87,7 +86,7 @@ Dependencies:
 
 2. Add an explicit contract note for follow-up queue fairness expectations with the new high-fan-out test evidence.
 
-3. Update planning docs to align workstream ownership language with the active multi-agent shared-worktree process.
+3. Add explicit CI guidance for optional long-running resilience soak lanes.
 
 ### Migration considerations
 
