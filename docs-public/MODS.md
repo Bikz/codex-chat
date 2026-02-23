@@ -74,6 +74,11 @@ Legacy keys are rejected:
 - `requiresThread` (optional, default `true`): if `false`, the mod can run in draft mode without a selected thread
 - `source` (optional): handler output binding
 
+In `Skills & Mods -> Mods`, runtime enablement is now separate from active selection:
+
+- `Runtime On/Off` controls whether hooks/automations/modsBar surfaces participate
+- `Set Active` chooses which scoped mod is currently focused in the panel
+
 ## Hook Events
 
 - `thread.started`

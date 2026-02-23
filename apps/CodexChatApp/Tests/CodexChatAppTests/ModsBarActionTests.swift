@@ -611,7 +611,9 @@ final class ModsBarActionTests: XCTestCase {
                 globalMods: [globalMod],
                 projectMods: [projectMod],
                 selectedGlobalModPath: globalMod.directoryPath,
-                selectedProjectModPath: nil
+                selectedProjectModPath: nil,
+                enabledGlobalModIDs: [globalMod.definition.manifest.id],
+                enabledProjectModIDs: [projectMod.definition.manifest.id]
             )
         )
 
@@ -634,7 +636,9 @@ final class ModsBarActionTests: XCTestCase {
                 globalMods: [globalMod],
                 projectMods: [projectMod],
                 selectedGlobalModPath: globalMod.directoryPath,
-                selectedProjectModPath: nil
+                selectedProjectModPath: nil,
+                enabledGlobalModIDs: [globalMod.definition.manifest.id],
+                enabledProjectModIDs: [projectMod.definition.manifest.id]
             )
         )
 

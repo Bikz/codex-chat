@@ -158,6 +158,7 @@ struct ModsCanvas: View {
                             modOptionCard(
                                 mod: mod,
                                 scope: .global,
+                                isEnabled: surface.enabledGlobalModIDs.contains(mod.definition.manifest.id),
                                 isSelected: surface.selectedGlobalModPath == mod.directoryPath,
                                 onSelect: { model.setGlobalMod(mod) }
                             )
@@ -269,6 +270,7 @@ struct ModsCanvas: View {
                             modOptionCard(
                                 mod: mod,
                                 scope: .project,
+                                isEnabled: surface.enabledProjectModIDs.contains(mod.definition.manifest.id),
                                 isSelected: surface.selectedProjectModPath == mod.directoryPath,
                                 onSelect: { model.setProjectMod(mod) }
                             )
@@ -282,6 +284,7 @@ struct ModsCanvas: View {
     private func modOptionCard(
         mod: DiscoveredUIMod,
         scope: ExtensionInstallScope,
+        isEnabled: Bool,
         isSelected: Bool,
         onSelect: @escaping () -> Void
     ) -> some View {
@@ -311,6 +314,11 @@ struct ModsCanvas: View {
                     }
 
                     Divider()
+
+                    Button(isEnabled ? "Disable Runtime" : "Enable Runtime") {
+                        model.setInstalledModEnabled(mod, scope: scope, enabled: !isEnabled)
+                    }
+                    .disabled(model.isModOperationInProgress)
 
                     Button("Update/Reinstall") {
                         model.updateInstalledMod(mod, scope: scope)
@@ -349,6 +357,7 @@ struct ModsCanvas: View {
 
             HStack(spacing: 8) {
                 modStatusPill(SkillsModsPresentation.modStatus(mod).rawValue)
+                modRuntimePill(isEnabled: isEnabled)
                 Spacer(minLength: 0)
             }
 
@@ -416,6 +425,16 @@ struct ModsCanvas: View {
             .padding(.vertical, 3)
             .background(SkillsModsTheme.headerBackground(tokens: tokens), in: Capsule())
             .overlay(Capsule().strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens)))
+    }
+
+    private func modRuntimePill(isEnabled: Bool) -> some View {
+        Text(isEnabled ? "Runtime On" : "Runtime Off")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(isEnabled ? .green : .secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background((isEnabled ? Color.green : Color.primary).opacity(0.10), in: Capsule())
+            .overlay(Capsule().strokeBorder((isEnabled ? Color.green : Color.primary).opacity(0.16)))
     }
 
     private func automationHealthRow(_ summary: AppModel.ExtensionAutomationHealthSummary) -> some View {

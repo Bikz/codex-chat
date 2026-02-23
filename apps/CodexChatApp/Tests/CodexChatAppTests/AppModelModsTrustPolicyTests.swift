@@ -132,6 +132,58 @@ final class AppModelModsTrustPolicyTests: XCTestCase {
         XCTAssertTrue(conditionMet)
     }
 
+    func testSetInstalledModEnabledOffClearsActiveGlobalSelection() async throws {
+        let repositories = try makeRepositories(prefix: "mods-global-disable")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let modID = "acme.prompt-book"
+        let modPath = "/tmp/mod-\(UUID().uuidString)"
+
+        _ = try await repositories.extensionInstallRepository.upsert(
+            ExtensionInstallRecord(
+                id: "global:\(modID)",
+                modID: modID,
+                scope: .global,
+                projectID: nil,
+                sourceURL: "https://github.com/acme/prompt-book",
+                installedPath: modPath,
+                enabled: true
+            )
+        )
+        try await repositories.preferenceRepository.setPreference(key: .globalUIModPath, value: modPath)
+
+        model.modsState = .loaded(
+            AppModel.ModsSurfaceModel(
+                globalMods: [],
+                projectMods: [],
+                selectedGlobalModPath: modPath,
+                selectedProjectModPath: nil,
+                enabledGlobalModIDs: [modID],
+                enabledProjectModIDs: []
+            )
+        )
+
+        model.setInstalledModEnabled(
+            makeMod(id: modID, directoryPath: modPath, scope: .global),
+            scope: .global,
+            enabled: false
+        )
+
+        let deadline = Date().addingTimeInterval(3)
+        var conditionMet = false
+        while Date() < deadline {
+            let path = try await repositories.preferenceRepository.getPreference(key: .globalUIModPath)
+            let installs = try await repositories.extensionInstallRepository.list()
+            let enabled = installs.first(where: { $0.modID == modID })?.enabled
+            if (path ?? "").isEmpty && enabled == false {
+                conditionMet = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+            await Task.yield()
+        }
+        XCTAssertTrue(conditionMet)
+    }
+
     private func makeModelWithSelectedProject(trustState: ProjectTrustState) -> AppModel {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectID = UUID()

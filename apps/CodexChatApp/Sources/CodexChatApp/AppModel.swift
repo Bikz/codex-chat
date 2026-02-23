@@ -121,6 +121,8 @@ final class AppModel: ObservableObject {
         var projectMods: [DiscoveredUIMod]
         var selectedGlobalModPath: String?
         var selectedProjectModPath: String?
+        var enabledGlobalModIDs: Set<String> = []
+        var enabledProjectModIDs: Set<String> = []
     }
 
     struct UserThemeCustomization: Hashable, Codable, Sendable {

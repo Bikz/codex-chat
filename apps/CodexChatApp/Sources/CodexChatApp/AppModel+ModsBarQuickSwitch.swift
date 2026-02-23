@@ -8,7 +8,10 @@ extension AppModel {
         var candidates: [ModsBarQuickSwitchOption] = []
 
         let projectOptions = surface.projectMods
-            .filter { $0.definition.uiSlots?.modsBar?.enabled == true }
+            .filter {
+                $0.definition.uiSlots?.modsBar?.enabled == true
+                    && surface.enabledProjectModIDs.contains($0.definition.manifest.id)
+            }
             .map {
                 ModsBarQuickSwitchOption(
                     scope: .project,
@@ -18,7 +21,10 @@ extension AppModel {
             }
 
         let globalOptions = surface.globalMods
-            .filter { $0.definition.uiSlots?.modsBar?.enabled == true }
+            .filter {
+                $0.definition.uiSlots?.modsBar?.enabled == true
+                    && surface.enabledGlobalModIDs.contains($0.definition.manifest.id)
+            }
             .map {
                 ModsBarQuickSwitchOption(
                     scope: .global,
