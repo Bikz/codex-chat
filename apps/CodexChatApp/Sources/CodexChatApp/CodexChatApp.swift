@@ -17,6 +17,7 @@ public struct CodexChatDesktopScene: Scene {
         }
         .defaultSize(width: 1000, height: 700)
         .windowResizability(.contentMinSize)
+        .windowStyle(.hiddenTitleBar)
         Settings {
             SettingsRoot(model: model)
         }
@@ -100,7 +101,7 @@ private struct WindowAccessor: NSViewRepresentable {
         // Don't cap maxSize — let the user go full-screen or any size
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         window.styleMask.insert(.fullSizeContentView)
-        window.toolbarStyle = .unifiedCompact
+        window.toolbarStyle = .unified
         window.toolbar?.showsBaselineSeparator = false
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -139,7 +140,7 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.toolbarStyle = .unifiedCompact
+        window.toolbarStyle = .unified
         window.toolbar?.showsBaselineSeparator = false
         if isTransparent {
             window.isOpaque = false

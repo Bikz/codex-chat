@@ -15,8 +15,15 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
         } detail: {
             detailSurface
-                .background(detailBackground)
+                .background(
+                    detailBackground
+                        .ignoresSafeArea(.container, edges: .top)
+                )
         }
+        .background(
+            detailBackground
+                .ignoresSafeArea(.container, edges: .top)
+        )
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar(removing: .sidebarToggle)
         .toolbar {

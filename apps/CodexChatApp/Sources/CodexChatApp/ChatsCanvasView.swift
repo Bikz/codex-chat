@@ -234,7 +234,11 @@ struct ChatsCanvasView: View {
                     )
             }
         }
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.16 : 0.06), radius: 10, y: 2)
+        .shadow(
+            color: composerSurfaceShadowColor,
+            radius: composerSurfaceShadowRadius,
+            y: composerSurfaceShadowYOffset
+        )
         .onDrop(
             of: [UTType.fileURL.identifier],
             isTargeted: $isComposerDropTargeted,
@@ -245,12 +249,28 @@ struct ChatsCanvasView: View {
     }
 
     private var panelSurfaceFillColor: Color {
-        Color(hex: tokens.palette.panelHex)
-            .opacity(model.isTransparentThemeMode ? 0.78 : 0.96)
+        let base = Color(hex: tokens.palette.panelHex)
+        if model.isTransparentThemeMode {
+            return base.opacity(colorScheme == .dark ? 0.62 : 0.72)
+        }
+        return base.opacity(0.95)
     }
 
     private var panelSurfaceStrokeColor: Color {
-        Color.primary.opacity(tokens.surfaces.hairlineOpacity * (model.isTransparentThemeMode ? 1.15 : 0.95))
+        Color.primary.opacity(tokens.surfaces.hairlineOpacity * (model.isTransparentThemeMode ? 0.78 : 0.95))
+    }
+
+    private var composerSurfaceShadowColor: Color {
+        guard !model.isTransparentThemeMode else { return .clear }
+        return .black.opacity(colorScheme == .dark ? 0.12 : 0.05)
+    }
+
+    private var composerSurfaceShadowRadius: CGFloat {
+        model.isTransparentThemeMode ? 0 : 8
+    }
+
+    private var composerSurfaceShadowYOffset: CGFloat {
+        model.isTransparentThemeMode ? 0 : 2
     }
 
     private var chipSurfaceFillColor: Color {

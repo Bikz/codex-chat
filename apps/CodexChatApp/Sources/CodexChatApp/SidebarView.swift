@@ -196,9 +196,11 @@ struct SidebarView: View {
         ))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             accountRow
-                .background(sidebarBackground)
         }
-        .background(sidebarBackground)
+        .background(
+            sidebarBackground
+                .ignoresSafeArea(.container, edges: .top)
+        )
         .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.expandedProjectIDs)
         .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.showAllProjects)
     }
