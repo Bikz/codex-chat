@@ -263,11 +263,11 @@ extension AppModel {
     }
 
     var isPromptBookModsBarActiveForSelectedThread: Bool {
-        selectedThreadID != nil
-            && (
-                isLikelyPromptBookModID(activeModsBarModID)
-                    || activeModsBarTitleContains(PromptBookModsBarConstants.titleToken)
-            )
+        (
+            isLikelyPromptBookModID(activeModsBarModID)
+                || activeModsBarTitleContains(PromptBookModsBarConstants.titleToken)
+        )
+            && (!isActiveModsBarThreadRequired || selectedThreadID != nil)
             && (activeModsBarSlot?.enabled ?? false)
     }
 
@@ -350,8 +350,7 @@ extension AppModel {
 
     func upsertPromptBookEntryInline(index: Int?, title: String, text: String) {
         guard isPromptBookModsBarActiveForSelectedThread,
-              let selectedThreadID,
-              let context = extensionProjectContext(forThreadID: selectedThreadID)
+              let context = activeModsBarActionContext(requireThread: false)
         else {
             return
         }
@@ -387,15 +386,14 @@ extension AppModel {
             .modsBarAction,
             projectID: context.projectID,
             projectPath: context.projectPath,
-            threadID: selectedThreadID,
+            threadID: context.threadID,
             payload: payload
         )
     }
 
     func deletePromptBookEntryInline(index: Int) {
         guard isPromptBookModsBarActiveForSelectedThread,
-              let selectedThreadID,
-              let context = extensionProjectContext(forThreadID: selectedThreadID)
+              let context = activeModsBarActionContext(requireThread: false)
         else {
             return
         }
@@ -420,7 +418,7 @@ extension AppModel {
             .modsBarAction,
             projectID: context.projectID,
             projectPath: context.projectPath,
-            threadID: selectedThreadID,
+            threadID: context.threadID,
             payload: payload
         )
     }
@@ -515,10 +513,9 @@ extension AppModel {
     }
 
     private func emitModsBarActionEvent(_ action: ExtensionModsBarOutput.Action, input: String?) {
-        guard let selectedThreadID,
-              let context = extensionProjectContext(forThreadID: selectedThreadID)
+        guard let context = activeModsBarActionContext(requireThread: false)
         else {
-            extensionStatusMessage = "Select a thread before using Mods bar actions."
+            extensionStatusMessage = "Select a project before using Mods bar actions."
             return
         }
 
@@ -538,7 +535,7 @@ extension AppModel {
             .modsBarAction,
             projectID: context.projectID,
             projectPath: context.projectPath,
-            threadID: selectedThreadID,
+            threadID: context.threadID,
             payload: payload
         )
     }
@@ -581,6 +578,23 @@ extension AppModel {
         }
 
         return (projectID: project.id, projectPath: project.path)
+    }
+
+    private func activeModsBarActionContext(requireThread: Bool) -> (projectID: UUID, projectPath: String, threadID: UUID)? {
+        if let selectedThreadID,
+           let context = extensionProjectContext(forThreadID: selectedThreadID)
+        {
+            return (context.projectID, context.projectPath, selectedThreadID)
+        }
+
+        guard !requireThread,
+              let selectedProject
+        else {
+            return nil
+        }
+
+        // Synthetic thread context for draft mode events when no thread is selected.
+        return (selectedProject.id, selectedProject.path, selectedProject.id)
     }
 
     func runHooks(for envelope: ExtensionEventEnvelope) async {
@@ -1143,8 +1157,7 @@ extension AppModel {
     }
 
     private func loadModsBarCacheForSelectedThread() async {
-        guard let selectedThreadID,
-              let activeModsBarSlot,
+        guard let activeModsBarSlot,
               activeModsBarSlot.enabled
         else {
             return
@@ -1161,23 +1174,25 @@ extension AppModel {
         guard let modDirectoryPath else { return }
 
         do {
-            let cachedThreadOutput = try await extensionStateStore.readModsBarOutput(
-                modDirectory: URL(fileURLWithPath: modDirectoryPath, isDirectory: true),
-                scope: .thread,
-                threadID: selectedThreadID
-            )
-            if let cachedThreadOutput,
-               !cachedThreadOutput.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                extensionModsBarByThreadID[selectedThreadID] = ExtensionModsBarState(
-                    title: activeModsBarSlot.title ?? cachedThreadOutput.title,
-                    markdown: cachedThreadOutput.markdown,
-                    scope: cachedThreadOutput.scope ?? .thread,
-                    actions: cachedThreadOutput.actions ?? [],
-                    updatedAt: Date()
+            if let selectedThreadID {
+                let cachedThreadOutput = try await extensionStateStore.readModsBarOutput(
+                    modDirectory: URL(fileURLWithPath: modDirectoryPath, isDirectory: true),
+                    scope: .thread,
+                    threadID: selectedThreadID
                 )
-            } else {
-                extensionModsBarByThreadID.removeValue(forKey: selectedThreadID)
+                if let cachedThreadOutput,
+                   !cachedThreadOutput.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    extensionModsBarByThreadID[selectedThreadID] = ExtensionModsBarState(
+                        title: activeModsBarSlot.title ?? cachedThreadOutput.title,
+                        markdown: cachedThreadOutput.markdown,
+                        scope: cachedThreadOutput.scope ?? .thread,
+                        actions: cachedThreadOutput.actions ?? [],
+                        updatedAt: Date()
+                    )
+                } else {
+                    extensionModsBarByThreadID.removeValue(forKey: selectedThreadID)
+                }
             }
 
             let cachedGlobalOutput = try await extensionStateStore.readModsBarOutput(

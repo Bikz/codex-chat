@@ -50,6 +50,7 @@
     "modsBar": {
       "enabled": true,
       "title": "Prompt Book",
+      "requiresThread": false,
       "source": {
         "type": "handlerOutput"
       }

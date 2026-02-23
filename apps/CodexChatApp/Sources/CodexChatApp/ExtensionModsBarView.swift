@@ -92,18 +92,17 @@ struct ExtensionModsBarView: View {
             Divider()
 
             Group {
-                if model.selectedThreadID == nil {
+                if !model.isModsBarAvailableForSelectedThread {
                     EmptyStateView(
-                        title: "No thread selected",
-                        message: "Select a thread to view modsBar content.",
-                        systemImage: "sidebar.right"
-                    )
-                    .padding(tokens.spacing.medium)
-                } else if !model.isModsBarAvailableForSelectedThread {
-                    EmptyStateView(
-                        title: "Install a Mods bar mod",
-                        message: "No active mod exposes modsBar content for this thread. Open Skills & Mods > Mods to install or enable one.",
-                        systemImage: "puzzlepiece.extension"
+                        title: model.selectedThreadID == nil && model.isActiveModsBarThreadRequired
+                            ? "Thread required"
+                            : "Install a Mods bar mod",
+                        message: model.selectedThreadID == nil && model.isActiveModsBarThreadRequired
+                            ? "The active mod requires a selected thread. Pick or start a chat, or switch to a global/project mod."
+                            : "No active mod exposes modsBar content for this context. Open Skills & Mods > Mods to install or enable one.",
+                        systemImage: model.selectedThreadID == nil && model.isActiveModsBarThreadRequired
+                            ? "sidebar.right"
+                            : "puzzlepiece.extension"
                     )
                     .padding(tokens.spacing.medium)
                 } else if model.isPersonalNotesModsBarActiveForSelectedThread {

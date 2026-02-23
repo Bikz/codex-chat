@@ -1530,8 +1530,18 @@ final class AppModel: ObservableObject {
         selectedProjectID != nil || selectedThreadID != nil
     }
 
+    var isActiveModsBarThreadRequired: Bool {
+        activeModsBarSlot?.requiresThread ?? true
+    }
+
     var isModsBarAvailableForSelectedThread: Bool {
-        activeModsBarSlot?.enabled ?? false
+        guard activeModsBarSlot?.enabled == true else {
+            return false
+        }
+        if selectedThreadID == nil, isActiveModsBarThreadRequired {
+            return false
+        }
+        return true
     }
 
     var canReviewChanges: Bool {

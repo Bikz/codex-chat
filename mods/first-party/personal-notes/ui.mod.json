@@ -50,6 +50,7 @@
     "modsBar": {
       "enabled": true,
       "title": "Personal Notes",
+      "requiresThread": true,
       "source": {
         "type": "handlerOutput"
       }

@@ -110,11 +110,18 @@ public struct ModUISlots: Hashable, Sendable, Codable {
     public struct ModsBar: Hashable, Sendable, Codable {
         public var enabled: Bool
         public var title: String?
+        public var requiresThread: Bool?
         public var source: ModsBarSource?
 
-        public init(enabled: Bool, title: String? = nil, source: ModsBarSource? = nil) {
+        public init(
+            enabled: Bool,
+            title: String? = nil,
+            requiresThread: Bool? = nil,
+            source: ModsBarSource? = nil
+        ) {
             self.enabled = enabled
             self.title = title
+            self.requiresThread = requiresThread
             self.source = source
         }
     }

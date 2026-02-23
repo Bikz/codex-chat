@@ -61,6 +61,7 @@
     "modsBar": {
       "enabled": true,
       "title": "Thread Summary",
+      "requiresThread": true,
       "source": {
         "type": "handlerOutput"
       }

@@ -524,6 +524,52 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(written.contains("\"input\":\"Forked :: Use forked prompt action\""))
     }
 
+    func testUpsertPromptBookEntryInlineSupportsDraftModeWithoutSelectedThread() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-promptbook-draft-upsert")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let projectPath = try makeTempDirectory(prefix: "modsbar-promptbook-draft-project").path
+        let output = URL(fileURLWithPath: projectPath).appendingPathComponent("prompt-draft.json", isDirectory: false)
+        let script = try makeCaptureScript(outputURL: output)
+
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Project", path: projectPath, trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+        model.activeModsBarModID = "acme.prompt-book"
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book", requiresThread: false)
+        model.activeExtensionHooks = [
+            AppModel.ResolvedExtensionHook(
+                modID: "acme.prompt-book",
+                modDirectoryPath: projectPath,
+                definition: ModHookDefinition(
+                    id: "acme-prompt-action",
+                    event: .modsBarAction,
+                    handler: .init(command: [script.path], cwd: ".")
+                )
+            ),
+        ]
+
+        XCTAssertTrue(model.isPromptBookModsBarActiveForSelectedThread)
+        model.upsertPromptBookEntryInline(index: nil, title: "Draft", text: "Run in draft mode")
+
+        try await eventually(timeoutSeconds: 10) {
+            guard FileManager.default.fileExists(atPath: output.path),
+                  let written = try? String(contentsOf: output)
+            else {
+                return false
+            }
+            return written.contains("\"event\":\"modsBar.action\"")
+        }
+
+        let written = try String(contentsOf: output)
+        XCTAssertTrue(written.contains("\"targetModID\":\"acme.prompt-book\""))
+        XCTAssertTrue(written.contains("\"targetHookID\":\"acme-prompt-action\""))
+        XCTAssertTrue(written.contains("\"operation\":\"add\""))
+        XCTAssertTrue(written.contains("\"input\":\"Draft :: Run in draft mode\""))
+    }
+
     func testModsBarQuickSwitchOptionsIncludeProjectAndGlobalChoices() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectMod = makeModsBarMod(id: "acme.project", name: "Project Prompt Book", scope: .project, directorySuffix: "project")
@@ -597,6 +643,24 @@ final class ModsBarActionTests: XCTestCase {
         model.toggleModsBar()
 
         XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+    }
+
+    func testModsBarAvailabilityInDraftDependsOnThreadRequirement() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Draft Project", path: "/tmp/draft-project", trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book", requiresThread: false)
+        XCTAssertTrue(model.isModsBarAvailableForSelectedThread)
+        XCTAssertFalse(model.isActiveModsBarThreadRequired)
+
+        model.activeModsBarSlot = .init(enabled: true, title: "Thread Summary", requiresThread: true)
+        XCTAssertFalse(model.isModsBarAvailableForSelectedThread)
+        XCTAssertTrue(model.isActiveModsBarThreadRequired)
     }
 
     func testToggleModsBarFromRailFullyHidesPanel() {
