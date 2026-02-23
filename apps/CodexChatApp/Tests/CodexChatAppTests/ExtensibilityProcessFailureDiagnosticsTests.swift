@@ -159,6 +159,7 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
         XCTAssertEqual(rollups.count, 2)
         XCTAssertEqual(rollups[0].occurrenceCount, 2)
         XCTAssertEqual(rollups[0].latestEvent.id, newest.id)
+        XCTAssertEqual(rollups[0].collapsedEvents.map(\.id), [newest.id, older.id])
         XCTAssertEqual(rollups[1].occurrenceCount, 1)
     }
 
@@ -178,6 +179,8 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
 
         XCTAssertEqual(rollups.count, 2)
         XCTAssertEqual(rollups.map(\.occurrenceCount), [1, 1])
+        XCTAssertEqual(rollups[0].collapsedEvents.count, 1)
+        XCTAssertEqual(rollups[1].collapsedEvents.count, 1)
     }
 
     func testRollupAutomationTimelineEventsDoesNotMergeAcrossDifferentInterleavedFingerprint() {
@@ -205,6 +208,8 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
         XCTAssertEqual(rollups[2].latestEvent.summary, "launchctl failed")
         XCTAssertEqual(rollups[0].occurrenceCount, 1)
         XCTAssertEqual(rollups[2].occurrenceCount, 1)
+        XCTAssertEqual(rollups[0].collapsedEvents.count, 1)
+        XCTAssertEqual(rollups[2].collapsedEvents.count, 1)
     }
 
     private func makeAutomationEvent(

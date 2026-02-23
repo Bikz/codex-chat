@@ -26,6 +26,7 @@ struct DiagnosticsView: View {
     )
     @State private var refreshTask: Task<Void, Never>?
     @State private var pendingAllowlistedRerunCommand: String?
+    @State private var expandedAutomationRollupIDs: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -263,9 +264,33 @@ struct DiagnosticsView: View {
                                     }
                                 }
                                 if rollup.occurrenceCount > 1 {
-                                    Text(repeatedEventSummary(for: rollup))
+                                    HStack(spacing: 10) {
+                                        Text(repeatedEventSummary(for: rollup))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                        Button(expandedAutomationRollupIDs.contains(rollup.id) ? "Hide repeats" : "Show repeats") {
+                                            toggleAutomationRollupExpansion(rollup.id)
+                                        }
+                                        .buttonStyle(.link)
                                         .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                    }
+                                }
+                                if expandedAutomationRollupIDs.contains(rollup.id), rollup.collapsedEvents.count > 1 {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        ForEach(Array(rollup.collapsedEvents.dropFirst().prefix(5)), id: \.id) { repeatEvent in
+                                            Text(
+                                                "\(repeatEvent.timestamp.formatted(.dateTime.hour().minute().second())) - \(repeatEvent.summary)"
+                                            )
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                        }
+                                        if rollup.collapsedEvents.count > 6 {
+                                            Text("+\(rollup.collapsedEvents.count - 6) more repeats")
+                                                .font(.caption2)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
                                 }
                                 Text(event.summary)
                                     .font(.caption)
@@ -489,6 +514,14 @@ struct DiagnosticsView: View {
 
         let hours = minutes / 60
         return "Repeated \(rollup.occurrenceCount)x over \(hours)h"
+    }
+
+    private func toggleAutomationRollupExpansion(_ rollupID: String) {
+        if expandedAutomationRollupIDs.contains(rollupID) {
+            expandedAutomationRollupIDs.remove(rollupID)
+        } else {
+            expandedAutomationRollupIDs.insert(rollupID)
+        }
     }
 
     private func startRefreshingPerformanceSnapshot() {

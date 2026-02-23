@@ -5,6 +5,7 @@ extension AppModel {
     struct AutomationTimelineEventRollup: Identifiable, Hashable, Sendable {
         let id: String
         let latestEvent: ExtensibilityDiagnosticEvent
+        let collapsedEvents: [ExtensibilityDiagnosticEvent]
         let earliestTimestamp: Date
         let occurrenceCount: Int
 
@@ -54,6 +55,7 @@ extension AppModel {
                     rollups[lastIndex] = AutomationTimelineEventRollup(
                         id: lastRollup.id,
                         latestEvent: lastRollup.latestEvent,
+                        collapsedEvents: lastRollup.collapsedEvents + [event],
                         earliestTimestamp: min(lastRollup.earliestTimestamp, event.timestamp),
                         occurrenceCount: lastRollup.occurrenceCount + 1
                     )
@@ -65,6 +67,7 @@ extension AppModel {
                 AutomationTimelineEventRollup(
                     id: event.id.uuidString,
                     latestEvent: event,
+                    collapsedEvents: [event],
                     earliestTimestamp: event.timestamp,
                     occurrenceCount: 1
                 )
