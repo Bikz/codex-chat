@@ -32,4 +32,24 @@ extension AppModel {
             appendLog(.error, "Diagnostics export failed: \(error.localizedDescription)")
         }
     }
+
+    func copyExtensibilityDiagnostics() {
+        do {
+            let snapshot = ExtensibilityDiagnosticsSnapshot(
+                generatedAt: Date(),
+                retentionLimit: extensibilityDiagnosticsRetentionLimit,
+                events: extensibilityDiagnostics
+            )
+            let destinationURL = try ExtensibilityDiagnosticsExporter.export(snapshot: snapshot)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(destinationURL.path, forType: .string)
+            accountStatusMessage = "Extensibility diagnostics exported and copied: \(destinationURL.lastPathComponent)"
+            appendLog(.info, "Extensibility diagnostics exported")
+        } catch ExtensibilityDiagnosticsExporterError.cancelled {
+            appendLog(.debug, "Extensibility diagnostics export cancelled")
+        } catch {
+            accountStatusMessage = "Failed to export extensibility diagnostics: \(error.localizedDescription)"
+            appendLog(.error, "Extensibility diagnostics export failed: \(error.localizedDescription)")
+        }
+    }
 }

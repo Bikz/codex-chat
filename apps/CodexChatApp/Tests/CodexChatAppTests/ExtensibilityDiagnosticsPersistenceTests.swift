@@ -37,6 +37,28 @@ final class ExtensibilityDiagnosticsPersistenceTests: XCTestCase {
         XCTAssertTrue(model.extensibilityDiagnostics.isEmpty)
     }
 
+    func testPersistAndRestoreRetentionLimit() async throws {
+        let repositories = try makeRepositories(prefix: "ext-diagnostics-retention")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        model.setExtensibilityDiagnosticsRetentionLimit(175)
+        await model.persistExtensibilityDiagnosticsRetentionLimitIfNeeded()
+
+        let restored = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        await restored.restoreExtensibilityDiagnosticsRetentionLimitIfNeeded()
+
+        XCTAssertEqual(restored.extensibilityDiagnosticsRetentionLimit, 175)
+    }
+
+    func testRetentionLimitIsClamped() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.setExtensibilityDiagnosticsRetentionLimit(1)
+        XCTAssertEqual(model.extensibilityDiagnosticsRetentionLimit, 25)
+
+        model.setExtensibilityDiagnosticsRetentionLimit(5_000)
+        XCTAssertEqual(model.extensibilityDiagnosticsRetentionLimit, 500)
+    }
+
     private func makeRepositories(prefix: String) throws -> MetadataRepositories {
         let root = try makeTempDirectory(prefix: prefix)
         let database = try MetadataDatabase(

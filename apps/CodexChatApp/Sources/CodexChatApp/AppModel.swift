@@ -665,6 +665,7 @@ final class AppModel: ObservableObject {
     @Published var extensionCatalogState: SurfaceState<[CatalogModListing]> = .idle
     @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
     @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []
+    @Published var extensibilityDiagnosticsRetentionLimit = 100
     @Published var activeModsBarSlot: ModUISlots.ModsBar?
     @Published var activeModsBarModID: String?
     @Published var activeModsBarModDirectoryPath: String?

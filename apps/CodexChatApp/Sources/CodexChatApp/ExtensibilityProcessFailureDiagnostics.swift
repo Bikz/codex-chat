@@ -4,7 +4,9 @@ import CodexSkills
 import Foundation
 
 extension AppModel {
-    private static let extensibilityDiagnosticsLimit = 100
+    private static let defaultExtensibilityDiagnosticsLimit = 100
+    private static let minExtensibilityDiagnosticsLimit = 25
+    private static let maxExtensibilityDiagnosticsLimit = 500
 
     struct ExtensibilityProcessFailureDetails: Hashable, Sendable {
         enum Kind: String, Hashable, Sendable {
@@ -108,8 +110,12 @@ extension AppModel {
             ),
             at: 0
         )
-        if extensibilityDiagnostics.count > Self.extensibilityDiagnosticsLimit {
-            extensibilityDiagnostics.removeLast(extensibilityDiagnostics.count - Self.extensibilityDiagnosticsLimit)
+        let retentionLimit = Self.normalizedDiagnosticsLimit(extensibilityDiagnosticsRetentionLimit)
+        if extensibilityDiagnosticsRetentionLimit != retentionLimit {
+            extensibilityDiagnosticsRetentionLimit = retentionLimit
+        }
+        if extensibilityDiagnostics.count > retentionLimit {
+            extensibilityDiagnostics.removeLast(extensibilityDiagnostics.count - retentionLimit)
         }
 
         Task { [weak self] in
@@ -118,7 +124,25 @@ extension AppModel {
         }
     }
 
+    func setExtensibilityDiagnosticsRetentionLimit(_ limit: Int) {
+        let normalized = Self.normalizedDiagnosticsLimit(limit)
+        guard extensibilityDiagnosticsRetentionLimit != normalized else { return }
+
+        extensibilityDiagnosticsRetentionLimit = normalized
+        if extensibilityDiagnostics.count > normalized {
+            extensibilityDiagnostics.removeLast(extensibilityDiagnostics.count - normalized)
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            await persistExtensibilityDiagnosticsRetentionLimitIfNeeded()
+            await persistExtensibilityDiagnosticsIfNeeded()
+        }
+    }
+
     func restoreExtensibilityDiagnosticsIfNeeded() async {
+        await restoreExtensibilityDiagnosticsRetentionLimitIfNeeded()
+
         guard let preferenceRepository else {
             extensibilityDiagnostics = []
             return
@@ -133,7 +157,7 @@ extension AppModel {
             }
 
             let decoded = try JSONDecoder().decode([ExtensibilityDiagnosticEvent].self, from: data)
-            extensibilityDiagnostics = Array(decoded.prefix(Self.extensibilityDiagnosticsLimit))
+            extensibilityDiagnostics = Array(decoded.prefix(extensibilityDiagnosticsRetentionLimit))
         } catch {
             appendLog(.warning, "Failed to restore extensibility diagnostics cache: \(error.localizedDescription)")
             extensibilityDiagnostics = []
@@ -143,13 +167,51 @@ extension AppModel {
     func persistExtensibilityDiagnosticsIfNeeded() async {
         guard let preferenceRepository else { return }
         do {
-            let snapshot = Array(extensibilityDiagnostics.prefix(Self.extensibilityDiagnosticsLimit))
+            let snapshot = Array(extensibilityDiagnostics.prefix(extensibilityDiagnosticsRetentionLimit))
             let data = try JSONEncoder().encode(snapshot)
             let text = String(data: data, encoding: .utf8) ?? "[]"
             try await preferenceRepository.setPreference(key: .extensibilityDiagnosticsV1, value: text)
         } catch {
             appendLog(.warning, "Failed to persist extensibility diagnostics cache: \(error.localizedDescription)")
         }
+    }
+
+    func restoreExtensibilityDiagnosticsRetentionLimitIfNeeded() async {
+        guard let preferenceRepository else {
+            extensibilityDiagnosticsRetentionLimit = Self.defaultExtensibilityDiagnosticsLimit
+            return
+        }
+
+        do {
+            guard let raw = try await preferenceRepository.getPreference(key: .extensibilityDiagnosticsRetentionLimitV1),
+                  let parsed = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            else {
+                extensibilityDiagnosticsRetentionLimit = Self.defaultExtensibilityDiagnosticsLimit
+                return
+            }
+            extensibilityDiagnosticsRetentionLimit = Self.normalizedDiagnosticsLimit(parsed)
+        } catch {
+            appendLog(.warning, "Failed to restore extensibility diagnostics retention: \(error.localizedDescription)")
+            extensibilityDiagnosticsRetentionLimit = Self.defaultExtensibilityDiagnosticsLimit
+        }
+    }
+
+    func persistExtensibilityDiagnosticsRetentionLimitIfNeeded() async {
+        guard let preferenceRepository else { return }
+        do {
+            let normalized = Self.normalizedDiagnosticsLimit(extensibilityDiagnosticsRetentionLimit)
+            extensibilityDiagnosticsRetentionLimit = normalized
+            try await preferenceRepository.setPreference(
+                key: .extensibilityDiagnosticsRetentionLimitV1,
+                value: String(normalized)
+            )
+        } catch {
+            appendLog(.warning, "Failed to persist extensibility diagnostics retention: \(error.localizedDescription)")
+        }
+    }
+
+    private static func normalizedDiagnosticsLimit(_ limit: Int) -> Int {
+        max(Self.minExtensibilityDiagnosticsLimit, min(Self.maxExtensibilityDiagnosticsLimit, limit))
     }
 
     private static func details(command: String, output: String) -> ExtensibilityProcessFailureDetails {
