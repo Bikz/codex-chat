@@ -77,7 +77,7 @@ actor PerformanceTracer {
     }
 
     @discardableResult
-    func measure<T>(
+    func measure<T: Sendable>(
         name: String,
         metadata: [String: String] = [:],
         operation: () async throws -> T
