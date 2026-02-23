@@ -118,6 +118,52 @@ final class ExtensionAutomationHealthTests: XCTestCase {
         XCTAssertTrue(model.extensionAutomationHealthByModID.isEmpty)
     }
 
+    func testRefreshAutomationHealthSummaryRecordsDiagnosticsOnFailingTransition() async throws {
+        let repositories = try makeRepositories(prefix: "automation-health-diag")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        _ = try await repositories.extensionAutomationStateRepository.upsert(
+            ExtensionAutomationStateRecord(
+                modID: "acme.mod",
+                automationID: "daily-sync",
+                nextRunAt: nil,
+                lastRunAt: Date(),
+                lastStatus: "failed",
+                lastError: "network timeout"
+            )
+        )
+
+        await model.refreshAutomationHealthSummary(for: "acme.mod")
+
+        XCTAssertEqual(model.extensibilityDiagnostics.first?.surface, "automations")
+        XCTAssertEqual(model.extensibilityDiagnostics.first?.operation, "health")
+        XCTAssertEqual(model.extensibilityDiagnostics.first?.kind, "command")
+        XCTAssertTrue(model.extensibilityDiagnostics.first?.summary.contains("acme.mod") == true)
+    }
+
+    func testRefreshAutomationHealthSummaryDoesNotDuplicateUnchangedFailingDiagnostics() async throws {
+        let repositories = try makeRepositories(prefix: "automation-health-dedup")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        _ = try await repositories.extensionAutomationStateRepository.upsert(
+            ExtensionAutomationStateRecord(
+                modID: "acme.mod",
+                automationID: "daily-sync",
+                nextRunAt: nil,
+                lastRunAt: Date(),
+                lastStatus: "failed",
+                lastError: "network timeout"
+            )
+        )
+
+        await model.refreshAutomationHealthSummary(for: "acme.mod")
+        let firstCount = model.extensibilityDiagnostics.count
+        await model.refreshAutomationHealthSummary(for: "acme.mod")
+
+        XCTAssertEqual(firstCount, 1)
+        XCTAssertEqual(model.extensibilityDiagnostics.count, 1)
+    }
+
     private func makeRepositories(prefix: String) throws -> MetadataRepositories {
         let root = try makeTempDirectory(prefix: prefix)
         let database = try MetadataDatabase(

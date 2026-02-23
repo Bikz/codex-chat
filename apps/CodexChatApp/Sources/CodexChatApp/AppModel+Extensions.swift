@@ -927,13 +927,20 @@ extension AppModel {
             return
         }
 
+        let previousByModID = extensionAutomationHealthByModID
         var next: [String: ExtensionAutomationHealthSummary] = [:]
         for modID in uniqueModIDs {
             do {
                 let records = try await extensionAutomationStateRepository.list(modID: modID)
-                if let summary = Self.summarizeAutomationHealth(modID: modID, records: records) {
+                let summary = Self.summarizeAutomationHealth(modID: modID, records: records)
+                if let summary {
                     next[modID] = summary
                 }
+                emitAutomationHealthDiagnosticIfNeeded(
+                    modID: modID,
+                    previous: previousByModID[modID],
+                    current: summary
+                )
             } catch {
                 appendLog(.warning, "Failed loading automation health for mod \(modID): \(error.localizedDescription)")
             }
@@ -948,6 +955,7 @@ extension AppModel {
             return
         }
 
+        let previous = extensionAutomationHealthByModID[modID]
         do {
             let records = try await extensionAutomationStateRepository.list(modID: modID)
             let summary = Self.summarizeAutomationHealth(modID: modID, records: records)
@@ -956,6 +964,11 @@ extension AppModel {
             } else {
                 extensionAutomationHealthByModID.removeValue(forKey: modID)
             }
+            emitAutomationHealthDiagnosticIfNeeded(
+                modID: modID,
+                previous: previous,
+                current: summary
+            )
         } catch {
             appendLog(.warning, "Failed refreshing automation health for mod \(modID): \(error.localizedDescription)")
         }
@@ -1001,6 +1014,39 @@ extension AppModel {
         let safeMod = resolved.modID.replacingOccurrences(of: "[^A-Za-z0-9_.-]", with: "-", options: .regularExpression)
         let safeAutomation = resolved.definition.id.replacingOccurrences(of: "[^A-Za-z0-9_.-]", with: "-", options: .regularExpression)
         return "app.codexchat.\(safeMod).\(safeAutomation)"
+    }
+
+    private func emitAutomationHealthDiagnosticIfNeeded(
+        modID: String,
+        previous: ExtensionAutomationHealthSummary?,
+        current: ExtensionAutomationHealthSummary?
+    ) {
+        guard let current else { return }
+
+        let wasFailing = (previous?.hasFailures ?? false) || (previous?.hasLaunchdFailures ?? false)
+        let isFailing = current.hasFailures || current.hasLaunchdFailures
+        guard isFailing else { return }
+
+        let changedStatus = previous?.lastStatus != current.lastStatus
+        let changedError = previous?.lastError != current.lastError
+        guard !wasFailing || changedStatus || changedError else { return }
+
+        var summary = "Mod \(modID) automation health reported \(current.lastStatus)."
+        if let lastError = current.lastError, !lastError.isEmpty {
+            summary += " \(lastError)"
+        }
+
+        let kind: ExtensibilityProcessFailureDetails.Kind = current.hasLaunchdFailures ? .launch : .command
+        let details = ExtensibilityProcessFailureDetails(
+            kind: kind,
+            command: "automation-health",
+            summary: summary
+        )
+        recordExtensibilityDiagnostic(
+            surface: "automations",
+            operation: "health",
+            details: details
+        )
     }
 
     private func shouldApplyModsBarOutput(sourceHookID: String?) -> Bool {
