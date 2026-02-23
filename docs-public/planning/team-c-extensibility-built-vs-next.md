@@ -37,6 +37,7 @@ Date: 2026-02-23
 | P2 | Adopted shared capability policy in extension and native-action permission gates (with regression coverage) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelComputerActionsTests.swift` | `759c6de` |
 | P2 | Extended shared capability policy to skill-install trust checks for untrusted projects | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelSkillsTrustPolicyTests.swift` | `b0e38b2` |
 | P2 | Extended shared capability policy to mod install/update trust checks for untrusted projects | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelModsTrustPolicyTests.swift` | `c345a43` |
+| P2 | Hardened skill/mod process runners with timeout and output-cap safeguards plus package-level regression tests | `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Tests/CodexSkillsTests/CodexSkillsTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Tests/CodexModsTests/ModInstallServiceTests.swift` | `49418d9` |
 
 ### Remaining prioritized backlog
 
@@ -50,7 +51,8 @@ Date: 2026-02-23
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift`.
 
 2. Unify process execution adapters.
-- Build one common executor abstraction with per-surface limits and structured failure telemetry.
+- Phase 1 shipped: skill/mod runners now enforce timeout + capped output with tests.
+- Next step is de-duplicating these runners with extension worker execution into one shared abstraction and telemetry schema.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 3. Improve automation observability UX.
@@ -61,7 +63,7 @@ Date: 2026-02-23
 
 ### 0-30 days
 1. Complete policy rollout for remaining automation-control edges.
-2. Draft migration and compatibility plan for consolidated process execution adapter.
+2. Draft migration and compatibility plan for consolidating now-bounded process runners into one shared adapter.
 
 Exit criteria:
 - Shared policy/process design is reviewed and approved by runtime + UX workstreams.
