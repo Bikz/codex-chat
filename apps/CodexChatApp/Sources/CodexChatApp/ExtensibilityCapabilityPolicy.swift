@@ -17,6 +17,7 @@ enum ExtensibilityCapabilityPolicy {
         .filesystemWrite,
         .network,
         .runtimeControl,
+        .runWhenAppClosed,
     ]
 
     static func blockedCapabilities(

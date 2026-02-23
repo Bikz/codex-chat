@@ -16,7 +16,7 @@ final class ExtensibilityCapabilityPolicyTests: XCTestCase {
             trustState: .untrusted
         )
 
-        XCTAssertEqual(blocked, Set([.network, .nativeActions]))
+        XCTAssertEqual(blocked, Set([.network, .nativeActions, .runWhenAppClosed]))
     }
 
     func testBlockedCapabilitiesAllowsAllForTrustedProjects() {
