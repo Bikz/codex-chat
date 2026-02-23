@@ -85,4 +85,29 @@ final class ChatsCanvasViewStyleTests: XCTestCase {
         XCTAssertEqual(style.cornerRadius, 16, accuracy: 0.0001)
         XCTAssertEqual(style.layerOffset, 8, accuracy: 0.0001)
     }
+
+    func testFollowUpStatusPresentationTreatsFailureCopyAsError() {
+        let presentation = ChatsCanvasView.followUpStatusPresentation(
+            for: "Failed to send follow-up: No draft chat is active."
+        )
+        XCTAssertEqual(
+            presentation,
+            .error("Failed to send follow-up: No draft chat is active.")
+        )
+    }
+
+    func testFollowUpStatusPresentationTreatsQueuedCopyAsInfo() {
+        let presentation = ChatsCanvasView.followUpStatusPresentation(
+            for: "Queued follow-up. It will auto-send when the runtime is idle."
+        )
+        XCTAssertEqual(
+            presentation,
+            .info("Queued follow-up. It will auto-send when the runtime is idle.")
+        )
+    }
+
+    func testFollowUpStatusPresentationDropsEmptyMessages() {
+        XCTAssertNil(ChatsCanvasView.followUpStatusPresentation(for: "   "))
+        XCTAssertNil(ChatsCanvasView.followUpStatusPresentation(for: nil))
+    }
 }

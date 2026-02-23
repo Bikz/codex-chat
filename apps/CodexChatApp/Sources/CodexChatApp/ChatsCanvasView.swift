@@ -20,6 +20,11 @@ struct ChatsCanvasView: View {
         let layerOffset: CGFloat
     }
 
+    enum FollowUpStatusPresentation: Equatable {
+        case info(String)
+        case error(String)
+    }
+
     static func composerSurfaceStyle(
         isTransparentThemeMode: Bool,
         colorScheme: ColorScheme
@@ -87,6 +92,28 @@ struct ChatsCanvasView: View {
         return min(base, maxWidth)
     }
 
+    static func followUpStatusPresentation(for statusMessage: String?) -> FollowUpStatusPresentation? {
+        guard let trimmed = statusMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else {
+            return nil
+        }
+
+        let lowered = trimmed.lowercased()
+        let errorMarkers = [
+            "failed",
+            "error",
+            "invalid response",
+            "unavailable",
+            "rejected",
+        ]
+        if errorMarkers.contains(where: { lowered.contains($0) }) {
+            return .error(trimmed)
+        }
+
+        return .info(trimmed)
+    }
+
     @ObservedObject var model: AppModel
     @Binding var isInsertMemorySheetVisible: Bool
     @Environment(\.designTokens) private var tokens
@@ -128,12 +155,7 @@ struct ChatsCanvasView: View {
                         .padding(.horizontal, tokens.spacing.medium)
                 }
 
-                if let followUpStatus = model.followUpStatusMessage {
-                    Text(followUpStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, tokens.spacing.medium)
-                }
+                followUpStatusSection
             }
 
             if model.isShellWorkspaceVisible {
@@ -408,6 +430,56 @@ struct ChatsCanvasView: View {
                 .buttonStyle(.borderless)
                 .controlSize(.small)
             }
+            .font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(colorScheme == .dark ? 0.16 : 0.1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.45))
+        )
+    }
+
+    private var followUpStatusSection: some View {
+        Group {
+            switch Self.followUpStatusPresentation(for: model.followUpStatusMessage) {
+            case let .info(message):
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, tokens.spacing.medium)
+            case let .error(message):
+                followUpErrorInlineBanner(message)
+                    .padding(.horizontal, tokens.spacing.medium)
+            case nil:
+                EmptyView()
+            }
+        }
+    }
+
+    private func followUpErrorInlineBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+                .padding(.top, 1)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            Button("Dismiss") {
+                model.followUpStatusMessage = nil
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
             .font(.caption)
         }
         .padding(.horizontal, 12)
