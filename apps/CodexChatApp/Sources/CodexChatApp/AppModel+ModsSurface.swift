@@ -669,14 +669,23 @@ extension AppModel {
         projectID: UUID?,
         enabledModID: String?
     ) async throws {
-        guard let extensionInstallRepository else { return }
+        guard let extensionInstallRepository,
+              let enabledModID = enabledModID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !enabledModID.isEmpty
+        else { return }
+
         let installs = try await extensionInstallRepository.list()
         for record in installs where record.scope == scope {
             if scope == .project, record.projectID != projectID {
                 continue
             }
+            guard record.modID == enabledModID,
+                  !record.enabled
+            else {
+                continue
+            }
             var next = record
-            next.enabled = (record.modID == enabledModID)
+            next.enabled = true
             _ = try await extensionInstallRepository.upsert(next)
         }
     }
