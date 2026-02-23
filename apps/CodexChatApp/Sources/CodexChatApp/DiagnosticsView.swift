@@ -8,6 +8,7 @@ struct DiagnosticsView: View {
     let adaptiveTurnConcurrencyLimit: Int
     let logs: [LogEntry]
     let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
+    let onPrepareRerunCommand: (String) -> Void
     let onClose: () -> Void
     @State private var performanceSnapshot = PerformanceSnapshot(
         generatedAt: .distantPast,
@@ -150,6 +151,11 @@ struct DiagnosticsView: View {
                                     .buttonStyle(.link)
                                     .font(.caption2)
                                     if let suggestedCommand = playbook.suggestedCommand {
+                                        Button("Prepare rerun in composer") {
+                                            onPrepareRerunCommand(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
                                         Button("Copy rerun command") {
                                             copyToPasteboard(suggestedCommand)
                                         }

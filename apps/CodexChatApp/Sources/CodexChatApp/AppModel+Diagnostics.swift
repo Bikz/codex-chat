@@ -52,4 +52,21 @@ extension AppModel {
             appendLog(.error, "Extensibility diagnostics export failed: \(error.localizedDescription)")
         }
     }
+
+    func prepareExtensibilityRerunCommand(_ command: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            followUpStatusMessage = "No rerun command is available for this diagnostics entry."
+            return
+        }
+
+        composerText = """
+        Troubleshoot and safely rerun this command in the current project:
+        ```
+        \(trimmed)
+        ```
+        """
+        followUpStatusMessage = "Prepared a safe rerun prompt in the composer. Review and send when ready."
+        appendLog(.info, "Prepared extensibility rerun prompt in composer")
+    }
 }
