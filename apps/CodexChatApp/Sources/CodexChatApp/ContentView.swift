@@ -25,21 +25,8 @@ struct ContentView: View {
                 .ignoresSafeArea(.container, edges: .top)
         )
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .toolbar(removing: .sidebarToggle)
         .toolbar {
             if !model.isOnboardingActive {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        toggleSidebarVisibility()
-                    } label: {
-                        Label("Toggle Sidebar", systemImage: "sidebar.left")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Toggle sidebar")
-                    .help("Toggle sidebar")
-                    .keyboardShortcut("s", modifiers: [.command, .option])
-                }
-
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
                         model.openReviewChanges()
