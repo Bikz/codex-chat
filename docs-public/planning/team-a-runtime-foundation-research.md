@@ -3,7 +3,7 @@
 Date: 2026-02-23  
 Scope: Runtime reliability + data foundation across `packages/CodexKit/**`, `packages/CodexChatInfra/**`, `packages/CodexChatCore/**`, and Team A-owned app runtime/data files.
 
-Assumption: This assessment is grounded in repository state at commit `d2b6d0885f4af1bc5cb8f38cf59497ed1f56d066`.
+Assumption: This assessment is grounded in repository state at commit `83f076d5f26f7c7a8445fe4b12f3613193a0931f`.
 Assumption: "Missing" means no direct test or contract statement was found for the exact invariant, even when adjacent behavior is covered.
 
 ## 1) Architecture Map
@@ -54,7 +54,7 @@ Evidence: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.
 | Worker-level bounded restart attempts + repeated crash-cycle coverage | Built | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:448`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:701`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171` | Includes repeated non-primary crash/recovery cycle validation. |
 | Transcript checkpoint durability with atomic replace | Built | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` | Write-denial, replace-boundary failure, and temp-artifact cleanup paths are now directly tested. |
 | Completion persistence batching under pressure | Built | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` | Threshold, shutdown flush, and max-pending spill are tested. |
-| Follow-up queue fairness under high fan-out | Missing | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400` | Functional behavior exists; starvation/fairness load tests are still missing. |
+| Follow-up queue fairness under high fan-out | Built | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`, `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:81`, `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6` | One-thread-per-batch and repeated-batch anti-starvation behavior are now directly tested. |
 
 ## 3) Reliability Guarantees Matrix
 
@@ -67,6 +67,7 @@ Evidence: `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.
 | Bounded app-level auto-recovery backoff and terminal failure | `AGENTS.md:46` | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:352`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:394`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimeRecoveryPolicy.swift:8` | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:7`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeRecoveryPolicyTests.swift:20` | Built |
 | Bounded worker-level recovery and failure-count reset | `AGENTS.md:46` | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:448`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:701`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimeRecoveryPolicy.swift:37` | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeRecoveryPolicyTests.swift:43` | Built |
 | Worker recovery remains stable across repeated crash/recovery cycles | `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:17` | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:448` | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171` | Built |
+| Follow-up auto-drain candidate selection avoids same-thread monopolies per batch and across repeated batches | `AGENTS.md:46` | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:412`, `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:81` | `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6` | Built |
 | Crash-safe transcript write path | `AGENTS.md:58` | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555` | `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` | Built |
 | Runtime continues when checkpoint start persistence fails | `AGENTS.md:58` | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:112` | `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:339` | Built |
 
@@ -83,7 +84,7 @@ Assumption: Fault-injection coverage now includes write-denial, replace-boundary
 | RuntimePool non-primary termination handling + repeated crash/recovery cycles | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:376`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:448` | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:7`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171` | Strong |
 | Checkpoint durability and replacement-boundary failure handling | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555` | `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:163`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` | Strong |
 | Batcher pressure handling (threshold/shutdown/max spill) | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:51`, `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:60` | `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:48`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:74`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` | Strong |
-| Follow-up auto-drain fairness under high fan-out | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400` | No targeted fairness/starvation load tests found. | Missing |
+| Follow-up auto-drain fairness under high fan-out | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`, `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:81` | `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6`, `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:66` | Strong |
 
 ## 5) Doc Staleness Findings (exact file paths)
 
@@ -97,7 +98,6 @@ Evidence: `docs-public/planning/workstreams.md:39`, `AGENTS.md:92`.
 
 | Rank | Opportunity | Impact | Merge Risk | Evidence |
 |---|---|---|---|---|
-| 1 | Extend follow-up queue tests with fairness/starvation coverage under high thread fan-out. | High | Low | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`. |
-| 2 | Publish an operator runbook for codex-home normalization/quarantine interpretation and recovery actions. | Medium | Low | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`. |
-| 3 | Extract runtime protocol compatibility fallback heuristics into a shared policy seam with CodexKit alignment. | Medium | Medium | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:671`, `packages/CodexKit/Sources/CodexKit/CodexRuntime+Params.swift:177`. |
-| 4 | Add optional CI soak lane for repeated RuntimePool crash/recovery cycles. | Medium | Medium | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`. |
+| 1 | Publish an operator runbook for codex-home normalization/quarantine interpretation and recovery actions. | High | Low | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`. |
+| 2 | Extract runtime protocol compatibility fallback heuristics into a shared policy seam with CodexKit alignment. | Medium | Medium | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:671`, `packages/CodexKit/Sources/CodexKit/CodexRuntime+Params.swift:177`. |
+| 3 | Add optional CI soak lane for repeated RuntimePool crash/recovery cycles. | Medium | Medium | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`. |

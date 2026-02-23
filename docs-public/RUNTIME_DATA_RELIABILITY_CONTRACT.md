@@ -12,9 +12,12 @@ Primary implementation surfaces:
 - `apps/CodexChatApp/Sources/CodexChatApp/RuntimeRecoveryPolicy.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift`
+- `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift`
 - `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteRuntimeThreadMappingRepository.swift`
+- `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift`
+- `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteFollowUpQueueRepository.swift`
 
 ## Runtime Lifecycle Invariants
 
@@ -72,6 +75,16 @@ Primary implementation surfaces:
 - Required behavior: failed begin/fail/finalize writes preserve previously committed archive content.
 - Evidence: `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:163`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:251`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:299`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362`.
 
+## Follow-Up Queue Fairness Invariants
+
+1. Auto-drain candidate selection must avoid same-thread monopolies within a single batch.
+- Required behavior: `listNextAutoCandidates(...)` returns at most one candidate per thread for each selection batch.
+- Evidence: `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:81`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:412`.
+
+2. Preferred-thread bias must not starve other pending threads across repeated batches.
+- Required behavior: with repeated batch consumption, non-preferred threads continue to receive dispatch opportunities.
+- Evidence: `packages/CodexChatInfra/Sources/CodexChatInfra/SQLiteFollowUpQueueRepository.swift:72`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:415`.
+
 ## Verification Matrix
 
 - Runtime auto-recovery bounds:
@@ -103,6 +116,9 @@ Primary implementation surfaces:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362`
 - Runtime degradation behavior on checkpoint begin failure:
   - `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:339`
+- Follow-up auto-drain fairness under high fan-out:
+  - `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6`
+  - `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:66`
 
 ## Change Control
 

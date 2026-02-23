@@ -18,6 +18,7 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | App-level auto-recovery boundedness | Backoff attempts are bounded, env-configurable, and capped in implementation and tests. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:352`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:394`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeAutoRecoveryTests.swift:40` |
 | Worker-level recovery boundedness | RuntimePool has consecutive-failure cap and reset-on-recovery semantics. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:454`, `apps/CodexChatApp/Sources/CodexChatApp/RuntimePool.swift:701`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolTests.swift:129` |
 | RuntimePool repeated degradation/recovery coverage | Non-primary worker crash/restart behavior is tested across repeated cycles and post-recovery routing. | `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171` |
+| Follow-up queue fairness under high fan-out | Candidate selection now has direct fairness/starvation regression coverage across high fan-out thread sets. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`, `packages/CodexChatCore/Sources/CodexChatCore/Repositories.swift:81`, `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6` |
 | Approval continuity | Pending approvals reset with explicit UX messaging on communication failure and restart. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:884`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeApprovalContinuityTests.swift:8`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppRuntimeSmokeTests.swift:306` |
 | Transcript durability | Checkpoint phases and atomic write path with fault-injection tests for write-denial, replace-boundary failure, and crash-leftover temp artifacts. | `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/ChatArchiveStore.swift:555`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:207`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208`, `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:362` |
 | Completion persistence pressure handling | Batcher threshold, shutdown, and max-pending spill are directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/PersistenceBatcher.swift:10`, `apps/CodexChatApp/Tests/CodexChatAppTests/PersistenceBatcherTests.swift:101` |
@@ -28,8 +29,8 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 
 ### P0
 
-1. Add fairness/starvation regression coverage for follow-up auto-drain under high thread fan-out.
-Evidence gap: follow-up logic exists, but targeted high-fan-out fairness tests are missing (`apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`).
+1. No open P0 reliability gaps in the current runtime/data foundation slice.
+Evidence: former P0 gaps (archive replacement-boundary durability and follow-up fairness under fan-out) now have direct regression coverage in `apps/CodexChatApp/Tests/CodexChatAppTests/ChatArchiveStoreCheckpointTests.swift:208` and `packages/CodexChatInfra/Tests/CodexChatInfraTests/SQLiteFollowUpQueueFairnessTests.swift:6`.
 
 ### P1
 
@@ -51,21 +52,21 @@ Evidence seed: fallback behavior currently lives in app layer dispatch path (`ap
 
 ### Day 0-30
 
-1. Add first pass follow-up fairness/starvation load tests.
-2. Update `workstreams.md` ownership language and stale prep-file references.
-3. Draft storage repair operator runbook skeleton.
+1. Update `workstreams.md` ownership language and stale prep-file references.
+2. Draft storage repair operator runbook skeleton.
+3. Propose optional CI soak lane design for repeated runtime-pool recovery cycles.
 
 Dependencies:
-- Existing follow-up scheduler flow: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+FollowUps.swift:400`.
+- Existing storage repair and resilience implementation surfaces: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:156`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimePoolResilienceTests.swift:171`.
 
 ### Day 31-60
 
 1. Publish codex-home normalization/quarantine operator runbook.
-2. Fold follow-up fairness tests into standard reliability suite.
-3. Add shared acceptance criteria snippets to planning docs referencing reliability contract.
+2. Add shared acceptance criteria snippets to planning docs referencing reliability contract.
+3. Start runtime compatibility fallback policy seam proposal.
 
 Dependencies:
-- P0 follow-up fairness baseline in place.
+- P0 reliability baseline remains green.
 - Reliability contract remains canonical (`docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:1`).
 
 ### Day 61-90
@@ -84,7 +85,7 @@ Dependencies:
 
 1. Clarify in reliability contract language that bounded recovery policy is now shared by app-level and worker-level recovery paths.
 
-2. Add an explicit contract note for follow-up queue fairness expectations once tests are landed.
+2. Add an explicit contract note for follow-up queue fairness expectations with the new high-fan-out test evidence.
 
 3. Update planning docs to align workstream ownership language with the active multi-agent shared-worktree process.
 
