@@ -3,7 +3,19 @@ import SwiftUI
 
 struct ExtensionModsBarView: View {
     @ObservedObject var model: AppModel
+    let drawsBackground: Bool
+    let showsPresentationControls: Bool
     @Environment(\.designTokens) private var tokens
+
+    init(
+        model: AppModel,
+        drawsBackground: Bool = true,
+        showsPresentationControls: Bool = false
+    ) {
+        self.model = model
+        self.drawsBackground = drawsBackground
+        self.showsPresentationControls = showsPresentationControls
+    }
 
     private var modsBarTitle: String {
         model.activeModsBarSlot?.title
@@ -27,6 +39,37 @@ struct ExtensionModsBarView: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
+
+                if showsPresentationControls, model.canToggleModsBarForSelectedThread {
+                    HStack(spacing: 4) {
+                        ForEach(AppModel.ModsBarPresentationMode.allCases, id: \.self) { mode in
+                            Button {
+                                model.setModsBarPresentationMode(mode)
+                            } label: {
+                                Image(systemName: mode.symbolName)
+                                    .font(.caption.weight(.semibold))
+                                    .frame(width: 22, height: 22)
+                                    .background(
+                                        Circle()
+                                            .fill(Color.primary.opacity(model.selectedModsBarPresentationMode == mode ? 0.16 : 0.06))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Set extension panel to \(mode.label)")
+                        }
+
+                        Button {
+                            model.toggleModsBar()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption.weight(.bold))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Close extension panel")
+                    }
+                    .foregroundStyle(.secondary)
+                }
 
                 if model.hasModsBarQuickSwitchChoices {
                     Menu {
@@ -128,16 +171,31 @@ struct ExtensionModsBarView: View {
                 }
             }
         }
-        .background(
-            ZStack {
-                Color(hex: tokens.palette.panelHex)
-                Rectangle()
-                    .fill(tokens.materials.panelMaterial.material)
-                    .opacity(model.isTransparentThemeMode ? 0.36 : 0)
+        .background {
+            if drawsBackground {
+                ZStack {
+                    Color(hex: tokens.palette.panelHex)
+                    Rectangle()
+                        .fill(tokens.materials.panelMaterial.material)
+                        .opacity(model.isTransparentThemeMode ? 0.36 : 0)
+                }
             }
-        )
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Extension modsBar")
+    }
+}
+
+private extension AppModel.ModsBarPresentationMode {
+    var label: String {
+        switch self {
+        case .rail:
+            "rail"
+        case .peek:
+            "peek"
+        case .expanded:
+            "expanded"
+        }
     }
 }
 

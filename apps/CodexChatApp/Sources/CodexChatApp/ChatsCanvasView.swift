@@ -12,6 +12,14 @@ struct ChatsCanvasView: View {
         let shadowYOffset: CGFloat
     }
 
+    struct ModsBarOverlayStyle: Equatable {
+        let railWidth: CGFloat
+        let peekWidth: CGFloat
+        let expandedWidth: CGFloat
+        let cornerRadius: CGFloat
+        let layerOffset: CGFloat
+    }
+
     static func composerSurfaceStyle(
         isTransparentThemeMode: Bool,
         colorScheme: ColorScheme
@@ -33,6 +41,25 @@ struct ChatsCanvasView: View {
             shadowRadius: 8,
             shadowYOffset: 2
         )
+    }
+
+    static let modsBarOverlayStyle = ModsBarOverlayStyle(
+        railWidth: 56,
+        peekWidth: 332,
+        expandedWidth: 446,
+        cornerRadius: 16,
+        layerOffset: 8
+    )
+
+    static func modsBarOverlayWidth(for mode: AppModel.ModsBarPresentationMode) -> CGFloat {
+        switch mode {
+        case .rail:
+            modsBarOverlayStyle.railWidth
+        case .peek:
+            modsBarOverlayStyle.peekWidth
+        case .expanded:
+            modsBarOverlayStyle.expandedWidth
+        }
     }
 
     @ObservedObject var model: AppModel
@@ -765,20 +792,130 @@ struct ChatsCanvasView: View {
         @ViewBuilder _ content: () -> some View
     ) -> some View {
         if model.canToggleModsBarForSelectedThread {
-            HStack(spacing: 0) {
+            ZStack(alignment: .topTrailing) {
                 content()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if model.isModsBarVisibleForSelectedThread {
-                    Divider()
-                    ExtensionModsBarView(model: model)
-                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 440)
+                    modsBarOverlay
+                        .padding(.top, tokens.spacing.small)
+                        .padding(.trailing, tokens.spacing.small)
+                        .padding(.bottom, tokens.spacing.small)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.isModsBarVisibleForSelectedThread)
+            .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: model.selectedModsBarPresentationMode)
         } else {
             content()
         }
+    }
+
+    @ViewBuilder
+    private var modsBarOverlay: some View {
+        switch model.selectedModsBarPresentationMode {
+        case .rail:
+            modsBarRail
+        case .peek, .expanded:
+            layeredModsBarPanel
+        }
+    }
+
+    private var modsBarRail: some View {
+        let style = Self.modsBarOverlayStyle
+
+        return VStack(spacing: 8) {
+            Button {
+                model.setModsBarPresentationMode(.peek)
+            } label: {
+                Image(systemName: AppModel.ModsBarPresentationMode.peek.symbolName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Expand extension panel")
+
+            Button {
+                model.setModsBarPresentationMode(.expanded)
+            } label: {
+                Image(systemName: AppModel.ModsBarPresentationMode.expanded.symbolName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Expand extension panel to full width")
+
+            Spacer(minLength: 0)
+
+            Button {
+                model.toggleModsBar()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close extension panel")
+        }
+        .foregroundStyle(.secondary)
+        .padding(6)
+        .frame(width: style.railWidth)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(overlayPanelLayer(offset: 0))
+        .overlay(
+            RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+                .strokeBorder(panelSurfaceStrokeColor)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Extension panel rail")
+    }
+
+    private var layeredModsBarPanel: some View {
+        let style = Self.modsBarOverlayStyle
+        let width = Self.modsBarOverlayWidth(for: model.selectedModsBarPresentationMode)
+
+        return ZStack(alignment: .topTrailing) {
+            overlayPanelLayer(offset: style.layerOffset * 2)
+                .opacity(0.24)
+            overlayPanelLayer(offset: style.layerOffset)
+                .opacity(0.44)
+
+            ExtensionModsBarView(
+                model: model,
+                drawsBackground: false,
+                showsPresentationControls: true
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(overlayPanelLayer(offset: 0))
+            .overlay(
+                RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+                    .strokeBorder(panelSurfaceStrokeColor)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity, alignment: .topTrailing)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Extension panel")
+    }
+
+    private func overlayPanelLayer(offset: CGFloat) -> some View {
+        let style = Self.modsBarOverlayStyle
+        return RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+            .fill(panelSurfaceFillColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+                    .fill(tokens.materials.panelMaterial.material)
+                    .opacity(model.isTransparentThemeMode ? 0.32 : 0)
+            )
+            .shadow(
+                color: .black.opacity(model.isTransparentThemeMode ? 0.18 : 0.10),
+                radius: model.isTransparentThemeMode ? 12 : 8,
+                x: 0,
+                y: model.isTransparentThemeMode ? 6 : 4
+            )
+            .offset(x: -offset, y: offset)
     }
 
     private func scrollTranscriptToBottom(

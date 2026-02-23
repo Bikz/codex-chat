@@ -55,4 +55,22 @@ final class ChatsCanvasViewStyleTests: XCTestCase {
         XCTAssertEqual(style.shadowRadius, 8, accuracy: 0.0001)
         XCTAssertEqual(style.shadowYOffset, 2, accuracy: 0.0001)
     }
+
+    func testModsBarOverlayWidthsScaleFromRailToExpanded() {
+        let railWidth = ChatsCanvasView.modsBarOverlayWidth(for: .rail)
+        let peekWidth = ChatsCanvasView.modsBarOverlayWidth(for: .peek)
+        let expandedWidth = ChatsCanvasView.modsBarOverlayWidth(for: .expanded)
+
+        XCTAssertEqual(railWidth, 56, accuracy: 0.0001)
+        XCTAssertEqual(peekWidth, 332, accuracy: 0.0001)
+        XCTAssertEqual(expandedWidth, 446, accuracy: 0.0001)
+        XCTAssertLessThan(railWidth, peekWidth)
+        XCTAssertLessThan(peekWidth, expandedWidth)
+    }
+
+    func testModsBarOverlayStyleKeepsLayeredPanelGeometryStable() {
+        let style = ChatsCanvasView.modsBarOverlayStyle
+        XCTAssertEqual(style.cornerRadius, 16, accuracy: 0.0001)
+        XCTAssertEqual(style.layerOffset, 8, accuracy: 0.0001)
+    }
 }
