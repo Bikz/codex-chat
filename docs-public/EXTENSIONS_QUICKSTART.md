@@ -76,7 +76,10 @@ In CodexChat:
 3. Choose scope: Project or Global.
 4. Click `Review Package`, confirm metadata + permissions, then install.
 
-The mod is auto-enabled after install.
+Enablement after install:
+- Most mods are enabled immediately after install.
+- If the mod contains executable hooks/automations and is not vetted first-party, it can install as disabled when advanced executable mods are locked in Settings.
+- In that case, unlock advanced executable mods (Settings -> Experimental) before enabling.
 
 ## 5) Permission prompts
 

@@ -18,34 +18,38 @@ Date: 2026-02-23
 | Adaptive intent | Intent parser for desktop/calendar/reminders/messages/plan/role with auto-routing only for native actions | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+AdaptiveIntent.swift:6`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+AdaptiveIntent.swift:38` |
 | Plan runner | Markdown task parsing, dependency scheduler, marker parsing, task/run persistence updates, cancel path | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+PlanRunner.swift:126`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+PlanRunner.swift:454`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/PlanRunner/PlanParser.swift:37`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/PlanRunner/PlanScheduler.swift:33` |
 
-## 2) Next to build (prioritized backlog)
+## 2) Execution status update (2026-02-23)
+
+### Completed now (executed on this branch)
+| Priority | Shipped item | Evidence | Commit(s) |
+|---|---|---|---|
+| P0 | Hardened harness bridge test coverage for malformed JSON, oversized payloads, protocol/token checks | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ComputerActionHarnessServerTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelHarnessAuthorizationTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ComputerActionHarnessServer.swift:202` | `9c53fa1`, `8809372` |
+| P0 | Closed doc-vs-code drift for personal actions + security model | `/Users/bikram/Developer/CodexChat/docs-public/PERSONAL_ACTIONS.md`, `/Users/bikram/Developer/CodexChat/docs-public/SECURITY_MODEL.md`, `/Users/bikram/Developer/CodexChat/packages/CodexComputerActions/Sources/CodexComputerActions/ComputerActionRegistry.swift:39` | `0c47823` |
+| P0 | Defined and enforced plan-runner capability contract before execution | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/PlanRunner/PlanParser.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/PlanRunner/PlanRunnerCapabilityPolicy.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+PlanRunner.swift` | `5a69be5` |
+| P1 | Added launchd manager reliability tests and injectable command runner | `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/LaunchdManagerTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/LaunchdManager.swift` | `da7d822` |
+| P1 | Added skill provenance hardening (explicit untrusted-source confirmation + git pinning) | `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Skills.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Tests/CodexSkillsTests/CodexSkillsTests.swift` | `9d9f517` |
+| P1 | Added advanced executable-mod lock regression tests (migration + install-time disabled behavior) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelAdvancedExecutableModsTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+AdvancedExecutableMods.swift:16`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift:296` | `2353310` |
+| P1 | Added extension artifact path-safety regression coverage + shared path helper | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ProjectPathSafety.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ProjectPathSafetyTests.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift` | `307aa26`, `a11f298` |
+
+### Remaining prioritized backlog
 
 ### P0 (safety/reliability critical)
-1. Harden harness bridge test coverage.
-- Add dedicated tests for request framing, max-size rejection, malformed JSON, token mismatch, and decode coercion.
-- Evidence: harness server and handler have explicit guardrails but minimal direct tests today.
-- References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ComputerActionHarnessServer.swift:202`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ComputerActionHarness.swift:119`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatAppTests.swift:710`.
+1. Update `EXTENSIONS_QUICKSTART.md` to explicitly document executable-mod lock behavior after install.
+- Current docs still imply unconditional auto-enable, but install can be disabled by advanced lock.
+- References: `/Users/bikram/Developer/CodexChat/docs-public/EXTENSIONS_QUICKSTART.md:79`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift:296`.
 
-2. Close doc-vs-code safety drift in public docs.
-- Update `PERSONAL_ACTIONS.md` and `SECURITY_MODEL.md` to match shipped action surface and routing defaults.
-- References: `/Users/bikram/Developer/CodexChat/docs-public/PERSONAL_ACTIONS.md:5`, `/Users/bikram/Developer/CodexChat/docs-public/SECURITY_MODEL.md:67`, `/Users/bikram/Developer/CodexChat/packages/CodexComputerActions/Sources/CodexComputerActions/ComputerActionRegistry.swift:39`.
-
-3. Define explicit plan-runner permission contract.
-- Add explicit policy for plan tasks that trigger native actions/mod hooks, instead of only relying on downstream runtime approvals.
-- References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+PlanRunner.swift:218`, `/Users/bikram/Developer/CodexChat/docs-public/planning/workstreams.md:156`.
+2. Add stronger negative-path coverage for extension worker output decoding edge cases.
+- Focus on malformed first-line JSON and boundary-size error messaging to keep external-output handling explicit.
+- References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:105`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Tests/CodexExtensionsTests/CodexExtensionsTests.swift`.
 
 ### P1 (high value hardening + platform clarity)
-1. Add launchd/background automation integration tests.
-- Validate plist generation, bootstrap/bootout error handling, and `runWhenAppClosed` state updates.
-- References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/LaunchdManager.swift:82`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:939`.
+1. Add tests for scheduler retry/backoff observability in automation runtime.
+- Launchd coverage is now present; scheduler-level assertions are still light.
+- References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:16`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`.
 
-2. Introduce stronger skill provenance controls.
-- Add optional commit/tag pinning and install-time policy checks for untrusted hosts (beyond hostname heuristic).
-- References: `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:518`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`.
-
-3. Add tests for advanced executable mods lock migration and enforcement.
-- Verify existing-user migration, new-user default lock, and install-time disabled behavior.
-- References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+AdvancedExecutableMods.swift:16`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsSurface.swift:296`.
+2. Strengthen mod provenance guidance in sharing docs for checksum usage.
+- Integrity exists but remains optional; docs should push stronger default guidance for remote installs.
+- References: `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModPackageManifest.swift:223`, `/Users/bikram/Developer/CodexChat/docs-public/MODS_SHARING.md`.
 
 ### P2 (platform evolution and maintainability)
 1. Unify permission policy primitives across skills/mods/extensions/native actions.
@@ -60,37 +64,37 @@ Date: 2026-02-23
 - Surface unified “next run / last run / last failure” across in-app and launchd paths.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:48`.
 
-## 3) 30/60/90 day roadmap
+## 3) 30/60/90 day roadmap (re-baselined)
 
 ### 0-30 days
-1. Ship doc corrections for personal actions/security model + quickstart caveat updates.
-2. Add harness negative/fuzz-like request parsing tests.
-3. Define and publish plan-runner permission contract doc.
+1. Update `EXTENSIONS_QUICKSTART.md` for executable-lock caveat and checksum guidance for remote installs.
+2. Add extension worker malformed-output boundary tests.
+3. Add scheduler retry/backoff reliability assertions.
 
 Exit criteria:
-- Public docs align with shipped action IDs and routing behavior.
-- Harness failure modes are regression-tested.
-- Plan runner permission boundaries are explicit and reviewed.
+- Public extension install docs match actual enabled/disabled outcomes.
+- External worker-output failure paths are regression-tested.
+- Automation retry/backoff behavior has deterministic tests.
 
 ### 31-60 days
-1. Add launchd integration tests and improve automation failure assertions.
-2. Add advanced executable mod lock tests (migration + enforcement).
-3. Prototype skill source pinning policy and installer UX messaging for untrusted sources.
+1. Prototype unified capability-policy primitives and map existing Team C permission surfaces.
+2. Add first integration seam between plan-runner capabilities and shared policy decisions.
+3. Draft migration plan for old permission records.
 
 Exit criteria:
-- Background automation safety flows are testable and deterministic.
-- Executable lock behavior is fully regression-covered.
-- Skill trust posture is stronger than hostname allowlist alone.
+- One policy decision model can represent current extension/native-action/skill checks.
+- Plan-runner uses the same policy vocabulary.
+- Migration impact is documented and test strategy is defined.
 
 ### 61-90 days
-1. Land shared capability-policy primitives across Team C surfaces.
-2. Consolidate process execution wrappers into one policy-aware executor.
-3. Ship unified automation observability model in app state.
+1. Consolidate process runners into one policy-aware executor.
+2. Land unified automation observability state model and UI bindings.
+3. Complete de-duplication of path/process safety helpers across Team C packages.
 
 Exit criteria:
-- Fewer duplicated policy/process paths across skills/mods/extensions/native actions.
-- Cross-surface permission outcomes are consistent and auditable.
-- Background automations have one coherent health surface.
+- Fewer duplicated execution paths across skills/mods/extensions.
+- Automation health is visible through one coherent model.
+- Cross-surface safety checks share reusable primitives.
 
 ## 4) Dependencies on Runtime contracts and UX integration points
 

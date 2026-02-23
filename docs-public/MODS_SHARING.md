@@ -157,6 +157,7 @@ Rules:
 3. Review package metadata + permissions.
 4. Install to global or project scope.
 5. Use repository URLs or GitHub `tree` URLs. GitHub `blob` URLs are not installable.
+6. For remote installs, strongly prefer publishing `integrity.uiModSha256` in `codex.mod.json` so consumers can detect tampering.
 
 Repository policy for this cycle:
 
