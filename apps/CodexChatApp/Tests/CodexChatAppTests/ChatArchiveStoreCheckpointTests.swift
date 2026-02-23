@@ -359,6 +359,70 @@ final class ChatArchiveStoreCheckpointTests: XCTestCase {
         XCTAssertTrue(tempArtifacts.isEmpty)
     }
 
+    func testLoadRecentTurnsIgnoresCrashLeftoverTemporaryArchiveArtifacts() throws {
+        let root = try makeTempProjectRoot(prefix: "checkpoint-crash-leftover-temp")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let threadID = UUID()
+        let turnID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000108"))
+        let timestamp = Date(timeIntervalSince1970: 1_700_100_700)
+
+        let canonicalURL = try ChatArchiveStore.beginCheckpoint(
+            projectPath: root.path,
+            threadID: threadID,
+            turn: ArchivedTurnSummary(
+                turnID: turnID,
+                timestamp: timestamp,
+                userText: "Canonical user text",
+                assistantText: "",
+                actions: []
+            )
+        )
+
+        let crashLeftoverTempURL = canonicalURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(canonicalURL.lastPathComponent).tmp-crash-leftover", isDirectory: false)
+        let fakeTempContent = """
+        # Thread Transcript for \(threadID.uuidString)
+
+        <!-- CODEXCHAT_FORMAT_VERSION: 2 -->
+
+        <!-- CODEXCHAT_TURN_BEGIN id=\(UUID().uuidString) timestamp=2026-01-01T00:00:00Z status=completed -->
+        ## Turn 2026-01-01T00:00:00Z
+
+        ### User
+
+        Temp artifact should not be loaded
+
+        ### Assistant
+
+        Temp artifact assistant
+
+        ### Actions
+
+        ```json
+        []
+        ```
+
+        <!-- CODEXCHAT_TURN_END -->
+
+        ---
+        """
+        try fakeTempContent.write(to: crashLeftoverTempURL, atomically: true, encoding: .utf8)
+
+        let turns = try ChatArchiveStore.loadRecentTurns(
+            projectPath: root.path,
+            threadID: threadID,
+            limit: 10
+        )
+        XCTAssertEqual(turns.count, 1)
+        XCTAssertEqual(turns.first?.userText, "Canonical user text")
+        XCTAssertFalse(turns.first?.assistantText.contains("Temp artifact") ?? false)
+
+        let latestURL = try XCTUnwrap(ChatArchiveStore.latestArchiveURL(projectPath: root.path, threadID: threadID))
+        XCTAssertEqual(latestURL.path, canonicalURL.path)
+    }
+
     func testLoadRecentTurnsReturnsOnlyLastFiftyTurns() throws {
         let root = try makeTempProjectRoot(prefix: "checkpoint-limit")
         defer { try? FileManager.default.removeItem(at: root) }
