@@ -188,12 +188,12 @@ public enum ModPackageManifestLoader {
         }
 
         let uiModRelativePath = packageManifest.entrypoints.uiMod.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isSafeRelativePath(uiModRelativePath) else {
+        guard ModPathSafety.normalizedSafeRelativePath(uiModRelativePath) != nil else {
             throw ModPackageValidationError.invalidEntrypointPath(uiModRelativePath)
         }
 
         let uiModURL = normalizedRoot.appendingPathComponent(uiModRelativePath, isDirectory: false).standardizedFileURL
-        guard uiModURL.path == normalizedRoot.path || uiModURL.path.hasPrefix(normalizedRoot.path + "/") else {
+        guard ModPathSafety.isWithinRoot(candidateURL: uiModURL, rootURL: normalizedRoot) else {
             throw ModPackageValidationError.invalidEntrypointPath(uiModRelativePath)
         }
         guard fileManager.fileExists(atPath: uiModURL.path) else {
@@ -342,18 +342,6 @@ public enum ModPackageManifestLoader {
             of: "^\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
             options: .regularExpression
         ) != nil
-    }
-
-    private static func isSafeRelativePath(_ path: String) -> Bool {
-        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        guard !trimmed.hasPrefix("/") else { return false }
-
-        let components = NSString(string: trimmed).pathComponents
-        if components.contains("..") {
-            return false
-        }
-        return true
     }
 
     private static func permissionKeys(from permissions: ModExtensionPermissions) -> Set<ModPermissionKey> {

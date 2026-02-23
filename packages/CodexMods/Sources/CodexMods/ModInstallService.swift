@@ -324,7 +324,7 @@ public final class ModInstallService: @unchecked Sendable {
             let preferredURL = normalizedRoot
                 .appendingPathComponent(preferredSubpath, isDirectory: true)
                 .standardizedFileURL
-            guard preferredURL.path.hasPrefix(normalizedRoot.path + "/"),
+            guard ModPathSafety.isWithinRoot(candidateURL: preferredURL, rootURL: normalizedRoot),
                   hasPackageDefinition(in: preferredURL)
             else {
                 throw ModInstallServiceError.packageRootNotFound
@@ -526,15 +526,7 @@ public final class ModInstallService: @unchecked Sendable {
     }
 
     private func normalizedPreferredSubpath(_ subpath: String?) -> String? {
-        let trimmed = (subpath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard !trimmed.hasPrefix("/") else { return nil }
-
-        let components = NSString(string: trimmed).pathComponents
-        if components.contains("..") {
-            return nil
-        }
-        return trimmed
+        ModPathSafety.normalizedSafeRelativePath(subpath)
     }
 
     private func sanitizedDirectoryName(from packageID: String) -> String {
