@@ -234,6 +234,11 @@ extension AppModel {
             detail: action.detail,
             itemType: action.itemType
         )
+        let shouldSuppressFromConversation = TranscriptActionPolicy.shouldSuppressRuntimeAction(
+            method: action.method,
+            title: action.title,
+            detail: action.detail
+        )
         let transcriptDetail = action.method == "runtime/stderr"
             ? sanitizeLogText(action.detail)
             : action.detail
@@ -276,6 +281,11 @@ extension AppModel {
         if action.method == "runtime/terminated" {
             conversationUpdateScheduler.flushImmediately()
             handleRuntimeTermination(detail: action.detail)
+        }
+
+        if shouldSuppressFromConversation {
+            appendLog(.debug, "Suppressed runtime decode error from transcript: \(action.detail)")
+            return
         }
 
         guard let localThreadID else {

@@ -60,6 +60,23 @@ enum TranscriptActionClassification: Hashable {
 }
 
 enum TranscriptActionPolicy {
+    static func shouldSuppressRuntimeAction(
+        method: String,
+        title _: String,
+        detail: String
+    ) -> Bool {
+        let methodLower = method.lowercased()
+        if methodLower == "runtime/stdout/decode_error" {
+            return true
+        }
+
+        if methodLower == "runtime/stderr", isKnownSkillLoaderStderrNoise(detail) {
+            return true
+        }
+
+        return false
+    }
+
     static func classify(
         method: String,
         title: String,
@@ -175,7 +192,11 @@ enum TranscriptActionPolicy {
     }
 
     static func shouldSuppressFromTranscript(_ action: ActionCard) -> Bool {
-        action.method.lowercased() == "runtime/stderr" && isKnownSkillLoaderStderrNoise(action.detail)
+        shouldSuppressRuntimeAction(
+            method: action.method,
+            title: action.title,
+            detail: action.detail
+        )
     }
 
     private static func isKnownSkillLoaderStderrNoise(_ detail: String) -> Bool {
@@ -432,14 +453,18 @@ enum TranscriptPresentationBuilder {
     }
 
     private static func liveActivity(from context: AppModel.ActiveTurnContext) -> LiveTurnActivityPresentation {
-        LiveTurnActivityPresentation(
+        let visibleActions = context.actions.filter { action in
+            !TranscriptActionPolicy.shouldSuppressFromTranscript(action)
+        }
+
+        return LiveTurnActivityPresentation(
             id: context.localTurnID,
             turnID: context.localTurnID,
             userPreview: preview(context.userText, maxLength: 160),
             assistantPreview: preview(context.assistantText, maxLength: 220),
-            latestActionTitle: context.actions.last?.title ?? "Streaming response",
-            actions: context.actions,
-            milestoneCounts: milestoneCounts(from: context.actions)
+            latestActionTitle: visibleActions.last?.title ?? "Streaming response",
+            actions: visibleActions,
+            milestoneCounts: milestoneCounts(from: visibleActions)
         )
     }
 

@@ -85,6 +85,50 @@ final class LiveActivityTraceFormatterTests: XCTestCase {
         XCTAssertEqual(presentation.lines.count, 1)
     }
 
+    func testDecodeErrorActionIsSuppressedFromLiveTrace() {
+        let threadID = UUID()
+        let actions = [
+            action(
+                threadID: threadID,
+                method: "runtime/stdout/decode_error",
+                title: "Runtime stream decode error",
+                detail: "The data couldn't be read because it isn't in the correct format."
+            ),
+        ]
+
+        let presentation = LiveActivityTraceFormatter.buildPresentation(
+            actions: actions,
+            fallbackTitle: "Runtime stream decode error",
+            detailLevel: .chat
+        )
+
+        XCTAssertFalse(presentation.showTraceBox)
+        XCTAssertTrue(presentation.lines.isEmpty)
+    }
+
+    func testDecodeErrorSuppressionKeepsVisibleActionAsStatusSource() {
+        let threadID = UUID()
+        let actions = [
+            action(
+                threadID: threadID,
+                method: "runtime/stdout/decode_error",
+                title: "Runtime stream decode error",
+                detail: "The data couldn't be read because it isn't in the correct format."
+            ),
+            action(threadID: threadID, method: "item/started", title: "Started reasoning"),
+        ]
+
+        let presentation = LiveActivityTraceFormatter.buildPresentation(
+            actions: actions,
+            fallbackTitle: "Runtime stream decode error",
+            detailLevel: .chat
+        )
+
+        XCTAssertEqual(presentation.statusLabel, "Thinking")
+        XCTAssertFalse(presentation.showTraceBox)
+        XCTAssertTrue(presentation.lines.isEmpty)
+    }
+
     private func action(
         threadID: UUID,
         method: String,

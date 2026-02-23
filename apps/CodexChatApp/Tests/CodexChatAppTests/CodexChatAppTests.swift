@@ -344,6 +344,40 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testRuntimeDecodeErrorIsSuppressedFromTranscriptAndLiveActions() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        model.activeTurnContext = makeActiveTurnContext(threadID: threadID, userText: "List calendar events")
+        model.transcriptStore[threadID] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "List calendar events")),
+        ]
+
+        model.handleRuntimeEvent(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stdout/decode_error",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: nil,
+                    turnID: nil,
+                    title: "Runtime stream decode error",
+                    detail: "The data couldn't be read because it isn't in the correct format."
+                )
+            )
+        )
+
+        let actionCards = model.transcriptStore[threadID, default: []].compactMap { entry -> ActionCard? in
+            guard case let .actionCard(card) = entry else {
+                return nil
+            }
+            return card
+        }
+        XCTAssertFalse(actionCards.contains(where: { $0.method == "runtime/stdout/decode_error" }))
+        XCTAssertFalse(model.activeTurnContext?.actions.contains(where: { $0.method == "runtime/stdout/decode_error" }) ?? false)
+        XCTAssertTrue(model.logs.contains(where: { $0.message.contains("Suppressed runtime decode error from transcript") }))
+    }
+
+    @MainActor
     func testRuntimeStderrRolloutPathErrorStaysInlineAndInjectsRepairSuggestionCard() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let threadID = UUID()

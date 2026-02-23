@@ -327,6 +327,27 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertFalse(rows.actionMethods.contains("runtime/stderr"))
     }
 
+    func testRuntimeDecodeErrorIsSuppressedInDetailedMode() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "hi")),
+            .actionCard(action(
+                threadID: threadID,
+                method: "runtime/stdout/decode_error",
+                title: "Runtime stream decode error",
+                detail: "The data couldn't be read because it isn't in the correct format."
+            )),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .detailed,
+            activeTurnContext: nil
+        )
+
+        XCTAssertFalse(rows.actionMethods.contains("runtime/stdout/decode_error"))
+    }
+
     @MainActor
     func testLiveActivityRowAppearsWhileTurnIsActive() {
         let threadID = UUID()
@@ -429,6 +450,54 @@ final class TranscriptPresentationTests: XCTestCase {
             if case .liveActivity = $0 { return true }
             return false
         })
+    }
+
+    @MainActor
+    func testLiveActivitySuppressesDecodeErrorFromActiveContext() {
+        let threadID = UUID()
+        let turnID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "Check repo")),
+        ]
+
+        let activeContext = AppModel.ActiveTurnContext(
+            localTurnID: turnID,
+            localThreadID: threadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "runtime-thread",
+            runtimeTurnID: "runtime-turn",
+            memoryWriteMode: .off,
+            userText: "Check repo",
+            assistantText: "Analyzing",
+            actions: [
+                action(
+                    threadID: threadID,
+                    method: "runtime/stdout/decode_error",
+                    title: "Runtime stream decode error",
+                    detail: "The data couldn't be read because it isn't in the correct format."
+                ),
+            ],
+            startedAt: Date()
+        )
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: activeContext
+        )
+
+        guard case let .liveActivity(live)? = rows.first(where: {
+            if case .liveActivity = $0 { return true }
+            return false
+        }) else {
+            XCTFail("Expected a live activity row")
+            return
+        }
+
+        XCTAssertTrue(live.actions.isEmpty)
+        XCTAssertEqual(live.latestActionTitle, "Streaming response")
+        XCTAssertFalse(live.milestoneCounts.hasAny)
     }
 
     func testActionOnlyTimelineStaysVisibleInChatMode() {

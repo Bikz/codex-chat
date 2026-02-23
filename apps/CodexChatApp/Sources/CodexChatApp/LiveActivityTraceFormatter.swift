@@ -18,8 +18,11 @@ enum LiveActivityTraceFormatter {
         fallbackTitle: String,
         detailLevel: TranscriptDetailLevel
     ) -> Presentation {
-        let statusLabel = statusLabelForLatestAction(actions: actions, fallbackTitle: fallbackTitle)
-        guard !actions.isEmpty else {
+        let visibleActions = actions.filter { action in
+            !TranscriptActionPolicy.shouldSuppressFromTranscript(action)
+        }
+        let statusLabel = statusLabelForLatestAction(actions: visibleActions, fallbackTitle: fallbackTitle)
+        guard !visibleActions.isEmpty else {
             return Presentation(statusLabel: statusLabel, showTraceBox: false, lines: [])
         }
 
@@ -27,19 +30,19 @@ enum LiveActivityTraceFormatter {
             return Presentation(
                 statusLabel: statusLabel,
                 showTraceBox: true,
-                lines: actions.map(traceLine(for:))
+                lines: visibleActions.map(traceLine(for:))
             )
         }
 
-        let hasRichTrace = actions.contains(where: hasRichTraceContent)
+        let hasRichTrace = visibleActions.contains(where: hasRichTraceContent)
         guard hasRichTrace else {
             return Presentation(statusLabel: statusLabel, showTraceBox: false, lines: [])
         }
 
-        let filtered = actions
+        let filtered = visibleActions
             .filter { !isGenericLifecycleEvent($0) }
             .map(traceLine(for:))
-        let lines = filtered.isEmpty ? actions.suffix(1).map(traceLine(for:)) : filtered
+        let lines = filtered.isEmpty ? visibleActions.suffix(1).map(traceLine(for:)) : filtered
 
         return Presentation(statusLabel: statusLabel, showTraceBox: true, lines: lines)
     }
