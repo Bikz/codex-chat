@@ -336,6 +336,40 @@ final class CodexChatAppRuntimeSmokeTests: XCTestCase {
         XCTAssertTrue(approvalResetCardExists)
     }
 
+    func testCheckpointWriteFailureLogsWarningButTurnStillStarts() async throws {
+        let harness = try await Harness.make(trustState: .trusted)
+        defer { harness.cleanup() }
+
+        await harness.model.loadInitialData()
+
+        let fileManager = FileManager.default
+        let threadsDirectory = URL(fileURLWithPath: harness.project.path, isDirectory: true)
+            .appendingPathComponent("chats", isDirectory: true)
+            .appendingPathComponent("threads", isDirectory: true)
+        try fileManager.createDirectory(at: threadsDirectory, withIntermediateDirectories: true)
+        let originalPermissions = try fileManager.attributesOfItem(atPath: threadsDirectory.path)[.posixPermissions]
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o555)], ofItemAtPath: threadsDirectory.path)
+        defer {
+            if let originalPermissions {
+                try? fileManager.setAttributes([.posixPermissions: originalPermissions], ofItemAtPath: threadsDirectory.path)
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: threadsDirectory.path)
+            }
+        }
+
+        harness.model.composerText = "Checkpoint should fail but turn should start"
+        harness.model.sendMessage()
+
+        try await eventually(timeoutSeconds: 8.0) {
+            harness.model.activeApprovalRequest != nil
+        }
+
+        let didLogCheckpointWarning = harness.model.logs.contains { entry in
+            entry.message.contains("Failed to checkpoint turn start")
+        }
+        XCTAssertTrue(didLogCheckpointWarning)
+    }
+
     func testBusyComposerSubmissionQueuesAndAutoDrains() async throws {
         let harness = try await Harness.make(trustState: .trusted)
         defer { harness.cleanup() }
