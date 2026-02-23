@@ -1,5 +1,6 @@
 @testable import CodexMods
 import CryptoKit
+import Darwin
 import Foundation
 import XCTest
 
@@ -593,6 +594,50 @@ final class ModInstallServiceTests: XCTestCase {
         XCTAssertEqual(resolved.manifestSource, .codexManifest)
         XCTAssertTrue(resolved.requestedPermissions.contains(.projectRead))
         XCTAssertNil(resolved.manifest.integrity?.uiModSha256)
+    }
+
+    func testDefaultProcessRunnerTimesOutWhenConfigured() throws {
+        try withEnvironment("CODEX_PROCESS_TIMEOUT_MS", "100") {
+            XCTAssertThrowsError(
+                try ModInstallService.defaultProcessRunner(
+                    ["sh", "-c", "sleep 1"],
+                    nil
+                )
+            ) { error in
+                guard case let ModInstallServiceError.commandFailed(_, output) = error else {
+                    return XCTFail("Expected commandFailed, got \(error)")
+                }
+                XCTAssertTrue(output.contains("Timed out"))
+            }
+        }
+    }
+
+    func testDefaultProcessRunnerTruncatesOutputWhenConfigured() throws {
+        try withEnvironment("CODEX_PROCESS_MAX_OUTPUT_BYTES", "1024") {
+            let output = try ModInstallService.defaultProcessRunner(
+                ["perl", "-e", "print 'x' x 5000"],
+                nil
+            )
+
+            XCTAssertTrue(output.contains("[output truncated after 1024 bytes]"))
+        }
+    }
+
+    private func withEnvironment(
+        _ key: String,
+        _ value: String,
+        body: () throws -> Void
+    ) rethrows {
+        let previous = getenv(key).map { String(cString: $0) }
+        setenv(key, value, 1)
+        defer {
+            if let previous {
+                setenv(key, previous, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+        try body()
     }
 
     private func makeTempDirectory(prefix: String) throws -> URL {

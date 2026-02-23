@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public struct ModInstallResult: Hashable, Sendable {
     public let source: String
@@ -572,15 +573,61 @@ public final class ModInstallService: @unchecked Sendable {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        try process.run()
-        process.waitUntilExit()
+        let maxOutputBytes = configuredProcessMaxOutputBytes()
+        let collector = CappedOutputCollector(maxBytes: maxOutputBytes)
 
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        let stdout = String(bytes: stdoutData, encoding: .utf8) ?? ""
-        let stderr = String(bytes: stderrData, encoding: .utf8) ?? ""
-        let merged = ([stdout, stderr].joined(separator: "\n"))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let stdoutHandle = stdoutPipe.fileHandleForReading
+        let stderrHandle = stderrPipe.fileHandleForReading
+        stdoutHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            collector.append(data)
+        }
+        stderrHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            collector.append(data)
+        }
+
+        let completion = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            completion.signal()
+        }
+
+        try process.run()
+        let timeoutMs = configuredProcessTimeoutMs()
+        if completion.wait(timeout: .now() + .milliseconds(timeoutMs)) == .timedOut {
+            stdoutHandle.readabilityHandler = nil
+            stderrHandle.readabilityHandler = nil
+            process.terminate()
+            usleep(200_000)
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            throw ModInstallServiceError.commandFailed(
+                command: argv.joined(separator: " "),
+                output: "Timed out after \(timeoutMs)ms"
+            )
+        }
+
+        stdoutHandle.readabilityHandler = nil
+        stderrHandle.readabilityHandler = nil
+        collector.append(stdoutHandle.readDataToEndOfFile())
+        collector.append(stderrHandle.readDataToEndOfFile())
+
+        let outputSnapshot = collector.snapshot()
+        var merged = String(bytes: outputSnapshot.data, encoding: .utf8) ?? ""
+        merged = merged.trimmingCharacters(in: .whitespacesAndNewlines)
+        if outputSnapshot.truncated {
+            let notice = "[output truncated after \(maxOutputBytes) bytes]"
+            merged = merged.isEmpty ? notice : "\(merged)\n\(notice)"
+        }
 
         guard process.terminationStatus == 0 else {
             let command = argv.joined(separator: " ")
@@ -588,5 +635,61 @@ public final class ModInstallService: @unchecked Sendable {
         }
 
         return merged
+    }
+
+    private static func configuredProcessTimeoutMs() -> Int {
+        let fallback = 120_000
+        guard let raw = ProcessInfo.processInfo.environment["CODEX_PROCESS_TIMEOUT_MS"],
+              let parsed = Int(raw)
+        else {
+            return fallback
+        }
+        return max(100, parsed)
+    }
+
+    private static func configuredProcessMaxOutputBytes() -> Int {
+        let fallback = 131_072
+        guard let raw = ProcessInfo.processInfo.environment["CODEX_PROCESS_MAX_OUTPUT_BYTES"],
+              let parsed = Int(raw)
+        else {
+            return fallback
+        }
+        return max(1024, parsed)
+    }
+
+    private final class CappedOutputCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private let maxBytes: Int
+        private var data = Data()
+        private var truncated = false
+
+        init(maxBytes: Int) {
+            self.maxBytes = maxBytes
+        }
+
+        func append(_ chunk: Data) {
+            guard !chunk.isEmpty else { return }
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard data.count < maxBytes else {
+                truncated = true
+                return
+            }
+
+            let remaining = maxBytes - data.count
+            if chunk.count > remaining {
+                data.append(chunk.prefix(remaining))
+                truncated = true
+            } else {
+                data.append(chunk)
+            }
+        }
+
+        func snapshot() -> (data: Data, truncated: Bool) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (data, truncated)
+        }
     }
 }

@@ -1,4 +1,5 @@
 @testable import CodexSkills
+import Darwin
 import XCTest
 
 final class CodexSkillsTests: XCTestCase {
@@ -639,6 +640,50 @@ final class CodexSkillsTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertEqual(restoredContent, "old-content")
+    }
+
+    func testDefaultProcessRunnerTimesOutWhenConfigured() throws {
+        try withEnvironment("CODEX_PROCESS_TIMEOUT_MS", "100") {
+            XCTAssertThrowsError(
+                try SkillCatalogService.defaultProcessRunner(
+                    ["sh", "-c", "sleep 1"],
+                    nil
+                )
+            ) { error in
+                guard case let SkillCatalogError.commandFailed(_, output) = error else {
+                    return XCTFail("Expected commandFailed, got \(error)")
+                }
+                XCTAssertTrue(output.contains("Timed out"))
+            }
+        }
+    }
+
+    func testDefaultProcessRunnerTruncatesOutputWhenConfigured() throws {
+        try withEnvironment("CODEX_PROCESS_MAX_OUTPUT_BYTES", "1024") {
+            let output = try SkillCatalogService.defaultProcessRunner(
+                ["perl", "-e", "print 'x' x 5000"],
+                nil
+            )
+
+            XCTAssertTrue(output.contains("[output truncated after 1024 bytes]"))
+        }
+    }
+
+    private func withEnvironment(
+        _ key: String,
+        _ value: String,
+        body: () throws -> Void
+    ) rethrows {
+        let previous = getenv(key).map { String(cString: $0) }
+        setenv(key, value, 1)
+        defer {
+            if let previous {
+                setenv(key, previous, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+        try body()
     }
 
     private func createSkill(at directoryURL: URL, body: String, includeScripts: Bool = false) throws {
