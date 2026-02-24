@@ -141,9 +141,10 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: targetOutput.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: otherOutput.path))
 
-        let written = try String(contentsOf: targetOutput)
-        XCTAssertTrue(written.contains("\"event\":\"modsBar.action\""))
-        XCTAssertTrue(written.contains("\"targetHookID\":\"target-hook\""))
+        let writtenData = try Data(contentsOf: targetOutput)
+        let capturedInput = try JSONDecoder().decode(ExtensionWorkerInput.self, from: writtenData)
+        XCTAssertEqual(capturedInput.event, ExtensionEventName.modsBarAction.rawValue)
+        XCTAssertEqual(capturedInput.payload["targetHookID"], "target-hook")
     }
 
     func testPerformModsBarActionNativeActionReportsUnsupportedAction() async throws {
