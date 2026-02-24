@@ -38,7 +38,9 @@ struct ShellTerminalPaneView: NSViewRepresentable {
     @MainActor
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator _: Coordinator) {
         nsView.processDelegate = nil
-        nsView.terminate()
+        if nsView.process.running {
+            nsView.terminate()
+        }
     }
 
     nonisolated static func normalizeReportedDirectory(_ directory: String?) -> String? {
