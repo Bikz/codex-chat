@@ -22,6 +22,12 @@ struct CodexChatCLI {
             try runSmoke()
         case let .repro(options):
             try runRepro(options: options)
+        case let .replay(options):
+            try runReplay(options: options)
+        case let .ledger(ledgerCommand):
+            try runLedger(ledgerCommand)
+        case let .policy(policyCommand):
+            try runPolicy(policyCommand)
         case let .mod(modCommand):
             try runMod(modCommand)
         case .help:
@@ -46,10 +52,11 @@ struct CodexChatCLI {
 
     private static func runSmoke() throws {
         let summary = try CodexChatBootstrap.runSmokeCheck()
+        let codexPath = summary.codexExecutablePath ?? "not found"
         print("Smoke check passed")
         print("Storage root: \(summary.storageRootPath)")
         print("Metadata database: \(summary.metadataDatabasePath)")
-        print("Codex CLI: \(summary.codexExecutablePath ?? "not found")")
+        print("Codex CLI: \(codexPath)")
     }
 
     private static func runRepro(options: CodexChatCLIReproOptions) throws {
@@ -78,6 +85,110 @@ struct CodexChatCLI {
         print("Transcript length: \(summary.transcriptLength)")
         print("Action count: \(summary.actionCount)")
         print("Final status: \(summary.finalStatus)")
+    }
+
+    private static func runReplay(options: CodexChatCLIReplayOptions) throws {
+        guard let threadID = UUID(uuidString: options.threadID) else {
+            throw CLIError("`--thread-id` must be a valid UUID")
+        }
+
+        let summary = try CodexChatBootstrap.replayThread(
+            projectPath: options.projectPath,
+            threadID: threadID,
+            limit: options.limit
+        )
+
+        if options.asJSON {
+            try printJSON(summary)
+            return
+        }
+
+        print("Replay summary")
+        print("Project: \(summary.projectPath)")
+        print("Thread: \(summary.threadID.uuidString)")
+        print("Turns: \(summary.turnCount) (completed=\(summary.completedTurnCount), pending=\(summary.pendingTurnCount), failed=\(summary.failedTurnCount))")
+
+        for turn in summary.turns {
+            print("- \(turn.timestamp.ISO8601Format()) [\(turn.status)] \(turn.turnID.uuidString)")
+            if !turn.actions.isEmpty {
+                for action in turn.actions {
+                    print("  • action: \(action.method) :: \(action.title)")
+                }
+            }
+        }
+    }
+
+    private static func runLedger(_ command: CodexChatCLILedgerCommand) throws {
+        switch command {
+        case let .export(options):
+            guard let threadID = UUID(uuidString: options.threadID) else {
+                throw CLIError("`--thread-id` must be a valid UUID")
+            }
+
+            let outputURL = options.outputPath.map { URL(fileURLWithPath: $0, isDirectory: false) }
+            let summary = try CodexChatBootstrap.exportThreadLedger(
+                projectPath: options.projectPath,
+                threadID: threadID,
+                limit: options.limit,
+                outputURL: outputURL
+            )
+
+            print("Ledger export complete")
+            print("Output: \(summary.outputPath)")
+            print("Entries: \(summary.entryCount)")
+            print("SHA256: \(summary.sha256)")
+        case let .backfill(options):
+            let summary = try CodexChatBootstrap.backfillThreadLedgers(
+                projectPath: options.projectPath,
+                limit: options.limit,
+                force: options.force
+            )
+
+            if options.asJSON {
+                try printJSON(summary)
+                return
+            }
+
+            print("Ledger backfill complete")
+            print("Project: \(summary.projectPath)")
+            print("Markers: \(summary.markerDirectoryPath)")
+            print("Threads scanned: \(summary.scannedThreadCount)")
+            print("Threads exported: \(summary.exportedThreadCount)")
+            print("Threads skipped: \(summary.skippedThreadCount)")
+        }
+    }
+
+    private static func runPolicy(_ command: CodexChatCLIPolicyCommand) throws {
+        switch command {
+        case let .validate(options):
+            let fileURL: URL
+            if let filePath = options.filePath {
+                fileURL = URL(fileURLWithPath: filePath, isDirectory: false)
+            } else if let defaultURL = CodexChatBootstrap.defaultRuntimePolicyURL() {
+                fileURL = defaultURL
+            } else {
+                throw CLIError("Unable to resolve default runtime policy file path; pass --file explicitly")
+            }
+
+            let report = try CodexChatBootstrap.validateRuntimePolicyDocument(at: fileURL)
+            if report.isValid {
+                print("Policy validation passed: \(report.filePath)")
+            } else {
+                print("Policy validation failed: \(report.filePath)")
+            }
+
+            if report.issues.isEmpty {
+                print("No policy issues reported")
+            } else {
+                for issue in report.issues {
+                    print("[\(issue.severity.uppercased())] \(issue.message)")
+                }
+            }
+
+            if !report.isValid {
+                throw CLIError("Policy validation failed")
+            }
+        }
     }
 
     private static func runMod(_ command: CodexChatCLIModCommand) throws {
@@ -113,12 +224,33 @@ struct CodexChatCLI {
           smoke                             Run non-UI startup health checks.
           repro --fixture <name>            Run deterministic fixture replay.
                [--fixtures-root <path>]
+          replay --project-path <path>      Replay archived thread turns from local artifacts.
+                 --thread-id <uuid>
+               [--limit <n>] [--json]
+          ledger export --project-path <path>
+                 --thread-id <uuid>         Export thread event ledger JSON.
+               [--limit <n>] [--output <path>]
+          ledger backfill --project-path <path>
+               [--limit <n>] [--force]      Backfill ledgers for archived thread artifacts.
+               [--json]
+          policy validate [--file <path>]   Validate runtime policy-as-code document.
           mod init --name <name>            Create a sample mod package.
                [--output <path>]
           mod validate --source <path|url>  Validate a local/GitHub mod source.
           mod inspect-source --source <path|url>
                                             Print structured source metadata as JSON.
         """)
+    }
+
+    private static func printJSON(_ value: some Encodable) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(value)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw CLIError("Failed to encode JSON output")
+        }
+        print(json)
     }
 }
 
