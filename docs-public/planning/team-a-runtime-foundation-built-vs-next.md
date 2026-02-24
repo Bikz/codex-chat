@@ -5,6 +5,7 @@ Scope: Runtime reliability + data foundation planning for CodexChat’s macOS-na
 
 Assumption: Priorities below optimize for reliability risk reduction and merge safety before feature breadth.
 Assumption: P0 means "blocks confidence in runtime/data invariants under failure," not "customer-visible feature gap."
+Assumption: Severity tiers in section 2 now distinguish release-defect backlog (none open) from strategic roadmap investment work.
 
 ## 1) What Is Already Built
 
@@ -27,8 +28,25 @@ Assumption: P0 means "blocks confidence in runtime/data invariants under failure
 | Runtime option compatibility fallback | Retry-without-turn-options heuristics are codified and directly tested. | `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:671`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsFallbackTests.swift:7` |
 | Turn-options compatibility policy seam | Compatibility fallback heuristics now live in a dedicated policy type with direct unit coverage. | `apps/CodexChatApp/Sources/CodexChatApp/RuntimeTurnOptionsCompatibilityPolicy.swift:4`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Runtime.swift:693`, `apps/CodexChatApp/Tests/CodexChatAppTests/RuntimeTurnOptionsCompatibilityPolicyTests.swift:4` |
 | Runtime/data reliability contract | Dedicated runtime/data invariants contract is published and cross-linked from architecture and contributor docs. | `docs-public/RUNTIME_DATA_RELIABILITY_CONTRACT.md:1`, `docs-public/ARCHITECTURE_CONTRACT.md:4`, `AGENTS.md:46` |
+| Local reliability gate | Team A reliability harness and pre-push flow are scriptable and enforced through make targets. | `scripts/runtime-reliability-local.sh:1`, `Makefile:40`, `Makefile:43`, `README.md:85` |
+| Reliability scorecard artifacts | Local scorecard script writes machine-readable and human-readable reports for deterministic gates. | `scripts/runtime-reliability-scorecard.sh:1`, `Makefile:43`, `README.md:93` |
+| Replay + ledger prototype | CLI supports replaying persisted thread artifacts and exporting deterministic event-ledger JSON. | `apps/CodexChatApp/Sources/CodexChatCLI/main.swift:22`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:178`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:227`, `docs-public/RUNTIME_LEDGER_REPLAY.md:1` |
+| Runtime policy-as-code validation | Tracked runtime policy defaults are validated via CLI and included in local reliability harness flow. | `config/runtime-policy/default-policy.json:1`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:256`, `scripts/runtime-reliability-local.sh:41`, `docs-public/RUNTIME_POLICY_AS_CODE.md:1` |
+| Lean hosted CI | Hosted CI path is minimized to required quick checks plus targeted smoke to reduce minute consumption. | `.github/workflows/ci.yml:1`, `.github/workflows/ci.yml:54` |
+| Reliability diagnostics bundle | One-command local diagnostics bundle captures doctor/smoke/policy checks plus scorecard artifacts into a portable archive. | `scripts/runtime-reliability-bundle.sh:1`, `Makefile:46`, `README.md:103`, `docs-public/RUNTIME_RELIABILITY_BUNDLE.md:1` |
+| Ledger migration/backfill planning | A migration-safe backfill plan now specifies dual-write rollout, idempotent markers, fallback read semantics, and crash-safe requirements. | `docs-public/planning/runtime-ledger-migration-backfill-plan.md:1` |
+| Ledger backfill execution path | CLI backfill scans archived thread artifacts, exports missing ledgers, and writes idempotent per-thread marker files with force rerun support. | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatCLICommandParser.swift:47`, `apps/CodexChatApp/Sources/CodexChatCLI/main.swift:112`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:174`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatRuntimeReliabilityArtifactsTests.swift:165` |
+| Backfill full-history + stale-marker safety | Backfill now defaults to full-history export and only skips threads when markers decode and point to existing ledgers; stale markers are self-healed via re-export. | `apps/CodexChatApp/Sources/CodexChatApp/CodexChatCLICommandParser.swift:301`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatRuntimeReliabilityArtifacts.swift:359`, `apps/CodexChatApp/Tests/CodexChatAppTests/CodexChatRuntimeReliabilityArtifactsTests.swift:232` |
 
 ## 2) What Must Be Built Next (Prioritized Backlog)
+
+Release-defect backlog status (2026-02-23 sweep):
+1. P0: none open.
+2. P1: none open.
+3. P2: none open.
+Evidence: local gates passed (`make quick`, `make oss-smoke`, `make reliability-local`, `make reliability-scorecard`) on this branch after backfill hardening updates.
+
+Strategic roadmap backlog (non-defect):
 
 ### P0
 
@@ -37,8 +55,11 @@ Evidence: former P0 gaps (archive replacement-boundary durability and follow-up 
 
 ### P1
 
-1. No open P1 documentation/coordination gaps in the current Team A slice.
-Evidence: runbook + workstream coordination updates landed in `docs-public/STORAGE_REPAIR_RUNBOOK.md:1` and `docs-public/planning/workstreams.md:14`.
+1. Expand reliability harness with additional deterministic fault-injection fixtures beyond current repro set (for example mixed interruption + partial persistence edge cases).
+Evidence seed: current repro lanes exist in `apps/CodexChatApp/Fixtures/repro/runtime-termination-recovery.json:1` and `apps/CodexChatApp/Fixtures/repro/stale-thread-remap.json:1`.
+
+2. Implement dual-write ledger persistence and migration markers from the published backfill plan.
+Evidence seed: plan exists (`docs-public/planning/runtime-ledger-migration-backfill-plan.md:1`) but runtime write-path implementation is not landed yet.
 
 ### P2
 

@@ -1,0 +1,30 @@
+{
+  "name": "runtime-termination-recovery",
+  "events": [
+    {
+      "kind": "delta",
+      "text": "Runtime exited unexpectedly."
+    },
+    {
+      "kind": "action",
+      "title": "Runtime restarted with bounded backoff (attempt 1/4)"
+    },
+    {
+      "kind": "action",
+      "title": "Approval queue reset with explicit notice"
+    },
+    {
+      "kind": "delta",
+      "text": " Recovery complete."
+    },
+    {
+      "kind": "turnCompleted",
+      "status": "completed"
+    }
+  ],
+  "expected": {
+    "transcript": "Runtime exited unexpectedly. Recovery complete.",
+    "actionCount": 2,
+    "finalStatus": "completed"
+  }
+}

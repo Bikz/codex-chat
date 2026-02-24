@@ -90,6 +90,47 @@ make oss-smoke
 
 Runs deterministic contributor smoke checks using `CodexChatCLI`.
 
+### Team A local reliability harness
+
+```sh
+make reliability-local
+```
+
+Runs deterministic runtime/data reliability suites (recovery, mapping, approvals, durability).
+Also includes a `ledger backfill` CLI smoke check against a temporary project artifact root.
+
+Generate a reliability scorecard artifact:
+
+```sh
+make reliability-scorecard
+```
+
+Writes markdown + JSON scorecard outputs under `.artifacts/reliability/`.
+Includes deterministic repro fixtures for `basic-turn`, runtime-termination recovery, and stale-thread remap.
+
+Create a one-command reliability diagnostics bundle:
+
+```sh
+make reliability-bundle
+```
+
+Writes bundle directory + `.tgz` archive under `.artifacts/reliability/bundles/`.
+Set `RELIABILITY_BUNDLE_SKIP_SCORECARD=1` to skip rerunning scorecard generation.
+
+### Local pre-push gate
+
+```sh
+make prepush-local
+```
+
+Runs `quick`, targeted smoke, and Team A reliability harness before push.
+
+Install an optional local `pre-push` hook:
+
+```sh
+make install-local-hooks
+```
+
 ### Full build + test validation
 
 ```sh
@@ -113,7 +154,15 @@ cd apps/CodexChatApp
 swift run CodexChatCLI doctor
 swift run CodexChatCLI smoke
 swift run CodexChatCLI repro --fixture basic-turn
+swift run CodexChatCLI repro --fixture runtime-termination-recovery
+swift run CodexChatCLI repro --fixture stale-thread-remap
+swift run CodexChatCLI replay --project-path <project-path> --thread-id <thread-uuid> --json
+swift run CodexChatCLI ledger export --project-path <project-path> --thread-id <thread-uuid>
+swift run CodexChatCLI ledger backfill --project-path <project-path> --json
+swift run CodexChatCLI policy validate --file ../../config/runtime-policy/default-policy.json
 ```
+
+`ledger backfill` defaults to full-history export per thread and only skips threads with valid markers pointing to existing ledger files.
 
 ### Release packaging
 
@@ -153,6 +202,9 @@ Builds signed/notarized DMG artifacts when signing credentials are configured.
 ```sh
 make quick
 make oss-smoke
+make reliability-local
+make reliability-scorecard
+make reliability-bundle
 pnpm -s run check
 ```
 
