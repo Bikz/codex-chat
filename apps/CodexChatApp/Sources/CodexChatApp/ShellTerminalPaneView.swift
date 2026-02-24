@@ -35,6 +35,7 @@ struct ShellTerminalPaneView: NSViewRepresentable {
         context.coordinator.paneID = pane.id
     }
 
+    @MainActor
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator _: Coordinator) {
         nsView.processDelegate = nil
         nsView.terminate()
@@ -78,6 +79,10 @@ struct ShellTerminalPaneView: NSViewRepresentable {
         private let onTitleChanged: (UUID, UUID, UUID, String) -> Void
         private let onCWDChanged: (UUID, UUID, UUID, String) -> Void
         private let onProcessTerminated: (UUID, UUID, UUID, Int32?) -> Void
+        private var lastReportedTitle: String?
+        private var lastReportedDirectory: String?
+        private var hasReportedTermination = false
+        private var lastReportedExitCode: Int32?
 
         init(
             projectID: UUID,
@@ -98,18 +103,84 @@ struct ShellTerminalPaneView: NSViewRepresentable {
         func sizeChanged(source _: LocalProcessTerminalView, newCols _: Int, newRows _: Int) {}
 
         func setTerminalTitle(source _: LocalProcessTerminalView, title: String) {
-            onTitleChanged(projectID, sessionID, paneID, title)
+            let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty else { return }
+
+            if Thread.isMainThread {
+                applyTitleUpdate(normalized)
+            } else {
+                performSelector(
+                    onMainThread: #selector(applyTitleUpdateSelector(_:)),
+                    with: normalized as NSString,
+                    waitUntilDone: false
+                )
+            }
         }
 
         func hostCurrentDirectoryUpdate(source _: TerminalView, directory: String?) {
             guard let path = ShellTerminalPaneView.normalizeReportedDirectory(directory) else {
                 return
             }
-            onCWDChanged(projectID, sessionID, paneID, path)
+            if Thread.isMainThread {
+                applyDirectoryUpdate(path)
+            } else {
+                performSelector(
+                    onMainThread: #selector(applyDirectoryUpdateSelector(_:)),
+                    with: path as NSString,
+                    waitUntilDone: false
+                )
+            }
         }
 
         func processTerminated(source _: TerminalView, exitCode: Int32?) {
-            onProcessTerminated(projectID, sessionID, paneID, exitCode)
+            let payload: AnyObject = exitCode.map { NSNumber(value: $0) } ?? NSNull()
+            if Thread.isMainThread {
+                applyTerminationUpdate(payload)
+            } else {
+                performSelector(
+                    onMainThread: #selector(applyTerminationUpdate(_:)),
+                    with: payload,
+                    waitUntilDone: false
+                )
+            }
+        }
+
+        @objc
+        private func applyTitleUpdateSelector(_ value: NSString) {
+            applyTitleUpdate(value as String)
+        }
+
+        private func applyTitleUpdate(_ title: String) {
+            guard lastReportedTitle != title else { return }
+            lastReportedTitle = title
+            onTitleChanged(projectID, sessionID, paneID, title)
+        }
+
+        @objc
+        private func applyDirectoryUpdateSelector(_ value: NSString) {
+            applyDirectoryUpdate(value as String)
+        }
+
+        private func applyDirectoryUpdate(_ directory: String) {
+            guard lastReportedDirectory != directory else { return }
+            lastReportedDirectory = directory
+            onCWDChanged(projectID, sessionID, paneID, directory)
+        }
+
+        @objc
+        private func applyTerminationUpdate(_ value: AnyObject) {
+            let decodedExitCode: Int32? = if let number = value as? NSNumber {
+                number.int32Value
+            } else {
+                nil
+            }
+
+            if hasReportedTermination, lastReportedExitCode == decodedExitCode {
+                return
+            }
+            hasReportedTermination = true
+            lastReportedExitCode = decodedExitCode
+            onProcessTerminated(projectID, sessionID, paneID, decodedExitCode)
         }
     }
 }

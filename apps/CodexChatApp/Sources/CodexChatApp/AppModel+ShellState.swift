@@ -184,10 +184,15 @@ extension AppModel {
         guard !normalized.isEmpty else { return }
 
         mutateSession(projectID: projectID, sessionID: sessionID) { session in
+            var didChange = false
             _ = ShellSplitTree.updateLeaf(in: &session.rootNode, paneID: paneID) { pane in
+                guard pane.title != normalized else { return }
                 pane.title = normalized
+                didChange = true
             }
-            session.updatedAt = Date()
+            if didChange {
+                session.updatedAt = Date()
+            }
         }
     }
 
@@ -196,20 +201,34 @@ extension AppModel {
         guard !normalized.isEmpty else { return }
 
         mutateSession(projectID: projectID, sessionID: sessionID) { session in
+            var didChange = false
             _ = ShellSplitTree.updateLeaf(in: &session.rootNode, paneID: paneID) { pane in
+                guard pane.cwd != normalized else { return }
                 pane.cwd = normalized
+                didChange = true
             }
-            session.updatedAt = Date()
+            if didChange {
+                session.updatedAt = Date()
+            }
         }
     }
 
     func markShellPaneProcessTerminated(projectID: UUID, sessionID: UUID, paneID: UUID, exitCode: Int32?) {
         mutateSession(projectID: projectID, sessionID: sessionID) { session in
+            var didChange = false
             _ = ShellSplitTree.updateLeaf(in: &session.rootNode, paneID: paneID) { pane in
-                pane.processStatus = .exited
-                pane.lastExitCode = exitCode
+                if pane.processStatus != .exited {
+                    pane.processStatus = .exited
+                    didChange = true
+                }
+                if pane.lastExitCode != exitCode {
+                    pane.lastExitCode = exitCode
+                    didChange = true
+                }
             }
-            session.updatedAt = Date()
+            if didChange {
+                session.updatedAt = Date()
+            }
         }
     }
 

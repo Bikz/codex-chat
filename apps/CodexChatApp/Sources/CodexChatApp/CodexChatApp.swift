@@ -1,5 +1,6 @@
 import AppKit
 import CodexChatUI
+import Foundation
 import SwiftUI
 
 @MainActor
@@ -181,11 +182,14 @@ private struct WindowAccessor: NSViewRepresentable {
 
     private func scheduleWindowConfiguration(for view: NSView, coordinator: Coordinator) {
         coordinator.pendingConfigTask?.cancel()
-        coordinator.pendingConfigTask = Task { @MainActor in
-            // Avoid mutating AppKit window state from the same pass that updates SwiftUI layout.
+        coordinator.pendingConfigTask = Task { @MainActor [weak view, weak coordinator] in
+            // Defer until after the current SwiftUI/AppKit layout cycle to avoid layout recursion.
             await Task.yield()
-            await Task.yield()
-            configureWindow(for: view, coordinator: coordinator)
+            guard !Task.isCancelled else { return }
+            DispatchQueue.main.async {
+                guard let view, let coordinator else { return }
+                configureWindow(for: view, coordinator: coordinator)
+            }
         }
     }
 
@@ -229,11 +233,14 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
 
     private func scheduleWindowConfiguration(for view: NSView, coordinator: Coordinator) {
         coordinator.pendingConfigTask?.cancel()
-        coordinator.pendingConfigTask = Task { @MainActor in
-            // Avoid mutating AppKit window state from the same pass that updates SwiftUI layout.
+        coordinator.pendingConfigTask = Task { @MainActor [weak view, weak coordinator] in
+            // Defer until after the current SwiftUI/AppKit layout cycle to avoid layout recursion.
             await Task.yield()
-            await Task.yield()
-            configureWindow(for: view, coordinator: coordinator)
+            guard !Task.isCancelled else { return }
+            DispatchQueue.main.async {
+                guard let view, let coordinator else { return }
+                configureWindow(for: view, coordinator: coordinator)
+            }
         }
     }
 
