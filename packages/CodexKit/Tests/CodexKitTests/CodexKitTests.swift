@@ -202,14 +202,16 @@ final class CodexKitTests: XCTestCase {
         )
 
         let deltaEvents = AppServerEventDecoder.decodeAll(deltaNotification)
-        guard case let .assistantMessageDelta(threadID, turnID, itemID, delta)? = deltaEvents.first else {
+        guard case let .assistantMessageDelta(assistantDelta)? = deltaEvents.first else {
             XCTFail("Expected assistantMessageDelta")
             return
         }
-        XCTAssertNil(threadID)
-        XCTAssertNil(turnID)
-        XCTAssertEqual(itemID, "item_1")
-        XCTAssertEqual(delta, "Hello")
+        XCTAssertNil(assistantDelta.threadID)
+        XCTAssertNil(assistantDelta.turnID)
+        XCTAssertEqual(assistantDelta.itemID, "item_1")
+        XCTAssertEqual(assistantDelta.delta, "Hello")
+        XCTAssertEqual(assistantDelta.channel, .finalResponse)
+        XCTAssertNil(assistantDelta.stage)
 
         let completionNotification = JSONRPCMessageEnvelope.notification(
             method: "turn/completed",
@@ -242,14 +244,14 @@ final class CodexKitTests: XCTestCase {
         )
 
         let deltaEvents = AppServerEventDecoder.decodeAll(deltaNotification)
-        guard case let .assistantMessageDelta(threadID, turnID, itemID, delta)? = deltaEvents.first else {
+        guard case let .assistantMessageDelta(assistantDelta)? = deltaEvents.first else {
             XCTFail("Expected assistantMessageDelta with thread metadata")
             return
         }
-        XCTAssertEqual(threadID, "thr_123")
-        XCTAssertEqual(turnID, "turn_abc")
-        XCTAssertEqual(itemID, "item_9")
-        XCTAssertEqual(delta, "Chunk")
+        XCTAssertEqual(assistantDelta.threadID, "thr_123")
+        XCTAssertEqual(assistantDelta.turnID, "turn_abc")
+        XCTAssertEqual(assistantDelta.itemID, "item_9")
+        XCTAssertEqual(assistantDelta.delta, "Chunk")
 
         let completionNotification = JSONRPCMessageEnvelope.notification(
             method: "turn/completed",
@@ -269,6 +271,56 @@ final class CodexKitTests: XCTestCase {
         }
         XCTAssertEqual(completion.threadID, "thr_123")
         XCTAssertEqual(completion.turnID, "turn_abc")
+    }
+
+    func testEventDecoderAgentDeltaParsesProgressChannelAndStage() {
+        let notification = JSONRPCMessageEnvelope.notification(
+            method: "item/agentMessage/delta",
+            params: .object([
+                "threadId": .string("thr_777"),
+                "turnId": .string("turn_777"),
+                "itemId": .string("item_progress_1"),
+                "channel": .string("progress"),
+                "stage": .string("planning"),
+                "delta": .string("I am auditing the codebase."),
+            ])
+        )
+
+        let events = AppServerEventDecoder.decodeAll(notification)
+        guard case let .assistantMessageDelta(assistantDelta)? = events.first else {
+            XCTFail("Expected assistantMessageDelta")
+            return
+        }
+
+        XCTAssertEqual(assistantDelta.threadID, "thr_777")
+        XCTAssertEqual(assistantDelta.turnID, "turn_777")
+        XCTAssertEqual(assistantDelta.itemID, "item_progress_1")
+        XCTAssertEqual(assistantDelta.delta, "I am auditing the codebase.")
+        XCTAssertEqual(assistantDelta.channel, .progress)
+        XCTAssertEqual(assistantDelta.stage, "planning")
+    }
+
+    func testEventDecoderAgentDeltaFallsBackToFinalChannelWhenUnknown() {
+        let notification = JSONRPCMessageEnvelope.notification(
+            method: "item/agentMessage/delta",
+            params: .object([
+                "itemId": .string("item_unknown_1"),
+                "item": .object([
+                    "type": .string("agentMessage"),
+                ]),
+                "delta": .string("Final response chunk."),
+            ])
+        )
+
+        let events = AppServerEventDecoder.decodeAll(notification)
+        guard case let .assistantMessageDelta(assistantDelta)? = events.first else {
+            XCTFail("Expected assistantMessageDelta")
+            return
+        }
+
+        XCTAssertEqual(assistantDelta.itemID, "item_unknown_1")
+        XCTAssertEqual(assistantDelta.channel, .finalResponse)
+        XCTAssertNil(assistantDelta.stage)
     }
 
     func testEventDecoderAccountNotifications() {

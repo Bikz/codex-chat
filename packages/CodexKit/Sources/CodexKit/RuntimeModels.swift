@@ -402,6 +402,55 @@ public struct RuntimeCommandOutputDelta: Hashable, Sendable, Codable {
     }
 }
 
+public enum RuntimeAssistantMessageChannel: String, Hashable, Sendable, Codable {
+    case finalResponse = "final"
+    case progress
+    case system
+    case unknown
+
+    public init(rawChannel: String?) {
+        let normalized = rawChannel?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+
+        switch normalized {
+        case "", "final", "assistant", "response", "message":
+            self = .finalResponse
+        case "progress", "intermediary", "intermediate", "status", "update", "thinking":
+            self = .progress
+        case "system", "meta":
+            self = .system
+        default:
+            self = .unknown
+        }
+    }
+}
+
+public struct RuntimeAssistantMessageDelta: Hashable, Sendable, Codable {
+    public let itemID: String
+    public let threadID: String?
+    public let turnID: String?
+    public let delta: String
+    public let channel: RuntimeAssistantMessageChannel
+    public let stage: String?
+
+    public init(
+        itemID: String,
+        threadID: String?,
+        turnID: String?,
+        delta: String,
+        channel: RuntimeAssistantMessageChannel = .finalResponse,
+        stage: String? = nil
+    ) {
+        self.itemID = itemID
+        self.threadID = threadID
+        self.turnID = turnID
+        self.delta = delta
+        self.channel = channel
+        self.stage = stage
+    }
+}
+
 public struct RuntimeFollowUpSuggestion: Hashable, Sendable {
     public let id: String?
     public let text: String
@@ -472,7 +521,7 @@ public struct RuntimeApprovalRequest: Identifiable, Hashable, Sendable, Codable 
 public enum CodexRuntimeEvent: Hashable, Sendable {
     case threadStarted(threadID: String)
     case turnStarted(threadID: String?, turnID: String)
-    case assistantMessageDelta(threadID: String?, turnID: String?, itemID: String, delta: String)
+    case assistantMessageDelta(RuntimeAssistantMessageDelta)
     case commandOutputDelta(RuntimeCommandOutputDelta)
     case followUpSuggestions(RuntimeFollowUpSuggestionBatch)
     case fileChangesUpdated(RuntimeFileChangeUpdate)

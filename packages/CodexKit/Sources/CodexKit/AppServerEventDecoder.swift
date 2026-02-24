@@ -46,8 +46,29 @@ enum AppServerEventDecoder {
 
             let itemID = stringValue(in: params, keyPaths: [["itemId"], ["item_id"], ["item", "id"], ["item", "itemId"], ["item", "item_id"]])
                 ?? "agent-message"
+            let channel = parseAssistantMessageChannel(params: params)
+            let stage = stringValue(
+                in: params,
+                keyPaths: [
+                    ["stage"],
+                    ["phase"],
+                    ["progress", "stage"],
+                    ["progress", "phase"],
+                    ["item", "stage"],
+                    ["item", "phase"],
+                ]
+            )
 
-            return [.assistantMessageDelta(threadID: threadID, turnID: turnID, itemID: itemID, delta: delta)]
+            let assistantDelta = RuntimeAssistantMessageDelta(
+                itemID: itemID,
+                threadID: threadID,
+                turnID: turnID,
+                delta: delta,
+                channel: channel,
+                stage: stage
+            )
+
+            return [.assistantMessageDelta(assistantDelta)]
 
         case "item/commandExecution/outputDelta":
             guard let itemID = stringValue(
@@ -238,6 +259,54 @@ enum AppServerEventDecoder {
             || trace.status != nil
             || trace.unavailableReason != nil
         return hasAnyValue ? trace : nil
+    }
+
+    private static func parseAssistantMessageChannel(params: JSONValue) -> RuntimeAssistantMessageChannel {
+        let raw = stringValue(
+            in: params,
+            keyPaths: [
+                ["channel"],
+                ["messageChannel"],
+                ["message_channel"],
+                ["item", "channel"],
+                ["item", "messageChannel"],
+                ["item", "message_channel"],
+            ]
+        )
+
+        if let raw {
+            return RuntimeAssistantMessageChannel(rawChannel: raw)
+        }
+
+        // Some runtimes may communicate assistant stream kind through item.type.
+        let itemType = stringValue(
+            in: params,
+            keyPaths: [
+                ["item", "type"],
+                ["itemType"],
+                ["item_type"],
+            ]
+        )
+
+        guard let itemType else {
+            return .finalResponse
+        }
+
+        let normalized = itemType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized.contains("progress")
+            || normalized.contains("intermediate")
+            || normalized.contains("intermediary")
+            || normalized.contains("thinking")
+            || normalized.contains("status")
+        {
+            return .progress
+        }
+
+        if normalized.contains("system") || normalized.contains("meta") {
+            return .system
+        }
+
+        return .finalResponse
     }
 
     private static func stringValue(in payload: JSONValue, keyPaths: [[String]]) -> String? {

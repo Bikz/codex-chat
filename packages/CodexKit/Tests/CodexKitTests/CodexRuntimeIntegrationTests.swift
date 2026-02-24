@@ -110,8 +110,8 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
                     XCTAssertEqual(request.command, ["echo", "snake-case"])
                     XCTAssertEqual(request.cwd, "/tmp/snake")
                     try await runtime.respondToApproval(requestID: request.id, decision: .approveOnce)
-                case let .assistantMessageDelta(_, _, _, chunk):
-                    delta += chunk
+                case let .assistantMessageDelta(assistantDelta):
+                    delta += assistantDelta.delta
                 case .turnCompleted:
                     return (sawApproval, delta)
                 default:
@@ -174,8 +174,8 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
                 switch event {
                 case .followUpSuggestions:
                     sawSuggestions = true
-                case let .assistantMessageDelta(_, _, _, chunk):
-                    delta += chunk
+                case let .assistantMessageDelta(assistantDelta):
+                    delta += assistantDelta.delta
                 case .turnCompleted:
                     return (sawSuggestions, delta)
                 default:
@@ -680,8 +680,8 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
             switch event {
             case let .approvalRequested(request):
                 try await runtime.respondToApproval(requestID: request.id, decision: .approveOnce)
-            case let .assistantMessageDelta(_, _, _, chunk):
-                delta += chunk
+            case let .assistantMessageDelta(assistantDelta):
+                delta += assistantDelta.delta
             case let .fileChangesUpdated(update):
                 changes = update.changes
             case let .action(action):
