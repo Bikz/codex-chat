@@ -160,6 +160,7 @@ private struct WindowAccessor: NSViewRepresentable {
         weak var configuredWindow: NSWindow?
         var lastTransparentValue: Bool?
         var pendingConfigTask: Task<Void, Never>?
+        var configurationEpoch: UInt64 = 0
 
         deinit {
             pendingConfigTask?.cancel()
@@ -182,12 +183,17 @@ private struct WindowAccessor: NSViewRepresentable {
 
     private func scheduleWindowConfiguration(for view: NSView, coordinator: Coordinator) {
         coordinator.pendingConfigTask?.cancel()
+        coordinator.configurationEpoch &+= 1
+        let scheduledEpoch = coordinator.configurationEpoch
         coordinator.pendingConfigTask = Task { @MainActor [weak view, weak coordinator] in
             // Defer until after the current SwiftUI/AppKit layout cycle to avoid layout recursion.
             await Task.yield()
             guard !Task.isCancelled else { return }
-            DispatchQueue.main.async {
+            guard let view, let coordinator else { return }
+            guard coordinator.configurationEpoch == scheduledEpoch else { return }
+            DispatchQueue.main.async { [weak view, weak coordinator] in
                 guard let view, let coordinator else { return }
+                guard coordinator.configurationEpoch == scheduledEpoch else { return }
                 configureWindow(for: view, coordinator: coordinator)
             }
         }
@@ -211,6 +217,7 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
         weak var configuredWindow: NSWindow?
         var lastTransparentValue: Bool?
         var pendingConfigTask: Task<Void, Never>?
+        var configurationEpoch: UInt64 = 0
 
         deinit {
             pendingConfigTask?.cancel()
@@ -233,12 +240,17 @@ private struct SettingsWindowAccessor: NSViewRepresentable {
 
     private func scheduleWindowConfiguration(for view: NSView, coordinator: Coordinator) {
         coordinator.pendingConfigTask?.cancel()
+        coordinator.configurationEpoch &+= 1
+        let scheduledEpoch = coordinator.configurationEpoch
         coordinator.pendingConfigTask = Task { @MainActor [weak view, weak coordinator] in
             // Defer until after the current SwiftUI/AppKit layout cycle to avoid layout recursion.
             await Task.yield()
             guard !Task.isCancelled else { return }
-            DispatchQueue.main.async {
+            guard let view, let coordinator else { return }
+            guard coordinator.configurationEpoch == scheduledEpoch else { return }
+            DispatchQueue.main.async { [weak view, weak coordinator] in
                 guard let view, let coordinator else { return }
+                guard coordinator.configurationEpoch == scheduledEpoch else { return }
                 configureWindow(for: view, coordinator: coordinator)
             }
         }

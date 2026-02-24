@@ -72,6 +72,34 @@ struct ShellTerminalPaneView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
+        private final class StringUpdatePayload: NSObject {
+            let projectID: UUID
+            let sessionID: UUID
+            let paneID: UUID
+            let value: String
+
+            init(projectID: UUID, sessionID: UUID, paneID: UUID, value: String) {
+                self.projectID = projectID
+                self.sessionID = sessionID
+                self.paneID = paneID
+                self.value = value
+            }
+        }
+
+        private final class TerminationUpdatePayload: NSObject {
+            let projectID: UUID
+            let sessionID: UUID
+            let paneID: UUID
+            let exitCode: Int32?
+
+            init(projectID: UUID, sessionID: UUID, paneID: UUID, exitCode: Int32?) {
+                self.projectID = projectID
+                self.sessionID = sessionID
+                self.paneID = paneID
+                self.exitCode = exitCode
+            }
+        }
+
         var projectID: UUID
         var sessionID: UUID
         var paneID: UUID
@@ -105,13 +133,19 @@ struct ShellTerminalPaneView: NSViewRepresentable {
         func setTerminalTitle(source _: LocalProcessTerminalView, title: String) {
             let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalized.isEmpty else { return }
+            let payload = StringUpdatePayload(
+                projectID: projectID,
+                sessionID: sessionID,
+                paneID: paneID,
+                value: normalized
+            )
 
             if Thread.isMainThread {
-                applyTitleUpdate(normalized)
+                applyTitleUpdate(payload)
             } else {
                 performSelector(
                     onMainThread: #selector(applyTitleUpdateSelector(_:)),
-                    with: normalized as NSString,
+                    with: payload,
                     waitUntilDone: false
                 )
             }
@@ -121,19 +155,30 @@ struct ShellTerminalPaneView: NSViewRepresentable {
             guard let path = ShellTerminalPaneView.normalizeReportedDirectory(directory) else {
                 return
             }
+            let payload = StringUpdatePayload(
+                projectID: projectID,
+                sessionID: sessionID,
+                paneID: paneID,
+                value: path
+            )
             if Thread.isMainThread {
-                applyDirectoryUpdate(path)
+                applyDirectoryUpdate(payload)
             } else {
                 performSelector(
                     onMainThread: #selector(applyDirectoryUpdateSelector(_:)),
-                    with: path as NSString,
+                    with: payload,
                     waitUntilDone: false
                 )
             }
         }
 
         func processTerminated(source _: TerminalView, exitCode: Int32?) {
-            let payload: AnyObject = exitCode.map { NSNumber(value: $0) } ?? NSNull()
+            let payload = TerminationUpdatePayload(
+                projectID: projectID,
+                sessionID: sessionID,
+                paneID: paneID,
+                exitCode: exitCode
+            )
             if Thread.isMainThread {
                 applyTerminationUpdate(payload)
             } else {
@@ -146,34 +191,50 @@ struct ShellTerminalPaneView: NSViewRepresentable {
         }
 
         @objc
-        private func applyTitleUpdateSelector(_ value: NSString) {
-            applyTitleUpdate(value as String)
+        private func applyTitleUpdateSelector(_ payload: StringUpdatePayload) {
+            applyTitleUpdate(payload)
         }
 
-        private func applyTitleUpdate(_ title: String) {
+        private func applyTitleUpdate(_ payload: StringUpdatePayload) {
+            guard payload.projectID == projectID,
+                  payload.sessionID == sessionID,
+                  payload.paneID == paneID
+            else {
+                return
+            }
+            let title = payload.value
             guard lastReportedTitle != title else { return }
             lastReportedTitle = title
             onTitleChanged(projectID, sessionID, paneID, title)
         }
 
         @objc
-        private func applyDirectoryUpdateSelector(_ value: NSString) {
-            applyDirectoryUpdate(value as String)
+        private func applyDirectoryUpdateSelector(_ payload: StringUpdatePayload) {
+            applyDirectoryUpdate(payload)
         }
 
-        private func applyDirectoryUpdate(_ directory: String) {
+        private func applyDirectoryUpdate(_ payload: StringUpdatePayload) {
+            guard payload.projectID == projectID,
+                  payload.sessionID == sessionID,
+                  payload.paneID == paneID
+            else {
+                return
+            }
+            let directory = payload.value
             guard lastReportedDirectory != directory else { return }
             lastReportedDirectory = directory
             onCWDChanged(projectID, sessionID, paneID, directory)
         }
 
         @objc
-        private func applyTerminationUpdate(_ value: AnyObject) {
-            let decodedExitCode: Int32? = if let number = value as? NSNumber {
-                number.int32Value
-            } else {
-                nil
+        private func applyTerminationUpdate(_ payload: TerminationUpdatePayload) {
+            guard payload.projectID == projectID,
+                  payload.sessionID == sessionID,
+                  payload.paneID == paneID
+            else {
+                return
             }
+            let decodedExitCode = payload.exitCode
 
             if hasReportedTermination, lastReportedExitCode == decodedExitCode {
                 return
