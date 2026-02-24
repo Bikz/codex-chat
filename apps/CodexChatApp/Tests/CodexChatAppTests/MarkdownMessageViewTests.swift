@@ -116,4 +116,45 @@ final class MarkdownMessageViewTests: XCTestCase {
             return XCTFail("Expected trailing markdown")
         }
     }
+
+    func testBuildIndexedSegmentsLinkifiesBacktickedProjectFileReferences() {
+        let source = "Inspect `Sources/App.swift:42` for details."
+
+        let indexed = MarkdownMessageView.buildIndexedSegments(text: source, policy: .trusted)
+        guard case let .markdown(markdown) = indexed.first?.segment else {
+            return XCTFail("Expected markdown segment")
+        }
+
+        XCTAssertTrue(markdown.contains("[`Sources/App.swift:42`]"))
+        XCTAssertTrue(markdown.contains("codexchat-file://open?"))
+        XCTAssertTrue(
+            markdown.contains("path=Sources%2FApp.swift")
+                || markdown.contains("path=Sources/App.swift")
+        )
+        XCTAssertTrue(markdown.contains("line=42"))
+    }
+
+    func testParseFileReferenceSupportsLineAndAnchorFormats() {
+        let lineRef = MarkdownMessageProcessor.parseFileReference("src/app.ts:12:4")
+        XCTAssertEqual(lineRef?.path, "src/app.ts")
+        XCTAssertEqual(lineRef?.line, 12)
+        XCTAssertEqual(lineRef?.column, 4)
+
+        let anchorRef = MarkdownMessageProcessor.parseFileReference("docs/guide.md#L33")
+        XCTAssertEqual(anchorRef?.path, "docs/guide.md")
+        XCTAssertEqual(anchorRef?.line, 33)
+        XCTAssertNil(anchorRef?.column)
+    }
+
+    func testResolveProjectFileURLResolvesRelativePathWithinProject() throws {
+        let url = try XCTUnwrap(URL(string: "codexchat-file://open?path=Sources%2FApp.swift&line=42"))
+        let resolved = MarkdownMessageProcessor.resolveProjectFileURL(url, projectPath: "/tmp/project")
+        XCTAssertEqual(resolved?.path, "/tmp/project/Sources/App.swift")
+    }
+
+    func testResolveProjectFileURLRejectsPathsOutsideProject() throws {
+        let url = try XCTUnwrap(URL(string: "codexchat-file://open?path=..%2FSecrets.txt"))
+        let resolved = MarkdownMessageProcessor.resolveProjectFileURL(url, projectPath: "/tmp/project")
+        XCTAssertNil(resolved)
+    }
 }

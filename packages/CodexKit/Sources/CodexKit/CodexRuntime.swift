@@ -15,7 +15,12 @@ public actor CodexRuntime {
     var stderrHandle: FileHandle?
     var framer = JSONLFramer()
     var stderrLineBuffer = Data()
-    var pendingApprovalRequests: [Int: RuntimeApprovalRequest] = [:]
+    struct PendingApprovalRequest: Sendable {
+        let rpcID: JSONRPCID
+    }
+
+    var pendingApprovalRequests: [Int: PendingApprovalRequest] = [:]
+    var nextLocalApprovalRequestID: Int = 1
     var runtimeCapabilities: RuntimeCapabilities = .none
 
     var stdoutPumpTask: Task<Void, Never>?

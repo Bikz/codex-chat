@@ -86,3 +86,11 @@ Validation checks include bundle ID, versions, minimum OS, icon assets, code sig
 
 - `apps/CodexChatHost/CodexChatHost/Resources/AppIcon.icns`
 - `apps/CodexChatHost/CodexChatHost/Assets.xcassets/AppIcon.appiconset`
+
+## Future Improvements Backlog
+
+- Add automatic release notes/changelog generation.
+- Add provenance/SBOM attestation for release artifacts.
+- Keep release toolchain deterministic with explicit Xcode/runner validation policy.
+- Enforce stricter branch/tag protections on release paths.
+- Add post-release clean-machine install smoke verification.

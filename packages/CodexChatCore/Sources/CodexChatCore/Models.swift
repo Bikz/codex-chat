@@ -682,6 +682,8 @@ public struct ActionCard: Identifiable, Hashable, Sendable {
     public let method: String
     public let title: String
     public let detail: String
+    public let itemID: String?
+    public let itemType: String?
     public let createdAt: Date
 
     public init(
@@ -690,6 +692,8 @@ public struct ActionCard: Identifiable, Hashable, Sendable {
         method: String,
         title: String,
         detail: String,
+        itemID: String? = nil,
+        itemType: String? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -697,6 +701,8 @@ public struct ActionCard: Identifiable, Hashable, Sendable {
         self.method = method
         self.title = title
         self.detail = detail
+        self.itemID = itemID
+        self.itemType = itemType
         self.createdAt = createdAt
     }
 }

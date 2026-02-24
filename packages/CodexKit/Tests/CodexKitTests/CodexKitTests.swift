@@ -136,6 +136,28 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
     }
 
+    func testRequestCorrelatorAcceptsNumericStringResponseID() async throws {
+        let correlator = RequestCorrelator()
+        let requestID = await correlator.makeRequestID()
+        guard case let .string(rawID) = requestID else {
+            XCTFail("Expected string request id")
+            return
+        }
+
+        let response = JSONRPCMessageEnvelope(
+            id: .string(rawID),
+            method: nil,
+            params: nil,
+            result: .object(["ok": .bool(true)]),
+            error: nil
+        )
+        _ = await correlator.resolveResponse(response)
+
+        let resolved = try await correlator.suspendResponse(id: requestID)
+        XCTAssertEqual(resolved.id, .string(rawID))
+        XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
+    }
+
     func testRequestCorrelatorFailsSuspensionAfterFailAllEvenIfNotPending() async throws {
         let correlator = RequestCorrelator()
         let requestID = await correlator.makeRequestID()
@@ -397,6 +419,67 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(action.workerTrace?.output, "Found one missing check.")
         XCTAssertEqual(action.workerTrace?.status, "completed")
         XCTAssertNil(action.workerTrace?.unavailableReason)
+    }
+
+    func testJSONRPCMessageEnvelopeDecodesStringIDServerRequest() throws {
+        let raw = #"{"id":"approval_req_1","method":"item/commandExecution/requestApproval","params":{"threadId":"thr_1"}}"#
+        let decoded = try JSONDecoder().decode(JSONRPCMessageEnvelope.self, from: Data(raw.utf8))
+
+        XCTAssertEqual(decoded.id, .string("approval_req_1"))
+        XCTAssertEqual(decoded.method, "item/commandExecution/requestApproval")
+        XCTAssertTrue(decoded.isServerRequest)
+    }
+
+    func testDecodeApprovalRequestSupportsSnakeCaseAndNestedIDs() {
+        let request = CodexRuntime.decodeApprovalRequest(
+            requestID: 99,
+            method: "item/commandExecution/requestApproval",
+            params: .object([
+                "thread_id": .string("thr_snake"),
+                "turn": .object([
+                    "id": .string("turn_nested"),
+                ]),
+                "item": .object([
+                    "id": .string("item_nested"),
+                ]),
+                "parsed_cmd": .array([
+                    .string("git"),
+                    .string("status"),
+                ]),
+                "working_directory": .string("/tmp/workspace"),
+                "safety_risk": .string("medium"),
+            ])
+        )
+
+        XCTAssertEqual(request.id, 99)
+        XCTAssertEqual(request.threadID, "thr_snake")
+        XCTAssertEqual(request.turnID, "turn_nested")
+        XCTAssertEqual(request.itemID, "item_nested")
+        XCTAssertEqual(request.command, ["git", "status"])
+        XCTAssertEqual(request.cwd, "/tmp/workspace")
+        XCTAssertEqual(request.risk, "medium")
+    }
+
+    func testEventDecoderAcceptsSnakeCaseThreadAndTurnIDs() {
+        let notification = JSONRPCMessageEnvelope.notification(
+            method: "turn/started",
+            params: .object([
+                "thread_id": .string("thr_snake"),
+                "turn": .object([
+                    "turn_id": .string("turn_snake"),
+                    "id": .string("turn_snake"),
+                ]),
+            ])
+        )
+
+        let events = AppServerEventDecoder.decodeAll(notification)
+        guard case let .turnStarted(threadID, turnID)? = events.first else {
+            XCTFail("Expected turnStarted event")
+            return
+        }
+
+        XCTAssertEqual(threadID, "thr_snake")
+        XCTAssertEqual(turnID, "turn_snake")
     }
 
     func testEventDecoderWorkerTraceFallsBackToUnavailableReason() {

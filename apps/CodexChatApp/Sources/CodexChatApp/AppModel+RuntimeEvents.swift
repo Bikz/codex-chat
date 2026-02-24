@@ -234,6 +234,11 @@ extension AppModel {
             detail: action.detail,
             itemType: action.itemType
         )
+        let shouldSuppressFromConversation = TranscriptActionPolicy.shouldSuppressRuntimeAction(
+            method: action.method,
+            title: action.title,
+            detail: action.detail
+        )
         let transcriptDetail = action.method == "runtime/stderr"
             ? sanitizeLogText(action.detail)
             : action.detail
@@ -278,6 +283,11 @@ extension AppModel {
             handleRuntimeTermination(detail: action.detail)
         }
 
+        if shouldSuppressFromConversation {
+            appendLog(.debug, "Suppressed runtime decode error from transcript: \(action.detail)")
+            return
+        }
+
         guard let localThreadID else {
             appendLog(.debug, "Runtime action without thread mapping: \(action.method)")
             return
@@ -293,7 +303,9 @@ extension AppModel {
             threadID: localThreadID,
             method: action.method,
             title: action.title,
-            detail: transcriptDetail
+            detail: transcriptDetail,
+            itemID: action.itemID,
+            itemType: action.itemType
         )
 
         captureWorkerTraceIfPresent(

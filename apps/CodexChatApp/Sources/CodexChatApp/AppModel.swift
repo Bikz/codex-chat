@@ -1405,6 +1405,32 @@ final class AppModel: ObservableObject {
         return nil
     }
 
+    var pendingUserApprovalForComposerSurface: UserApprovalRequest? {
+        if let scopedRequest = pendingUserApprovalForSelectedThread {
+            return scopedRequest
+        }
+
+        guard let unscopedRequest = unscopedApprovalRequests.first else {
+            return nil
+        }
+
+        // If no thread is selected yet, surface the pending runtime approval so the user can recover.
+        if selectedThreadID == nil {
+            return .runtimeApproval(unscopedRequest)
+        }
+
+        // If there is exactly one active turn and it matches the selected thread, prefer showing
+        // the unscoped request inline instead of hiding the approval behind missing runtime mapping.
+        if activeTurnContextsByThreadID.count == 1,
+           let onlyActiveThreadID = activeTurnContextsByThreadID.keys.first,
+           onlyActiveThreadID == selectedThreadID
+        {
+            return .runtimeApproval(unscopedRequest)
+        }
+
+        return nil
+    }
+
     var hasPendingApprovalForSelectedThread: Bool {
         pendingUserApprovalForSelectedThread != nil
     }

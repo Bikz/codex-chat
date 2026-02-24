@@ -263,22 +263,45 @@ extension CodexRuntime {
             .unknown
         }
 
-        let command: [String] = if let array = payload.value(at: ["command"])?.arrayValue {
+        let commandValue = firstValue(
+            in: payload,
+            keyPaths: [
+                ["command"],
+                ["parsedCmd"],
+                ["parsed_cmd"],
+                ["command", "argv"],
+                ["command", "command"],
+            ]
+        )
+        let command: [String] = if let array = commandValue?.arrayValue {
             array.compactMap(\.stringValue)
-        } else if let parsed = payload.value(at: ["parsedCmd"])?.arrayValue {
-            parsed.compactMap(\.stringValue)
-        } else if let single = payload.value(at: ["command"])?.stringValue {
+        } else if let single = commandValue?.stringValue {
             [single]
         } else {
             []
         }
 
-        let changes: [RuntimeFileChange] = (payload.value(at: ["changes"])?.arrayValue ?? []).compactMap { change in
+        let rawChanges = firstValue(
+            in: payload,
+            keyPaths: [
+                ["changes"],
+                ["fileChanges"],
+                ["file_changes"],
+                ["fileChange", "changes"],
+                ["file_change", "changes"],
+                ["item", "changes"],
+            ]
+        )?.arrayValue ?? []
+        let changes: [RuntimeFileChange] = rawChanges.compactMap { change in
             guard let path = change.value(at: ["path"])?.stringValue else {
                 return nil
             }
-            let kind = change.value(at: ["kind"])?.stringValue ?? "update"
+            let kind = change.value(at: ["kind"])?.stringValue
+                ?? change.value(at: ["changeKind"])?.stringValue
+                ?? change.value(at: ["change_kind"])?.stringValue
+                ?? "update"
             let diff = change.value(at: ["diff"])?.stringValue
+                ?? change.value(at: ["patch"])?.stringValue
             return RuntimeFileChange(path: path, kind: kind, diff: diff)
         }
 
@@ -286,15 +309,66 @@ extension CodexRuntime {
             id: requestID,
             kind: kind,
             method: method,
-            threadID: payload.value(at: ["threadId"])?.stringValue,
-            turnID: payload.value(at: ["turnId"])?.stringValue,
-            itemID: payload.value(at: ["itemId"])?.stringValue,
-            reason: payload.value(at: ["reason"])?.stringValue,
-            risk: payload.value(at: ["risk"])?.stringValue,
-            cwd: payload.value(at: ["cwd"])?.stringValue,
+            threadID: firstString(
+                in: payload,
+                keyPaths: [
+                    ["threadId"],
+                    ["thread_id"],
+                    ["thread", "id"],
+                    ["thread", "threadId"],
+                    ["thread", "thread_id"],
+                ]
+            ),
+            turnID: firstString(
+                in: payload,
+                keyPaths: [
+                    ["turnId"],
+                    ["turn_id"],
+                    ["turn", "id"],
+                    ["turn", "turnId"],
+                    ["turn", "turn_id"],
+                ]
+            ),
+            itemID: firstString(
+                in: payload,
+                keyPaths: [
+                    ["itemId"],
+                    ["item_id"],
+                    ["item", "id"],
+                    ["item", "itemId"],
+                    ["item", "item_id"],
+                ]
+            ),
+            reason: firstString(in: payload, keyPaths: [["reason"], ["message"]]),
+            risk: firstString(in: payload, keyPaths: [["risk"], ["safetyRisk"], ["safety_risk"]]),
+            cwd: firstString(in: payload, keyPaths: [["cwd"], ["workingDirectory"], ["working_directory"]]),
             command: command,
             changes: changes,
             detail: payload.prettyPrinted()
         )
+    }
+
+    private static func firstValue(in payload: JSONValue, keyPaths: [[String]]) -> JSONValue? {
+        for keyPath in keyPaths {
+            if let value = payload.value(at: keyPath),
+               value != .null
+            {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func firstString(in payload: JSONValue, keyPaths: [[String]]) -> String? {
+        for keyPath in keyPaths {
+            guard let raw = payload.value(at: keyPath)?.stringValue else {
+                continue
+            }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return nil
     }
 }
