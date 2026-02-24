@@ -208,6 +208,7 @@ public struct ExtensionArtifactInstruction: Hashable, Sendable, Codable {
 public struct ExtensionModsBarOutput: Hashable, Sendable, Codable {
     public enum Scope: String, Hashable, Sendable, Codable {
         case thread
+        case project
         case global
     }
 

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "defaultApprovalPolicy": "on-request",
+  "defaultSandboxMode": "workspace-write",
+  "allowNetworkAccess": true,
+  "allowWebSearch": true,
+  "allowDangerFullAccess": false,
+  "allowNeverApproval": false
+}

@@ -9,6 +9,7 @@ public struct UIModManifest: Hashable, Sendable, Codable {
     public var id: String
     public var name: String
     public var version: String
+    public var iconSymbol: String?
     public var author: String?
     public var license: String?
     public var description: String?
@@ -20,6 +21,7 @@ public struct UIModManifest: Hashable, Sendable, Codable {
         id: String,
         name: String,
         version: String,
+        iconSymbol: String? = nil,
         author: String? = nil,
         license: String? = nil,
         description: String? = nil,
@@ -30,6 +32,7 @@ public struct UIModManifest: Hashable, Sendable, Codable {
         self.id = id
         self.name = name
         self.version = version
+        self.iconSymbol = iconSymbol
         self.author = author
         self.license = license
         self.description = description

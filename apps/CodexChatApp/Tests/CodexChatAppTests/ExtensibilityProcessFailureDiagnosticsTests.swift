@@ -136,4 +136,99 @@ final class ExtensibilityProcessFailureDiagnosticsTests: XCTestCase {
         )
         XCTAssertNil(playbook.shortcut)
     }
+
+    func testRollupAutomationTimelineEventsMergesContiguousMatchingEntriesWithinWindow() {
+        let now = Date()
+        let newest = makeAutomationEvent(id: UUID(), timestamp: now, summary: "launchctl failed")
+        let older = makeAutomationEvent(
+            id: UUID(),
+            timestamp: now.addingTimeInterval(-40),
+            summary: "launchctl failed"
+        )
+        let distinct = makeAutomationEvent(
+            id: UUID(),
+            timestamp: now.addingTimeInterval(-70),
+            summary: "scheduler timeout"
+        )
+
+        let rollups = AppModel.rollupAutomationTimelineEvents(
+            [newest, older, distinct],
+            collapseWindowSeconds: 180
+        )
+
+        XCTAssertEqual(rollups.count, 2)
+        XCTAssertEqual(rollups[0].occurrenceCount, 2)
+        XCTAssertEqual(rollups[0].latestEvent.id, newest.id)
+        XCTAssertEqual(rollups[0].collapsedEvents.map(\.id), [newest.id, older.id])
+        XCTAssertEqual(rollups[1].occurrenceCount, 1)
+    }
+
+    func testRollupAutomationTimelineEventsKeepsSameEntriesSeparateOutsideWindow() {
+        let now = Date()
+        let newest = makeAutomationEvent(id: UUID(), timestamp: now, summary: "launchctl failed")
+        let stale = makeAutomationEvent(
+            id: UUID(),
+            timestamp: now.addingTimeInterval(-600),
+            summary: "launchctl failed"
+        )
+
+        let rollups = AppModel.rollupAutomationTimelineEvents(
+            [newest, stale],
+            collapseWindowSeconds: 180
+        )
+
+        XCTAssertEqual(rollups.count, 2)
+        XCTAssertEqual(rollups.map(\.occurrenceCount), [1, 1])
+        XCTAssertEqual(rollups[0].collapsedEvents.count, 1)
+        XCTAssertEqual(rollups[1].collapsedEvents.count, 1)
+    }
+
+    func testRollupAutomationTimelineEventsDoesNotMergeAcrossDifferentInterleavedFingerprint() {
+        let now = Date()
+        let first = makeAutomationEvent(id: UUID(), timestamp: now, summary: "launchctl failed")
+        let middle = makeAutomationEvent(
+            id: UUID(),
+            timestamp: now.addingTimeInterval(-20),
+            kind: "timeout",
+            summary: "worker timed out"
+        )
+        let lastMatchingFirst = makeAutomationEvent(
+            id: UUID(),
+            timestamp: now.addingTimeInterval(-40),
+            summary: "launchctl failed"
+        )
+
+        let rollups = AppModel.rollupAutomationTimelineEvents(
+            [first, middle, lastMatchingFirst],
+            collapseWindowSeconds: 180
+        )
+
+        XCTAssertEqual(rollups.count, 3)
+        XCTAssertEqual(rollups[0].latestEvent.summary, "launchctl failed")
+        XCTAssertEqual(rollups[2].latestEvent.summary, "launchctl failed")
+        XCTAssertEqual(rollups[0].occurrenceCount, 1)
+        XCTAssertEqual(rollups[2].occurrenceCount, 1)
+        XCTAssertEqual(rollups[0].collapsedEvents.count, 1)
+        XCTAssertEqual(rollups[2].collapsedEvents.count, 1)
+    }
+
+    private func makeAutomationEvent(
+        id: UUID,
+        timestamp: Date,
+        kind: String = "command",
+        summary: String
+    ) -> AppModel.ExtensibilityDiagnosticEvent {
+        AppModel.ExtensibilityDiagnosticEvent(
+            id: id,
+            timestamp: timestamp,
+            surface: "extensions",
+            operation: "automation",
+            kind: kind,
+            command: "launchctl bootstrap gui/501/com.example.mod",
+            modID: "com.example.mod",
+            projectID: UUID(uuidString: "B26CF4D8-CE13-447A-A7F2-96313C1E1B58"),
+            threadID: UUID(uuidString: "2F7219F4-67ED-4CE5-A501-06D8FB9E67D8"),
+            summary: summary
+        )
+    }
 }

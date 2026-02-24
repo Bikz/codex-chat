@@ -56,6 +56,18 @@ Date: 2026-02-23
 | P2 | Added contextual Diagnostics shortcut to open app settings for launchd-related remediation paths | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `5c346cc` |
 | P2 | Added guarded inline rerun preparation by routing diagnostics commands into composer prompts (manual send remains explicit) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelDiagnosticsActionsTests.swift` | `6d0f43a` |
 | P2 | Added automation-health failure transition events into shared diagnostics stream for timeline visibility | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensionAutomationHealthTests.swift` | `985d4e2` |
+| P2 | Added policy-gated direct rerun contracts in Diagnostics with strict command allowlists, blocked-reason messaging, and explicit confirmation before dispatch | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelDiagnosticsActionsTests.swift` | `dd4ba02` |
+| P2 | Added unified automation timeline UX in Diagnostics and mod-aware telemetry linking launchd/scheduler/health events with retry-policy context | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensionAutomationHealthTests.swift` | `88cdd0a` |
+| P2 | Added persisted automation timeline focus filters (All/Project/Thread) with scoped diagnostics context and startup restore | `/Users/bikram/Developer/CodexChat/packages/CodexChatCore/Sources/CodexChatCore/Models.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Lifecycle.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `bc87003` |
+| P2 | Added explicit automation-timeline recovery affordances (copy steps, prepare rerun, allowlisted rerun, contextual shortcuts) inline with timeline events | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensibilityProcessFailureDiagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift` | `5c2da51` |
+| P2 | Added source-grouped automation timeline rollups that collapse recurring contiguous failures with deterministic coverage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1a981e7` |
+| P2 | Added inline timeline scope pivots so automation diagnostics rows can jump directly to project/thread investigation context | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/AppModelDiagnosticsActionsTests.swift` | `61fb786` |
+| P2 | Added in-place rollup expansion in Diagnostics so collapsed automation repeats can be inspected without leaving timeline context | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityProcessFailureDiagnosticsTests.swift` | `1e0a4b6` |
+| P2 | Added human-readable project/thread metadata labels in automation timeline rows to accelerate triage context without UUID lookup | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ContentView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift` | `b391159` |
+| P2 | Added relative recency badges in automation timeline headers to improve scan speed during incident triage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/DiagnosticsView.swift` | `5a36745` |
+| P2 | Fixed automation timeline focus-filter persistence race by sequencing in-flight writes and added deterministic regression coverage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift` | `782be85` |
+| P1 | Added persisted user icon overrides for mods bar identity with per-mod reset and normalization coverage | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsBarQuickSwitch.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ModViews.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/packages/CodexChatCore/Sources/CodexChatCore/Models.swift` | `dc633f7` |
+| P1 | Grouped quick-switch entries by scope and surfaced iconized menu identity for project/global switching (with regression tests) | `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ExtensionModsBarView.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+ModsBarQuickSwitch.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ModsBarActionTests.swift`, `/Users/bikram/Developer/CodexChat/docs-public/MODS.md` | `4205bec` |
 
 ### Remaining prioritized backlog
 
@@ -77,12 +89,41 @@ Date: 2026-02-23
 - Phase 13 shipped: diagnostics now provide contextual app-settings deep links for launchd remediation flows.
 - Phase 14 shipped: diagnostics can now prepare safe rerun prompts in composer without auto-executing commands.
 - Phase 15 shipped: automation-health failing transitions now emit normalized diagnostics events for timeline continuity.
-- Next step is policy-gated direct rerun execution for explicitly allowlisted command classes plus unified automation timeline UX.
+- Phase 16 shipped: diagnostics now gate direct rerun execution with strict command allowlists, blocked-reason messaging, and explicit confirmation before dispatch.
+- Phase 17 shipped: diagnostics now provide a unified automation timeline view across launchd/scheduler/health streams with mod-aware telemetry and retry-policy context.
+- Phase 18 shipped: diagnostics now support persisted automation timeline focus filters (All/Project/Thread) with project/thread scoped filtering.
+- Phase 19 shipped: automation timeline entries now provide explicit recovery affordances (copy steps, prepare rerun, allowlisted rerun, shortcuts).
+- Phase 20 shipped: automation timeline now collapses recurring contiguous failures into source-grouped rollups for noisy loops.
+- Phase 21 shipped: automation timeline rows now provide direct project/thread scope pivots to speed remediation workflows.
+- Phase 22 shipped: automation timeline rollups now support inline expansion to inspect underlying repeated events in place.
+- Phase 23 shipped: automation timeline rows now show human-readable project/thread labels when available.
+- Phase 24 shipped: automation timeline rows now include relative-time recency badges beside absolute timestamps.
+- Phase 25 shipped: timeline focus-filter persistence now serializes writes to avoid stale value overrides during rapid toggles.
+- Next step is evaluating if remaining diagnostics UX items should be promoted to P1 or closed out for this cycle.
 - References: `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionWorkerRunner.swift:46`, `/Users/bikram/Developer/CodexChat/packages/CodexSkills/Sources/CodexSkills/SkillCatalog.swift:882`, `/Users/bikram/Developer/CodexChat/packages/CodexMods/Sources/CodexMods/ModInstallService.swift:562`.
 
 2. Improve automation observability UX.
 - Phase 2 shipped: per-mod automation health summaries now include launchd scheduled/failure signal alongside scheduler health in the Mods UI.
-- Next step is wiring launchd and scheduler telemetry into a richer event timeline with explicit failure-recovery affordances.
+- Phase 3 shipped: launchd/scheduler/health telemetry is now unified in Diagnostics timeline with explicit recovery affordances per event.
+- Phase 4 shipped: recurring contiguous automation failures now collapse into rollups to reduce timeline noise.
+- Phase 5 shipped: timeline rows now include direct project/thread scope pivots for rapid investigation.
+- Phase 6 shipped: rollups can now be expanded inline to inspect repeated events without context switching.
+- Phase 7 shipped: timeline rows now include project/thread labels for immediate scope context.
+- Phase 8 shipped: timeline rows now include relative-time recency badges for faster scanability.
+- Phase 9 shipped: focus-filter persistence now guarantees last-write-wins under rapid toggle churn.
+- Next step is evaluating whether to close out this automation-observability backlog slice for the cycle.
+
+## 2.1) Release readiness review (2026-02-23)
+P0 findings:
+- None in reviewed Team C scope.
+
+P1 findings:
+- None in reviewed Team C scope.
+
+P2 findings:
+- Fixed: automation timeline focus-filter persistence could record stale selection under rapid toggles due unordered async writes.
+- Evidence: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Diagnostics.swift`, `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Tests/CodexChatAppTests/ExtensibilityDiagnosticsPersistenceTests.swift`.
+- Commit: `782be85`.
 - References: `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/AppModel+Extensions.swift:810`, `/Users/bikram/Developer/CodexChat/packages/CodexExtensions/Sources/CodexExtensions/ExtensionAutomationScheduler.swift:48`.
 
 ## 3) 30/60/90 day roadmap (re-baselined)

@@ -61,6 +61,15 @@ extension AppModel {
                     selectedGlobalPath: snapshot.selectedGlobal,
                     selectedProjectPath: snapshot.selectedProject
                 )
+                let installRecords = try await extensionInstallRepository?.list() ?? []
+                let enabledModIDs = Self.resolveEnabledModIDs(
+                    globalMods: snapshot.globalMods,
+                    projectMods: snapshot.projectMods,
+                    selectedGlobalPath: snapshot.selectedGlobal,
+                    selectedProjectPath: snapshot.selectedProject,
+                    selectedProjectID: selectedProjectID,
+                    installRecords: installRecords
+                )
                 effectiveThemeOverride = resolved.light
                 effectiveDarkThemeOverride = resolved.dark
                 modsState = .loaded(
@@ -68,14 +77,17 @@ extension AppModel {
                         globalMods: snapshot.globalMods,
                         projectMods: snapshot.projectMods,
                         selectedGlobalModPath: snapshot.selectedGlobal,
-                        selectedProjectModPath: snapshot.selectedProject
+                        selectedProjectModPath: snapshot.selectedProject,
+                        enabledGlobalModIDs: enabledModIDs.global,
+                        enabledProjectModIDs: enabledModIDs.project
                     )
                 )
                 syncActiveExtensions(
                     globalMods: snapshot.globalMods,
                     projectMods: snapshot.projectMods,
                     selectedGlobalPath: snapshot.selectedGlobal,
-                    selectedProjectPath: snapshot.selectedProject
+                    selectedProjectPath: snapshot.selectedProject,
+                    installRecords: installRecords
                 )
                 let modIDs = (snapshot.globalMods + snapshot.projectMods).map(\.definition.manifest.id)
                 await refreshAutomationHealthSummaries(for: modIDs)
@@ -158,6 +170,80 @@ extension AppModel {
             } catch {
                 modStatusMessage = "Failed to update project mod: \(error.localizedDescription)"
                 appendLog(.error, "Update project mod failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func setInstalledModEnabled(
+        _ mod: DiscoveredUIMod,
+        scope: ExtensionInstallScope,
+        enabled: Bool
+    ) {
+        guard let extensionInstallRepository else {
+            modStatusMessage = "Extension install repository unavailable."
+            return
+        }
+
+        Task {
+            do {
+                let projectID = installProjectID(for: scope)
+                let installs = try await extensionInstallRepository.list()
+                let existing = installs.first(where: { record in
+                    guard record.scope == scope,
+                          record.modID == mod.definition.manifest.id
+                    else {
+                        return false
+                    }
+                    if scope == .project {
+                        return record.projectID == projectID
+                    }
+                    return true
+                })
+
+                var next = existing ?? ExtensionInstallRecord(
+                    id: extensionInstallRecordID(
+                        scope: scope,
+                        projectID: projectID,
+                        modID: mod.definition.manifest.id
+                    ),
+                    modID: mod.definition.manifest.id,
+                    scope: scope,
+                    projectID: projectID,
+                    sourceURL: existing?.sourceURL,
+                    installedPath: mod.directoryPath,
+                    enabled: enabled
+                )
+                next.installedPath = mod.directoryPath
+                next.enabled = enabled
+                _ = try await extensionInstallRepository.upsert(next)
+
+                if !enabled {
+                    switch scope {
+                    case .global:
+                        if case let .loaded(surface) = modsState,
+                           surface.selectedGlobalModPath == mod.directoryPath
+                        {
+                            try await preferenceRepository?.setPreference(key: .globalUIModPath, value: "")
+                        }
+                    case .project:
+                        if case let .loaded(surface) = modsState,
+                           surface.selectedProjectModPath == mod.directoryPath,
+                           let selectedProjectID,
+                           let projectRepository
+                        {
+                            _ = try await projectRepository.updateProjectUIModPath(id: selectedProjectID, uiModPath: nil)
+                            try await refreshProjects()
+                        }
+                    }
+                }
+
+                modStatusMessage = enabled
+                    ? "Enabled mod runtime: \(mod.definition.manifest.name)."
+                    : "Disabled mod runtime: \(mod.definition.manifest.name)."
+                refreshModsSurface()
+            } catch {
+                modStatusMessage = "Failed updating mod enablement: \(error.localizedDescription)"
+                appendLog(.error, "Mod enablement update failed: \(error.localizedDescription)")
             }
         }
     }
@@ -630,6 +716,74 @@ extension AppModel {
         return trimmed
     }
 
+    nonisolated static func resolveEnabledModIDs(
+        globalMods: [DiscoveredUIMod],
+        projectMods: [DiscoveredUIMod],
+        selectedGlobalPath: String?,
+        selectedProjectPath: String?,
+        selectedProjectID: UUID?,
+        installRecords: [ExtensionInstallRecord]
+    ) -> (global: Set<String>, project: Set<String>) {
+        let globalIDs = Set(globalMods.map(\.definition.manifest.id))
+        let projectIDs = Set(projectMods.map(\.definition.manifest.id))
+
+        var enabledGlobal: Set<String> = []
+        var enabledProject: Set<String> = []
+
+        for record in installRecords where record.enabled {
+            switch record.scope {
+            case .global:
+                if globalIDs.contains(record.modID) {
+                    enabledGlobal.insert(record.modID)
+                }
+            case .project:
+                guard record.projectID == selectedProjectID,
+                      projectIDs.contains(record.modID)
+                else {
+                    continue
+                }
+                enabledProject.insert(record.modID)
+            }
+        }
+
+        for mod in globalMods {
+            let normalizedPath = NSString(string: mod.directoryPath).standardizingPath
+            if mod.definition.manifest.id.lowercased().hasPrefix("codexchat.")
+                || normalizedPath.contains("/mods/first-party/")
+            {
+                enabledGlobal.insert(mod.definition.manifest.id)
+            }
+        }
+        for mod in projectMods {
+            let normalizedPath = NSString(string: mod.directoryPath).standardizingPath
+            if mod.definition.manifest.id.lowercased().hasPrefix("codexchat.")
+                || normalizedPath.contains("/mods/first-party/")
+            {
+                enabledProject.insert(mod.definition.manifest.id)
+            }
+        }
+
+        if let selectedGlobalPath,
+           let selectedGlobal = globalMods.first(where: { $0.directoryPath == selectedGlobalPath }),
+           installRecords.first(where: { $0.scope == .global && $0.modID == selectedGlobal.definition.manifest.id }) == nil
+        {
+            enabledGlobal.insert(selectedGlobal.definition.manifest.id)
+        }
+
+        if let selectedProjectPath,
+           let selectedProject = projectMods.first(where: { $0.directoryPath == selectedProjectPath }),
+           installRecords.first(where: {
+               $0.scope == .project
+                   && $0.projectID == selectedProjectID
+                   && $0.modID == selectedProject.definition.manifest.id
+           }) == nil
+        {
+            enabledProject.insert(selectedProject.definition.manifest.id)
+        }
+
+        return (enabledGlobal, enabledProject)
+    }
+
     private func installRootPath(for scope: ExtensionInstallScope) throws -> String {
         switch scope {
         case .global:
@@ -669,14 +823,23 @@ extension AppModel {
         projectID: UUID?,
         enabledModID: String?
     ) async throws {
-        guard let extensionInstallRepository else { return }
+        guard let extensionInstallRepository,
+              let enabledModID = enabledModID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !enabledModID.isEmpty
+        else { return }
+
         let installs = try await extensionInstallRepository.list()
         for record in installs where record.scope == scope {
             if scope == .project, record.projectID != projectID {
                 continue
             }
+            guard record.modID == enabledModID,
+                  !record.enabled
+            else {
+                continue
+            }
             var next = record
-            next.enabled = (record.modID == enabledModID)
+            next.enabled = true
             _ = try await extensionInstallRepository.upsert(next)
         }
     }

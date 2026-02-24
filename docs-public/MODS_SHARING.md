@@ -60,7 +60,8 @@ Precedence:
   "manifest": {
     "id": "acme.thread-summary",
     "name": "Thread Summary",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "iconSymbol": "text.alignleft"
   },
   "theme": {},
   "hooks": [
@@ -76,6 +77,7 @@ Precedence:
     "modsBar": {
       "enabled": true,
       "title": "Thread Summary",
+      "requiresThread": true,
       "source": { "type": "handlerOutput", "hookId": "turn-summary" }
     }
   }
@@ -110,7 +112,7 @@ Input (one JSON line):
 Output:
 
 ```json
-{"ok":true,"modsBar":{"title":"Thread Summary","scope":"thread","markdown":"- Turn completed","actions":[{"id":"clear","label":"Clear","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"summary-action"}}]},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}]}
+{"ok":true,"modsBar":{"title":"Thread Summary","scope":"project","markdown":"- Turn completed","actions":[{"id":"clear","label":"Clear","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"summary-action"}}]},"artifacts":[{"path":"notes/summary.md","op":"upsert","content":"..."}]}
 ```
 
 Native action output example:
@@ -151,6 +153,7 @@ Rules:
 - Content comes from `uiSlots.modsBar` + worker output.
 - `Mods bar` is docked in the conversation pane and pushes chat content inward (no persistent third pane).
 - UI presentation is global, not thread-scoped: visibility and mode are shared across existing chats and new drafts.
+- To support draft mode usage, set `uiSlots.modsBar.requiresThread` to `false` (for example Prompt Book style global launchers).
 - Presentation modes are `rail`, `peek`, and `expanded`:
   - `rail`: compact icon launcher strip for quick extension switching
   - `peek`: standard panel width

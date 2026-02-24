@@ -35,16 +35,16 @@ JXA
 }
 
 event="$(extract_raw event)"
-thread_id="$(extract_raw thread.id)"
+project_id="$(extract_raw project.id)"
 
-if [ -z "$thread_id" ]; then
-  echo '{"ok":false,"log":"Missing thread id"}'
+if [ -z "$project_id" ]; then
+  echo '{"ok":false,"log":"Missing project id"}'
   exit 0
 fi
 
 state_dir=".codexchat/state"
 mkdir -p "$state_dir"
-note_file="$state_dir/notes-$thread_id.txt"
+note_file="$state_dir/notes-project-$project_id.txt"
 
 if [ "$event" = "modsBar.action" ]; then
   operation="$(extract_raw payload.operation)"
@@ -72,8 +72,8 @@ note="$(trim_value "$note")"
 
 markdown="$note"
 if [ -z "$markdown" ]; then
-  markdown="_Start typing to save thread-specific notes. Notes autosave for this chat._"
+  markdown="_Start typing to save project-specific notes. Notes autosave for this project._"
 fi
 escaped_markdown="$(json_escape "$markdown")"
 
-printf '{"ok":true,"modsBar":{"title":"Personal Notes","scope":"thread","markdown":%s,"actions":[{"id":"notes-add-edit","label":"Add / Edit Note","kind":"promptThenEmitEvent","payload":{"operation":"upsert","targetHookID":"notes-action"},"prompt":{"title":"Personal Notes","message":"Write a note for this thread.","placeholder":"Next steps, key commands, reminders..."}},{"id":"notes-clear","label":"Clear Note","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"notes-action"}}]}}\n' "$escaped_markdown"
+printf '{"ok":true,"modsBar":{"title":"Personal Notes","scope":"project","markdown":%s,"actions":[{"id":"notes-add-edit","label":"Add / Edit Note","kind":"promptThenEmitEvent","payload":{"operation":"upsert","targetHookID":"notes-action"},"prompt":{"title":"Personal Notes","message":"Write a note for this project.","placeholder":"Next steps, key commands, reminders..."}},{"id":"notes-clear","label":"Clear Note","kind":"emitEvent","payload":{"operation":"clear","targetHookID":"notes-action"}}]}}\n' "$escaped_markdown"

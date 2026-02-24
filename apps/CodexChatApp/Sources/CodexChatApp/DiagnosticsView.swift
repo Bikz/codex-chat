@@ -8,6 +8,17 @@ struct DiagnosticsView: View {
     let adaptiveTurnConcurrencyLimit: Int
     let logs: [LogEntry]
     let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
+    let selectedProjectID: UUID?
+    let selectedThreadID: UUID?
+    let projectLabelsByID: [UUID: String]
+    let threadLabelsByID: [UUID: String]
+    let automationTimelineFocusFilter: AppModel.AutomationTimelineFocusFilter
+    let onAutomationTimelineFocusFilterChange: @MainActor (AppModel.AutomationTimelineFocusFilter) -> Void
+    let onFocusTimelineProject: @MainActor (UUID) -> Void
+    let onFocusTimelineThread: @MainActor (UUID) -> Void
+    let canExecuteRerunCommand: (String) -> Bool
+    let rerunExecutionPolicyMessage: (String) -> String
+    let onExecuteRerunCommand: (String) -> Void
     let onPrepareRerunCommand: (String) -> Void
     let onClose: () -> Void
     @State private var performanceSnapshot = PerformanceSnapshot(
@@ -16,6 +27,8 @@ struct DiagnosticsView: View {
         recent: []
     )
     @State private var refreshTask: Task<Void, Never>?
+    @State private var pendingAllowlistedRerunCommand: String?
+    @State private var expandedAutomationRollupIDs: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -156,6 +169,182 @@ struct DiagnosticsView: View {
                                         }
                                         .buttonStyle(.link)
                                         .font(.caption2)
+
+                                        let canExecuteDirectly = canExecuteRerunCommand(suggestedCommand)
+                                        Button(
+                                            canExecuteDirectly ? "Run allowlisted rerun" : "Direct rerun blocked"
+                                        ) {
+                                            pendingAllowlistedRerunCommand = suggestedCommand
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                        .disabled(!canExecuteDirectly)
+                                        .help(rerunExecutionPolicyMessage(suggestedCommand))
+
+                                        Button("Copy rerun command") {
+                                            copyToPasteboard(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                    if let shortcut = playbook.shortcut {
+                                        Button(shortcutLabel(for: shortcut)) {
+                                            performShortcut(shortcut)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            GroupBox("Automation Timeline") {
+                Picker("Focus", selection: Binding(
+                    get: { automationTimelineFocusFilter },
+                    set: { nextFilter in
+                        Task { @MainActor in
+                            onAutomationTimelineFocusFilterChange(nextFilter)
+                        }
+                    }
+                )) {
+                    ForEach(AppModel.AutomationTimelineFocusFilter.allCases, id: \.self) { filter in
+                        Text(filter.label).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.bottom, 6)
+
+                if automationTimelineRollups.isEmpty {
+                    Text(emptyAutomationTimelineMessage)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(automationTimelineRollups.prefix(8)) { rollup in
+                            let event = rollup.latestEvent
+                            let playbook = AppModel.extensibilityDiagnosticPlaybook(for: event)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 8) {
+                                    Text(event.timestamp.formatted(.dateTime.hour().minute().second()))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text(relativeTimestampLabel(for: event.timestamp))
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                    Text(automationSourceLabel(for: event))
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(event.kind.uppercased())
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(color(forDiagnosticKind: event.kind))
+                                    Spacer(minLength: 0)
+                                }
+                                if let modID = event.modID, !modID.isEmpty {
+                                    Text("Mod: \(modID)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let projectID = event.projectID {
+                                    Text("Project: \(projectLabel(for: projectID))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let threadID = event.threadID {
+                                    Text("Thread: \(threadLabel(for: threadID))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                HStack(spacing: 10) {
+                                    if let projectID = event.projectID {
+                                        Button("Open project scope") {
+                                            Task { @MainActor in
+                                                onFocusTimelineProject(projectID)
+                                            }
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                    if let threadID = event.threadID {
+                                        Button("Open thread scope") {
+                                            Task { @MainActor in
+                                                onFocusTimelineThread(threadID)
+                                            }
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                }
+                                if rollup.occurrenceCount > 1 {
+                                    HStack(spacing: 10) {
+                                        Text(repeatedEventSummary(for: rollup))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                        Button(expandedAutomationRollupIDs.contains(rollup.id) ? "Hide repeats" : "Show repeats") {
+                                            toggleAutomationRollupExpansion(rollup.id)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                    }
+                                }
+                                if expandedAutomationRollupIDs.contains(rollup.id), rollup.collapsedEvents.count > 1 {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        ForEach(Array(rollup.collapsedEvents.dropFirst().prefix(5)), id: \.id) { repeatEvent in
+                                            Text(
+                                                "\(repeatEvent.timestamp.formatted(.dateTime.hour().minute().second())) - \(repeatEvent.summary)"
+                                            )
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                        }
+                                        if rollup.collapsedEvents.count > 6 {
+                                            Text("+\(rollup.collapsedEvents.count - 6) more repeats")
+                                                .font(.caption2)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                }
+                                Text(event.summary)
+                                    .font(.caption)
+                                    .lineLimit(3)
+                                    .foregroundStyle(.secondary)
+                                Text("Recovery: \(playbook.primaryStep)")
+                                    .font(.caption2)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
+                                if !event.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text("Retry policy: \(rerunExecutionPolicyMessage(event.command))")
+                                        .font(.caption2)
+                                        .lineLimit(2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                HStack(spacing: 10) {
+                                    Button("Copy recovery steps") {
+                                        copyToPasteboard(playbook.steps.joined(separator: "\n"))
+                                    }
+                                    .buttonStyle(.link)
+                                    .font(.caption2)
+                                    if let suggestedCommand = playbook.suggestedCommand {
+                                        Button("Prepare rerun in composer") {
+                                            onPrepareRerunCommand(suggestedCommand)
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+
+                                        let canExecuteDirectly = canExecuteRerunCommand(suggestedCommand)
+                                        Button(
+                                            canExecuteDirectly ? "Run allowlisted rerun" : "Direct rerun blocked"
+                                        ) {
+                                            pendingAllowlistedRerunCommand = suggestedCommand
+                                        }
+                                        .buttonStyle(.link)
+                                        .font(.caption2)
+                                        .disabled(!canExecuteDirectly)
+                                        .help(rerunExecutionPolicyMessage(suggestedCommand))
+
                                         Button("Copy rerun command") {
                                             copyToPasteboard(suggestedCommand)
                                         }
@@ -216,6 +405,32 @@ struct DiagnosticsView: View {
             refreshTask?.cancel()
             refreshTask = nil
         }
+        .confirmationDialog(
+            "Run allowlisted rerun command?",
+            isPresented: Binding(
+                get: { pendingAllowlistedRerunCommand != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingAllowlistedRerunCommand = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let command = pendingAllowlistedRerunCommand {
+                Button("Run Now") {
+                    onExecuteRerunCommand(command)
+                    pendingAllowlistedRerunCommand = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingAllowlistedRerunCommand = nil
+            }
+        } message: {
+            if let command = pendingAllowlistedRerunCommand {
+                Text("This queues a single allowlisted rerun request for:\n\(command)")
+            }
+        }
     }
 
     private func color(for level: LogLevel) -> Color {
@@ -244,6 +459,104 @@ struct DiagnosticsView: View {
         default:
             .secondary
         }
+    }
+
+    private var automationTimelineRollups: [AppModel.AutomationTimelineEventRollup] {
+        let scoped = extensibilityDiagnostics.filter { event in
+            if event.surface == "automations" {
+                return true
+            }
+            if event.surface == "launchd" {
+                return true
+            }
+            return event.surface == "extensions" && event.operation == "automation"
+        }
+
+        switch automationTimelineFocusFilter {
+        case .all:
+            return AppModel.rollupAutomationTimelineEvents(scoped)
+        case .selectedProject:
+            guard let selectedProjectID else { return [] }
+            return AppModel.rollupAutomationTimelineEvents(
+                scoped.filter { $0.projectID == selectedProjectID }
+            )
+        case .selectedThread:
+            guard let selectedThreadID else { return [] }
+            return AppModel.rollupAutomationTimelineEvents(
+                scoped.filter { $0.threadID == selectedThreadID }
+            )
+        }
+    }
+
+    private var emptyAutomationTimelineMessage: String {
+        switch automationTimelineFocusFilter {
+        case .all:
+            "No automation diagnostics events yet"
+        case .selectedProject:
+            selectedProjectID == nil
+                ? "Select a project to view project-scoped automation diagnostics."
+                : "No automation diagnostics events for the selected project."
+        case .selectedThread:
+            selectedThreadID == nil
+                ? "Select a thread to view thread-scoped automation diagnostics."
+                : "No automation diagnostics events for the selected thread."
+        }
+    }
+
+    private func automationSourceLabel(for event: AppModel.ExtensibilityDiagnosticEvent) -> String {
+        switch (event.surface, event.operation) {
+        case ("extensions", "automation"):
+            "Scheduler"
+        case ("launchd", _):
+            "Launchd"
+        case ("automations", "health"):
+            "Health"
+        default:
+            "\(event.surface)/\(event.operation)"
+        }
+    }
+
+    private func repeatedEventSummary(for rollup: AppModel.AutomationTimelineEventRollup) -> String {
+        let seconds = Int(rollup.durationSeconds.rounded(.down))
+        if seconds < 60 {
+            return "Repeated \(rollup.occurrenceCount)x in the last \(max(1, seconds))s"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "Repeated \(rollup.occurrenceCount)x over \(minutes)m"
+        }
+
+        let hours = minutes / 60
+        return "Repeated \(rollup.occurrenceCount)x over \(hours)h"
+    }
+
+    private func projectLabel(for projectID: UUID) -> String {
+        if let label = projectLabelsByID[projectID], !label.isEmpty {
+            return label
+        }
+        return projectID.uuidString
+    }
+
+    private func threadLabel(for threadID: UUID) -> String {
+        if let label = threadLabelsByID[threadID], !label.isEmpty {
+            return label
+        }
+        return threadID.uuidString
+    }
+
+    private func toggleAutomationRollupExpansion(_ rollupID: String) {
+        if expandedAutomationRollupIDs.contains(rollupID) {
+            expandedAutomationRollupIDs.remove(rollupID)
+        } else {
+            expandedAutomationRollupIDs.insert(rollupID)
+        }
+    }
+
+    private func relativeTimestampLabel(for timestamp: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: timestamp, relativeTo: Date())
     }
 
     private func startRefreshingPerformanceSnapshot() {

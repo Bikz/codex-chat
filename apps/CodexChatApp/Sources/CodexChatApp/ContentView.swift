@@ -117,6 +117,23 @@ struct ContentView: View {
                 adaptiveTurnConcurrencyLimit: model.adaptiveTurnConcurrencyLimit,
                 logs: model.logs,
                 extensibilityDiagnostics: model.extensibilityDiagnostics,
+                selectedProjectID: model.selectedProjectID,
+                selectedThreadID: model.selectedThreadID,
+                projectLabelsByID: Dictionary(
+                    uniqueKeysWithValues: model.projects.map { ($0.id, $0.name) }
+                ),
+                threadLabelsByID: Dictionary(
+                    model.threads
+                        .map { ($0.id, $0.title) } + model.generalThreads.map { ($0.id, $0.title) },
+                    uniquingKeysWith: { first, _ in first }
+                ),
+                automationTimelineFocusFilter: model.automationTimelineFocusFilter,
+                onAutomationTimelineFocusFilterChange: model.setAutomationTimelineFocusFilter,
+                onFocusTimelineProject: model.focusAutomationTimelineProject,
+                onFocusTimelineThread: model.focusAutomationTimelineThread,
+                canExecuteRerunCommand: model.isExtensibilityRerunCommandAllowlisted,
+                rerunExecutionPolicyMessage: model.extensibilityRerunCommandPolicyMessage,
+                onExecuteRerunCommand: model.executeAllowlistedExtensibilityRerunCommand,
                 onPrepareRerunCommand: model.prepareExtensibilityRerunCommand,
                 onClose: model.closeDiagnostics
             )

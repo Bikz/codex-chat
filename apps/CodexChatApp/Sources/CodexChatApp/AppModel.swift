@@ -121,6 +121,8 @@ final class AppModel: ObservableObject {
         var projectMods: [DiscoveredUIMod]
         var selectedGlobalModPath: String?
         var selectedProjectModPath: String?
+        var enabledGlobalModIDs: Set<String> = []
+        var enabledProjectModIDs: Set<String> = []
     }
 
     struct UserThemeCustomization: Hashable, Codable, Sendable {
@@ -509,6 +511,19 @@ final class AppModel: ObservableObject {
         let isSelected: Bool
     }
 
+    struct ModsBarQuickSwitchSection: Identifiable, Hashable, Sendable {
+        let scope: ModsBarQuickSwitchOption.Scope
+        let options: [ModsBarQuickSwitchOption]
+
+        var id: ModsBarQuickSwitchOption.Scope {
+            scope
+        }
+
+        var title: String {
+            scope.label
+        }
+    }
+
     struct PendingModReview: Identifiable, Hashable {
         let id: UUID
         let threadID: UUID
@@ -564,6 +579,9 @@ final class AppModel: ObservableObject {
         let operation: String
         let kind: String
         let command: String
+        let modID: String?
+        let projectID: UUID?
+        let threadID: UUID?
         let summary: String
 
         init(
@@ -573,6 +591,9 @@ final class AppModel: ObservableObject {
             operation: String,
             kind: String,
             command: String,
+            modID: String? = nil,
+            projectID: UUID? = nil,
+            threadID: UUID? = nil,
             summary: String
         ) {
             self.id = id
@@ -581,6 +602,9 @@ final class AppModel: ObservableObject {
             self.operation = operation
             self.kind = kind
             self.command = command
+            self.modID = modID
+            self.projectID = projectID
+            self.threadID = threadID
             self.summary = summary
         }
     }
@@ -713,6 +737,23 @@ final class AppModel: ObservableObject {
                 "rectangle.righthalf.inset.filled"
             case .expanded:
                 "rectangle.split.3x1"
+            }
+        }
+    }
+
+    enum AutomationTimelineFocusFilter: String, CaseIterable, Codable, Sendable {
+        case all
+        case selectedProject
+        case selectedThread
+
+        var label: String {
+            switch self {
+            case .all:
+                "All"
+            case .selectedProject:
+                "Project"
+            case .selectedThread:
+                "Thread"
             }
         }
     }
@@ -919,7 +960,9 @@ final class AppModel: ObservableObject {
     @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
     @Published var activeUntrustedShellWarning: UntrustedShellWarningContext?
     @Published var extensionModsBarByThreadID: [UUID: ExtensionModsBarState] = [:]
+    @Published var extensionModsBarByProjectID: [UUID: ExtensionModsBarState] = [:]
     @Published var extensionGlobalModsBarState: ExtensionModsBarState?
+    @Published var modsBarIconOverridesByModID: [String: String] = [:]
     @Published var extensionModsBarIsVisible = false
     @Published var extensionModsBarPresentationMode: ModsBarPresentationMode = .peek
     @Published var extensionModsBarLastOpenPresentationMode: ModsBarPresentationMode = .peek
@@ -927,6 +970,7 @@ final class AppModel: ObservableObject {
     @Published var extensionAutomationHealthByModID: [String: ExtensionAutomationHealthSummary] = [:]
     @Published var extensibilityDiagnostics: [ExtensibilityDiagnosticEvent] = []
     @Published var extensibilityDiagnosticsRetentionLimit = 100
+    @Published var automationTimelineFocusFilter: AutomationTimelineFocusFilter = .all
     @Published var activeModsBarSlot: ModUISlots.ModsBar?
     @Published var activeModsBarModID: String?
     @Published var activeModsBarModDirectoryPath: String?
@@ -1052,6 +1096,8 @@ final class AppModel: ObservableObject {
     var voiceElapsedTickerTask: Task<Void, Never>?
     var userThemePersistenceTask: Task<Void, Never>?
     var savedCustomThemePresetPersistenceTask: Task<Void, Never>?
+    var modsBarIconOverridesPersistenceTask: Task<Void, Never>?
+    var automationTimelineFocusFilterPersistenceTask: Task<Void, Never>?
     var voiceCaptureSessionID: UInt64 = 0
     var voiceAutoStopDurationNanoseconds: UInt64 = 90_000_000_000
     let voiceElapsedClock = ContinuousClock()
@@ -1177,6 +1223,8 @@ final class AppModel: ObservableObject {
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
         savedCustomThemePresetPersistenceTask?.cancel()
+        modsBarIconOverridesPersistenceTask?.cancel()
+        automationTimelineFocusFilterPersistenceTask?.cancel()
         conversationUpdateScheduler.invalidate()
         globalModsWatcher?.stop()
         globalModsWatcher = nil
@@ -1243,6 +1291,8 @@ final class AppModel: ObservableObject {
         voiceElapsedTickerTask?.cancel()
         userThemePersistenceTask?.cancel()
         savedCustomThemePresetPersistenceTask?.cancel()
+        modsBarIconOverridesPersistenceTask?.cancel()
+        automationTimelineFocusFilterPersistenceTask?.cancel()
         globalModsWatcher?.stop()
         projectModsWatcher?.stop()
         computerActionHarnessServer?.stop()
@@ -1517,8 +1567,17 @@ final class AppModel: ObservableObject {
     }
 
     var selectedExtensionModsBarState: ExtensionModsBarState? {
-        guard let selectedThreadID else { return extensionGlobalModsBarState }
-        return extensionModsBarByThreadID[selectedThreadID] ?? extensionGlobalModsBarState
+        if let selectedThreadID,
+           let threadState = extensionModsBarByThreadID[selectedThreadID]
+        {
+            return threadState
+        }
+        if let selectedProjectID,
+           let projectState = extensionModsBarByProjectID[selectedProjectID]
+        {
+            return projectState
+        }
+        return extensionGlobalModsBarState
     }
 
     var resolvedLightThemeOverride: ModThemeOverride {
@@ -1558,8 +1617,18 @@ final class AppModel: ObservableObject {
         selectedProjectID != nil || selectedThreadID != nil
     }
 
+    var isActiveModsBarThreadRequired: Bool {
+        activeModsBarSlot?.requiresThread ?? true
+    }
+
     var isModsBarAvailableForSelectedThread: Bool {
-        activeModsBarSlot?.enabled ?? false
+        guard activeModsBarSlot?.enabled == true else {
+            return false
+        }
+        if selectedThreadID == nil, isActiveModsBarThreadRequired {
+            return false
+        }
+        return true
     }
 
     var canReviewChanges: Bool {

@@ -17,6 +17,10 @@ This folder contains contributor-facing documentation tracked in git.
 - `PERSONAL_ACTIONS.md` — native macOS personal actions, adaptive intent routing, and preview/confirm safety model.
 - `DEVELOPER_AGENT_WORKFLOWS.md` — worker trace, role/profile builder, and dependency-aware plan runner primitives.
 - `CODEX_APP_SERVER_RESPONSE_TAXONOMY.md` — complete inventory of app-server response types, decode paths, and current UX treatment.
+- `RUNTIME_LEDGER_REPLAY.md` — deterministic local replay and thread-ledger export workflow.
+- `RUNTIME_POLICY_AS_CODE.md` — tracked runtime safety policy validation workflow.
+- `RUNTIME_RELIABILITY_SLO_DRAFT.md` — draft SLI/SLO targets for runtime/data reliability.
+- `RUNTIME_RELIABILITY_BUNDLE.md` — one-command local reliability diagnostics bundle workflow.
 - `EXTENSIONS.md` — compatibility landing page linking to canonical `MODS_SHARING.md` sections.
 - `ADR-EXTENSIONS-RUNTIME.md` — extension runtime architecture decision.
 - `EXTENSIONS_SPEC_VNEXT.md` — proposed package/runtime extension spec for ecosystem scaling.

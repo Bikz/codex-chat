@@ -7,6 +7,129 @@ final class CodexChatCLICommandParserTests: XCTestCase {
         XCTAssertEqual(try CodexChatCLICommandParser.parse(arguments: ["smoke"]), .smoke)
     }
 
+    func testParsesReplayCommandWithJSONAndLimit() throws {
+        let command = try CodexChatCLICommandParser.parse(
+            arguments: [
+                "replay",
+                "--project-path",
+                "/tmp/project",
+                "--thread-id",
+                "00000000-0000-0000-0000-000000000111",
+                "--limit",
+                "25",
+                "--json",
+            ]
+        )
+
+        XCTAssertEqual(
+            command,
+            .replay(
+                CodexChatCLIReplayOptions(
+                    projectPath: "/tmp/project",
+                    threadID: "00000000-0000-0000-0000-000000000111",
+                    limit: 25,
+                    asJSON: true
+                )
+            )
+        )
+    }
+
+    func testParsesLedgerExportCommand() throws {
+        let command = try CodexChatCLICommandParser.parse(
+            arguments: [
+                "ledger",
+                "export",
+                "--project-path",
+                "/tmp/project",
+                "--thread-id",
+                "00000000-0000-0000-0000-000000000222",
+                "--limit",
+                "10",
+                "--output",
+                "/tmp/ledger.json",
+            ]
+        )
+
+        XCTAssertEqual(
+            command,
+            .ledger(
+                .export(
+                    CodexChatCLILedgerExportOptions(
+                        projectPath: "/tmp/project",
+                        threadID: "00000000-0000-0000-0000-000000000222",
+                        limit: 10,
+                        outputPath: "/tmp/ledger.json"
+                    )
+                )
+            )
+        )
+    }
+
+    func testParsesLedgerBackfillCommand() throws {
+        let command = try CodexChatCLICommandParser.parse(
+            arguments: [
+                "ledger",
+                "backfill",
+                "--project-path",
+                "/tmp/project",
+                "--limit",
+                "50",
+                "--force",
+                "--json",
+            ]
+        )
+
+        XCTAssertEqual(
+            command,
+            .ledger(
+                .backfill(
+                    CodexChatCLILedgerBackfillOptions(
+                        projectPath: "/tmp/project",
+                        limit: 50,
+                        force: true,
+                        asJSON: true
+                    )
+                )
+            )
+        )
+    }
+
+    func testParsesLedgerBackfillCommandWithDefaultOptions() throws {
+        let command = try CodexChatCLICommandParser.parse(
+            arguments: [
+                "ledger",
+                "backfill",
+                "--project-path",
+                "/tmp/project",
+            ]
+        )
+
+        XCTAssertEqual(
+            command,
+            .ledger(
+                .backfill(
+                    CodexChatCLILedgerBackfillOptions(
+                        projectPath: "/tmp/project",
+                        limit: .max,
+                        force: false,
+                        asJSON: false
+                    )
+                )
+            )
+        )
+    }
+
+    func testParsesPolicyValidateCommand() throws {
+        let command = try CodexChatCLICommandParser.parse(
+            arguments: ["policy", "validate", "--file", "/tmp/policy.json"]
+        )
+
+        XCTAssertEqual(
+            command,
+            .policy(.validate(CodexChatCLIPolicyValidateOptions(filePath: "/tmp/policy.json")))
+        )
+    }
+
     func testParsesReproWithFixtureAndOverrideRoot() throws {
         let command = try CodexChatCLICommandParser.parse(
             arguments: ["repro", "--fixture", "basic-turn", "--fixtures-root", "/tmp/fixtures"]
@@ -74,6 +197,47 @@ final class CodexChatCLICommandParserTests: XCTestCase {
             XCTAssertEqual(
                 (error as? CodexChatCLIArgumentError)?.message,
                 "Missing value for --name"
+            )
+        }
+    }
+
+    func testRejectsInvalidReplayAndLedgerArguments() throws {
+        XCTAssertThrowsError(try CodexChatCLICommandParser.parse(arguments: ["replay", "--project-path", "/tmp/p"])) { error in
+            XCTAssertEqual(
+                (error as? CodexChatCLIArgumentError)?.message,
+                "`replay` requires --thread-id <uuid>"
+            )
+        }
+
+        XCTAssertThrowsError(
+            try CodexChatCLICommandParser.parse(arguments: [
+                "ledger",
+                "export",
+                "--project-path",
+                "/tmp/p",
+                "--thread-id",
+                "id",
+                "--limit",
+                "0",
+            ])
+        ) { error in
+            XCTAssertEqual(
+                (error as? CodexChatCLIArgumentError)?.message,
+                "--limit must be a positive integer"
+            )
+        }
+
+        XCTAssertThrowsError(
+            try CodexChatCLICommandParser.parse(arguments: [
+                "ledger",
+                "backfill",
+                "--limit",
+                "10",
+            ])
+        ) { error in
+            XCTAssertEqual(
+                (error as? CodexChatCLIArgumentError)?.message,
+                "`ledger backfill` requires --project-path <path>"
             )
         }
     }

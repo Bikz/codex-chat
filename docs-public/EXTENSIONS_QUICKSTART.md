@@ -37,6 +37,7 @@ Output: one JSON line, for example:
 Then keep `ui.mod.json` hook bound to `turn.completed` and `uiSlots.modsBar`.
 
 Keep `ui.mod.json` on `schemaVersion: 1` and do not use legacy `uiSlots.rightInspector`.
+Use `modsBar.scope` as needed: `thread`, `project`, or `global`.
 
 ### Runtime baseline for no-dependency mods
 
@@ -100,11 +101,14 @@ If your extension requests privileged permissions (`projectWrite`, `network`, `r
   - `peek`: standard docked panel
   - `expanded`: wider docked panel for dense extension UIs
 - Closing from `rail` hides the panel fully; reopening restores the last open non-rail mode.
+- When the same mod id exists in both project and global scope, rail quick-switch deduplicates to one entry.
+- Add `uiSlots.modsBar.requiresThread: false` for mods that should work in draft mode without a selected thread.
+- Optionally set `manifest.iconSymbol` to control the Mods bar rail icon.
 
 ## Patterns For Common Extensions
 
-1. Personal Notes (per chat):
-- use `turn.completed` hook + modsBar markdown + optional `artifacts` writes under project root.
+1. Personal Notes (per project):
+- use `modsBar.scope: project` so notes persist across chats in the same project.
 
 2. Thread Summary:
 - emit one-line bullet updates in modsBar markdown after each turn.

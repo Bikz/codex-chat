@@ -22,12 +22,17 @@ public actor ExtensionStateStore {
     public func modsBarOutputURL(
         modDirectory: URL,
         scope: ExtensionModsBarOutput.Scope,
-        threadID: UUID?
+        threadID: UUID?,
+        projectID: UUID?
     ) -> URL {
         switch scope {
         case .global:
             return stateDirectoryURL(modDirectory: modDirectory)
                 .appendingPathComponent("modsBar-global.json", isDirectory: false)
+        case .project:
+            let resolvedProjectID = projectID ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+            return stateDirectoryURL(modDirectory: modDirectory)
+                .appendingPathComponent("modsBar-project-\(resolvedProjectID.uuidString).json", isDirectory: false)
         case .thread:
             let resolvedThreadID = threadID ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
             return stateDirectoryURL(modDirectory: modDirectory)
@@ -38,17 +43,25 @@ public actor ExtensionStateStore {
     public func writeModsBarOutput(
         output: ExtensionModsBarOutput,
         modDirectory: URL,
-        threadID: UUID?
+        threadID: UUID?,
+        projectID: UUID?
     ) throws -> URL {
         let scope = output.scope ?? .thread
-        guard scope == .global || threadID != nil else {
+        if scope == .thread, threadID == nil {
             throw NSError(
                 domain: "CodexExtensions.ExtensionStateStore",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Thread-scoped modsBar output requires a thread ID."]
             )
         }
-        let url = modsBarOutputURL(modDirectory: modDirectory, scope: scope, threadID: threadID)
+        if scope == .project, projectID == nil {
+            throw NSError(
+                domain: "CodexExtensions.ExtensionStateStore",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Project-scoped modsBar output requires a project ID."]
+            )
+        }
+        let url = modsBarOutputURL(modDirectory: modDirectory, scope: scope, threadID: threadID, projectID: projectID)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -60,9 +73,10 @@ public actor ExtensionStateStore {
     public func readModsBarOutput(
         modDirectory: URL,
         scope: ExtensionModsBarOutput.Scope,
-        threadID: UUID?
+        threadID: UUID?,
+        projectID: UUID?
     ) throws -> ExtensionModsBarOutput? {
-        let url = modsBarOutputURL(modDirectory: modDirectory, scope: scope, threadID: threadID)
+        let url = modsBarOutputURL(modDirectory: modDirectory, scope: scope, threadID: threadID, projectID: projectID)
         if FileManager.default.fileExists(atPath: url.path) {
             let data = try Data(contentsOf: url)
             return try JSONDecoder().decode(ExtensionModsBarOutput.self, from: data)

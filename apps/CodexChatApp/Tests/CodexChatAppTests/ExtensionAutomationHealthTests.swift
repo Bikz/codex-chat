@@ -138,6 +138,7 @@ final class ExtensionAutomationHealthTests: XCTestCase {
         XCTAssertEqual(model.extensibilityDiagnostics.first?.surface, "automations")
         XCTAssertEqual(model.extensibilityDiagnostics.first?.operation, "health")
         XCTAssertEqual(model.extensibilityDiagnostics.first?.kind, "command")
+        XCTAssertEqual(model.extensibilityDiagnostics.first?.modID, "acme.mod")
         XCTAssertTrue(model.extensibilityDiagnostics.first?.summary.contains("acme.mod") == true)
     }
 
