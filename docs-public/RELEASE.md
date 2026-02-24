@@ -24,6 +24,26 @@ SwiftPM GUI binaries are not release inputs.
 
 ## Auto-Increment Version + Build
 
+- Preferred production release command (CI-first with automatic local fallback):
+
+```sh
+make release-prod
+```
+
+Optional controls:
+
+- `VERSION=v0.0.7 make release-prod` (force a specific version)
+- `RELEASE_TIMEOUT_MINUTES=30 make release-prod` (CI wait SLO)
+- `ENABLE_LOCAL_FALLBACK=0 make release-prod` (fail instead of local fallback)
+
+`release-prod` behavior:
+
+- Idempotent retries: re-running a version will reuse existing tag/release and only upload missing/replaceable assets.
+- CI-first: pushes/uses tag and waits for `.github/workflows/release-dmg.yml`.
+- Timeout + fallback: if CI fails/times out, it automatically runs local signed/notarized DMG build and uploads assets.
+- Diagnostics: prints failing GitHub Actions run details and failed logs before fallback.
+- Post-release verification: asserts release is not draft/prerelease and contains both required assets.
+
 - Version auto-increment helper (patch bump, starting at `v0.0.1` when no tags exist):
 
 ```sh
