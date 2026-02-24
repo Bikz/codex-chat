@@ -137,7 +137,7 @@ struct ChatsCanvasView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 FollowUpQueueView(model: model)
-                if let request = model.pendingUserApprovalForSelectedThread {
+                if let request = model.pendingUserApprovalForComposerSurface {
                     InlineUserApprovalRequestView(
                         model: model,
                         request: request,
@@ -148,7 +148,7 @@ struct ChatsCanvasView: View {
                 }
 
                 if let notice = model.permissionRecoveryNotice,
-                   model.pendingUserApprovalForSelectedThread == nil
+                   model.pendingUserApprovalForComposerSurface == nil
                 {
                     permissionRecoveryInlineBanner(notice)
                         .padding(.horizontal, tokens.spacing.medium)
@@ -756,7 +756,8 @@ struct ChatsCanvasView: View {
                                 MessageRow(
                                     message: message,
                                     tokens: tokens,
-                                    allowsExternalMarkdownContent: model.isSelectedProjectTrusted
+                                    allowsExternalMarkdownContent: model.isSelectedProjectTrusted,
+                                    projectPath: model.selectedProject?.path
                                 )
                                 .padding(.vertical, tokens.spacing.xSmall)
                                 .listRowSeparator(.hidden)
