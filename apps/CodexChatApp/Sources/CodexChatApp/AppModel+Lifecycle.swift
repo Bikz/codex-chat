@@ -100,10 +100,16 @@ extension AppModel {
         await restoreExtensibilityDiagnosticsIfNeeded()
         try ensureCurrentStartupGeneration(generation)
 
+        await restoreAutomationTimelineFocusFilterIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
         await restoreUserThemeCustomizationIfNeeded()
         try ensureCurrentStartupGeneration(generation)
 
         await restoreSavedCustomThemePresetIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
+        await restoreModsBarIconOverridesIfNeeded()
         try ensureCurrentStartupGeneration(generation)
 
         await restoreModsBarVisibility()

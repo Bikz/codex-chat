@@ -23,6 +23,37 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(model.selectedExtensionModsBarState?.title, "Prompt Book")
     }
 
+    func testSelectedExtensionModsBarStateFallsBackToProjectThenGlobal() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Project", path: "/tmp/project", trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+
+        let projectState = AppModel.ExtensionModsBarState(
+            title: "Project Notes",
+            markdown: "- scoped",
+            scope: .project,
+            actions: [],
+            updatedAt: Date()
+        )
+        let globalState = AppModel.ExtensionModsBarState(
+            title: "Prompt Book",
+            markdown: "- global",
+            scope: .global,
+            actions: [],
+            updatedAt: Date()
+        )
+
+        model.extensionModsBarByProjectID[projectID] = projectState
+        model.extensionGlobalModsBarState = globalState
+
+        XCTAssertEqual(model.selectedExtensionModsBarState?.scope, .project)
+        XCTAssertEqual(model.selectedExtensionModsBarState?.title, "Project Notes")
+    }
+
     func testPerformModsBarActionComposerInsertAppendsToComposer() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.composerText = "Existing text"
@@ -110,9 +141,10 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: targetOutput.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: otherOutput.path))
 
-        let written = try String(contentsOf: targetOutput)
-        XCTAssertTrue(written.contains("\"event\":\"modsBar.action\""))
-        XCTAssertTrue(written.contains("\"targetHookID\":\"target-hook\""))
+        let writtenData = try Data(contentsOf: targetOutput)
+        let capturedInput = try JSONDecoder().decode(ExtensionWorkerInput.self, from: writtenData)
+        XCTAssertEqual(capturedInput.event, ExtensionEventName.modsBarAction.rawValue)
+        XCTAssertEqual(capturedInput.payload["targetHookID"], "target-hook")
     }
 
     func testPerformModsBarActionNativeActionReportsUnsupportedAction() async throws {
@@ -524,6 +556,52 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(written.contains("\"input\":\"Forked :: Use forked prompt action\""))
     }
 
+    func testUpsertPromptBookEntryInlineSupportsDraftModeWithoutSelectedThread() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-promptbook-draft-upsert")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        let projectPath = try makeTempDirectory(prefix: "modsbar-promptbook-draft-project").path
+        let output = URL(fileURLWithPath: projectPath).appendingPathComponent("prompt-draft.json", isDirectory: false)
+        let script = try makeCaptureScript(outputURL: output)
+
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Project", path: projectPath, trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+        model.activeModsBarModID = "acme.prompt-book"
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book", requiresThread: false)
+        model.activeExtensionHooks = [
+            AppModel.ResolvedExtensionHook(
+                modID: "acme.prompt-book",
+                modDirectoryPath: projectPath,
+                definition: ModHookDefinition(
+                    id: "acme-prompt-action",
+                    event: .modsBarAction,
+                    handler: .init(command: [script.path], cwd: ".")
+                )
+            ),
+        ]
+
+        XCTAssertTrue(model.isPromptBookModsBarActiveForSelectedThread)
+        model.upsertPromptBookEntryInline(index: nil, title: "Draft", text: "Run in draft mode")
+
+        try await eventually(timeoutSeconds: 10) {
+            guard FileManager.default.fileExists(atPath: output.path),
+                  let written = try? String(contentsOf: output)
+            else {
+                return false
+            }
+            return written.contains("\"event\":\"modsBar.action\"")
+        }
+
+        let written = try String(contentsOf: output)
+        XCTAssertTrue(written.contains("\"targetModID\":\"acme.prompt-book\""))
+        XCTAssertTrue(written.contains("\"targetHookID\":\"acme-prompt-action\""))
+        XCTAssertTrue(written.contains("\"operation\":\"add\""))
+        XCTAssertTrue(written.contains("\"input\":\"Draft :: Run in draft mode\""))
+    }
+
     func testModsBarQuickSwitchOptionsIncludeProjectAndGlobalChoices() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectMod = makeModsBarMod(id: "acme.project", name: "Project Prompt Book", scope: .project, directorySuffix: "project")
@@ -534,7 +612,9 @@ final class ModsBarActionTests: XCTestCase {
                 globalMods: [globalMod],
                 projectMods: [projectMod],
                 selectedGlobalModPath: globalMod.directoryPath,
-                selectedProjectModPath: nil
+                selectedProjectModPath: nil,
+                enabledGlobalModIDs: [globalMod.definition.manifest.id],
+                enabledProjectModIDs: [projectMod.definition.manifest.id]
             )
         )
 
@@ -544,6 +624,115 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(options[1].scope, .global)
         XCTAssertTrue(options[1].isSelected)
         XCTAssertTrue(model.hasModsBarQuickSwitchChoices)
+    }
+
+    func testModsBarQuickSwitchSectionsGroupByScopeOrder() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectMod = makeModsBarMod(id: "acme.project", name: "Project Prompt Book", scope: .project, directorySuffix: "project")
+        let globalMod = makeModsBarMod(id: "acme.global", name: "Global Notes", scope: .global, directorySuffix: "global")
+
+        model.modsState = .loaded(
+            AppModel.ModsSurfaceModel(
+                globalMods: [globalMod],
+                projectMods: [projectMod],
+                selectedGlobalModPath: globalMod.directoryPath,
+                selectedProjectModPath: nil,
+                enabledGlobalModIDs: [globalMod.definition.manifest.id],
+                enabledProjectModIDs: [projectMod.definition.manifest.id]
+            )
+        )
+
+        let sections = model.modsBarQuickSwitchSections
+        XCTAssertEqual(sections.map(\.scope), [.project, .global])
+        XCTAssertEqual(sections[0].options.count, 1)
+        XCTAssertEqual(sections[1].options.count, 1)
+        XCTAssertEqual(sections[0].options[0].mod.definition.manifest.id, "acme.project")
+        XCTAssertEqual(sections[1].options[0].mod.definition.manifest.id, "acme.global")
+    }
+
+    func testModsBarQuickSwitchDeduplicatesSameModIDAcrossScopes() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let modID = "acme.shared-mod"
+        let projectMod = makeModsBarMod(id: modID, name: "Shared Mod", scope: .project, directorySuffix: "project-shared")
+        let globalMod = makeModsBarMod(id: modID, name: "Shared Mod", scope: .global, directorySuffix: "global-shared")
+
+        model.modsState = .loaded(
+            AppModel.ModsSurfaceModel(
+                globalMods: [globalMod],
+                projectMods: [projectMod],
+                selectedGlobalModPath: globalMod.directoryPath,
+                selectedProjectModPath: nil,
+                enabledGlobalModIDs: [globalMod.definition.manifest.id],
+                enabledProjectModIDs: [projectMod.definition.manifest.id]
+            )
+        )
+
+        let options = model.modsBarQuickSwitchOptions
+        XCTAssertEqual(options.count, 1)
+        XCTAssertEqual(options[0].mod.definition.manifest.id, modID)
+        XCTAssertEqual(options[0].scope, .global)
+        XCTAssertTrue(options[0].isSelected)
+        XCTAssertEqual(model.modsBarQuickSwitchSections.map(\.scope), [.global])
+        XCTAssertEqual(model.selectedModsBarQuickSwitchOption?.mod.definition.manifest.id, modID)
+    }
+
+    func testSyncActiveExtensionsIncludesMultipleEnabledGlobalMods() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let modAPath = "/tmp/mod-a-\(UUID().uuidString)"
+        let modBPath = "/tmp/mod-b-\(UUID().uuidString)"
+
+        let modA = DiscoveredUIMod(
+            scope: .global,
+            directoryPath: modAPath,
+            definitionPath: "\(modAPath)/ui.mod.json",
+            definition: UIModDefinition(
+                manifest: .init(id: "acme.a", name: "A", version: "1.0.0"),
+                theme: .init(),
+                hooks: [
+                    .init(id: "hook-a", event: .turnCompleted, handler: .init(command: ["sh", "hook-a.sh"])),
+                ]
+            ),
+            computedChecksum: nil
+        )
+        let modB = DiscoveredUIMod(
+            scope: .global,
+            directoryPath: modBPath,
+            definitionPath: "\(modBPath)/ui.mod.json",
+            definition: UIModDefinition(
+                manifest: .init(id: "acme.b", name: "B", version: "1.0.0"),
+                theme: .init(),
+                hooks: [
+                    .init(id: "hook-b", event: .turnCompleted, handler: .init(command: ["sh", "hook-b.sh"])),
+                ]
+            ),
+            computedChecksum: nil
+        )
+
+        model.syncActiveExtensions(
+            globalMods: [modA, modB],
+            projectMods: [],
+            selectedGlobalPath: modAPath,
+            selectedProjectPath: nil,
+            installRecords: [
+                ExtensionInstallRecord(
+                    id: "global:acme.a",
+                    modID: "acme.a",
+                    scope: .global,
+                    installedPath: modAPath,
+                    enabled: true
+                ),
+                ExtensionInstallRecord(
+                    id: "global:acme.b",
+                    modID: "acme.b",
+                    scope: .global,
+                    installedPath: modBPath,
+                    enabled: true
+                ),
+            ]
+        )
+
+        let hookIDs = Set(model.activeExtensionHooks.map(\.definition.id))
+        XCTAssertEqual(hookIDs, Set(["hook-a", "hook-b"]))
     }
 
     func testModsBarQuickSwitchSymbolUsesPromptBookIconForPromptTitles() {
@@ -560,6 +749,23 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "text.book.closed")
     }
 
+    func testModsBarQuickSwitchSymbolPrefersExplicitManifestIcon() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let mod = DiscoveredUIMod(
+            scope: .global,
+            directoryPath: "/tmp/mod-\(UUID().uuidString)",
+            definitionPath: "/tmp/mod-ui.mod.json",
+            definition: UIModDefinition(
+                manifest: .init(id: "acme.custom", name: "Custom", version: "1.0.0", iconSymbol: "bolt.fill"),
+                theme: .init(),
+                uiSlots: .init(modsBar: .init(enabled: true, title: "Custom"))
+            ),
+            computedChecksum: nil
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: mod, isSelected: false)
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
+    }
+
     func testModsBarQuickSwitchSymbolFallsBackToPuzzlePieceForUnknownMods() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let unknownMod = makeModsBarMod(
@@ -570,7 +776,79 @@ final class ModsBarActionTests: XCTestCase {
         )
         let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
 
-        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "puzzlepiece.extension")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "tray.full")
+    }
+
+    func testModsBarIconOverrideAffectsResolvedSymbol() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let unknownMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .global,
+            directorySuffix: "custom"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "tray.full")
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: "bolt.fill")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
+    }
+
+    func testModsBarIconOverridesPersistAndRestore() async throws {
+        let repositories = try makeRepositories(prefix: "modsbar-icon-override")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: "bolt.fill")
+
+        let deadline = Date().addingTimeInterval(3)
+        var persistedValue: String?
+        repeat {
+            persistedValue = try await repositories.preferenceRepository.getPreference(key: .modsBarIconOverridesV1)
+            if persistedValue?.contains("\"acme.custom-tool\":\"bolt.fill\"") == true {
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        } while Date() < deadline
+
+        XCTAssertTrue(
+            persistedValue?.contains("\"acme.custom-tool\":\"bolt.fill\"") == true,
+            "Expected icon override to persist within timeout"
+        )
+
+        let restored = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        await restored.restoreModsBarIconOverridesIfNeeded()
+        XCTAssertEqual(restored.modsBarIconOverridesByModID["acme.custom-tool"], "bolt.fill")
+    }
+
+    func testModsBarIconOverrideCanResetToAutomatic() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let unknownMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .global,
+            directorySuffix: "custom"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
+
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: "bolt.fill")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
+
+        model.setModsBarIconOverride(modID: "acme.custom-tool", symbolName: nil)
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "tray.full")
+    }
+
+    func testModsBarIconOverrideNormalizesKeyWhitespaceAndCase() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let unknownMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .global,
+            directorySuffix: "custom"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: unknownMod, isSelected: false)
+
+        model.setModsBarIconOverride(modID: "  ACME.CUSTOM-TOOL  ", symbolName: " bolt.fill ")
+        XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
     }
 
     func testToggleModsBarOpensThreadInPeekModeByDefault() {
@@ -597,6 +875,24 @@ final class ModsBarActionTests: XCTestCase {
         model.toggleModsBar()
 
         XCTAssertTrue(model.isModsBarVisibleForSelectedThread)
+    }
+
+    func testModsBarAvailabilityInDraftDependsOnThreadRequirement() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Draft Project", path: "/tmp/draft-project", trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book", requiresThread: false)
+        XCTAssertTrue(model.isModsBarAvailableForSelectedThread)
+        XCTAssertFalse(model.isActiveModsBarThreadRequired)
+
+        model.activeModsBarSlot = .init(enabled: true, title: "Thread Summary", requiresThread: true)
+        XCTAssertFalse(model.isModsBarAvailableForSelectedThread)
+        XCTAssertTrue(model.isActiveModsBarThreadRequired)
     }
 
     func testToggleModsBarFromRailFullyHidesPanel() {

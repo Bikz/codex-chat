@@ -125,7 +125,7 @@ struct ModsCanvas: View {
         SkillsModsCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Global Mod")
+                    Text("Global Mods")
                         .font(.title3.weight(.semibold))
 
                     Spacer()
@@ -149,11 +149,16 @@ struct ModsCanvas: View {
                         systemImage: "folder"
                     )
                 } else {
+                    Text("Checked = active for this scope. Installed mods remain available from the Mods bar quick switch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     LazyVGrid(columns: modCardColumns, alignment: .leading, spacing: 10) {
                         ForEach(surface.globalMods) { mod in
                             modOptionCard(
                                 mod: mod,
                                 scope: .global,
+                                isEnabled: surface.enabledGlobalModIDs.contains(mod.definition.manifest.id),
                                 isSelected: surface.selectedGlobalModPath == mod.directoryPath,
                                 onSelect: { model.setGlobalMod(mod) }
                             )
@@ -225,7 +230,7 @@ struct ModsCanvas: View {
         SkillsModsCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Project Mod")
+                    Text("Project Mods")
                         .font(.title3.weight(.semibold))
 
                     Spacer()
@@ -256,11 +261,16 @@ struct ModsCanvas: View {
                         systemImage: "doc.badge.plus"
                     )
                 } else {
+                    Text("Checked = active for this scope. Installed mods remain available from the Mods bar quick switch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     LazyVGrid(columns: modCardColumns, alignment: .leading, spacing: 10) {
                         ForEach(surface.projectMods) { mod in
                             modOptionCard(
                                 mod: mod,
                                 scope: .project,
+                                isEnabled: surface.enabledProjectModIDs.contains(mod.definition.manifest.id),
                                 isSelected: surface.selectedProjectModPath == mod.directoryPath,
                                 onSelect: { model.setProjectMod(mod) }
                             )
@@ -274,11 +284,18 @@ struct ModsCanvas: View {
     private func modOptionCard(
         mod: DiscoveredUIMod,
         scope: ExtensionInstallScope,
+        isEnabled: Bool,
         isSelected: Bool,
         onSelect: @escaping () -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
+                if mod.definition.uiSlots?.modsBar?.enabled == true {
+                    Image(systemName: modsBarSymbolName(for: mod, scope: scope))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Text(mod.definition.manifest.name)
                     .font(.headline)
                     .lineLimit(1)
@@ -292,17 +309,40 @@ struct ModsCanvas: View {
                 }
 
                 Menu {
-                    Button("Enable") {
+                    Button("Set Active") {
                         onSelect()
                     }
 
                     if isSelected {
-                        Button("Disable") {
+                        Button("Clear Active Selection") {
                             clearModSelection(scope: scope)
                         }
                     }
 
                     Divider()
+
+                    Button(isEnabled ? "Disable Runtime" : "Enable Runtime") {
+                        model.setInstalledModEnabled(mod, scope: scope, enabled: !isEnabled)
+                    }
+                    .disabled(model.isModOperationInProgress)
+
+                    if mod.definition.uiSlots?.modsBar?.enabled == true {
+                        Menu("Set Icon") {
+                            Button("Automatic") {
+                                model.setModsBarIconOverride(modID: mod.definition.manifest.id, symbolName: nil)
+                            }
+
+                            Divider()
+
+                            ForEach(model.modsBarIconPresetSymbols(), id: \.self) { symbol in
+                                Button {
+                                    model.setModsBarIconOverride(modID: mod.definition.manifest.id, symbolName: symbol)
+                                } label: {
+                                    Label(symbol, systemImage: symbol)
+                                }
+                            }
+                        }
+                    }
 
                     Button("Update/Reinstall") {
                         model.updateInstalledMod(mod, scope: scope)
@@ -341,6 +381,7 @@ struct ModsCanvas: View {
 
             HStack(spacing: 8) {
                 modStatusPill(SkillsModsPresentation.modStatus(mod).rawValue)
+                modRuntimePill(isEnabled: isEnabled)
                 Spacer(minLength: 0)
             }
 
@@ -388,6 +429,17 @@ struct ModsCanvas: View {
         }
     }
 
+    private func modsBarSymbolName(for mod: DiscoveredUIMod, scope: ExtensionInstallScope) -> String {
+        let optionScope: AppModel.ModsBarQuickSwitchOption.Scope = switch scope {
+        case .global:
+            .global
+        case .project:
+            .project
+        }
+        let option = AppModel.ModsBarQuickSwitchOption(scope: optionScope, mod: mod, isSelected: false)
+        return model.modsBarQuickSwitchSymbolName(for: option)
+    }
+
     private func modCapabilityBadge(_ capability: SkillsModsPresentation.ModCapability) -> some View {
         let isPrivileged = capability == .privileged
 
@@ -408,6 +460,16 @@ struct ModsCanvas: View {
             .padding(.vertical, 3)
             .background(SkillsModsTheme.headerBackground(tokens: tokens), in: Capsule())
             .overlay(Capsule().strokeBorder(SkillsModsTheme.subtleBorder(tokens: tokens)))
+    }
+
+    private func modRuntimePill(isEnabled: Bool) -> some View {
+        Text(isEnabled ? "Runtime On" : "Runtime Off")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(isEnabled ? .green : .secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background((isEnabled ? Color.green : Color.primary).opacity(0.10), in: Capsule())
+            .overlay(Capsule().strokeBorder((isEnabled ? Color.green : Color.primary).opacity(0.16)))
     }
 
     private func automationHealthRow(_ summary: AppModel.ExtensionAutomationHealthSummary) -> some View {

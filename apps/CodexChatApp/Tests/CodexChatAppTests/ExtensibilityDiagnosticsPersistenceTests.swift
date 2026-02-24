@@ -59,6 +59,57 @@ final class ExtensibilityDiagnosticsPersistenceTests: XCTestCase {
         XCTAssertEqual(model.extensibilityDiagnosticsRetentionLimit, 500)
     }
 
+    func testPersistAndRestoreAutomationTimelineFocusFilter() async throws {
+        let repositories = try makeRepositories(prefix: "ext-diagnostics-focus-filter")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        model.setAutomationTimelineFocusFilter(.selectedProject)
+
+        let deadline = Date().addingTimeInterval(3)
+        var persisted: String?
+        repeat {
+            persisted = try await repositories.preferenceRepository.getPreference(
+                key: .extensibilityAutomationTimelineFocusFilterV1
+            )
+            if persisted == AppModel.AutomationTimelineFocusFilter.selectedProject.rawValue {
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        } while Date() < deadline
+
+        XCTAssertEqual(persisted, AppModel.AutomationTimelineFocusFilter.selectedProject.rawValue)
+
+        let restored = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        await restored.restoreAutomationTimelineFocusFilterIfNeeded()
+        XCTAssertEqual(restored.automationTimelineFocusFilter, .selectedProject)
+    }
+
+    func testAutomationTimelineFocusPersistenceWaitsForInFlightPersistenceTask() async throws {
+        let repositories = try makeRepositories(prefix: "ext-diagnostics-focus-filter-ordering")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        model.automationTimelineFocusFilterPersistenceTask = Task {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+        }
+
+        model.setAutomationTimelineFocusFilter(.selectedProject)
+
+        try await Task.sleep(nanoseconds: 120_000_000)
+        let pendingValue = try await repositories.preferenceRepository.getPreference(
+            key: .extensibilityAutomationTimelineFocusFilterV1
+        )
+        XCTAssertNil(pendingValue)
+
+        if let task = model.automationTimelineFocusFilterPersistenceTask {
+            _ = await task.result
+        }
+
+        let persisted = try await repositories.preferenceRepository.getPreference(
+            key: .extensibilityAutomationTimelineFocusFilterV1
+        )
+        XCTAssertEqual(persisted, AppModel.AutomationTimelineFocusFilter.selectedProject.rawValue)
+    }
+
     private func makeRepositories(prefix: String) throws -> MetadataRepositories {
         let root = try makeTempDirectory(prefix: prefix)
         let database = try MetadataDatabase(

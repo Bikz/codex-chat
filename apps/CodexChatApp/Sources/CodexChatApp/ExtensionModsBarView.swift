@@ -42,16 +42,24 @@ struct ExtensionModsBarView: View {
 
                 if !showsCloseToRailControl, model.hasModsBarQuickSwitchChoices {
                     Menu {
-                        ForEach(model.modsBarQuickSwitchOptions) { option in
-                            Button {
-                                model.activateModsBarQuickSwitchOption(option)
-                            } label: {
-                                HStack {
-                                    Text("\(option.mod.definition.manifest.name) (\(option.scope.label))")
-                                    if option.isSelected {
-                                        Spacer(minLength: 6)
-                                        Image(systemName: "checkmark")
+                        ForEach(model.modsBarQuickSwitchSections) { section in
+                            Section(section.title) {
+                                ForEach(section.options) { option in
+                                    Button {
+                                        model.activateModsBarQuickSwitchOption(option)
+                                    } label: {
+                                        HStack {
+                                            Label(
+                                                model.modsBarQuickSwitchTitle(for: option),
+                                                systemImage: model.modsBarQuickSwitchSymbolName(for: option)
+                                            )
+                                            if option.isSelected {
+                                                Spacer(minLength: 6)
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
                                     }
+                                    .help(model.modsBarQuickSwitchTooltip(for: option))
                                 }
                             }
                         }
@@ -61,7 +69,7 @@ struct ExtensionModsBarView: View {
                             .frame(width: 22, height: 22)
                     }
                     .menuStyle(.borderlessButton)
-                    .help("Switch active mod")
+                    .help(selectedQuickSwitchHelpText)
                     .accessibilityLabel("Switch active mod")
                 }
 
@@ -92,18 +100,17 @@ struct ExtensionModsBarView: View {
             Divider()
 
             Group {
-                if model.selectedThreadID == nil {
+                if !model.isModsBarAvailableForSelectedThread {
                     EmptyStateView(
-                        title: "No thread selected",
-                        message: "Select a thread to view modsBar content.",
-                        systemImage: "sidebar.right"
-                    )
-                    .padding(tokens.spacing.medium)
-                } else if !model.isModsBarAvailableForSelectedThread {
-                    EmptyStateView(
-                        title: "Install a Mods bar mod",
-                        message: "No active mod exposes modsBar content for this thread. Open Skills & Mods > Mods to install or enable one.",
-                        systemImage: "puzzlepiece.extension"
+                        title: model.selectedThreadID == nil && model.isActiveModsBarThreadRequired
+                            ? "Thread required"
+                            : "Install a Mods bar mod",
+                        message: model.selectedThreadID == nil && model.isActiveModsBarThreadRequired
+                            ? "The active mod requires a selected thread. Pick or start a chat, or switch to a global/project mod."
+                            : "No active mod exposes modsBar content for this context. Open Skills & Mods > Mods to install or enable one.",
+                        systemImage: model.selectedThreadID == nil && model.isActiveModsBarThreadRequired
+                            ? "sidebar.right"
+                            : "puzzlepiece.extension"
                     )
                     .padding(tokens.spacing.medium)
                 } else if model.isPersonalNotesModsBarActiveForSelectedThread {
@@ -168,6 +175,13 @@ struct ExtensionModsBarView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Extension modsBar")
     }
+
+    private var selectedQuickSwitchHelpText: String {
+        if let selected = model.selectedModsBarQuickSwitchOption {
+            return "Switch active mod (currently \(model.modsBarQuickSwitchTooltip(for: selected)))"
+        }
+        return "Switch active mod"
+    }
 }
 
 private struct PersonalNotesInlineEditor: View {
@@ -194,7 +208,7 @@ private struct PersonalNotesInlineEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: tokens.spacing.small) {
-            Text("Thread Notes")
+            Text(model.isActiveModsBarThreadRequired ? "Thread Notes" : "Project Notes")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 

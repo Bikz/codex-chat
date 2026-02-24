@@ -4,6 +4,7 @@
     "id": "codexchat.personal-notes",
     "name": "Personal Notes",
     "version": "1.0.0",
+    "iconSymbol": "note.text",
     "description": "Per-thread personal notes in the Mods bar.",
     "author": "CodexChat",
     "license": "MIT",
@@ -50,6 +51,7 @@
     "modsBar": {
       "enabled": true,
       "title": "Personal Notes",
+      "requiresThread": false,
       "source": {
         "type": "handlerOutput"
       }
