@@ -1,6 +1,6 @@
 # Codex App-Server Response Taxonomy
 
-Last updated: 2026-02-23
+Last updated: 2026-02-24
 
 ## Why this exists
 
@@ -72,7 +72,7 @@ All notification decoding lives in `AppServerEventDecoder.decodeAll`.
 | --- | --- | --- |
 | `thread/started` | `.threadStarted` | `thread.id` |
 | `turn/started` | `.turnStarted` | `threadId`, `turn.id` |
-| `item/agentMessage/delta` | `.assistantMessageDelta` | `threadId`, `turnId`, `itemId`, `delta` |
+| `item/agentMessage/delta` | `.assistantMessageDelta(RuntimeAssistantMessageDelta)` | `threadId`, `turnId`, `itemId`, `delta`, optional `channel`, optional `stage` |
 | `item/commandExecution/outputDelta` | `.commandOutputDelta` | `threadId`, `turnId`, `itemId`, `delta` |
 | `turn/followUpsSuggested` | `.followUpSuggestions` | `threadId`, `turnId`, `suggestions[]` |
 | `item/started` | `.action` (+ `.fileChangesUpdated` if `item.type == fileChange`) | `item.id`, `item.type`, `item.status`, `item.changes[]`, optional worker trace |
@@ -84,6 +84,19 @@ All notification decoding lives in `AppServerEventDecoder.decodeAll`.
 Unknown notification methods are ignored.
 
 Reference: `packages/CodexKit/Sources/CodexKit/AppServerEventDecoder.swift`
+
+### Assistant message channel metadata
+
+`RuntimeAssistantMessageDelta` now carries:
+
+- `channel` (`final`, `progress`, `system`, `unknown`)
+- optional `stage` (for phase labels like `planning`, `mapping`, etc.)
+
+Decoder behavior:
+
+- missing channel defaults to `final`
+- unknown channel strings decode to `unknown`
+- when explicit channel is absent, decoder may infer `progress/system` from `item.type` hints
 
 ## Layer 5: Synthetic runtime events generated locally
 
@@ -135,6 +148,8 @@ References:
 - `liveActivity` row (active turn only)
 - `turnSummary` row (compacted history)
 
+Progress deltas (`channel = progress/system`) now render as inline system-style transcript messages in the active turn, separate from the final assistant answer stream.
+
 References:
 
 - `apps/CodexChatApp/Sources/CodexChatApp/TranscriptPresentation.swift`
@@ -180,6 +195,19 @@ References:
 - `apps/CodexChatApp/Sources/CodexChatApp/ConversationComponents.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/ChatsCanvasView.swift`
 - `apps/CodexChatApp/Sources/CodexChatApp/ShellWorkspaceDrawer.swift`
+
+### Progress timeline UX
+
+- Progress updates are first-class transcript content (flat, inline, no user-style bubble).
+- Final assistant text remains isolated to `channel = final` (or `unknown`) and continues to drive completion/title/memory behavior.
+- Backward-compatible fallback can synthesize brief progress notes from active action milestones when explicit progress deltas are absent.
+
+References:
+
+- `apps/CodexChatApp/Sources/CodexChatApp/AppModel+RuntimeEvents.swift`
+- `apps/CodexChatApp/Sources/CodexChatApp/ConversationUpdateScheduler.swift`
+- `apps/CodexChatApp/Sources/CodexChatApp/TranscriptPresentation.swift`
+- `apps/CodexChatApp/Sources/CodexChatApp/ConversationComponents.swift`
 
 ### Extension/Mods bar (user called out as MCP/MFP-like surface)
 
@@ -238,7 +266,7 @@ Then map each to distinct rendering primitives (iconography, tint, verbosity, co
 2. Use `item.type`-driven icons and labels.
 - Example: `reasoning`, `webSearch`, `toolCall`, `fileChange`, `commandExecution` each get dedicated visual treatment.
 
-## Implemented in CodexChat (2026-02-23)
+## Implemented in CodexChat (2026-02-24)
 
 The following UX changes are now shipped in `CodexChatApp`:
 
@@ -255,9 +283,17 @@ The following UX changes are now shipped in `CodexChatApp`:
 - Backticked file references in assistant markdown are linkified into `codexchat-file://` links.
 - File links resolve safely against the selected project root (`ProjectPathSafety`) and open locally.
 
+4. Assistant stream now supports explicit progress channels with inline timeline treatment.
+- `item/agentMessage/delta` decoding now supports optional `channel` + `stage` metadata.
+- `progress/system` channel deltas render as inline progress notes during active turns.
+- `final/unknown` channel deltas continue to render as the canonical assistant answer stream.
+- Runtime action milestones can synthesize fallback progress notes while active when explicit progress deltas are not emitted.
+
 Primary implementation references:
 - `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/RuntimeVisualState.swift`
 - `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/TranscriptPresentation.swift`
+- `/Users/bikram/Developer/CodexChat/packages/CodexKit/Sources/CodexKit/RuntimeModels.swift`
+- `/Users/bikram/Developer/CodexChat/packages/CodexKit/Sources/CodexKit/AppServerEventDecoder.swift`
 - `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/ConversationComponents.swift`
 - `/Users/bikram/Developer/CodexChat/apps/CodexChatApp/Sources/CodexChatApp/MarkdownMessageView.swift`
 
