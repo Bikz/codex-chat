@@ -174,11 +174,32 @@ wait_for_run_completion() {
 }
 
 build_local_release() {
-  log "Running local notarized build for $VERSION"
-  (
-    cd "$ROOT"
-    VERSION="$VERSION" ./scripts/release/build-notarized-dmg.sh
-  )
+  local temp_worktree
+  local worktree_dir
+
+  log "Running local notarized build for $VERSION from isolated tag worktree"
+  mkdir -p "$ROOT/.release-worktrees"
+  temp_worktree="$(mktemp -d "$ROOT/.release-worktrees/$VERSION.XXXXXX")"
+  worktree_dir="$ROOT/.release-worktrees/${VERSION}.worktree"
+  rm -rf "$worktree_dir"
+  mv "$temp_worktree" "$worktree_dir"
+
+  if ! git worktree add --detach "$worktree_dir" "$VERSION" >/dev/null; then
+    rm -rf "$worktree_dir"
+    fail "failed to create temporary release worktree for $VERSION"
+  fi
+
+  if ! (
+    cd "$worktree_dir"
+    DIST_DIR="$ROOT/dist" VERSION="$VERSION" ./scripts/release/build-notarized-dmg.sh
+  ); then
+    git worktree remove --force "$worktree_dir" >/dev/null 2>&1 || true
+    rm -rf "$worktree_dir"
+    fail "local fallback build failed for $VERSION"
+  fi
+
+  git worktree remove --force "$worktree_dir" >/dev/null 2>&1 || true
+  rm -rf "$worktree_dir"
 }
 
 publish_local_assets() {
@@ -221,10 +242,9 @@ main() {
   require_command git
   require_command gh
 
+  git fetch "$REMOTE" --tags --force
   resolve_version
   log "Starting production release for $VERSION"
-
-  git fetch "$REMOTE" --tags --force
 
   if release_has_required_assets; then
     log "Release already complete for $VERSION; nothing to do."
