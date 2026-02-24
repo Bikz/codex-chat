@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)-${RANDOM}-$$"
 BASE_DIR="${RELIABILITY_BUNDLE_DIR:-$ROOT/.artifacts/reliability/bundles}"
 BUNDLE_DIR="$BASE_DIR/reliability-bundle-$STAMP"
 ARCHIVE_PATH="$BASE_DIR/reliability-bundle-$STAMP.tgz"
@@ -20,15 +20,20 @@ swift run --package-path "$ROOT/apps/CodexChatApp" CodexChatCLI smoke > "$BUNDLE
 swift run --package-path "$ROOT/apps/CodexChatApp" CodexChatCLI policy validate \
   --file "$ROOT/config/runtime-policy/default-policy.json" > "$BUNDLE_DIR/policy-validate.txt"
 
-LATEST_SCORECARD_MD="$(find "$ROOT/.artifacts/reliability" -maxdepth 1 -type f -name 'scorecard-*.md' | sort | tail -n 1 || true)"
-LATEST_SCORECARD_JSON="$(find "$ROOT/.artifacts/reliability" -maxdepth 1 -type f -name 'scorecard-*.json' | sort | tail -n 1 || true)"
+LATEST_SCORECARD_STEM="$(
+  find "$ROOT/.artifacts/reliability" -maxdepth 1 -type f \( -name 'scorecard-*.md' -o -name 'scorecard-*.json' \) \
+    | sed -E 's/\.(md|json)$//' \
+    | sort \
+    | tail -n 1 || true
+)"
 
-if [[ -n "$LATEST_SCORECARD_MD" && -f "$LATEST_SCORECARD_MD" ]]; then
-  cp "$LATEST_SCORECARD_MD" "$BUNDLE_DIR/"
-fi
-
-if [[ -n "$LATEST_SCORECARD_JSON" && -f "$LATEST_SCORECARD_JSON" ]]; then
-  cp "$LATEST_SCORECARD_JSON" "$BUNDLE_DIR/"
+if [[ -n "$LATEST_SCORECARD_STEM" ]]; then
+  for ext in md json; do
+    candidate="${LATEST_SCORECARD_STEM}.${ext}"
+    if [[ -f "$candidate" ]]; then
+      cp "$candidate" "$BUNDLE_DIR/"
+    fi
+  done
 fi
 
 {

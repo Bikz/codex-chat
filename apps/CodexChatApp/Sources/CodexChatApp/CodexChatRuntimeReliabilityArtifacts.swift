@@ -190,6 +190,7 @@ public struct CodexChatLedgerBackfillMarker: Codable, Equatable, Sendable {
     public let projectPath: String
     public let threadID: UUID
     public let ledgerPath: String
+    public let turnLimit: Int?
     public let entryCount: Int
     public let sha256: String
 
@@ -199,6 +200,7 @@ public struct CodexChatLedgerBackfillMarker: Codable, Equatable, Sendable {
         projectPath: String,
         threadID: UUID,
         ledgerPath: String,
+        turnLimit: Int?,
         entryCount: Int,
         sha256: String
     ) {
@@ -207,6 +209,7 @@ public struct CodexChatLedgerBackfillMarker: Codable, Equatable, Sendable {
         self.projectPath = projectPath
         self.threadID = threadID
         self.ledgerPath = ledgerPath
+        self.turnLimit = turnLimit
         self.entryCount = entryCount
         self.sha256 = sha256
     }
@@ -386,7 +389,8 @@ public extension CodexChatBootstrap {
             if !force, fileManager.fileExists(atPath: markerURL.path) {
                 if let marker = readBackfillMarker(from: markerURL),
                    marker.threadID == threadID,
-                   fileManager.fileExists(atPath: marker.ledgerPath)
+                   marker.turnLimit == limit,
+                   markerReferencesCurrentLedger(marker, fileManager: fileManager)
                 {
                     skippedCount += 1
                     threadResults.append(
@@ -417,6 +421,7 @@ public extension CodexChatBootstrap {
                 projectPath: normalizedProjectPath,
                 threadID: threadID,
                 ledgerPath: exportSummary.outputPath,
+                turnLimit: limit,
                 entryCount: exportSummary.entryCount,
                 sha256: exportSummary.sha256
             )
@@ -666,6 +671,31 @@ private extension CodexChatBootstrap {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(CodexChatLedgerBackfillMarker.self, from: data)
+    }
+
+    static func markerReferencesCurrentLedger(
+        _ marker: CodexChatLedgerBackfillMarker,
+        fileManager: FileManager
+    ) -> Bool {
+        guard fileManager.fileExists(atPath: marker.ledgerPath) else {
+            return false
+        }
+        guard let digest = readLedgerDigest(atPath: marker.ledgerPath) else {
+            return false
+        }
+        return marker.entryCount == digest.entryCount && marker.sha256 == digest.sha256
+    }
+
+    static func readLedgerDigest(atPath ledgerPath: String) -> (entryCount: Int, sha256: String)? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: ledgerPath, isDirectory: false)) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let document = try? decoder.decode(CodexChatThreadLedgerDocument.self, from: data) else {
+            return nil
+        }
+        return (entryCount: document.entries.count, sha256: sha256Hex(data))
     }
 
     static func sha256Hex(_ data: Data) -> String {
