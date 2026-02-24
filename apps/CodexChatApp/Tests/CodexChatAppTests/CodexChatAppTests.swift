@@ -2745,6 +2745,75 @@ final class CodexChatAppTests: XCTestCase {
     }
 
     @MainActor
+    func testShellPaneMetadataUpdatesSkipUnchangedValues() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "P1", path: "/tmp/project-root", trustState: .trusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+        model.createShellSession()
+
+        guard var workspace = model.shellWorkspacesByProjectID[project.id],
+              let sessionIndex = workspace.sessions.firstIndex(where: { $0.id == workspace.selectedSessionID })
+        else {
+            XCTFail("Missing shell workspace")
+            return
+        }
+
+        let baseline = Date(timeIntervalSince1970: 1234)
+        workspace.sessions[sessionIndex].updatedAt = baseline
+        model.shellWorkspacesByProjectID[project.id] = workspace
+
+        let sessionID = workspace.sessions[sessionIndex].id
+        let paneID = workspace.sessions[sessionIndex].activePaneID
+        model.updateShellPaneTitle(projectID: project.id, sessionID: sessionID, paneID: paneID, title: "Shell")
+        model.updateShellPaneCWD(projectID: project.id, sessionID: sessionID, paneID: paneID, cwd: project.path)
+
+        guard let unchangedSession = model.shellWorkspacesByProjectID[project.id]?.selectedSession() else {
+            XCTFail("Missing unchanged session")
+            return
+        }
+        XCTAssertEqual(unchangedSession.updatedAt, baseline)
+
+        model.updateShellPaneCWD(projectID: project.id, sessionID: sessionID, paneID: paneID, cwd: "/tmp/new")
+        guard let changedSession = model.shellWorkspacesByProjectID[project.id]?.selectedSession() else {
+            XCTFail("Missing changed session")
+            return
+        }
+        XCTAssertNotEqual(changedSession.updatedAt, baseline)
+    }
+
+    @MainActor
+    func testShellPaneTerminationSkipsDuplicateExitEvents() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let project = ProjectRecord(name: "P1", path: "/tmp/project-root", trustState: .trusted)
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+        model.createShellSession()
+
+        guard let workspace = model.shellWorkspacesByProjectID[project.id],
+              let session = workspace.selectedSession()
+        else {
+            XCTFail("Missing shell workspace")
+            return
+        }
+
+        let paneID = session.activePaneID
+        model.markShellPaneProcessTerminated(projectID: project.id, sessionID: session.id, paneID: paneID, exitCode: 1)
+        guard let terminatedSession = model.shellWorkspacesByProjectID[project.id]?.selectedSession() else {
+            XCTFail("Missing terminated session")
+            return
+        }
+        let firstTimestamp = terminatedSession.updatedAt
+
+        model.markShellPaneProcessTerminated(projectID: project.id, sessionID: session.id, paneID: paneID, exitCode: 1)
+        guard let duplicateSession = model.shellWorkspacesByProjectID[project.id]?.selectedSession() else {
+            XCTFail("Missing duplicate session")
+            return
+        }
+        XCTAssertEqual(duplicateSession.updatedAt, firstTimestamp)
+    }
+
+    @MainActor
     func testClosingLastPaneAutoClosesSession() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let project = ProjectRecord(name: "P1", path: "/tmp/project-root", trustState: .trusted)
