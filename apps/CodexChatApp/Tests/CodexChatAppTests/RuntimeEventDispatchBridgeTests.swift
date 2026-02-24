@@ -9,21 +9,23 @@ final class RuntimeEventDispatchBridgeTests: XCTestCase {
             await recorder.record(events)
         }
 
-        await bridge.enqueue(.assistantMessageDelta(threadID: "thr", turnID: "turn", itemID: "item", delta: "Hel"))
-        await bridge.enqueue(.assistantMessageDelta(threadID: "thr", turnID: "turn", itemID: "item", delta: "lo"))
+        await bridge.enqueue(assistantDeltaEvent(delta: "Hel"))
+        await bridge.enqueue(assistantDeltaEvent(delta: "lo"))
         await bridge.flushNow()
 
         let events = await recorder.allEvents()
         XCTAssertEqual(events.count, 1)
-        guard case let .assistantMessageDelta(threadID, turnID, itemID, delta) = events[0] else {
+        guard case let .assistantMessageDelta(assistantDelta) = events[0] else {
             XCTFail("Expected assistant delta event.")
             return
         }
 
-        XCTAssertEqual(threadID, "thr")
-        XCTAssertEqual(turnID, "turn")
-        XCTAssertEqual(itemID, "item")
-        XCTAssertEqual(delta, "Hello")
+        XCTAssertEqual(assistantDelta.threadID, "thr")
+        XCTAssertEqual(assistantDelta.turnID, "turn")
+        XCTAssertEqual(assistantDelta.itemID, "item")
+        XCTAssertEqual(assistantDelta.delta, "Hello")
+        XCTAssertEqual(assistantDelta.channel, .finalResponse)
+        XCTAssertNil(assistantDelta.stage)
     }
 
     func testAssistantDeltasDoNotCoalesceAcrossActionBoundary() async {
@@ -32,7 +34,7 @@ final class RuntimeEventDispatchBridgeTests: XCTestCase {
             await recorder.record(events)
         }
 
-        await bridge.enqueue(.assistantMessageDelta(threadID: "thr", turnID: "turn", itemID: "item", delta: "A"))
+        await bridge.enqueue(assistantDeltaEvent(delta: "A"))
         await bridge.enqueue(
             .action(
                 RuntimeAction(
@@ -46,7 +48,7 @@ final class RuntimeEventDispatchBridgeTests: XCTestCase {
                 )
             )
         )
-        await bridge.enqueue(.assistantMessageDelta(threadID: "thr", turnID: "turn", itemID: "item", delta: "B"))
+        await bridge.enqueue(assistantDeltaEvent(delta: "B"))
         await bridge.flushNow()
 
         let events = await recorder.allEvents()
@@ -89,6 +91,45 @@ final class RuntimeEventDispatchBridgeTests: XCTestCase {
         }
         XCTAssertEqual(delta.delta, "foobar")
         XCTAssertEqual(delta.itemID, "cmd")
+    }
+
+    func testAssistantDeltasDoNotCoalesceAcrossChannelBoundary() async {
+        let recorder = RuntimeEventBatchRecorder()
+        let bridge = RuntimeEventDispatchBridge { events in
+            await recorder.record(events)
+        }
+
+        await bridge.enqueue(
+            assistantDeltaEvent(
+                delta: "Planning",
+                channel: .progress
+            )
+        )
+        await bridge.enqueue(
+            assistantDeltaEvent(
+                delta: "Answer",
+                channel: .finalResponse
+            )
+        )
+        await bridge.flushNow()
+
+        let events = await recorder.allEvents()
+        XCTAssertEqual(events.count, 2)
+    }
+
+    private func assistantDeltaEvent(
+        delta: String,
+        channel: RuntimeAssistantMessageChannel = .finalResponse
+    ) -> CodexRuntimeEvent {
+        .assistantMessageDelta(
+            RuntimeAssistantMessageDelta(
+                itemID: "item",
+                threadID: "thr",
+                turnID: "turn",
+                delta: delta,
+                channel: channel
+            )
+        )
     }
 }
 

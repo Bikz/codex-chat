@@ -12,6 +12,7 @@ struct MessageRow: View {
 
     var body: some View {
         let isUser = message.role == .user
+        let isProgress = message.role == .system
         let bubbleHex = tokens.bubbles.userBackgroundHex
         let style = tokens.bubbles.style
         let foreground = bubbleForeground(isUser: isUser, style: style)
@@ -31,6 +32,13 @@ struct MessageRow: View {
                     .background(bubbleBackground(style: style, colorHex: bubbleHex, isUser: true))
             }
             .frame(maxWidth: .infinity)
+        } else if isProgress {
+            messageText(message: message)
+                .font(.system(size: max(tokens.typography.bodySize - 2, 13)))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             messageText(message: message)
                 .font(.system(size: tokens.typography.bodySize))

@@ -1421,10 +1421,12 @@ final class CodexChatAppTests: XCTestCase {
 
         model.handleRuntimeEvent(
             .assistantMessageDelta(
-                threadID: "thr_active",
-                turnID: "turn_active",
-                itemID: "msg_1",
-                delta: "Working"
+                RuntimeAssistantMessageDelta(
+                    itemID: "msg_1",
+                    threadID: "thr_active",
+                    turnID: "turn_active",
+                    delta: "Working"
+                )
             )
         )
         XCTAssertTrue(model.isThreadUnread(activeThreadID))
@@ -1471,10 +1473,12 @@ final class CodexChatAppTests: XCTestCase {
 
         model.handleRuntimeEvent(
             .assistantMessageDelta(
-                threadID: "thr_buffered",
-                turnID: "turn_buffered",
-                itemID: "msg_1",
-                delta: "Buffered"
+                RuntimeAssistantMessageDelta(
+                    itemID: "msg_1",
+                    threadID: "thr_buffered",
+                    turnID: "turn_buffered",
+                    delta: "Buffered"
+                )
             )
         )
 
@@ -1500,6 +1504,69 @@ final class CodexChatAppTests: XCTestCase {
             guard case let .message(message) = $0 else { return false }
             return message.role == .assistant && message.text.contains("Buffered")
         })
+    }
+
+    @MainActor
+    func testProgressAssistantDeltaRendersAsSystemMessageAndDoesNotMutateFinalAssistantText() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+        let turnID = UUID()
+
+        model.selectedThreadID = threadID
+        model.activeTurnContext = AppModel.ActiveTurnContext(
+            localTurnID: turnID,
+            localThreadID: threadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "thr_progress",
+            runtimeTurnID: "turn_progress",
+            memoryWriteMode: .off,
+            userText: "Scan the repository",
+            assistantText: "",
+            actions: [],
+            startedAt: Date()
+        )
+        model.isTurnInProgress = true
+
+        model.handleRuntimeEvent(
+            .assistantMessageDelta(
+                RuntimeAssistantMessageDelta(
+                    itemID: "progress_1",
+                    threadID: "thr_progress",
+                    turnID: "turn_progress",
+                    delta: "I am mapping the architecture first.",
+                    channel: .progress,
+                    stage: "mapping"
+                )
+            )
+        )
+        model.handleRuntimeEvent(
+            .assistantMessageDelta(
+                RuntimeAssistantMessageDelta(
+                    itemID: "final_1",
+                    threadID: "thr_progress",
+                    turnID: "turn_progress",
+                    delta: "Here is the architecture map.",
+                    channel: .finalResponse
+                )
+            )
+        )
+        model.conversationUpdateScheduler.flushImmediately()
+
+        let messages = model.transcriptStore[threadID, default: []].compactMap { entry -> ChatMessage? in
+            guard case let .message(message) = entry else {
+                return nil
+            }
+            return message
+        }
+
+        XCTAssertTrue(messages.contains {
+            $0.role == .system && $0.text.contains("Mapping: I am mapping the architecture first.")
+        })
+        XCTAssertTrue(messages.contains {
+            $0.role == .assistant && $0.text.contains("Here is the architecture map.")
+        })
+        XCTAssertEqual(model.activeTurnContext?.assistantText, "Here is the architecture map.")
     }
 
     @MainActor

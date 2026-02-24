@@ -1,3 +1,4 @@
+import CodexKit
 import Foundation
 
 @MainActor
@@ -6,11 +7,29 @@ final class ConversationUpdateScheduler {
         let threadID: UUID
         let itemID: String
         let delta: String
+        let channel: RuntimeAssistantMessageChannel
+        let stage: String?
+
+        init(
+            threadID: UUID,
+            itemID: String,
+            delta: String,
+            channel: RuntimeAssistantMessageChannel = .finalResponse,
+            stage: String? = nil
+        ) {
+            self.threadID = threadID
+            self.itemID = itemID
+            self.delta = delta
+            self.channel = channel
+            self.stage = stage
+        }
     }
 
     private struct DeltaKey: Hashable {
         let threadID: UUID
         let itemID: String
+        let channel: RuntimeAssistantMessageChannel
+        let stage: String?
     }
 
     private enum Constants {
@@ -37,12 +56,23 @@ final class ConversationUpdateScheduler {
         Int(currentIntervalNanoseconds / 1_000_000)
     }
 
-    func enqueue(delta: String, threadID: UUID, itemID: String) {
+    func enqueue(
+        delta: String,
+        threadID: UUID,
+        itemID: String,
+        channel: RuntimeAssistantMessageChannel = .finalResponse,
+        stage: String? = nil
+    ) {
         guard !delta.isEmpty else {
             return
         }
 
-        let key = DeltaKey(threadID: threadID, itemID: itemID)
+        let key = DeltaKey(
+            threadID: threadID,
+            itemID: itemID,
+            channel: channel,
+            stage: stage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
         if pendingByKey[key] == nil {
             insertionOrder.append(key)
         }
@@ -97,7 +127,15 @@ final class ConversationUpdateScheduler {
             guard let delta = pendingByKey[key], !delta.isEmpty else {
                 continue
             }
-            batch.append(BatchItem(threadID: key.threadID, itemID: key.itemID, delta: delta))
+            batch.append(
+                BatchItem(
+                    threadID: key.threadID,
+                    itemID: key.itemID,
+                    delta: delta,
+                    channel: key.channel,
+                    stage: key.stage
+                )
+            )
         }
 
         pendingByKey.removeAll(keepingCapacity: true)

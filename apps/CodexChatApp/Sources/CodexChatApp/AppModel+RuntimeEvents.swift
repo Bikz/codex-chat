@@ -87,25 +87,44 @@ extension AppModel {
             )
             markThreadUnreadIfNeeded(context.localThreadID)
 
-        case let .assistantMessageDelta(runtimeThreadID, runtimeTurnID, itemID, delta):
+        case let .assistantMessageDelta(assistantDelta):
             guard let localThreadID = resolveLocalThreadID(
-                runtimeThreadID: runtimeThreadID,
-                itemID: itemID,
-                runtimeTurnID: runtimeTurnID
+                runtimeThreadID: assistantDelta.threadID,
+                itemID: assistantDelta.itemID,
+                runtimeTurnID: assistantDelta.turnID
             ) else {
                 appendLog(.debug, "Dropped delta with no thread mapping")
                 return
             }
 
-            enqueueAssistantDeltaForUI(delta, itemID: itemID, threadID: localThreadID)
+            if assistantDelta.channel == .progress || assistantDelta.channel == .system {
+                hasExplicitProgressDeltasByThreadID.insert(localThreadID)
+            }
+
+            enqueueAssistantDeltaForUI(
+                assistantDelta.delta,
+                itemID: assistantDelta.itemID,
+                channel: assistantDelta.channel,
+                stage: assistantDelta.stage,
+                threadID: localThreadID
+            )
             if let context = activeTurnContext(for: localThreadID) {
+                var payload: [String: String] = [
+                    "itemID": assistantDelta.itemID,
+                    "delta": assistantDelta.delta,
+                    "channel": assistantDelta.channel.rawValue,
+                ]
+                if let stage = assistantDelta.stage, !stage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    payload["stage"] = stage
+                }
+
                 emitExtensionEvent(
                     .assistantDelta,
                     projectID: context.projectID,
                     projectPath: context.projectPath,
                     threadID: context.localThreadID,
                     turnID: context.localTurnID.uuidString,
-                    payload: ["itemID": itemID, "delta": delta]
+                    payload: payload
                 )
             }
             markThreadUnreadIfNeeded(localThreadID)
@@ -315,6 +334,7 @@ extension AppModel {
         )
 
         appendEntry(.actionCard(card), to: localThreadID)
+        appendSynthesizedProgressNoteIfNeeded(for: card)
         markThreadUnreadIfNeeded(localThreadID)
         if let context = extensionProjectContext(forThreadID: localThreadID) {
             emitExtensionEvent(
@@ -340,11 +360,111 @@ extension AppModel {
         }
     }
 
-    private func enqueueAssistantDeltaForUI(_ delta: String, itemID: String, threadID: UUID) {
+    private func appendSynthesizedProgressNoteIfNeeded(for card: ActionCard) {
+        guard !hasExplicitProgressDeltasByThreadID.contains(card.threadID) else {
+            return
+        }
+
+        guard let text = synthesizedProgressText(for: card) else {
+            return
+        }
+
+        let signature = [
+            card.method.lowercased(),
+            normalizedProgressItemType(for: card) ?? "-",
+            text.lowercased(),
+        ].joined(separator: "|")
+
+        if synthesizedProgressSignatureByThreadID[card.threadID] == signature {
+            return
+        }
+        synthesizedProgressSignatureByThreadID[card.threadID] = signature
+
+        let itemID = [
+            "progress",
+            card.itemID ?? UUID().uuidString,
+            card.method.lowercased(),
+            String(Int(card.createdAt.timeIntervalSinceReferenceDate * 1000)),
+        ].joined(separator: ":")
+
+        appendAssistantDelta(
+            text,
+            itemID: itemID,
+            channel: .progress,
+            to: card.threadID
+        )
+    }
+
+    private func synthesizedProgressText(for card: ActionCard) -> String? {
+        let method = card.method.lowercased()
+        guard method == "item/started" || method == "item/completed" else {
+            return nil
+        }
+
+        guard let itemType = normalizedProgressItemType(for: card) else {
+            return nil
+        }
+
+        let started = method == "item/started"
+        switch itemType {
+        case "reasoning":
+            return started ? "Thinking through the approach." : "Reasoning step complete."
+        case "websearch":
+            return started ? "Searching the web for context." : "Web search complete."
+        case "toolcall":
+            return started ? "Calling a tool." : "Tool call complete."
+        case "commandexecution":
+            return started ? "Running a shell command." : "Shell command completed."
+        case "filechange":
+            return started ? "Preparing file edits." : "File edit step complete."
+        default:
+            return nil
+        }
+    }
+
+    private func normalizedProgressItemType(for card: ActionCard) -> String? {
+        let normalizedFromItemType = card.itemType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        if let normalizedFromItemType, !normalizedFromItemType.isEmpty {
+            return normalizedFromItemType
+        }
+
+        let title = card.title.lowercased()
+        let titleMappings: [(contains: String, itemType: String)] = [
+            ("reasoning", "reasoning"),
+            ("websearch", "websearch"),
+            ("web search", "websearch"),
+            ("toolcall", "toolcall"),
+            ("tool call", "toolcall"),
+            ("commandexecution", "commandexecution"),
+            ("command execution", "commandexecution"),
+            ("filechange", "filechange"),
+            ("file change", "filechange"),
+        ]
+
+        for mapping in titleMappings where title.contains(mapping.contains) {
+            return mapping.itemType
+        }
+        return nil
+    }
+
+    private func enqueueAssistantDeltaForUI(
+        _ delta: String,
+        itemID: String,
+        channel: RuntimeAssistantMessageChannel,
+        stage: String?,
+        threadID: UUID
+    ) {
         conversationUpdateScheduler.enqueue(
             delta: delta,
             threadID: threadID,
-            itemID: itemID
+            itemID: itemID,
+            channel: channel,
+            stage: stage
         )
     }
 
@@ -354,7 +474,18 @@ extension AppModel {
         }
 
         for item in batch {
-            appendAssistantDelta(item.delta, itemID: item.itemID, to: item.threadID)
+            appendAssistantDelta(
+                item.delta,
+                itemID: item.itemID,
+                channel: item.channel,
+                stage: item.stage,
+                to: item.threadID
+            )
+
+            guard item.channel == .finalResponse || item.channel == .unknown else {
+                continue
+            }
+
             _ = updateActiveTurnContext(for: item.threadID, mutate: { context in
                 context.assistantText += item.delta
             })

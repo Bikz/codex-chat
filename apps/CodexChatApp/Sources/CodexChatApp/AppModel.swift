@@ -1014,6 +1014,8 @@ final class AppModel: ObservableObject {
     var transcriptPresentationCache: [TranscriptPresentationCacheKey: TranscriptPresentationCacheEntry] = [:]
     var transcriptPresentationCacheLRU: [TranscriptPresentationCacheKey] = []
     var assistantMessageIDsByItemID: [UUID: [String: UUID]] = [:]
+    var synthesizedProgressSignatureByThreadID: [UUID: String] = [:]
+    var hasExplicitProgressDeltasByThreadID: Set<UUID> = []
     var runtimeThreadIDByLocalThreadID: [UUID: String] = [:]
     var localThreadIDByRuntimeThreadID: [String: UUID] = [:]
     var localThreadIDByRuntimeTurnID: [String: UUID] = [:]
@@ -1595,11 +1597,24 @@ final class AppModel: ObservableObject {
         refreshConversationStateIfSelectedThreadChanged(threadID)
     }
 
-    func appendAssistantDelta(_ delta: String, itemID: String, to threadID: UUID) {
+    func appendAssistantDelta(
+        _ delta: String,
+        itemID: String,
+        channel: RuntimeAssistantMessageChannel = .finalResponse,
+        stage: String? = nil,
+        to threadID: UUID
+    ) {
         var entries = transcriptStore[threadID, default: []]
         var itemMap = assistantMessageIDsByItemID[threadID, default: [:]]
+        let normalizedStage = stage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mapKey = assistantDeltaMessageMapKey(
+            itemID: itemID,
+            channel: channel,
+            stage: normalizedStage
+        )
+        let role = assistantDeltaRole(for: channel)
 
-        if let messageID = itemMap[itemID],
+        if let messageID = itemMap[mapKey],
            let index = entries.firstIndex(where: {
                guard case let .message(message) = $0 else {
                    return false
@@ -1616,14 +1631,41 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let message = ChatMessage(threadId: threadID, role: .assistant, text: delta)
+        let initialText = if role == .system,
+                             let normalizedStage,
+                             !normalizedStage.isEmpty
+        {
+            "\(normalizedStage.capitalized): \(delta)"
+        } else {
+            delta
+        }
+
+        let message = ChatMessage(threadId: threadID, role: role, text: initialText)
         entries.append(.message(message))
-        itemMap[itemID] = message.id
+        itemMap[mapKey] = message.id
 
         transcriptStore[threadID] = entries
         assistantMessageIDsByItemID[threadID] = itemMap
         bumpTranscriptRevision(for: threadID)
         refreshConversationStateIfSelectedThreadChanged(threadID)
+    }
+
+    private func assistantDeltaRole(for channel: RuntimeAssistantMessageChannel) -> ChatMessageRole {
+        switch channel {
+        case .progress, .system:
+            .system
+        case .finalResponse, .unknown:
+            .assistant
+        }
+    }
+
+    private func assistantDeltaMessageMapKey(
+        itemID: String,
+        channel: RuntimeAssistantMessageChannel,
+        stage: String?
+    ) -> String {
+        let stageKey = stage?.isEmpty == false ? stage! : "-"
+        return "\(channel.rawValue)|\(stageKey)|\(itemID)"
     }
 
     func refreshProjects() async throws {
@@ -1937,6 +1979,8 @@ final class AppModel: ObservableObject {
             localThreadIDByRuntimeTurnID.removeValue(forKey: runtimeTurnID)
         }
         assistantMessageIDsByItemID[threadID] = [:]
+        synthesizedProgressSignatureByThreadID.removeValue(forKey: threadID)
+        hasExplicitProgressDeltasByThreadID.remove(threadID)
         localThreadIDByCommandItemID = localThreadIDByCommandItemID.filter { $0.value != threadID }
         pendingTurnStartThreadIDs.remove(threadID)
         syncActiveTurnPublishedState()

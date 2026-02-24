@@ -1,5 +1,6 @@
 import CodexChatCore
 import CodexKit
+import CryptoKit
 import Foundation
 
 enum TranscriptPresentationRow: Identifiable, Hashable {
@@ -225,6 +226,7 @@ enum TranscriptPresentationBuilder {
         let id: UUID
         var userMessage: ChatMessage?
         var assistantMessages: [ChatMessage] = []
+        var progressMessages: [ChatMessage] = []
         var actions: [ActionCard] = []
     }
 
@@ -258,6 +260,13 @@ enum TranscriptPresentationBuilder {
             }
 
             let isActiveBucket = bucket.id == activeBucketID
+            for progress in progressMessagesForDisplay(
+                in: bucket,
+                detailLevel: detailLevel,
+                isActiveBucket: isActiveBucket
+            ) {
+                rows.append(.message(progress))
+            }
             if isActiveBucket {
                 continue
             }
@@ -301,10 +310,24 @@ enum TranscriptPresentationBuilder {
                     buckets.append(TurnBucket(id: message.id, userMessage: message))
                     activeBucketIndex = buckets.count - 1
                 } else if let activeBucketIndex {
-                    buckets[activeBucketIndex].assistantMessages.append(message)
+                    switch message.role {
+                    case .assistant:
+                        buckets[activeBucketIndex].assistantMessages.append(message)
+                    case .system:
+                        buckets[activeBucketIndex].progressMessages.append(message)
+                    case .user:
+                        break
+                    }
                 } else {
                     var synthetic = TurnBucket(id: message.id, userMessage: nil)
-                    synthetic.assistantMessages.append(message)
+                    switch message.role {
+                    case .assistant:
+                        synthetic.assistantMessages.append(message)
+                    case .system:
+                        synthetic.progressMessages.append(message)
+                    case .user:
+                        break
+                    }
                     buckets.append(synthetic)
                 }
 
@@ -358,6 +381,169 @@ enum TranscriptPresentationBuilder {
         }
 
         return [finalMessage]
+    }
+
+    private static func progressMessagesForDisplay(
+        in bucket: TurnBucket,
+        detailLevel: TranscriptDetailLevel,
+        isActiveBucket: Bool
+    ) -> [ChatMessage] {
+        let sourceMessages: [ChatMessage] = if !bucket.progressMessages.isEmpty {
+            bucket.progressMessages
+        } else if isActiveBucket {
+            // Backward-compatible fallback: synthesize lightweight progress notes
+            // from runtime action milestones only while the turn is active.
+            synthesizedProgressMessages(from: bucket)
+        } else {
+            []
+        }
+
+        guard !sourceMessages.isEmpty else {
+            return []
+        }
+
+        if detailLevel == .detailed {
+            return sourceMessages
+        }
+
+        if isActiveBucket {
+            return Array(sourceMessages.suffix(8))
+        }
+
+        let maxVisible = detailLevel == .chat ? 2 : 4
+        guard sourceMessages.count > maxVisible else {
+            return sourceMessages
+        }
+
+        let hiddenCount = sourceMessages.count - maxVisible
+        let threadID = sourceMessages.first?.threadId
+            ?? bucket.userMessage?.threadId
+            ?? UUID()
+        let summaryID = deterministicSyntheticMessageID(
+            seed: "\(bucket.id.uuidString)|progress-hidden|\(hiddenCount)|\(detailLevel.rawValue)"
+        )
+        let hiddenSummary = ChatMessage(
+            id: summaryID,
+            threadId: threadID,
+            role: .system,
+            text: "\(hiddenCount) earlier progress updates hidden."
+        )
+
+        var visible = Array(sourceMessages.suffix(maxVisible))
+        visible.insert(hiddenSummary, at: 0)
+        return visible
+    }
+
+    private static func synthesizedProgressMessages(from bucket: TurnBucket) -> [ChatMessage] {
+        guard !bucket.actions.isEmpty else {
+            return []
+        }
+
+        let threadID = bucket.userMessage?.threadId
+            ?? bucket.actions.first?.threadID
+            ?? UUID()
+
+        var messages: [ChatMessage] = []
+        var lastText: String?
+        for action in bucket.actions {
+            guard let text = synthesizedProgressText(for: action) else {
+                continue
+            }
+            if lastText == text {
+                continue
+            }
+            lastText = text
+
+            let syntheticID = deterministicSyntheticMessageID(
+                seed: "\(bucket.id.uuidString)|progress-action|\(action.id.uuidString)"
+            )
+            messages.append(
+                ChatMessage(
+                    id: syntheticID,
+                    threadId: threadID,
+                    role: .system,
+                    text: text,
+                    createdAt: action.createdAt
+                )
+            )
+        }
+
+        return messages
+    }
+
+    private static func synthesizedProgressText(for action: ActionCard) -> String? {
+        let method = action.method.lowercased()
+        guard method == "item/started" || method == "item/completed" else {
+            return nil
+        }
+
+        guard let itemType = normalizedProgressItemType(for: action) else {
+            return nil
+        }
+
+        let started = method == "item/started"
+        switch itemType {
+        case "reasoning":
+            return started ? "Thinking through the approach." : "Reasoning step complete."
+        case "websearch":
+            return started ? "Searching the web for context." : "Web search complete."
+        case "toolcall":
+            return started ? "Calling a tool." : "Tool call complete."
+        case "commandexecution":
+            return started ? "Running a shell command." : "Shell command completed."
+        case "filechange":
+            return started ? "Preparing file edits." : "File edit step complete."
+        default:
+            return nil
+        }
+    }
+
+    private static func normalizedProgressItemType(for action: ActionCard) -> String? {
+        let normalizedFromItemType = action.itemType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        if let normalizedFromItemType, !normalizedFromItemType.isEmpty {
+            return normalizedFromItemType
+        }
+
+        let title = action.title.lowercased()
+        let titleMappings: [(contains: String, itemType: String)] = [
+            ("reasoning", "reasoning"),
+            ("websearch", "websearch"),
+            ("web search", "websearch"),
+            ("toolcall", "toolcall"),
+            ("tool call", "toolcall"),
+            ("commandexecution", "commandexecution"),
+            ("command execution", "commandexecution"),
+            ("filechange", "filechange"),
+            ("file change", "filechange"),
+        ]
+
+        for mapping in titleMappings where title.contains(mapping.contains) {
+            return mapping.itemType
+        }
+        return nil
+    }
+
+    private static func deterministicSyntheticMessageID(seed: String) -> UUID {
+        let digest = SHA256.hash(data: Data(seed.utf8))
+        let bytes = Array(digest.prefix(16))
+        guard bytes.count == 16 else {
+            return UUID()
+        }
+
+        let versionedByte6 = (bytes[6] & 0x0F) | 0x40
+        let variantByte8 = (bytes[8] & 0x3F) | 0x80
+
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], versionedByte6, bytes[7],
+            variantByte8, bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
     }
 
     private static func inlineActions(for actions: [ActionCard]) -> [ActionCard] {

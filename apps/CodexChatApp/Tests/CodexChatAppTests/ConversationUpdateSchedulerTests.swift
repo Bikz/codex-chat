@@ -1,4 +1,5 @@
 @testable import CodexChatShared
+import CodexKit
 import Foundation
 import XCTest
 
@@ -42,5 +43,46 @@ final class ConversationUpdateSchedulerTests: XCTestCase {
         scheduler.enqueue(delta: "ok", threadID: threadID, itemID: "item-b")
 
         XCTAssertEqual(scheduler.currentFlushIntervalMilliseconds, 33)
+    }
+
+    func testFlushImmediatelySeparatesBatchesByAssistantChannel() {
+        var flushedBatches: [[ConversationUpdateScheduler.BatchItem]] = []
+        let scheduler = ConversationUpdateScheduler { batch in
+            flushedBatches.append(batch)
+        }
+
+        let threadID = UUID()
+        scheduler.enqueue(
+            delta: "Thinking...",
+            threadID: threadID,
+            itemID: "item-a",
+            channel: .progress
+        )
+        scheduler.enqueue(
+            delta: "Answer",
+            threadID: threadID,
+            itemID: "item-a",
+            channel: .finalResponse
+        )
+        scheduler.flushImmediately()
+
+        XCTAssertEqual(flushedBatches.count, 1)
+        XCTAssertEqual(
+            flushedBatches.first,
+            [
+                .init(
+                    threadID: threadID,
+                    itemID: "item-a",
+                    delta: "Thinking...",
+                    channel: .progress
+                ),
+                .init(
+                    threadID: threadID,
+                    itemID: "item-a",
+                    delta: "Answer",
+                    channel: .finalResponse
+                ),
+            ]
+        )
     }
 }

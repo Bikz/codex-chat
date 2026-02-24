@@ -122,16 +122,22 @@ actor RuntimeEventDispatchBridge {
 
         switch (lastEvent, event) {
         case let (
-            .assistantMessageDelta(lastThreadID, lastTurnID, lastItemID, lastDelta),
-            .assistantMessageDelta(nextThreadID, nextTurnID, nextItemID, nextDelta)
-        ) where lastThreadID == nextThreadID
-            && lastTurnID == nextTurnID
-            && lastItemID == nextItemID:
+            .assistantMessageDelta(lastDelta),
+            .assistantMessageDelta(nextDelta)
+        ) where lastDelta.threadID == nextDelta.threadID
+            && lastDelta.turnID == nextDelta.turnID
+            && lastDelta.itemID == nextDelta.itemID
+            && lastDelta.channel == nextDelta.channel
+            && lastDelta.stage == nextDelta.stage:
             pendingEvents[pendingEvents.count - 1] = .assistantMessageDelta(
-                threadID: lastThreadID,
-                turnID: lastTurnID,
-                itemID: lastItemID,
-                delta: lastDelta + nextDelta
+                RuntimeAssistantMessageDelta(
+                    itemID: lastDelta.itemID,
+                    threadID: lastDelta.threadID,
+                    turnID: lastDelta.turnID,
+                    delta: lastDelta.delta + nextDelta.delta,
+                    channel: lastDelta.channel,
+                    stage: lastDelta.stage
+                )
             )
             return true
 

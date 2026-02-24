@@ -516,12 +516,16 @@ actor RuntimePool {
                 turnID: Self.scope(id: turnID, workerID: workerID)
             )
 
-        case let .assistantMessageDelta(threadID, turnID, itemID, delta):
+        case let .assistantMessageDelta(assistantDelta):
             return .assistantMessageDelta(
-                threadID: threadID.map { Self.scope(id: $0, workerID: workerID) },
-                turnID: turnID.map { Self.scope(id: $0, workerID: workerID) },
-                itemID: Self.scope(id: itemID, workerID: workerID),
-                delta: delta
+                RuntimeAssistantMessageDelta(
+                    itemID: Self.scope(id: assistantDelta.itemID, workerID: workerID),
+                    threadID: assistantDelta.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: assistantDelta.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    delta: assistantDelta.delta,
+                    channel: assistantDelta.channel,
+                    stage: assistantDelta.stage
+                )
             )
 
         case let .commandOutputDelta(output):

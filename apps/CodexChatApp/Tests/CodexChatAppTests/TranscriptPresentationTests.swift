@@ -431,6 +431,57 @@ final class TranscriptPresentationTests: XCTestCase {
         })
     }
 
+    @MainActor
+    func testActiveTurnShowsProgressMessagesInlineWhileRunning() {
+        let threadID = UUID()
+        let turnID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "Review the repo")),
+            .message(ChatMessage(threadId: threadID, role: .system, text: "Planning: I will map modules first.")),
+            .message(ChatMessage(threadId: threadID, role: .system, text: "Running: I am checking build scripts now.")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "Final answer placeholder")),
+        ]
+
+        let activeContext = AppModel.ActiveTurnContext(
+            localTurnID: turnID,
+            localThreadID: threadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "runtime-thread",
+            runtimeTurnID: "runtime-turn",
+            memoryWriteMode: .off,
+            userText: "Review the repo",
+            assistantText: "Final answer placeholder",
+            actions: [
+                action(threadID: threadID, method: "item/started", title: "Started reasoning"),
+            ],
+            startedAt: Date()
+        )
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: activeContext
+        )
+
+        let progressMessages = rows.compactMap { row -> ChatMessage? in
+            guard case let .message(message) = row,
+                  message.role == .system
+            else {
+                return nil
+            }
+            return message
+        }
+
+        XCTAssertEqual(
+            progressMessages.map(\.text),
+            [
+                "Planning: I will map modules first.",
+                "Running: I am checking build scripts now.",
+            ]
+        )
+    }
+
     func testCompletedTurnShowsSummaryWithoutLiveActivity() {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [

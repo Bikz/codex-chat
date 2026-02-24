@@ -149,8 +149,10 @@ enum ChatTitleGenerator {
                     var assistantText = ""
                     for await event in stream {
                         switch event {
-                        case let .assistantMessageDelta(_, _, _, delta):
-                            assistantText += delta
+                        case let .assistantMessageDelta(assistantDelta):
+                            if assistantDelta.channel == .finalResponse || assistantDelta.channel == .unknown {
+                                assistantText += assistantDelta.delta
+                            }
                         case let .turnCompleted(completion):
                             guard !isFailureStatus(completion) else {
                                 return nil

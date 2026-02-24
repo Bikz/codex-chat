@@ -396,7 +396,9 @@ private actor RuntimePoolHarnessCollector {
             }
             localThreadIDByScopedTurnID[scopedTurnID] = localThreadID
 
-        case let .assistantMessageDelta(scopedThreadID, scopedTurnID, _, _):
+        case let .assistantMessageDelta(assistantDelta):
+            let scopedThreadID = assistantDelta.threadID
+            let scopedTurnID = assistantDelta.turnID
             guard let scopedThreadID, let scopedTurnID else {
                 misroutedEventCount += 1
                 return
