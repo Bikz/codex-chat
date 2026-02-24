@@ -184,6 +184,37 @@ final class AppModelModsTrustPolicyTests: XCTestCase {
         XCTAssertTrue(conditionMet)
     }
 
+    func testResolveEnabledModIDsHandlesDuplicateManifestIDsInSameScope() {
+        let duplicateID = "acme.prompt-book"
+        let selectedProjectID = UUID()
+        let globalMods = [
+            makeMod(id: duplicateID, directoryPath: "/tmp/mod-a", scope: .global),
+            makeMod(id: duplicateID, directoryPath: "/tmp/mod-b", scope: .global),
+        ]
+
+        let resolved = AppModel.resolveEnabledModIDs(
+            globalMods: globalMods,
+            projectMods: [],
+            selectedGlobalPath: nil,
+            selectedProjectPath: nil,
+            selectedProjectID: selectedProjectID,
+            installRecords: [
+                ExtensionInstallRecord(
+                    id: "global:\(duplicateID)",
+                    modID: duplicateID,
+                    scope: .global,
+                    projectID: nil,
+                    sourceURL: "https://github.com/acme/prompt-book",
+                    installedPath: "/tmp/mod-a",
+                    enabled: true
+                ),
+            ]
+        )
+
+        XCTAssertEqual(resolved.global, [duplicateID])
+        XCTAssertTrue(resolved.project.isEmpty)
+    }
+
     private func makeModelWithSelectedProject(trustState: ProjectTrustState) -> AppModel {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectID = UUID()

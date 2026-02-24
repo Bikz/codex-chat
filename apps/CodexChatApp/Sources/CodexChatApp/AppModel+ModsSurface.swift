@@ -724,8 +724,8 @@ extension AppModel {
         selectedProjectID: UUID?,
         installRecords: [ExtensionInstallRecord]
     ) -> (global: Set<String>, project: Set<String>) {
-        let globalByID = Dictionary(uniqueKeysWithValues: globalMods.map { ($0.definition.manifest.id, $0) })
-        let projectByID = Dictionary(uniqueKeysWithValues: projectMods.map { ($0.definition.manifest.id, $0) })
+        let globalIDs = Set(globalMods.map(\.definition.manifest.id))
+        let projectIDs = Set(projectMods.map(\.definition.manifest.id))
 
         var enabledGlobal: Set<String> = []
         var enabledProject: Set<String> = []
@@ -733,12 +733,12 @@ extension AppModel {
         for record in installRecords where record.enabled {
             switch record.scope {
             case .global:
-                if globalByID[record.modID] != nil {
+                if globalIDs.contains(record.modID) {
                     enabledGlobal.insert(record.modID)
                 }
             case .project:
                 guard record.projectID == selectedProjectID,
-                      projectByID[record.modID] != nil
+                      projectIDs.contains(record.modID)
                 else {
                     continue
                 }
