@@ -17,7 +17,7 @@ Then open `http://localhost:4173`.
 2. PWA opens from that link and calls `POST /pair/join` on the relay.
 3. Desktop must explicitly approve the pairing request in the Remote Control sheet.
 4. Relay returns `deviceSessionToken` + `wsURL`.
-5. PWA opens `wsURL?token=<deviceSessionToken>`.
+5. PWA opens `wsURL`, then sends `{"type":"relay.auth","token":"<deviceSessionToken>"}`.
 6. On websocket auth, relay rotates the device session token and the PWA stores the new token for reconnects.
 
 ## MVP behavior

@@ -11,6 +11,11 @@ const MAX_PAIR_REQUESTS_PER_MINUTE = Number(process.env.MAX_PAIR_REQUESTS_PER_MI
 const MAX_DEVICES_PER_SESSION = Number(process.env.MAX_DEVICES_PER_SESSION || "2");
 const SESSION_RETENTION_MS = Number(process.env.SESSION_RETENTION_MS || "600000");
 const PAIR_APPROVAL_TIMEOUT_MS = Number(process.env.PAIR_APPROVAL_TIMEOUT_MS || "45000");
+const WS_AUTH_TIMEOUT_MS = Number(process.env.WS_AUTH_TIMEOUT_MS || "10000");
+const TOKEN_ROTATION_GRACE_MS = Number(process.env.TOKEN_ROTATION_GRACE_MS || "15000");
+const MAX_PENDING_JOIN_WAITERS = Number(process.env.MAX_PENDING_JOIN_WAITERS || "64");
+const TRUST_PROXY = truthyEnv(process.env.TRUST_PROXY);
+const ALLOW_LEGACY_QUERY_TOKEN_AUTH = truthyEnv(process.env.ALLOW_LEGACY_QUERY_TOKEN_AUTH);
 const DEFAULT_ALLOWED_ORIGINS = [
   new URL(PUBLIC_BASE_URL).origin,
   "http://localhost:4173",
@@ -21,6 +26,15 @@ const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.ALLOWED_ORIGINS || DEFAU
 const sessions = new Map();
 const deviceTokenIndex = new Map();
 const rateBuckets = new Map();
+let pendingJoinWaiters = 0;
+
+function truthyEnv(value) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
 
 function respondJSON(res, statusCode, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload);
@@ -153,7 +167,7 @@ function safeTokenEquals(lhs, rhs) {
 
 function clientIP(req) {
   const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0) {
+  if (TRUST_PROXY && typeof forwarded === "string" && forwarded.length > 0) {
     return forwarded.split(",")[0].trim();
   }
   return req.socket.remoteAddress || "unknown";
@@ -198,9 +212,9 @@ function closeSession(sessionId, reason) {
     reason: "session_closed"
   });
 
-  for (const device of session.devices.values()) {
-    if (device.currentSessionToken) {
-      deviceTokenIndex.delete(device.currentSessionToken);
+  for (const [token, tokenContext] of deviceTokenIndex.entries()) {
+    if (tokenContext.sessionID === sessionId) {
+      deviceTokenIndex.delete(token);
     }
   }
 
@@ -280,6 +294,15 @@ function scheduleSessionSweep() {
       continue;
     }
   }
+  sweepExpiredDeviceTokens(now);
+}
+
+function sweepExpiredDeviceTokens(now = nowMs()) {
+  for (const [token, tokenContext] of deviceTokenIndex.entries()) {
+    if (tokenContext.expiresAtMs !== null && now >= tokenContext.expiresAtMs) {
+      deviceTokenIndex.delete(token);
+    }
+  }
 }
 
 function sendJSON(socket, payload) {
@@ -318,14 +341,24 @@ function rotateDeviceSessionToken(session, deviceID) {
     return null;
   }
 
+  const now = nowMs();
   const nextToken = randomToken(32);
   if (device.currentSessionToken) {
-    deviceTokenIndex.delete(device.currentSessionToken);
+    if (TOKEN_ROTATION_GRACE_MS > 0) {
+      deviceTokenIndex.set(device.currentSessionToken, {
+        sessionID: session.sessionID,
+        deviceID,
+        expiresAtMs: now + TOKEN_ROTATION_GRACE_MS
+      });
+    } else {
+      deviceTokenIndex.delete(device.currentSessionToken);
+    }
   }
   device.currentSessionToken = nextToken;
   deviceTokenIndex.set(nextToken, {
     sessionID: session.sessionID,
-    deviceID
+    deviceID,
+    expiresAtMs: null
   });
   return nextToken;
 }
@@ -343,10 +376,21 @@ function resolveWebSocketAuth(token) {
 
   const mobileAuth = deviceTokenIndex.get(token);
   if (mobileAuth) {
+    if (mobileAuth.expiresAtMs !== null && nowMs() >= mobileAuth.expiresAtMs) {
+      deviceTokenIndex.delete(token);
+      return null;
+    }
     return { role: "mobile", sessionID: mobileAuth.sessionID, deviceID: mobileAuth.deviceID };
   }
 
   return null;
+}
+
+function queryTokenFromWebSocketRequest(requestURL) {
+  if (!ALLOW_LEGACY_QUERY_TOKEN_AUTH) {
+    return null;
+  }
+  return requestURL.searchParams.get("token") || null;
 }
 
 function buildWebSocketURL() {
@@ -545,6 +589,13 @@ const server = createServer(async (req, res) => {
         }, corsHeaders);
       }
 
+      if (pendingJoinWaiters >= MAX_PENDING_JOIN_WAITERS) {
+        return respondJSON(res, 503, {
+          error: "pairing_backpressure",
+          message: "Relay is handling too many pending pairing approvals. Retry shortly."
+        }, corsHeaders);
+      }
+
       const pendingRequest = startPendingJoinRequest(session, clientIP(req));
       if (!pendingRequest) {
         return respondJSON(res, 500, {
@@ -562,7 +613,13 @@ const server = createServer(async (req, res) => {
         expiresAt: new Date(pendingRequest.expiresAtMs).toISOString()
       });
 
-      const decision = await pendingRequest.decisionPromise;
+      pendingJoinWaiters += 1;
+      let decision;
+      try {
+        decision = await pendingRequest.decisionPromise;
+      } finally {
+        pendingJoinWaiters = Math.max(0, pendingJoinWaiters - 1);
+      }
 
       if (!decision.approved) {
         if (decision.reason === "approval_timeout") {
@@ -607,7 +664,8 @@ const server = createServer(async (req, res) => {
       session.lastActivityAt = nowMs();
       deviceTokenIndex.set(deviceSessionToken, {
         sessionID,
-        deviceID
+        deviceID,
+        expiresAtMs: null
       });
 
       console.info(`[relay] pair_join session=${sessionLogID(sessionID)}`);
@@ -633,61 +691,101 @@ const server = createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_JSON_BYTES });
 
-wss.on("connection", (socket, request, authContext) => {
-  const { sessionID, role } = authContext;
-  const session = sessions.get(sessionID);
-  if (!session) {
-    socket.close(1008, "session_not_found");
-    return;
-  }
+wss.on("connection", (socket, request) => {
+  const authState = {
+    authenticated: false,
+    role: null,
+    sessionID: null,
+    deviceID: null
+  };
+  let session = null;
+  let authTimeout = setTimeout(() => {
+    socket.close(1008, "auth_timeout");
+  }, WS_AUTH_TIMEOUT_MS);
 
-  session.lastActivityAt = nowMs();
-
-  if (role === "desktop") {
-    if (session.desktopSocket && session.desktopSocket.readyState === 1) {
-      session.desktopSocket.close(1000, "desktop_reconnected");
-    }
-    session.desktopSocket = socket;
-    sendJSON(socket, {
-      type: "auth_ok",
-      role,
-      sessionID,
-      connectedDeviceCount: session.mobileSockets.size
-    });
-    console.info(`[relay] desktop_connected session=${sessionLogID(sessionID)}`);
-  } else {
-    if (!authContext.deviceID || !session.devices.has(authContext.deviceID)) {
-      socket.close(1008, "device_not_found");
-      return;
+  function authenticateSocket(token) {
+    const authContext = resolveWebSocketAuth(token);
+    if (!authContext) {
+      return false;
     }
 
-    closeExistingMobileSocketForDevice(session, authContext.deviceID, "device_reconnected");
+    if (authContext.role === "mobile") {
+      const origin = requestOrigin(request);
+      if (!origin || !isAllowedOrigin(origin)) {
+        return false;
+      }
+    }
+
+    const activeSession = sessions.get(authContext.sessionID);
+    if (!activeSession) {
+      return false;
+    }
+
+    session = activeSession;
+    session.lastActivityAt = nowMs();
+    authState.authenticated = true;
+    authState.role = authContext.role;
+    authState.sessionID = authContext.sessionID;
+    authState.deviceID = authContext.deviceID || null;
+    clearTimeout(authTimeout);
+    authTimeout = null;
+
+    if (authContext.role === "desktop") {
+      if (session.desktopSocket && session.desktopSocket.readyState === 1) {
+        session.desktopSocket.close(1000, "desktop_reconnected");
+      }
+      session.desktopSocket = socket;
+      sendJSON(socket, {
+        type: "auth_ok",
+        role: authState.role,
+        sessionID: authState.sessionID,
+        connectedDeviceCount: session.mobileSockets.size
+      });
+      console.info(`[relay] desktop_connected session=${sessionLogID(authState.sessionID)}`);
+      return true;
+    }
+
+    if (!authState.deviceID || !session.devices.has(authState.deviceID)) {
+      return false;
+    }
+
+    closeExistingMobileSocketForDevice(session, authState.deviceID, "device_reconnected");
 
     if (session.mobileSockets.size >= MAX_DEVICES_PER_SESSION) {
-      socket.close(1008, "device_cap_reached");
-      return;
+      return false;
     }
 
     const connectionID = randomToken(10);
-    const rotatedToken = rotateDeviceSessionToken(session, authContext.deviceID);
+    const rotatedToken = rotateDeviceSessionToken(session, authState.deviceID);
     if (!rotatedToken) {
-      socket.close(1011, "token_rotation_failed");
-      return;
+      return false;
     }
 
     socket.connectionID = connectionID;
-    socket.deviceID = authContext.deviceID;
+    socket.deviceID = authState.deviceID;
     session.mobileSockets.set(connectionID, socket);
     sendJSON(socket, {
       type: "auth_ok",
-      role,
-      sessionID,
-      deviceID: authContext.deviceID,
+      role: authState.role,
+      sessionID: authState.sessionID,
+      deviceID: authState.deviceID,
       nextDeviceSessionToken: rotatedToken,
       connectedDeviceCount: session.mobileSockets.size
     });
     relayDeviceCount(session);
-    console.info(`[relay] mobile_connected session=${sessionLogID(sessionID)} devices=${session.mobileSockets.size}`);
+    console.info(`[relay] mobile_connected session=${sessionLogID(authState.sessionID)} devices=${session.mobileSockets.size}`);
+    return true;
+  }
+
+  try {
+    const requestURL = new URL(request.url || "/", PUBLIC_BASE_URL);
+    const queryToken = queryTokenFromWebSocketRequest(requestURL);
+    if (queryToken && !authenticateSocket(queryToken)) {
+      socket.close(1008, "auth_failed");
+      return;
+    }
+  } catch {
+    // Ignore URL parse failures and wait for explicit relay.auth message.
   }
 
   socket.on("message", (data, isBinary) => {
@@ -704,13 +802,37 @@ wss.on("connection", (socket, request, authContext) => {
       return;
     }
 
+    if (!authState.authenticated) {
+      if (!parsed || typeof parsed !== "object" || parsed.type !== "relay.auth") {
+        socket.close(1008, "auth_required");
+        return;
+      }
+      if (!isOpaqueToken(parsed.token, 22)) {
+        socket.close(1008, "auth_invalid");
+        return;
+      }
+      if (!authenticateSocket(parsed.token)) {
+        socket.close(1008, "auth_failed");
+      }
+      return;
+    }
+
+    if (!session) {
+      socket.close(1008, "session_not_found");
+      return;
+    }
+
     session.lastActivityAt = nowMs();
-    if (parsed && typeof parsed === "object" && parsed.sessionID && parsed.sessionID !== sessionID) {
+    if (parsed && typeof parsed === "object" && parsed.sessionID && parsed.sessionID !== authState.sessionID) {
       socket.close(1008, "session_mismatch");
       return;
     }
 
-    if (role === "desktop") {
+    if (parsed.type === "relay.auth") {
+      return;
+    }
+
+    if (authState.role === "desktop") {
       if (parsed.type === "relay.pair_decision") {
         const requestID = typeof parsed.requestID === "string" ? parsed.requestID : "";
         const approved = parsed.approved === true;
@@ -726,7 +848,7 @@ wss.on("connection", (socket, request, authContext) => {
         });
         sendJSON(socket, {
           type: "relay.pair_result",
-          sessionID,
+          sessionID: authState.sessionID,
           requestID,
           approved
         });
@@ -745,14 +867,22 @@ wss.on("connection", (socket, request, authContext) => {
   });
 
   socket.on("close", () => {
-    const liveSession = sessions.get(sessionID);
+    if (authTimeout) {
+      clearTimeout(authTimeout);
+      authTimeout = null;
+    }
+    if (!authState.authenticated || !authState.sessionID) {
+      return;
+    }
+
+    const liveSession = sessions.get(authState.sessionID);
     if (!liveSession) {
       return;
     }
 
     liveSession.lastActivityAt = nowMs();
 
-    if (role === "desktop") {
+    if (authState.role === "desktop") {
       if (liveSession.desktopSocket === socket) {
         liveSession.desktopSocket = null;
       }
@@ -760,7 +890,7 @@ wss.on("connection", (socket, request, authContext) => {
         approved: false,
         reason: "desktop_disconnected"
       });
-      console.info(`[relay] desktop_disconnected session=${sessionLogID(sessionID)}`);
+      console.info(`[relay] desktop_disconnected session=${sessionLogID(authState.sessionID)}`);
       return;
     }
 
@@ -768,7 +898,7 @@ wss.on("connection", (socket, request, authContext) => {
       liveSession.mobileSockets.delete(socket.connectionID);
     }
     relayDeviceCount(liveSession);
-    console.info(`[relay] mobile_disconnected session=${sessionLogID(sessionID)} devices=${liveSession.mobileSockets.size}`);
+    console.info(`[relay] mobile_disconnected session=${sessionLogID(authState.sessionID)} devices=${liveSession.mobileSockets.size}`);
   });
 });
 
@@ -779,24 +909,8 @@ server.on("upgrade", (request, socket, head) => {
     return;
   }
 
-  const token = requestURL.searchParams.get("token") || "";
-  const authContext = resolveWebSocketAuth(token);
-  if (!authContext) {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-    socket.destroy();
-    return;
-  }
-  if (authContext.role === "mobile") {
-    const origin = requestOrigin(request);
-    if (!origin || !isAllowedOrigin(origin)) {
-      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-  }
-
   wss.handleUpgrade(request, socket, head, (webSocket) => {
-    wss.emit("connection", webSocket, request, authContext);
+    wss.emit("connection", webSocket, request);
   });
 });
 

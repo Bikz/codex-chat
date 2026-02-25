@@ -105,21 +105,39 @@ async function nextJSONMessage(socket, timeoutMs = 5000) {
   });
 }
 
-async function expectWebSocketAuthFailure(url, { origin }, expectedStatusCode) {
+async function expectWebSocketAuthFailure(url, { origin, token }, expectedCloseCode = 1008) {
+  const socket = await openWebSocket(url, { origin });
   await new Promise((resolve, reject) => {
-    const socket = new WebSocket(url, { headers: { origin } });
-    socket.once("open", () => {
-      socket.close(1000, "unexpected_open");
-      reject(new Error("Expected websocket auth failure, but socket opened"));
-    });
-    socket.once("error", (error) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      socket.close(1000, "timeout");
+      reject(new Error("Timed out waiting for websocket auth failure"));
+    }, 3000);
+
+    const onClose = (code) => {
+      cleanup();
       try {
-        assert.match(String(error.message), new RegExp(String(expectedStatusCode)));
+        assert.equal(code, expectedCloseCode);
         resolve();
       } catch (assertionError) {
         reject(assertionError);
       }
-    });
+    };
+
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      socket.off("close", onClose);
+      socket.off("error", onError);
+    };
+
+    socket.once("close", onClose);
+    socket.once("error", onError);
+    socket.send(JSON.stringify({ type: "relay.auth", token }));
   });
 }
 
@@ -137,7 +155,8 @@ test("pair join requires desktop approval and rotates device session tokens", as
       PORT: String(port),
       HOST: host,
       PUBLIC_BASE_URL: baseURL,
-      ALLOWED_ORIGINS: "http://localhost:4173"
+      ALLOWED_ORIGINS: "http://localhost:4173",
+      TOKEN_ROTATION_GRACE_MS: "120"
     }
   });
 
@@ -163,7 +182,13 @@ test("pair join requires desktop approval and rotates device session tokens", as
     });
     assert.equal(pairStartResponse.status, 200);
 
-    const desktopSocket = await openWebSocket(`${wsURL}?token=${desktopSessionToken}`);
+    const desktopSocket = await openWebSocket(wsURL);
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: desktopSessionToken
+      })
+    );
     const desktopAuth = await nextJSONMessage(desktopSocket);
     assert.equal(desktopAuth.type, "auth_ok");
     assert.equal(desktopAuth.role, "desktop");
@@ -199,9 +224,15 @@ test("pair join requires desktop approval and rotates device session tokens", as
     assert.equal(typeof joinPayload.deviceID, "string");
 
     const firstToken = joinPayload.deviceSessionToken;
-    const mobileSocket = await openWebSocket(`${wsURL}?token=${firstToken}`, {
+    const mobileSocket = await openWebSocket(wsURL, {
       origin: "http://localhost:4173"
     });
+    mobileSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: firstToken
+      })
+    );
     const mobileAuth = await nextJSONMessage(mobileSocket);
     assert.equal(mobileAuth.type, "auth_ok");
     assert.equal(mobileAuth.role, "mobile");
@@ -211,14 +242,22 @@ test("pair join requires desktop approval and rotates device session tokens", as
     const rotatedToken = mobileAuth.nextDeviceSessionToken;
 
     mobileSocket.close();
+    await wait(180);
 
-    await expectWebSocketAuthFailure(`${wsURL}?token=${firstToken}`, {
-      origin: "http://localhost:4173"
-    }, 401);
+    await expectWebSocketAuthFailure(wsURL, {
+      origin: "http://localhost:4173",
+      token: firstToken
+    });
 
-    const secondMobileSocket = await openWebSocket(`${wsURL}?token=${rotatedToken}`, {
+    const secondMobileSocket = await openWebSocket(wsURL, {
       origin: "http://localhost:4173"
     });
+    secondMobileSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: rotatedToken
+      })
+    );
     const secondMobileAuth = await nextJSONMessage(secondMobileSocket);
     assert.equal(secondMobileAuth.type, "auth_ok");
     assert.equal(secondMobileAuth.role, "mobile");

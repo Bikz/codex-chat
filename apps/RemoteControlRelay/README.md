@@ -15,7 +15,8 @@ pnpm start
 - `POST /pair/start`: Desktop registers a one-time join token and desktop session token.
 - `POST /pair/join`: Mobile requests pairing; relay waits for explicit desktop approval, then issues a device session token.
 - `GET /healthz`: Basic liveness and active session count.
-- `GET /ws?token=<session_token>`: WebSocket channel for desktop/mobile routing.
+- `GET /ws`: WebSocket channel for desktop/mobile routing.
+  - Client authenticates immediately after connect with `{"type":"relay.auth","token":"..."}`.
 
 ## Security baseline (MVP)
 
@@ -41,4 +42,9 @@ pnpm start
 - `MAX_DEVICES_PER_SESSION` (default `2`)
 - `SESSION_RETENTION_MS` (default `600000`)
 - `PAIR_APPROVAL_TIMEOUT_MS` (default `45000`)
+- `MAX_PENDING_JOIN_WAITERS` (default `64`)
+- `WS_AUTH_TIMEOUT_MS` (default `10000`)
+- `TOKEN_ROTATION_GRACE_MS` (default `15000`)
+- `TRUST_PROXY` (`true` to honor `X-Forwarded-For`; default `false`)
+- `ALLOW_LEGACY_QUERY_TOKEN_AUTH` (`true` to allow deprecated `?token=` websocket auth)
 - `ALLOWED_ORIGINS` (comma-separated browser origin allowlist; defaults to relay origin plus local PWA dev origins)

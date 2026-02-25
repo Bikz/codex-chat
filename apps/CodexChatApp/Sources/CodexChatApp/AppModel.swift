@@ -1158,6 +1158,8 @@ final class AppModel: ObservableObject {
     var projectModsWatcher: DirectoryWatcher?
     var watchedProjectModsRootPath: String?
     var remoteControlWebSocketTask: URLSessionWebSocketTask?
+    var remoteControlWebSocketAuthToken: String?
+    var remoteControlRelayAuthenticated = false
     var remoteControlInboundSequenceTracker = RemoteControlSequenceTracker()
     var remoteControlOutboundSequence: UInt64 = 0
     var remoteControlReconnectAttempt: Int = 0

@@ -18,7 +18,6 @@ private struct RemoteRelayControlSignal: Decodable {
 }
 
 private enum RemoteControlSnapshotReason: String {
-    case sessionStarted = "session_started"
     case websocketAuthenticated = "websocket_authenticated"
     case snapshotRequest = "snapshot_request"
     case stateChanged = "state_changed"
@@ -158,6 +157,8 @@ extension AppModel {
         }
 
         closeRemoteControlWebSocket(reason: "Reconnecting websocket")
+        remoteControlWebSocketAuthToken = descriptor.desktopSessionToken
+        remoteControlRelayAuthenticated = false
 
         let websocketTask = URLSession.shared.webSocketTask(with: socketURL)
         remoteControlWebSocketTask = websocketTask
@@ -166,6 +167,9 @@ extension AppModel {
         remoteControlStatusMessage = "Connecting to remote relay..."
         startRemoteControlReceiveLoop()
         startRemoteControlSnapshotPump()
+        Task { [weak self] in
+            await self?.sendRemoteControlAuthSignalIfNeeded()
+        }
     }
 
     private func closeRemoteControlWebSocket(reason: String) {
@@ -177,6 +181,8 @@ extension AppModel {
         remoteControlReconnectTask = nil
         remoteControlWebSocketTask?.cancel(with: .normalClosure, reason: nil)
         remoteControlWebSocketTask = nil
+        remoteControlWebSocketAuthToken = nil
+        remoteControlRelayAuthenticated = false
         remoteControlPendingPairRequest = nil
         remoteControlLastSnapshotSignature = nil
         appendLog(.debug, "Remote control websocket closed: \(reason)")
@@ -188,7 +194,6 @@ extension AppModel {
         }
         var queryItems = components.queryItems ?? []
         queryItems.removeAll(where: { $0.name == "token" })
-        queryItems.append(URLQueryItem(name: "token", value: descriptor.desktopSessionToken))
         components.queryItems = queryItems
         return components.url
     }
@@ -309,6 +314,7 @@ extension AppModel {
         switch signal.type {
         case "auth_ok":
             remoteControlReconnectAttempt = 0
+            remoteControlRelayAuthenticated = true
             if let connectedDeviceCount = signal.connectedDeviceCount {
                 await remoteControlBroker.updateConnectedDeviceCount(connectedDeviceCount)
             }
@@ -345,8 +351,6 @@ extension AppModel {
         remoteControlSnapshotPumpTask = Task { [weak self] in
             guard let self else { return }
 
-            await sendRemoteControlSnapshot(reason: .sessionStarted, force: true)
-
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.remoteControlSnapshotPumpNanoseconds)
                 guard !Task.isCancelled else { return }
@@ -356,7 +360,9 @@ extension AppModel {
     }
 
     private func sendRemoteControlSnapshot(reason: RemoteControlSnapshotReason, force: Bool) async {
-        guard let session = remoteControlStatus.session else {
+        guard remoteControlRelayAuthenticated,
+              let session = remoteControlStatus.session
+        else {
             return
         }
 
@@ -388,7 +394,9 @@ extension AppModel {
     }
 
     private func sendRemoteControlHello() async {
-        guard let session = remoteControlStatus.session else {
+        guard remoteControlRelayAuthenticated,
+              let session = remoteControlStatus.session
+        else {
             return
         }
         let helloPayload = RemoteControlHelloPayload(
@@ -430,6 +438,23 @@ extension AppModel {
             throw URLError(.cannotParseResponse)
         }
         try await websocketTask.send(.string(raw))
+    }
+
+    private func sendRemoteControlAuthSignalIfNeeded() async {
+        guard let authToken = remoteControlWebSocketAuthToken else {
+            return
+        }
+
+        do {
+            try await sendRemoteControlSignal(
+                [
+                    "type": "relay.auth",
+                    "token": authToken,
+                ]
+            )
+        } catch {
+            appendLog(.warning, "Failed to authenticate remote relay websocket: \(error.localizedDescription)")
+        }
     }
 
     private func nextRemoteControlOutboundSequence() -> UInt64 {

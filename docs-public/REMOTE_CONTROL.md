@@ -36,7 +36,7 @@ This MVP delivers:
   - `RemoteControlSheet` with QR code, copy link, and stop controls
   - `AppModel+RemoteControl` outbound websocket client, snapshot streaming, and remote command ingestion
 - `apps/RemoteControlRelay`
-  - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws?token=...`
+  - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws` (then `relay.auth` websocket message)
   - Pass-through websocket routing between desktop/mobile
 - `apps/RemoteControlPWA`
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)

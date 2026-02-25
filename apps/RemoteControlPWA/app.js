@@ -327,6 +327,7 @@ function onSocketMessage(event) {
       state.deviceID = message.deviceID;
     }
     setStatus("WebSocket authenticated.");
+    requestSnapshot("initial_sync");
     return;
   }
 
@@ -377,16 +378,19 @@ function connectSocket() {
   }
 
   closeSocket();
-  const url = new URL(state.wsURL);
-  url.searchParams.set("token", state.deviceSessionToken);
-  const socket = new WebSocket(url.toString());
+  const socket = new WebSocket(state.wsURL);
   state.socket = socket;
 
   socket.onopen = () => {
     state.reconnectAttempts = 0;
     setConnectionBadge(true);
-    setStatus("Connected to desktop relay.");
-    requestSnapshot("initial_sync");
+    setStatus("Connected. Authenticating...");
+    socket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: state.deviceSessionToken
+      })
+    );
   };
 
   socket.onmessage = onSocketMessage;
