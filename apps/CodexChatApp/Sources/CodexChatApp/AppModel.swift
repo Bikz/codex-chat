@@ -1106,6 +1106,9 @@ final class AppModel: ObservableObject {
     var followUpDrainTask: Task<Void, Never>?
     var modsRefreshTask: Task<Void, Never>?
     var modsDebounceTask: Task<Void, Never>?
+    var remoteControlReceiveTask: Task<Void, Never>?
+    var remoteControlSnapshotPumpTask: Task<Void, Never>?
+    var remoteControlReconnectTask: Task<Void, Never>?
     var startupBackgroundTask: Task<Void, Never>?
     var startupLoadGeneration: UInt64 = 0
     var runtimeThreadPrewarmTask: Task<Void, Never>?
@@ -1145,6 +1148,11 @@ final class AppModel: ObservableObject {
     var globalModsWatcher: DirectoryWatcher?
     var projectModsWatcher: DirectoryWatcher?
     var watchedProjectModsRootPath: String?
+    var remoteControlWebSocketTask: URLSessionWebSocketTask?
+    var remoteControlInboundSequenceTracker = RemoteControlSequenceTracker()
+    var remoteControlOutboundSequence: UInt64 = 0
+    var remoteControlReconnectAttempt: Int = 0
+    var remoteControlLastSnapshotSignature: String?
     var untrustedShellAcknowledgedProjectIDs: Set<UUID> = []
     var didLoadUntrustedShellAcknowledgements = false
     var didPrepareForTeardown = false
@@ -1202,7 +1210,7 @@ final class AppModel: ObservableObject {
             cacheURL: storagePaths.systemURL.appendingPathComponent("codex-config-schema.json", isDirectory: false),
             bundledSchemaURL: bundledSchemaURL
         )
-        remoteControlBroker = RemoteControlBroker()
+        remoteControlBroker = RemoteControlBroker(relayRegistrar: RemoteControlHTTPRelayRegistrar())
 
         if let bootError {
             projectsState = .failed(bootError)
@@ -1238,6 +1246,11 @@ final class AppModel: ObservableObject {
         followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
+        remoteControlReceiveTask?.cancel()
+        remoteControlSnapshotPumpTask?.cancel()
+        remoteControlReconnectTask?.cancel()
+        remoteControlWebSocketTask?.cancel(with: .normalClosure, reason: nil)
+        remoteControlWebSocketTask = nil
         startupBackgroundTask?.cancel()
         runtimeThreadPrewarmGeneration = runtimeThreadPrewarmGeneration &+ 1
         runtimeThreadPrewarmTask?.cancel()
@@ -1309,6 +1322,11 @@ final class AppModel: ObservableObject {
         followUpDrainTask?.cancel()
         modsRefreshTask?.cancel()
         modsDebounceTask?.cancel()
+        remoteControlReceiveTask?.cancel()
+        remoteControlSnapshotPumpTask?.cancel()
+        remoteControlReconnectTask?.cancel()
+        remoteControlWebSocketTask?.cancel(with: .normalClosure, reason: nil)
+        remoteControlWebSocketTask = nil
         startupBackgroundTask?.cancel()
         runtimeThreadPrewarmGeneration = runtimeThreadPrewarmGeneration &+ 1
         runtimeThreadPrewarmTask?.cancel()

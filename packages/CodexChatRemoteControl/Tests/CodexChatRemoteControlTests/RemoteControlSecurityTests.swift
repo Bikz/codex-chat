@@ -51,6 +51,8 @@ final class RemoteControlSecurityTests: XCTestCase {
         XCTAssertEqual(descriptor.joinURL.scheme, "https")
         XCTAssertTrue(descriptor.joinURL.absoluteString.contains("#sid="))
         XCTAssertTrue(descriptor.joinURL.absoluteString.contains("&jt="))
+        let fragmentQuery = URLComponents(string: "https://example.invalid/?\(descriptor.joinURL.fragment ?? "")")?.queryItems
+        XCTAssertEqual(fragmentQuery?.first(where: { $0.name == "relay" })?.value, "https://relay.codexchat.example")
         XCTAssertNil(URLComponents(url: descriptor.joinURL, resolvingAgainstBaseURL: false)?.query)
         XCTAssertFalse(descriptor.desktopSessionToken.isEmpty)
     }

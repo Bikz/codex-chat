@@ -173,10 +173,18 @@ public struct RemoteControlTokenFactory: Sendable {
         }
 
         if components.path.isEmpty {
-            components.path = "/rc"
+            components.path = "/"
         }
         components.query = nil
-        components.fragment = "sid=\(sessionID)&jt=\(joinTokenLease.token)"
+
+        var fragmentItems = [
+            "sid=\(sessionID)",
+            "jt=\(joinTokenLease.token)",
+        ]
+        if let relayBaseURL = Self.relayBaseURLString(from: relayWebSocketURL) {
+            fragmentItems.append("relay=\(relayBaseURL)")
+        }
+        components.fragment = fragmentItems.joined(separator: "&")
 
         guard let joinURL = components.url else {
             throw RemoteControlSecurityError.invalidBaseURL(joinBaseURL.absoluteString)
@@ -203,6 +211,21 @@ public struct RemoteControlTokenFactory: Sendable {
             diff |= lhsByte ^ rhsByte
         }
         return diff == 0
+    }
+
+    private static func relayBaseURLString(from relayWebSocketURL: URL) -> String? {
+        guard var components = URLComponents(url: relayWebSocketURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        if components.scheme == "wss" {
+            components.scheme = "https"
+        } else if components.scheme == "ws" {
+            components.scheme = "http"
+        }
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        return components.url?.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 }
 

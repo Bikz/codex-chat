@@ -39,6 +39,7 @@ final class RemoteControlBrokerTests: XCTestCase {
         let request = await registrar.latestRequest()
         XCTAssertEqual(request?.sessionID, descriptor.sessionID)
         XCTAssertEqual(request?.desktopSessionToken, descriptor.desktopSessionToken)
+        XCTAssertEqual(request?.relayWebSocketURL, "wss://relay.codexchat.example/ws")
 
         let firstConsumeResult = await broker.consumeJoinToken(descriptor.joinTokenLease.token)
         let secondConsumeResult = await broker.consumeJoinToken(descriptor.joinTokenLease.token)

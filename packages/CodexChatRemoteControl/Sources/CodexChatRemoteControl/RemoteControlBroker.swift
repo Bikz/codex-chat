@@ -3,6 +3,7 @@ import Foundation
 public struct RemoteControlPairStartRequest: Codable, Sendable, Equatable {
     public var schemaVersion: Int
     public var sessionID: String
+    public var relayWebSocketURL: String
     public var joinToken: String
     public var joinTokenExpiresAt: Date
     public var desktopSessionToken: String
@@ -11,6 +12,7 @@ public struct RemoteControlPairStartRequest: Codable, Sendable, Equatable {
     public init(
         schemaVersion: Int = RemoteControlProtocol.schemaVersion,
         sessionID: String,
+        relayWebSocketURL: String,
         joinToken: String,
         joinTokenExpiresAt: Date,
         desktopSessionToken: String,
@@ -18,6 +20,7 @@ public struct RemoteControlPairStartRequest: Codable, Sendable, Equatable {
     ) {
         self.schemaVersion = schemaVersion
         self.sessionID = sessionID
+        self.relayWebSocketURL = relayWebSocketURL
         self.joinToken = joinToken
         self.joinTokenExpiresAt = joinTokenExpiresAt
         self.desktopSessionToken = desktopSessionToken
@@ -27,9 +30,11 @@ public struct RemoteControlPairStartRequest: Codable, Sendable, Equatable {
 
 public struct RemoteControlPairStartResponse: Codable, Sendable, Equatable {
     public var accepted: Bool
+    public var relayWebSocketURL: String?
 
-    public init(accepted: Bool) {
+    public init(accepted: Bool, relayWebSocketURL: String? = nil) {
         self.accepted = accepted
+        self.relayWebSocketURL = relayWebSocketURL
     }
 }
 
@@ -109,23 +114,34 @@ public actor RemoteControlBroker {
 
         let request = RemoteControlPairStartRequest(
             sessionID: descriptor.sessionID,
+            relayWebSocketURL: descriptor.relayWebSocketURL.absoluteString,
             joinToken: descriptor.joinTokenLease.token,
             joinTokenExpiresAt: descriptor.joinTokenLease.expiresAt,
             desktopSessionToken: descriptor.desktopSessionToken,
             idleTimeoutSeconds: Int(descriptor.idleTimeout.rounded())
         )
-        _ = try await relayRegistrar.startPairing(request)
+        let relayResponse = try await relayRegistrar.startPairing(request)
+        guard relayResponse.accepted else {
+            throw URLError(.cannotConnectToHost)
+        }
+
+        var effectiveDescriptor = descriptor
+        if let relayWebSocketURL = relayResponse.relayWebSocketURL,
+           let parsedURL = URL(string: relayWebSocketURL)
+        {
+            effectiveDescriptor.relayWebSocketURL = parsedURL
+        }
 
         status = RemoteControlBrokerStatus(
             phase: .active,
-            session: descriptor,
+            session: effectiveDescriptor,
             connectedDeviceCount: 0,
             disconnectReason: nil
         )
 
-        scheduleIdleTimeout(seconds: descriptor.idleTimeout)
+        scheduleIdleTimeout(seconds: effectiveDescriptor.idleTimeout)
 
-        return descriptor
+        return effectiveDescriptor
     }
 
     public func updateConnectedDeviceCount(_ count: Int) {
