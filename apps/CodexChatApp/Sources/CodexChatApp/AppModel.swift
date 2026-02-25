@@ -934,7 +934,14 @@ final class AppModel: ObservableObject {
     @Published var isShellWorkspaceVisible = false
     @Published var isReviewChangesVisible = false
     @Published var isApprovalInboxVisible = false
-    @Published var allowRemoteApprovals = false
+    @Published var allowRemoteApprovals = false {
+        didSet {
+            Task { [weak self] in
+                await self?.handleRemoteApprovalCapabilityChange()
+            }
+        }
+    }
+
     @Published var remoteControlStatus = RemoteControlBrokerStatus(
         phase: .disconnected,
         session: nil,

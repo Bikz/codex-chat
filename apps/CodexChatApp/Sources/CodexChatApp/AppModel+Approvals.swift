@@ -14,14 +14,19 @@ extension AppModel {
         submitApprovalDecision(.decline)
     }
 
-    private func submitApprovalDecision(_ decision: RuntimeApprovalDecision) {
-        guard let request = pendingApprovalForSelectedThread
-            ?? unscopedApprovalRequests.first
-            ?? approvalStateMachine.firstPendingRequest,
-            let runtimePool
-        else {
-            return
+    func submitRemoteApprovalDecision(_ decision: RuntimeApprovalDecision, requestID: Int?) {
+        submitApprovalDecision(decision, requestID: requestID)
+    }
+
+    private func submitApprovalDecision(_ decision: RuntimeApprovalDecision, requestID: Int? = nil) {
+        let resolvedRequest: RuntimeApprovalRequest? = if let requestID {
+            resolvePendingApprovalRequest(id: requestID)
+        } else {
+            pendingApprovalForSelectedThread
+                ?? unscopedApprovalRequests.first
+                ?? approvalStateMachine.firstPendingRequest
         }
+        guard let request = resolvedRequest, let runtimePool else { return }
 
         approvalDecisionInFlightRequestIDs.insert(request.id)
         isApprovalDecisionInProgress = true
@@ -46,6 +51,21 @@ extension AppModel {
                 appendLog(.error, "Approval decision failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func resolvePendingApprovalRequest(id requestID: Int) -> RuntimeApprovalRequest? {
+        if let activeApprovalRequest, activeApprovalRequest.id == requestID {
+            return activeApprovalRequest
+        }
+
+        if let request = unscopedApprovalRequests.first(where: { $0.id == requestID }) {
+            return request
+        }
+
+        guard let threadID = approvalStateMachine.threadID(for: requestID) else {
+            return nil
+        }
+        return approvalStateMachine.pendingByThreadID[threadID]?.first(where: { $0.id == requestID })
     }
 
     private func approvalDecisionLabel(_ decision: RuntimeApprovalDecision) -> String {

@@ -9,8 +9,10 @@ const state = {
   reconnectTimer: null,
   lastIncomingSeq: null,
   nextOutgoingSeq: 1,
+  canApproveRemotely: false,
   projects: [],
   threads: [],
+  pendingApprovals: [],
   selectedProjectID: null,
   selectedThreadID: null,
   messagesByThreadID: new Map()
@@ -27,6 +29,7 @@ const dom = {
   snapshotButton: document.getElementById("snapshotButton"),
   projectList: document.getElementById("projectList"),
   threadList: document.getElementById("threadList"),
+  approvalList: document.getElementById("approvalList"),
   threadTitle: document.getElementById("threadTitle"),
   messageList: document.getElementById("messageList"),
   composerForm: document.getElementById("composerForm"),
@@ -173,9 +176,65 @@ function renderMessages() {
   dom.messageList.scrollTop = dom.messageList.scrollHeight;
 }
 
+function renderApprovals() {
+  dom.approvalList.innerHTML = "";
+  if (!Array.isArray(state.pendingApprovals) || state.pendingApprovals.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "No pending approvals";
+    dom.approvalList.appendChild(li);
+    return;
+  }
+
+  for (const approval of state.pendingApprovals) {
+    const li = document.createElement("li");
+    const row = document.createElement("div");
+    row.className = "approval-row";
+
+    const title = document.createElement("strong");
+    title.textContent = `#${approval.requestID || "?"}`;
+
+    const summary = document.createElement("div");
+    summary.className = "approval-summary";
+    summary.textContent = approval.summary || "Pending approval request";
+
+    row.append(title, summary);
+
+    if (state.canApproveRemotely) {
+      const actions = document.createElement("div");
+      actions.className = "approval-actions";
+      actions.append(
+        approvalButton("Approve once", approval, "approve_once", true),
+        approvalButton("Approve session", approval, "approve_for_session"),
+        approvalButton("Decline", approval, "decline")
+      );
+      row.append(actions);
+    }
+
+    li.append(row);
+    dom.approvalList.appendChild(li);
+  }
+}
+
+function approvalButton(label, approval, decision, isPrimary = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  if (isPrimary) {
+    button.classList.add("primary");
+  }
+  button.addEventListener("click", () => {
+    sendCommand("approval.respond", {
+      approvalRequestID: approval.requestID,
+      approvalDecision: decision
+    });
+  });
+  return button;
+}
+
 function applySnapshot(snapshot) {
   state.projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
   state.threads = Array.isArray(snapshot.threads) ? snapshot.threads : [];
+  state.pendingApprovals = Array.isArray(snapshot.pendingApprovals) ? snapshot.pendingApprovals : [];
   state.selectedProjectID = snapshot.selectedProjectID || state.selectedProjectID;
   state.selectedThreadID = snapshot.selectedThreadID || state.selectedThreadID;
 
@@ -194,6 +253,7 @@ function applySnapshot(snapshot) {
   renderProjects();
   renderThreads();
   renderMessages();
+  renderApprovals();
 }
 
 function appendMessageFromEvent(eventPayload) {
@@ -271,6 +331,15 @@ function onSocketMessage(event) {
   if (payload.type === "snapshot") {
     applySnapshot(payload.payload || {});
     setStatus("Snapshot synced.");
+    return;
+  }
+
+  if (payload.type === "hello") {
+    state.canApproveRemotely = Boolean(payload.payload?.supportsApprovals);
+    renderApprovals();
+    if (!state.canApproveRemotely) {
+      setStatus("Connected. Remote approvals are disabled on desktop.", "warn");
+    }
     return;
   }
 
@@ -363,7 +432,9 @@ function sendCommand(name, options = {}) {
         name,
         threadID: options.threadID || null,
         projectID: options.projectID || null,
-        text: options.text || null
+        text: options.text || null,
+        approvalRequestID: options.approvalRequestID || null,
+        approvalDecision: options.approvalDecision || null
       }
     }
   };
@@ -479,6 +550,7 @@ function init() {
   renderProjects();
   renderThreads();
   renderMessages();
+  renderApprovals();
   registerServiceWorker();
 }
 

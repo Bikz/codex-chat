@@ -17,8 +17,7 @@ struct RemoteControlSheet: View {
             }
 
             Toggle("Allow approvals from remote", isOn: $model.allowRemoteApprovals)
-                .disabled(true)
-                .help("Phase 2: approval actions stay local-only in this release.")
+                .help("When enabled, paired remote clients can approve or decline pending actions.")
 
             if let message = model.remoteControlStatusMessage,
                !message.isEmpty

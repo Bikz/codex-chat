@@ -22,6 +22,7 @@ Then open `http://localhost:4173`.
 
 - Two-pane mirror layout (projects + threads + active thread messages).
 - Thread send command (`thread.send_message`) through websocket.
+- Approval queue view with remote approve/decline commands when desktop enables remote approvals.
 - Sequence tracking and gap detection.
 - Manual + automatic snapshot requests on reconnect.
 - Reconnect backoff when backgrounding or network drops.

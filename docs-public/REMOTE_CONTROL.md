@@ -77,7 +77,7 @@ Set environment variables before launching Codex Chat:
 
 ## Known limitations
 
-- Remote approvals remain disabled in UI for this phase.
+- Remote approvals are off by default and must be explicitly enabled in the desktop Remote Control sheet.
 - iOS/PWA backgrounding can drop sockets; reconnect + snapshot is required.
 - Relay state is in-memory (no persistent store yet).
 

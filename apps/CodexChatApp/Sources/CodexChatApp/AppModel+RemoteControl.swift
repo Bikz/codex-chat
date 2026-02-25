@@ -1,6 +1,7 @@
 import AppKit
 import CodexChatCore
 import CodexChatRemoteControl
+import CodexKit
 import Foundation
 
 private struct RemoteRelayControlSignal: Decodable {
@@ -118,6 +119,14 @@ extension AppModel {
             await remoteControlBroker.updateConnectedDeviceCount(count)
             await refreshRemoteControlStatus()
         }
+    }
+
+    func handleRemoteApprovalCapabilityChange() async {
+        guard isRemoteControlSessionActive else {
+            return
+        }
+        await sendRemoteControlHello()
+        await sendRemoteControlSnapshot(reason: .stateChanged, force: true)
     }
 
     private func resolvedRemoteControlURLs() -> (joinURL: URL, relayWebSocketURL: URL)? {
@@ -473,14 +482,7 @@ extension AppModel {
             )
         }()
 
-        let approvalSnapshots = pendingApprovalSummaries.map { summary in
-            let requestID = summary.threadID?.uuidString ?? "unscoped-runtime-approvals"
-            return RemoteControlApprovalSnapshot(
-                requestID: requestID,
-                threadID: summary.threadID?.uuidString,
-                summary: "\(summary.title) (\(summary.count))"
-            )
-        }
+        let approvalSnapshots = buildRemoteApprovalSnapshots()
 
         return RemoteControlSnapshotPayload(
             projects: projectSnapshots,
@@ -567,20 +569,91 @@ extension AppModel {
             return
         }
 
-        guard let decision = command.approvalDecision?.lowercased() else {
+        guard let decisionRaw = command.approvalDecision?.lowercased(),
+              let decision = remoteApprovalDecision(from: decisionRaw)
+        else {
             return
         }
 
-        switch decision {
+        let requestID = command.approvalRequestID.flatMap(Int.init)
+        submitRemoteApprovalDecision(decision, requestID: requestID)
+    }
+
+    private func remoteApprovalDecision(from rawDecision: String) -> RuntimeApprovalDecision? {
+        switch rawDecision {
         case "approve", "approve_once", "approve-once":
-            approvePendingApprovalOnce()
+            .approveOnce
         case "approve_for_session", "approve-session", "approveforsession":
-            approvePendingApprovalForSession()
+            .approveForSession
         case "decline", "reject":
-            declinePendingApproval()
+            .decline
         default:
-            break
+            nil
         }
+    }
+
+    private func buildRemoteApprovalSnapshots() -> [RemoteControlApprovalSnapshot] {
+        var snapshots: [RemoteControlApprovalSnapshot] = []
+        var seenRequestIDs = Set<Int>()
+
+        for (threadID, requests) in approvalStateMachine.pendingByThreadID.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            for request in requests.sorted(by: { $0.id < $1.id }) {
+                guard seenRequestIDs.insert(request.id).inserted else {
+                    continue
+                }
+                snapshots.append(
+                    RemoteControlApprovalSnapshot(
+                        requestID: String(request.id),
+                        threadID: threadID.uuidString,
+                        summary: remoteApprovalSummary(for: request)
+                    )
+                )
+            }
+        }
+
+        for request in unscopedApprovalRequests.sorted(by: { $0.id < $1.id }) {
+            guard seenRequestIDs.insert(request.id).inserted else {
+                continue
+            }
+            snapshots.append(
+                RemoteControlApprovalSnapshot(
+                    requestID: String(request.id),
+                    threadID: nil,
+                    summary: remoteApprovalSummary(for: request)
+                )
+            )
+        }
+
+        if let activeApprovalRequest,
+           seenRequestIDs.insert(activeApprovalRequest.id).inserted
+        {
+            let threadID = approvalStateMachine.threadID(for: activeApprovalRequest.id)?.uuidString
+            snapshots.append(
+                RemoteControlApprovalSnapshot(
+                    requestID: String(activeApprovalRequest.id),
+                    threadID: threadID,
+                    summary: remoteApprovalSummary(for: activeApprovalRequest)
+                )
+            )
+        }
+
+        return snapshots
+    }
+
+    private func remoteApprovalSummary(for request: RuntimeApprovalRequest) -> String {
+        if let reason = request.reason?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !reason.isEmpty
+        {
+            return reason
+        }
+        if !request.command.isEmpty {
+            return request.command.joined(separator: " ")
+        }
+        let detail = request.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !detail.isEmpty {
+            return detail
+        }
+        return request.method
     }
 
     private static func remoteTimestamp(_ date: Date) -> String {
