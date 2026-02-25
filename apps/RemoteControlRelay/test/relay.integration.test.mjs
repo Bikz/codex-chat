@@ -105,6 +105,18 @@ async function nextJSONMessage(socket, timeoutMs = 5000) {
   });
 }
 
+async function nextMatchingJSONMessage(socket, predicate, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remaining = Math.max(50, deadline - Date.now());
+    const message = await nextJSONMessage(socket, remaining);
+    if (predicate(message)) {
+      return message;
+    }
+  }
+  throw new Error("Timed out waiting for matching websocket message");
+}
+
 async function expectWebSocketAuthFailure(url, { origin, token }, expectedCloseCode = 1008) {
   const socket = await openWebSocket(url, { origin });
   await new Promise((resolve, reject) => {
@@ -240,6 +252,29 @@ test("pair join requires desktop approval and rotates device session tokens", as
     assert.equal(typeof mobileAuth.nextDeviceSessionToken, "string");
     assert.notEqual(mobileAuth.nextDeviceSessionToken, firstToken);
     const rotatedToken = mobileAuth.nextDeviceSessionToken;
+
+    mobileSocket.send(
+      JSON.stringify({
+        schemaVersion: 1,
+        sessionID,
+        seq: 1,
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: "command",
+          payload: {
+            name: "thread.select",
+            threadID: "thread-1"
+          }
+        }
+      })
+    );
+
+    const desktopForwardedCommand = await nextMatchingJSONMessage(
+      desktopSocket,
+      (message) => message?.payload?.type === "command"
+    );
+    assert.equal(typeof desktopForwardedCommand.relayConnectionID, "string");
+    assert.equal(desktopForwardedCommand.relayDeviceID, joinPayload.deviceID);
 
     mobileSocket.close();
     await wait(180);

@@ -1161,6 +1161,7 @@ final class AppModel: ObservableObject {
     var remoteControlWebSocketAuthToken: String?
     var remoteControlRelayAuthenticated = false
     var remoteControlInboundSequenceTracker = RemoteControlSequenceTracker()
+    var remoteControlInboundSequenceTrackersByConnectionID: [String: RemoteControlSequenceTracker] = [:]
     var remoteControlOutboundSequence: UInt64 = 0
     var remoteControlReconnectAttempt: Int = 0
     var remoteControlLastSnapshotSignature: String?

@@ -862,7 +862,15 @@ wss.on("connection", (socket, request) => {
     }
 
     if (session.desktopSocket && session.desktopSocket.readyState === 1) {
-      sendJSON(session.desktopSocket, parsed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        sendJSON(session.desktopSocket, {
+          ...parsed,
+          relayConnectionID: socket.connectionID || null,
+          relayDeviceID: socket.deviceID || null
+        });
+      } else {
+        sendJSON(session.desktopSocket, parsed);
+      }
     }
   });
 

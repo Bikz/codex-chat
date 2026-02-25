@@ -78,6 +78,7 @@ extension AppModel {
                 await refreshRemoteControlStatus()
                 remoteControlReconnectAttempt = 0
                 remoteControlInboundSequenceTracker.reset()
+                remoteControlInboundSequenceTrackersByConnectionID = [:]
                 remoteControlOutboundSequence = 0
                 remoteControlLastSnapshotSignature = nil
                 remoteControlLastEventEntryIDsByThreadID = [:]
@@ -187,6 +188,7 @@ extension AppModel {
         remoteControlWebSocketAuthToken = nil
         remoteControlRelayAuthenticated = false
         remoteControlPendingPairRequest = nil
+        remoteControlInboundSequenceTrackersByConnectionID = [:]
         remoteControlLastSnapshotSignature = nil
         remoteControlLastEventEntryIDsByThreadID = [:]
         remoteControlLastTurnStateByThreadID = [:]
@@ -278,6 +280,7 @@ extension AppModel {
     }
 
     private func handleRemoteControlIncomingData(_ data: Data) async {
+        let relayConnectionID = remoteRelayConnectionID(from: data)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
@@ -296,7 +299,7 @@ extension AppModel {
             return
         }
 
-        let ingestResult = remoteControlInboundSequenceTracker.ingest(envelope.seq)
+        let ingestResult = ingestRemoteInboundSequence(envelope.seq, relayConnectionID: relayConnectionID)
         switch ingestResult {
         case .accepted:
             break
@@ -623,6 +626,32 @@ extension AppModel {
     private func nextRemoteControlOutboundSequence() -> UInt64 {
         remoteControlOutboundSequence &+= 1
         return remoteControlOutboundSequence
+    }
+
+    private func remoteRelayConnectionID(from data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data, options: []),
+              let object = json as? [String: Any],
+              let relayConnectionID = object["relayConnectionID"] as? String
+        else {
+            return nil
+        }
+
+        let trimmed = relayConnectionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func ingestRemoteInboundSequence(
+        _ sequence: UInt64,
+        relayConnectionID: String?
+    ) -> RemoteControlSequenceIngestResult {
+        guard let relayConnectionID else {
+            return remoteControlInboundSequenceTracker.ingest(sequence)
+        }
+
+        var tracker = remoteControlInboundSequenceTrackersByConnectionID[relayConnectionID] ?? RemoteControlSequenceTracker()
+        let result = tracker.ingest(sequence)
+        remoteControlInboundSequenceTrackersByConnectionID[relayConnectionID] = tracker
+        return result
     }
 
     private func remoteControlSnapshotSignature() -> String {
