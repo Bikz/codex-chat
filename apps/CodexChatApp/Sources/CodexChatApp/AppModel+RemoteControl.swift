@@ -30,6 +30,7 @@ extension AppModel {
     private static let defaultRemoteControlRelayWSURL = "wss://remote.codexchat.app/ws"
     private static let remoteControlSnapshotPumpNanoseconds: UInt64 = 700_000_000
     private static let remoteControlSnapshotMessageLimit = 160
+    private static let remoteControlInboundSequenceTrackerLimit = 24
 
     var isRemoteControlSessionActive: Bool {
         remoteControlStatus.phase == .active && remoteControlStatus.session != nil
@@ -79,6 +80,7 @@ extension AppModel {
                 remoteControlReconnectAttempt = 0
                 remoteControlInboundSequenceTracker.reset()
                 remoteControlInboundSequenceTrackersByConnectionID = [:]
+                remoteControlInboundSequenceTrackerConnectionOrder = []
                 remoteControlOutboundSequence = 0
                 remoteControlLastSnapshotSignature = nil
                 remoteControlLastEventEntryIDsByThreadID = [:]
@@ -189,6 +191,7 @@ extension AppModel {
         remoteControlRelayAuthenticated = false
         remoteControlPendingPairRequest = nil
         remoteControlInboundSequenceTrackersByConnectionID = [:]
+        remoteControlInboundSequenceTrackerConnectionOrder = []
         remoteControlLastSnapshotSignature = nil
         remoteControlLastEventEntryIDsByThreadID = [:]
         remoteControlLastTurnStateByThreadID = [:]
@@ -648,9 +651,23 @@ extension AppModel {
             return remoteControlInboundSequenceTracker.ingest(sequence)
         }
 
+        if remoteControlInboundSequenceTrackersByConnectionID[relayConnectionID] == nil {
+            remoteControlInboundSequenceTrackerConnectionOrder.append(relayConnectionID)
+        }
+
         var tracker = remoteControlInboundSequenceTrackersByConnectionID[relayConnectionID] ?? RemoteControlSequenceTracker()
         let result = tracker.ingest(sequence)
         remoteControlInboundSequenceTrackersByConnectionID[relayConnectionID] = tracker
+
+        let overflow = remoteControlInboundSequenceTrackerConnectionOrder.count - Self.remoteControlInboundSequenceTrackerLimit
+        if overflow > 0 {
+            let evictedConnectionIDs = remoteControlInboundSequenceTrackerConnectionOrder.prefix(overflow)
+            for connectionID in evictedConnectionIDs {
+                remoteControlInboundSequenceTrackersByConnectionID.removeValue(forKey: connectionID)
+            }
+            remoteControlInboundSequenceTrackerConnectionOrder.removeFirst(overflow)
+        }
+
         return result
     }
 

@@ -1162,6 +1162,7 @@ final class AppModel: ObservableObject {
     var remoteControlRelayAuthenticated = false
     var remoteControlInboundSequenceTracker = RemoteControlSequenceTracker()
     var remoteControlInboundSequenceTrackersByConnectionID: [String: RemoteControlSequenceTracker] = [:]
+    var remoteControlInboundSequenceTrackerConnectionOrder: [String] = []
     var remoteControlOutboundSequence: UInt64 = 0
     var remoteControlReconnectAttempt: Int = 0
     var remoteControlLastSnapshotSignature: String?
