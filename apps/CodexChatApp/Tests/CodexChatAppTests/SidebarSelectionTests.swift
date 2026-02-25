@@ -103,6 +103,37 @@ final class SidebarSelectionTests: XCTestCase {
         )
     }
 
+    func testFilteredThreadsSupportsPendingAndUnreadModes() {
+        let pendingThread = ThreadRecord(id: UUID(), projectId: UUID(), title: "Pending")
+        let unreadThread = ThreadRecord(id: UUID(), projectId: UUID(), title: "Unread")
+        let plainThread = ThreadRecord(id: UUID(), projectId: UUID(), title: "Plain")
+        let all = [pendingThread, unreadThread, plainThread]
+
+        let pendingOnly = SidebarView.filteredThreads(
+            all,
+            filter: .pending,
+            pendingThreadIDs: [pendingThread.id],
+            unreadThreadIDs: [unreadThread.id]
+        )
+        XCTAssertEqual(pendingOnly.map(\.id), [pendingThread.id])
+
+        let unreadOnly = SidebarView.filteredThreads(
+            all,
+            filter: .unread,
+            pendingThreadIDs: [pendingThread.id],
+            unreadThreadIDs: [unreadThread.id]
+        )
+        XCTAssertEqual(unreadOnly.map(\.id), [unreadThread.id])
+
+        let allThreads = SidebarView.filteredThreads(
+            all,
+            filter: .all,
+            pendingThreadIDs: [pendingThread.id],
+            unreadThreadIDs: [unreadThread.id]
+        )
+        XCTAssertEqual(allThreads.map(\.id), all.map(\.id))
+    }
+
     func testRemoveSelectedProjectDisconnectsItAndKeepsFilesOnDisk() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-remove-project-\(UUID().uuidString)", isDirectory: true)

@@ -4,6 +4,23 @@ import CodexChatUI
 import SwiftUI
 
 struct SidebarView: View {
+    enum ThreadListFilter: String, CaseIterable {
+        case all
+        case pending
+        case unread
+
+        var label: String {
+            switch self {
+            case .all:
+                "All"
+            case .pending:
+                "Pending"
+            case .unread:
+                "Unread"
+            }
+        }
+    }
+
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
@@ -20,8 +37,8 @@ struct SidebarView: View {
     @State private var expandedProjectThreadsByProjectID: [UUID: [ThreadRecord]] = [:]
     @State private var projectThreadLoadInFlightIDs: Set<UUID> = []
     @State private var projectThreadLoadErrorsByProjectID: [UUID: String] = [:]
-
-    private let projectsPreviewCount = 3
+    @AppStorage("codexchat.sidebar.projectsPreviewCount") private var projectsPreviewCountSetting = 3
+    @AppStorage("codexchat.sidebar.threadFilter") private var threadFilterRawValue = ThreadListFilter.all.rawValue
 
     private var sidebarBodyFont: Font {
         .system(size: 14, weight: .regular)
@@ -49,6 +66,14 @@ struct SidebarView: View {
 
     private var sidebarMetaIconFont: Font {
         .system(size: SidebarLayoutSpec.controlIconFontSize, weight: .semibold)
+    }
+
+    private var projectsPreviewCount: Int {
+        min(max(projectsPreviewCountSetting, 1), 12)
+    }
+
+    private var activeThreadFilter: ThreadListFilter {
+        ThreadListFilter(rawValue: threadFilterRawValue) ?? .all
     }
 
     @ViewBuilder
@@ -110,6 +135,8 @@ struct SidebarView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
+                sidebarControlsRow
+
                 SidebarActionRow(
                     icon: "square.and.pencil",
                     title: "New chat",
@@ -161,6 +188,25 @@ struct SidebarView: View {
                     actionSymbolSize: SidebarLayoutSpec.controlIconFontSize,
                     titleTracking: 0.3,
                     action: model.presentNewProjectSheet
+                )
+            }
+            .listRowSeparator(.hidden)
+
+            Section {
+                recentThreadRows
+            } header: {
+                SidebarSectionHeader(
+                    title: "Recents",
+                    font: sidebarSectionFont,
+                    trailingAlignmentWidth: SidebarLayoutSpec.threadTrailingWidth,
+                    horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
+                    trailingPadding: SidebarLayoutSpec.headerActionTrailingPadding,
+                    leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
+                    topPadding: SidebarLayoutSpec.sectionHeaderTopPadding,
+                    bottomPadding: SidebarLayoutSpec.sectionHeaderBottomPadding,
+                    actionSlotSize: SidebarLayoutSpec.controlButtonSize,
+                    actionSymbolSize: SidebarLayoutSpec.controlIconFontSize,
+                    titleTracking: 0.3
                 )
             }
             .listRowSeparator(.hidden)
@@ -434,12 +480,12 @@ struct SidebarView: View {
     @ViewBuilder
     private func projectThreadRows(for project: ProjectRecord) -> some View {
         if model.selectedProjectID == project.id {
-            let projectThreads = groupedThreadsByProjectID[project.id] ?? []
+            let projectThreads = filteredThreads(groupedThreadsByProjectID[project.id] ?? [])
             ForEach(projectThreads) { thread in
                 threadRow(thread, isGeneralThread: false)
             }
         } else if let cachedThreads = expandedProjectThreadsByProjectID[project.id] {
-            ForEach(cachedThreads) { thread in
+            ForEach(filteredThreads(cachedThreads)) { thread in
                 threadRow(thread, isGeneralThread: false)
             }
         } else if projectThreadLoadInFlightIDs.contains(project.id) {
@@ -476,13 +522,81 @@ struct SidebarView: View {
             ) {
                 retryGeneralThreads()
             }
-        case let .loaded(threads) where threads.isEmpty:
+        case let .loaded(threads) where filteredThreads(threads).isEmpty:
             sidebarStatusRow(systemImage: "bubble.left", title: "No chats yet")
         case let .loaded(threads):
-            ForEach(threads) { thread in
+            ForEach(filteredThreads(threads)) { thread in
                 threadRow(thread, isGeneralThread: true)
             }
         }
+    }
+
+    @ViewBuilder
+    private var recentThreadRows: some View {
+        let recentThreads = filteredThreads(model.threads + model.generalThreads)
+            .sorted { lhs, rhs in
+                if lhs.updatedAt != rhs.updatedAt {
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            .prefix(6)
+
+        if recentThreads.isEmpty {
+            sidebarStatusRow(systemImage: "clock", title: "No recent chats")
+        } else {
+            ForEach(Array(recentThreads)) { thread in
+                threadRow(thread, isGeneralThread: false)
+            }
+        }
+    }
+
+    private var sidebarControlsRow: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(ThreadListFilter.allCases, id: \.rawValue) { filter in
+                    Button {
+                        threadFilterRawValue = filter.rawValue
+                    } label: {
+                        if activeThreadFilter == filter {
+                            Label(filter.label, systemImage: "checkmark")
+                        } else {
+                            Text(filter.label)
+                        }
+                    }
+                }
+            } label: {
+                Label("Filter: \(activeThreadFilter.label)", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(sidebarMetaFont)
+                    .labelStyle(.titleAndIcon)
+            }
+            .menuStyle(.borderlessButton)
+            .help("Filter visible chats")
+
+            Spacer(minLength: 0)
+
+            Menu {
+                ForEach([3, 5, 8, 12], id: \.self) { count in
+                    Button {
+                        projectsPreviewCountSetting = count
+                    } label: {
+                        if projectsPreviewCount == count {
+                            Label("\(count)", systemImage: "checkmark")
+                        } else {
+                            Text("\(count)")
+                        }
+                    }
+                }
+            } label: {
+                Label("Projects: \(projectsPreviewCount)", systemImage: "rectangle.stack")
+                    .font(sidebarMetaFont)
+                    .labelStyle(.titleAndIcon)
+            }
+            .menuStyle(.borderlessButton)
+            .help("Set project preview count")
+        }
+        .padding(.horizontal, SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding)
+        .padding(.vertical, 2)
     }
 
     private func sidebarStatusRow(systemImage: String, title: String) -> some View {
@@ -881,6 +995,31 @@ struct SidebarView: View {
 
     private var groupedThreadsByProjectID: [UUID: [ThreadRecord]] {
         Dictionary(grouping: model.threads, by: \.projectId)
+    }
+
+    private func filteredThreads(_ threads: [ThreadRecord]) -> [ThreadRecord] {
+        Self.filteredThreads(
+            threads,
+            filter: activeThreadFilter,
+            pendingThreadIDs: model.pendingApprovalThreadIDs,
+            unreadThreadIDs: model.unreadThreadIDs
+        )
+    }
+
+    static func filteredThreads(
+        _ threads: [ThreadRecord],
+        filter: ThreadListFilter,
+        pendingThreadIDs: Set<UUID>,
+        unreadThreadIDs: Set<UUID>
+    ) -> [ThreadRecord] {
+        switch filter {
+        case .all:
+            threads
+        case .pending:
+            threads.filter { pendingThreadIDs.contains($0.id) }
+        case .unread:
+            threads.filter { unreadThreadIDs.contains($0.id) }
+        }
     }
 
     static func trailingControlsVisible(isHovered: Bool, isSelected: Bool) -> Bool {
