@@ -116,6 +116,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    struct PendingApprovalSummary: Identifiable, Equatable {
+        let threadID: UUID?
+        let title: String
+        let count: Int
+
+        var id: String {
+            threadID?.uuidString ?? "unscoped-approvals"
+        }
+
+        var isUnscoped: Bool {
+            threadID == nil
+        }
+    }
+
     struct ModsSurfaceModel: Hashable {
         var globalMods: [DiscoveredUIMod]
         var projectMods: [DiscoveredUIMod]
@@ -916,6 +930,7 @@ final class AppModel: ObservableObject {
     @Published var isNewProjectSheetVisible = false
     @Published var isShellWorkspaceVisible = false
     @Published var isReviewChangesVisible = false
+    @Published var isApprovalInboxVisible = false
     @Published var runtimeStatus: RuntimeStatus = .idle
     @Published var runtimeIssue: RuntimeIssue?
     @Published var runtimeSetupMessage: String?
@@ -1438,6 +1453,50 @@ final class AppModel: ObservableObject {
         pendingUserApprovalForSelectedThread != nil
     }
 
+    var pendingApprovalSummaries: [PendingApprovalSummary] {
+        var summaries = pendingApprovalThreadIDs
+            .map { threadID in
+                PendingApprovalSummary(
+                    threadID: threadID,
+                    title: titleForThread(threadID),
+                    count: max(approvalStateMachine.pendingRequestCount(for: threadID), 1)
+                )
+            }
+            .sorted { lhs, rhs in
+                lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+
+        if !unscopedApprovalRequests.isEmpty {
+            summaries.insert(
+                PendingApprovalSummary(
+                    threadID: nil,
+                    title: "Unscoped runtime approvals",
+                    count: unscopedApprovalRequests.count
+                ),
+                at: 0
+            )
+        }
+
+        return summaries
+    }
+
+    var totalPendingApprovalCount: Int {
+        var runtimeRequestIDs: Set<Int> = Set(unscopedApprovalRequests.map(\.id))
+        var supplementalThreadBlockerCount = 0
+
+        for threadID in pendingApprovalThreadIDs {
+            if let request = approvalStateMachine.pendingRequest(for: threadID) {
+                runtimeRequestIDs.insert(request.id)
+            } else {
+                // For non-runtime approval blockers (computer actions / permission notices),
+                // count one blocker per thread when there isn't a mapped runtime request.
+                supplementalThreadBlockerCount += 1
+            }
+        }
+
+        return runtimeRequestIDs.count + supplementalThreadBlockerCount
+    }
+
     var isSelectedThreadApprovalInProgress: Bool {
         if let request = pendingApprovalForSelectedThread {
             return approvalDecisionInFlightRequestIDs.contains(request.id)
@@ -1456,6 +1515,21 @@ final class AppModel: ObservableObject {
             return true
         }
         return false
+    }
+
+    func openApprovalInbox() {
+        isApprovalInboxVisible = true
+    }
+
+    func closeApprovalInbox() {
+        isApprovalInboxVisible = false
+    }
+
+    private func titleForThread(_ threadID: UUID) -> String {
+        if let thread = (threads + generalThreads + archivedThreads).first(where: { $0.id == threadID }) {
+            return thread.title
+        }
+        return "Thread \(threadID.uuidString.prefix(8))"
     }
 
     var canSendMessages: Bool {

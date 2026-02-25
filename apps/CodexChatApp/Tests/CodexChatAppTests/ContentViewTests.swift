@@ -8,6 +8,7 @@ final class ContentViewTests: XCTestCase {
         XCTAssertEqual(
             ContentView.primaryToolbarSystemImages(canToggleModsBar: false),
             [
+                ContentView.ToolbarIcon.pendingApprovals.rawValue,
                 ContentView.ToolbarIcon.reviewChanges.rawValue,
                 ContentView.ToolbarIcon.revealChatFile.rawValue,
                 ContentView.ToolbarIcon.shellWorkspace.rawValue,
@@ -20,6 +21,7 @@ final class ContentViewTests: XCTestCase {
         XCTAssertEqual(
             ContentView.primaryToolbarSystemImages(canToggleModsBar: true),
             [
+                ContentView.ToolbarIcon.pendingApprovals.rawValue,
                 ContentView.ToolbarIcon.reviewChanges.rawValue,
                 ContentView.ToolbarIcon.revealChatFile.rawValue,
                 ContentView.ToolbarIcon.shellWorkspace.rawValue,

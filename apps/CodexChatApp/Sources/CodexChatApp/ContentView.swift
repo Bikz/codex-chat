@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ContentView: View {
     enum ToolbarIcon: String, CaseIterable {
+        case pendingApprovals = "exclamationmark.bubble"
         case reviewChanges = "doc.text.magnifyingglass"
         case revealChatFile = "doc.text"
         case shellWorkspace = "terminal"
@@ -16,6 +17,7 @@ struct ContentView: View {
 
     static func primaryToolbarSystemImages(canToggleModsBar: Bool) -> [String] {
         var images = [
+            ToolbarIcon.pendingApprovals.rawValue,
             ToolbarIcon.reviewChanges.rawValue,
             ToolbarIcon.revealChatFile.rawValue,
             ToolbarIcon.shellWorkspace.rawValue,
@@ -53,6 +55,29 @@ struct ContentView: View {
         .toolbar {
             if !model.isOnboardingActive {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    if model.totalPendingApprovalCount > 0 {
+                        Button {
+                            model.openApprovalInbox()
+                        } label: {
+                            Label("Pending approvals", systemImage: ToolbarIcon.pendingApprovals.rawValue)
+                                .labelStyle(.iconOnly)
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            Text("\(model.totalPendingApprovalCount)")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.red.opacity(0.95))
+                                )
+                                .offset(x: 6, y: -6)
+                        }
+                        .accessibilityLabel("Open pending approvals")
+                        .help("Pending approvals")
+                    }
+
                     Button {
                         model.openReviewChanges()
                     } label: {
@@ -150,6 +175,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.isReviewChangesVisible) {
             ReviewChangesSheet(model: model)
         }
+        .sheet(isPresented: $model.isApprovalInboxVisible) {
+            PendingApprovalsInboxSheet(model: model)
+        }
         .sheet(isPresented: $isInstallSkillSheetVisible) {
             InstallSkillSheet(model: model, isPresented: $isInstallSkillSheetVisible)
         }
@@ -207,13 +235,21 @@ struct ContentView: View {
         if model.isOnboardingActive {
             OnboardingView(model: model)
         } else {
-            switch model.detailDestination {
-            case .thread:
-                ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
-            case .skillsAndMods:
-                SkillsModsCanvasView(model: model, isInstallSkillSheetVisible: $isInstallSkillSheetVisible)
-            case .none:
-                ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
+            VStack(spacing: 0) {
+                if model.totalPendingApprovalCount > 0 {
+                    pendingApprovalsBanner
+                        .padding(.horizontal, tokens.spacing.medium)
+                        .padding(.top, tokens.spacing.small)
+                }
+
+                switch model.detailDestination {
+                case .thread:
+                    ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
+                case .skillsAndMods:
+                    SkillsModsCanvasView(model: model, isInstallSkillSheetVisible: $isInstallSkillSheetVisible)
+                case .none:
+                    ChatsCanvasView(model: model, isInsertMemorySheetVisible: $isInsertMemorySheetVisible)
+                }
             }
         }
     }
@@ -274,5 +310,35 @@ struct ContentView: View {
         } else {
             Color(hex: chatHex)
         }
+    }
+
+    private var pendingApprovalsBanner: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "exclamationmark.bubble.fill")
+                .foregroundStyle(.orange)
+
+            Text(model.totalPendingApprovalCount == 1 ? "1 pending approval needs attention." : "\(model.totalPendingApprovalCount) pending approvals need attention.")
+                .font(.caption.weight(.semibold))
+
+            Spacer(minLength: 0)
+
+            Button("Open Inbox") {
+                model.openApprovalInbox()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(colorScheme == .dark ? 0.16 : 0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.45))
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Pending approvals banner")
     }
 }
