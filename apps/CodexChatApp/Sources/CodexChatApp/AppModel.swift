@@ -1,6 +1,7 @@
 import AppKit
 import CodexChatCore
 import CodexChatInfra
+import CodexChatRemoteControl
 import CodexComputerActions
 import CodexExtensions
 import CodexKit
@@ -929,9 +930,18 @@ final class AppModel: ObservableObject {
     @Published var isDiagnosticsVisible = false
     @Published var isProjectSettingsVisible = false
     @Published var isNewProjectSheetVisible = false
+    @Published var isRemoteControlSheetVisible = false
     @Published var isShellWorkspaceVisible = false
     @Published var isReviewChangesVisible = false
     @Published var isApprovalInboxVisible = false
+    @Published var allowRemoteApprovals = false
+    @Published var remoteControlStatus = RemoteControlBrokerStatus(
+        phase: .disconnected,
+        session: nil,
+        connectedDeviceCount: 0,
+        disconnectReason: nil
+    )
+    @Published var remoteControlStatusMessage: String?
     @Published var runtimeStatus: RuntimeStatus = .idle
     @Published var runtimeIssue: RuntimeIssue?
     @Published var runtimeSetupMessage: String?
@@ -1040,6 +1050,7 @@ final class AppModel: ObservableObject {
     let voiceCaptureService: any VoiceCaptureService
     let codexConfigFileStore: CodexConfigFileStore
     let codexConfigSchemaLoader: CodexConfigSchemaLoader
+    let remoteControlBroker: RemoteControlBroker
     let codexConfigValidator = CodexConfigValidator()
     let extensionWorkerRunner = ExtensionWorkerRunner()
     let extensionStateStore = ExtensionStateStore()
@@ -1191,6 +1202,7 @@ final class AppModel: ObservableObject {
             cacheURL: storagePaths.systemURL.appendingPathComponent("codex-config-schema.json", isDirectory: false),
             bundledSchemaURL: bundledSchemaURL
         )
+        remoteControlBroker = RemoteControlBroker()
 
         if let bootError {
             projectsState = .failed(bootError)
@@ -1250,6 +1262,7 @@ final class AppModel: ObservableObject {
         computerActionHarnessServer?.stop()
         computerActionHarnessServer = nil
         harnessRunContextByToken.removeAll(keepingCapacity: false)
+        isRemoteControlSheetVisible = false
 
         if let runtimePoolForLoginCancellation, let pendingLoginID {
             Task {
@@ -1257,12 +1270,14 @@ final class AppModel: ObservableObject {
             }
         }
 
+        let remoteControlBroker = remoteControlBroker
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
         let turnScheduler = turnConcurrencyScheduler
         let persistenceScheduler = turnPersistenceScheduler
         let persistenceBatcher = persistenceBatcher
         let eventBridge = runtimeEventDispatchBridge
         Task {
+            await remoteControlBroker.stopSession(reason: "App teardown")
             await threadResolutionCoordinator.cancelAll()
             await persistenceBatcher.shutdown()
             await turnScheduler.cancelAll()
@@ -1321,9 +1336,11 @@ final class AppModel: ObservableObject {
             }
         }
 
+        let remoteControlBroker = remoteControlBroker
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
         let turnScheduler = turnConcurrencyScheduler
         Task {
+            await remoteControlBroker.stopSession(reason: "App deinit")
             await threadResolutionCoordinator.cancelAll()
             await turnScheduler.cancelAll()
         }

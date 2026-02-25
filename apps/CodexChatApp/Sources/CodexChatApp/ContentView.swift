@@ -5,6 +5,7 @@ import SwiftUI
 struct ContentView: View {
     enum ToolbarIcon: String, CaseIterable {
         case pendingApprovals = "exclamationmark.bubble"
+        case remoteControl = "iphone.gen3"
         case sidebarFocus = "sidebar.left"
         case reviewChanges = "doc.text.magnifyingglass"
         case revealChatFile = "doc.text"
@@ -19,6 +20,7 @@ struct ContentView: View {
     static func primaryToolbarSystemImages(canToggleModsBar: Bool) -> [String] {
         var images = [
             ToolbarIcon.pendingApprovals.rawValue,
+            ToolbarIcon.remoteControl.rawValue,
             ToolbarIcon.sidebarFocus.rawValue,
             ToolbarIcon.reviewChanges.rawValue,
             ToolbarIcon.revealChatFile.rawValue,
@@ -88,6 +90,15 @@ struct ContentView: View {
                         .accessibilityLabel("Open pending approvals")
                         .help("Pending approvals")
                     }
+
+                    Button {
+                        model.presentRemoteControlSheet()
+                    } label: {
+                        Label("Remote control", systemImage: ToolbarIcon.remoteControl.rawValue)
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Open remote control")
+                    .help("Open remote control")
 
                     Button {
                         model.openReviewChanges()
@@ -179,6 +190,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.isProjectSettingsVisible) {
             ProjectSettingsSheet(model: model)
+        }
+        .sheet(isPresented: $model.isRemoteControlSheetVisible, onDismiss: model.dismissRemoteControlSheet) {
+            RemoteControlSheet(model: model)
         }
         .sheet(isPresented: $model.isNewProjectSheetVisible) {
             NewProjectSheet(model: model)

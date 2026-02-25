@@ -9,6 +9,7 @@ final class ContentViewTests: XCTestCase {
             ContentView.primaryToolbarSystemImages(canToggleModsBar: false),
             [
                 ContentView.ToolbarIcon.pendingApprovals.rawValue,
+                ContentView.ToolbarIcon.remoteControl.rawValue,
                 ContentView.ToolbarIcon.sidebarFocus.rawValue,
                 ContentView.ToolbarIcon.reviewChanges.rawValue,
                 ContentView.ToolbarIcon.revealChatFile.rawValue,
@@ -23,6 +24,7 @@ final class ContentViewTests: XCTestCase {
             ContentView.primaryToolbarSystemImages(canToggleModsBar: true),
             [
                 ContentView.ToolbarIcon.pendingApprovals.rawValue,
+                ContentView.ToolbarIcon.remoteControl.rawValue,
                 ContentView.ToolbarIcon.sidebarFocus.rawValue,
                 ContentView.ToolbarIcon.reviewChanges.rawValue,
                 ContentView.ToolbarIcon.revealChatFile.rawValue,
@@ -36,6 +38,13 @@ final class ContentViewTests: XCTestCase {
     func testPrimaryToolbarSystemImagesContainSidebarLeftToggle() {
         XCTAssertTrue(
             ContentView.primaryToolbarSystemImages(canToggleModsBar: true).contains("sidebar.left")
+        )
+    }
+
+    func testPrimaryToolbarSystemImagesContainRemoteControl() {
+        XCTAssertTrue(
+            ContentView.primaryToolbarSystemImages(canToggleModsBar: true)
+                .contains(ContentView.ToolbarIcon.remoteControl.rawValue)
         )
     }
 

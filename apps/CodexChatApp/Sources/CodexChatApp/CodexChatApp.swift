@@ -114,6 +114,11 @@ public struct CodexChatDesktopScene: Scene {
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
 
+                Button("Remote Control…") {
+                    model.presentRemoteControlSheet()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+
                 Button("Star or Unstar Selected Chat") {
                     model.togglePinForSelectedThread()
                 }
