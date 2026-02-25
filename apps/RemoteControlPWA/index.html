@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111827" />
+    <title>Codex Chat Remote</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Codex Chat Remote</h1>
+        <p class="subtitle">Control your local Codex Chat session securely.</p>
+      </div>
+      <div id="connectionBadge" class="badge">Disconnected</div>
+    </header>
+
+    <main class="layout">
+      <section class="panel pairing">
+        <h2>Pairing</h2>
+        <p id="pairingHint">Open via desktop QR link to auto-fill session details.</p>
+        <dl class="kv">
+          <dt>Session</dt>
+          <dd id="sessionValue">Not paired</dd>
+          <dt>Last seq</dt>
+          <dd id="seqValue">-</dd>
+        </dl>
+        <div class="actions">
+          <button id="pairButton" class="primary">Pair Device</button>
+          <button id="reconnectButton">Reconnect</button>
+          <button id="snapshotButton">Request Snapshot</button>
+        </div>
+        <p id="statusText" class="status">Waiting to pair.</p>
+      </section>
+
+      <section class="panel two-pane">
+        <aside class="sidebar">
+          <h2>Projects</h2>
+          <ul id="projectList" class="list"></ul>
+          <h2>Threads</h2>
+          <ul id="threadList" class="list"></ul>
+        </aside>
+        <section class="thread-view">
+          <h2 id="threadTitle">Thread</h2>
+          <div id="messageList" class="messages"></div>
+          <form id="composerForm" class="composer">
+            <textarea id="composerInput" placeholder="Send instruction to Codex Chat" rows="3"></textarea>
+            <button type="submit" class="primary">Send</button>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

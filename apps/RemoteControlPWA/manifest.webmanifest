@@ -1,0 +1,9 @@
+{
+  "name": "Codex Chat Remote",
+  "short_name": "Codex Remote",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#111827",
+  "description": "Remote companion UI for controlling local Codex Chat sessions."
+}
