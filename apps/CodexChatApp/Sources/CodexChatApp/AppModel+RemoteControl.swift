@@ -192,7 +192,7 @@ extension AppModel {
                     let message = try await websocketTask.receive()
                     await handleRemoteControlWebSocketMessage(message)
                 } catch {
-                    await handleRemoteControlWebSocketDisconnect(error)
+                    handleRemoteControlWebSocketDisconnect(error)
                     return
                 }
             }
@@ -389,7 +389,7 @@ extension AppModel {
         }
         let payloadData = try encoder.encode(envelope)
         guard let payloadString = String(data: payloadData, encoding: .utf8) else {
-            throw URLError(.cannotEncodeContentData)
+            throw URLError(.cannotParseResponse)
         }
         try await websocketTask.send(.string(payloadString))
     }
@@ -573,11 +573,11 @@ extension AppModel {
 
         switch decision {
         case "approve", "approve_once", "approve-once":
-            approveCurrentRequestOnce()
+            approvePendingApprovalOnce()
         case "approve_for_session", "approve-session", "approveforsession":
-            approveCurrentRequestForSession()
+            approvePendingApprovalForSession()
         case "decline", "reject":
-            declineCurrentRequest()
+            declinePendingApproval()
         default:
             break
         }
