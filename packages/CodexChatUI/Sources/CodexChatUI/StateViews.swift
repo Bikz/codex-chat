@@ -4,11 +4,24 @@ public struct EmptyStateView: View {
     private let title: String
     private let message: String
     private let systemImage: String
+    private let actionLabel: String?
+    private let action: (() -> Void)?
+    private let shortcutHint: String?
 
-    public init(title: String, message: String, systemImage: String) {
+    public init(
+        title: String,
+        message: String,
+        systemImage: String,
+        actionLabel: String? = nil,
+        action: (() -> Void)? = nil,
+        shortcutHint: String? = nil
+    ) {
         self.title = title
         self.message = message
         self.systemImage = systemImage
+        self.actionLabel = actionLabel
+        self.action = action
+        self.shortcutHint = shortcutHint
     }
 
     @Environment(\.designTokens) private var tokens
@@ -25,6 +38,19 @@ public struct EmptyStateView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            if let actionLabel, let action {
+                Button(actionLabel, action: action)
+                    .buttonStyle(.borderedProminent)
+            }
+
+            if let shortcutHint,
+               !shortcutHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                Text(shortcutHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

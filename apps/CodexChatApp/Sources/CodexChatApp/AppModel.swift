@@ -888,6 +888,7 @@ final class AppModel: ObservableObject {
     @Published var expandedProjectIDs: Set<UUID> = []
     @Published var showAllProjects: Bool = false
     @Published var composerText = ""
+    @Published var composerFocusRequestID = 0
     @Published var composerMemoryMode: ComposerMemoryMode = .projectDefault
     @Published var composerAttachments: [ComposerAttachment] = []
     @Published var searchQuery = ""

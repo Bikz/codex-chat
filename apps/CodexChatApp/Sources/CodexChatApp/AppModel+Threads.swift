@@ -6,6 +6,23 @@ import CryptoKit
 import Foundation
 
 extension AppModel {
+    func requestComposerFocus() {
+        composerFocusRequestID &+= 1
+    }
+
+    func startChatFromEmptyState() {
+        if hasActiveDraftChatForSelectedProject {
+            requestComposerFocus()
+            return
+        }
+
+        if let selectedProjectID {
+            beginDraftChat(in: selectedProjectID)
+        } else {
+            createGlobalNewChat()
+        }
+    }
+
     func revealSelectedThreadArchiveInFinder() {
         guard let threadID = selectedThreadID,
               let project = selectedProject
@@ -55,6 +72,7 @@ extension AppModel {
                     draftChatProjectID = selectedProjectID
                     detailDestination = .thread
                     refreshConversationState()
+                    requestComposerFocus()
                     try await persistSelection()
                 }
                 let hydratedThreadID = selectedThreadID
@@ -329,6 +347,7 @@ extension AppModel {
         selectedThreadID = nil
         draftChatProjectID = projectID
         detailDestination = .thread
+        requestComposerFocus()
         refreshConversationState()
         appendLog(.info, "Started draft chat for project \(projectID.uuidString)")
 

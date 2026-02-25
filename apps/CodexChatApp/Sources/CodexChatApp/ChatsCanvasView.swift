@@ -173,6 +173,14 @@ struct ChatsCanvasView: View {
         .task(id: model.selectedThreadID) {
             await model.refreshModsBarForSelectedThread()
         }
+        .onChange(of: model.composerFocusRequestID) { _, _ in
+            guard model.pendingUserApprovalForComposerSurface == nil else {
+                return
+            }
+            DispatchQueue.main.async {
+                isComposerFocused = true
+            }
+        }
         .sheet(item: $permissionRecoveryDetailsNotice) { notice in
             PermissionRecoveryDetailsSheet(
                 notice: notice,
@@ -728,7 +736,10 @@ struct ChatsCanvasView: View {
                     EmptyStateView(
                         title: "No active thread",
                         message: "Choose or create a thread to start chatting.",
-                        systemImage: "bubble.left.and.bubble.right"
+                        systemImage: "bubble.left.and.bubble.right",
+                        actionLabel: "Start chat",
+                        action: model.startChatFromEmptyState,
+                        shortcutHint: "Shortcut: Shift-Command-N"
                     )
                 }
             case .loading:
@@ -743,7 +754,7 @@ struct ChatsCanvasView: View {
                 }
             case let .loaded(entries) where entries.isEmpty:
                 conversationWithModsBar {
-                    ThreadEmptyStateView()
+                    ThreadEmptyStateView(onStartChat: model.startChatFromEmptyState)
                 }
             case let .loaded(entries):
                 conversationWithModsBar {
@@ -1025,6 +1036,7 @@ struct ChatsCanvasView: View {
 
 private struct ThreadEmptyStateView: View {
     @Environment(\.designTokens) private var tokens
+    let onStartChat: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -1038,6 +1050,13 @@ private struct ThreadEmptyStateView: View {
 
             Text("Start a conversation")
                 .font(.headline)
+
+            Button("Start chat", action: onStartChat)
+                .buttonStyle(.borderedProminent)
+
+            Text("Shortcut: Shift-Command-N")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
