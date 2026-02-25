@@ -1,0 +1,91 @@
+# Remote Control (MVP)
+
+Remote Control lets a phone/web companion drive a local Codex Chat session without exposing Codex/OpenAI credentials outside the desktop boundary.
+
+## Scope
+
+This MVP delivers:
+
+- Desktop remote-session surface (toolbar + sheet + QR link + stop session)
+- Secure pairing/session primitives in `CodexChatRemoteControl`
+- Outbound-friendly relay scaffold (`apps/RemoteControlRelay`)
+- PWA scaffold with pairing, websocket reconnect, and sequence-gap snapshot requests (`apps/RemoteControlPWA`)
+
+## Security model
+
+- Desktop is the trust boundary for Codex/OpenAI credentials.
+- Pairing uses high-entropy opaque tokens.
+- Join tokens are short-lived and single-use.
+- Relay uses constant-time token comparison and strict token format validation.
+- Pairing endpoints are rate-limited per client IP.
+- Device connections per session are capped.
+- Relay logs avoid raw token output and truncate session identifiers.
+- Sessions auto-expire through idle timeout and retention cleanup.
+
+## Architecture
+
+- `packages/CodexChatRemoteControl`
+  - Versioned message schema (`RemoteControlEnvelope` + payloads)
+  - Token/session descriptor generation and lease enforcement
+  - Sequence tracker for gap/stale detection
+  - Broker actor for session lifecycle and kill switch
+- `apps/CodexChatApp`
+  - Remote control toolbar entry and command-menu shortcut
+  - `RemoteControlSheet` with QR code, copy link, and stop controls
+  - `AppModel+RemoteControl` session actions
+- `apps/RemoteControlRelay`
+  - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws?token=...`
+  - Pass-through websocket routing between desktop/mobile
+- `apps/RemoteControlPWA`
+  - Pair via QR fragment (`#sid=...&jt=...`)
+  - Two-pane project/thread shell
+  - Reconnect with backoff and snapshot re-request
+
+## Local run
+
+### 1) Start relay
+
+```bash
+cd apps/RemoteControlRelay
+pnpm install
+pnpm start
+```
+
+Default URL: `http://localhost:8787`
+
+### 2) Start PWA
+
+```bash
+cd apps/RemoteControlPWA
+pnpm start
+```
+
+Default URL: `http://localhost:4173`
+
+### 3) Point desktop app to local relay/PWA
+
+Set environment variables before launching Codex Chat:
+
+- `CODEXCHAT_REMOTE_CONTROL_JOIN_URL=http://localhost:4173`
+- `CODEXCHAT_REMOTE_CONTROL_RELAY_WS_URL=ws://localhost:8787/ws`
+
+### 4) Pair and connect
+
+- In desktop app, open Remote Control and start a session.
+- Scan the QR from phone (or open copied link).
+- Tap Pair on PWA and wait for websocket connect.
+
+## Known limitations
+
+- Desktop websocket streaming to relay is scaffolded and not yet wired to full transcript/runtime parity.
+- Remote approvals remain disabled in UI for this phase.
+- iOS/PWA backgrounding can drop sockets; reconnect + snapshot is required.
+- Relay state is in-memory (no persistent store yet).
+
+## Next hardening steps
+
+- Desktop relay websocket client with full snapshot + event streaming.
+- Local desktop confirmation prompt for pair-join requests.
+- Device revocation list and explicit trusted-device management.
+- Optional end-to-end payload encryption between desktop and phone.
+- Passkey-based account option for multi-device identity over time.

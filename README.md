@@ -46,6 +46,8 @@ Core differentiators:
 
 - `apps/CodexChatHost`: canonical GUI app target (`com.codexchat.app`) and release source.
 - `apps/CodexChatApp`: shared app/runtime module (`CodexChatShared`) and `CodexChatCLI`.
+- `apps/RemoteControlRelay`: outbound-only websocket relay scaffold for remote mobile control.
+- `apps/RemoteControlPWA`: installable mobile/web companion UI scaffold.
 - `packages/*`: modular Swift packages (`Core`, `Infra`, `UI`, `CodexKit`, `Skills`, `Memory`, `Mods`, `Extensions`).
 - `skills/first-party`: tracked first-party skill templates (including personal-action playbooks for macOS workflows).
 - `tests/fixtures`: shared fake runtime fixtures used by smoke/integration paths.
@@ -202,6 +204,7 @@ Set `USE_GITHUB_RELEASE_WORKFLOW=1` to opt into the manual GitHub-hosted release
 - `docs-public/INSTALL.md`
 - `docs-public/ARCHITECTURE_CONTRACT.md`
 - `docs-public/SECURITY_MODEL.md`
+- `docs-public/REMOTE_CONTROL.md`
 - `docs-public/MODS.md`
 - `docs-public/MODS_SHARING.md`
 - `docs-public/PERSONAL_ACTIONS.md`
