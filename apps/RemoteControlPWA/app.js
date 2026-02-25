@@ -264,13 +264,19 @@ function appendMessageFromEvent(eventPayload) {
   }
 
   const bucket = state.messagesByThreadID.get(threadID) || [];
+  const messageID = eventPayload.messageID || `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const exists = bucket.some((message) => message.id === messageID);
+  if (exists) {
+    return;
+  }
+
   const text = eventPayload.body || "";
   bucket.push({
-    id: `event-${Date.now()}`,
+    id: messageID,
     threadID,
-    role: "assistant",
+    role: eventPayload.role || "assistant",
     text,
-    createdAt: new Date().toISOString()
+    createdAt: eventPayload.createdAt || new Date().toISOString()
   });
   state.messagesByThreadID.set(threadID, bucket);
 
@@ -355,6 +361,16 @@ function onSocketMessage(event) {
     const eventPayload = payload.payload || {};
     if (eventPayload.name === "thread.message.append") {
       appendMessageFromEvent(eventPayload);
+      return;
+    }
+    if (eventPayload.name === "approval.requested" || eventPayload.name === "approval.resolved") {
+      requestSnapshot("approval_event");
+      return;
+    }
+    if (eventPayload.name === "turn.status.update") {
+      const threadLabel = eventPayload.threadID ? ` (${eventPayload.threadID.slice(0, 8)})` : "";
+      const stateLabel = eventPayload.body || "updated";
+      setStatus(`Turn status${threadLabel}: ${stateLabel}.`);
       return;
     }
   }

@@ -80,6 +80,9 @@ extension AppModel {
                 remoteControlInboundSequenceTracker.reset()
                 remoteControlOutboundSequence = 0
                 remoteControlLastSnapshotSignature = nil
+                remoteControlLastEventEntryIDsByThreadID = [:]
+                remoteControlLastTurnStateByThreadID = [:]
+                remoteControlLastPendingApprovalRequestIDs = []
 
                 startRemoteControlWebSocket(using: descriptor)
                 remoteControlStatusMessage = "Remote session started. Join token expires at \(Self.remoteTimestamp(descriptor.joinTokenLease.expiresAt))."
@@ -185,6 +188,9 @@ extension AppModel {
         remoteControlRelayAuthenticated = false
         remoteControlPendingPairRequest = nil
         remoteControlLastSnapshotSignature = nil
+        remoteControlLastEventEntryIDsByThreadID = [:]
+        remoteControlLastTurnStateByThreadID = [:]
+        remoteControlLastPendingApprovalRequestIDs = []
         appendLog(.debug, "Remote control websocket closed: \(reason)")
     }
 
@@ -322,6 +328,7 @@ extension AppModel {
             remoteControlStatusMessage = "Remote relay authenticated."
             await sendRemoteControlHello()
             await sendRemoteControlSnapshot(reason: .websocketAuthenticated, force: true)
+            primeRemoteControlEventBaselines()
         case "relay.device_count":
             if let connectedDeviceCount = signal.connectedDeviceCount {
                 await remoteControlBroker.updateConnectedDeviceCount(connectedDeviceCount)
@@ -354,6 +361,7 @@ extension AppModel {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.remoteControlSnapshotPumpNanoseconds)
                 guard !Task.isCancelled else { return }
+                await sendRemoteControlDeltaEventsIfNeeded()
                 await sendRemoteControlSnapshot(reason: .stateChanged, force: false)
             }
         }
@@ -455,6 +463,161 @@ extension AppModel {
         } catch {
             appendLog(.warning, "Failed to authenticate remote relay websocket: \(error.localizedDescription)")
         }
+    }
+
+    private func sendRemoteControlDeltaEventsIfNeeded() async {
+        guard remoteControlRelayAuthenticated,
+              remoteControlStatus.session != nil
+        else {
+            return
+        }
+
+        await sendRemoteControlMessageEventsIfNeeded()
+        await sendRemoteControlTurnStateEventIfNeeded()
+        await sendRemoteControlApprovalEventsIfNeeded()
+    }
+
+    private func sendRemoteControlMessageEventsIfNeeded() async {
+        guard let selectedThreadID else {
+            remoteControlLastEventEntryIDsByThreadID = [:]
+            return
+        }
+
+        let entries = Array(transcriptStore[selectedThreadID, default: []].suffix(Self.remoteControlSnapshotMessageLimit))
+        let previousIDs = remoteControlLastEventEntryIDsByThreadID[selectedThreadID, default: []]
+        var nextIDs = Set<UUID>()
+
+        for entry in entries {
+            nextIDs.insert(entry.id)
+            guard !previousIDs.contains(entry.id),
+                  let eventPayload = remoteControlEventPayload(for: entry)
+            else {
+                continue
+            }
+            await sendRemoteControlEvent(eventPayload)
+        }
+
+        remoteControlLastEventEntryIDsByThreadID = [selectedThreadID: nextIDs]
+    }
+
+    private func sendRemoteControlTurnStateEventIfNeeded() async {
+        guard let selectedThreadID else {
+            remoteControlLastTurnStateByThreadID = [:]
+            return
+        }
+
+        let isRunning = activeTurnThreadIDs.contains(selectedThreadID)
+        let previousValue = remoteControlLastTurnStateByThreadID[selectedThreadID]
+        guard previousValue != isRunning else {
+            return
+        }
+
+        await sendRemoteControlEvent(
+            RemoteControlEventPayload(
+                name: "turn.status.update",
+                threadID: selectedThreadID.uuidString,
+                body: isRunning ? "running" : "idle"
+            )
+        )
+        remoteControlLastTurnStateByThreadID = [selectedThreadID: isRunning]
+    }
+
+    private func sendRemoteControlApprovalEventsIfNeeded() async {
+        let snapshots = buildRemoteApprovalSnapshots()
+        var currentByID: [Int: RemoteControlApprovalSnapshot] = [:]
+        for snapshot in snapshots {
+            guard let requestID = Int(snapshot.requestID) else {
+                continue
+            }
+            currentByID[requestID] = snapshot
+        }
+
+        let currentIDs = Set(currentByID.keys)
+        let previousIDs = remoteControlLastPendingApprovalRequestIDs
+
+        for requestID in currentIDs.subtracting(previousIDs).sorted() {
+            guard let snapshot = currentByID[requestID] else {
+                continue
+            }
+            await sendRemoteControlEvent(
+                RemoteControlEventPayload(
+                    name: "approval.requested",
+                    threadID: snapshot.threadID,
+                    body: snapshot.summary
+                )
+            )
+        }
+
+        for requestID in previousIDs.subtracting(currentIDs).sorted() {
+            await sendRemoteControlEvent(
+                RemoteControlEventPayload(
+                    name: "approval.resolved",
+                    threadID: nil,
+                    body: "Approval #\(requestID) resolved."
+                )
+            )
+        }
+
+        remoteControlLastPendingApprovalRequestIDs = currentIDs
+    }
+
+    private func remoteControlEventPayload(for entry: TranscriptEntry) -> RemoteControlEventPayload? {
+        switch entry {
+        case let .message(message):
+            RemoteControlEventPayload(
+                name: "thread.message.append",
+                threadID: message.threadId.uuidString,
+                body: message.text,
+                messageID: message.id.uuidString,
+                role: message.role.rawValue,
+                createdAt: message.createdAt
+            )
+        case let .actionCard(card):
+            RemoteControlEventPayload(
+                name: "thread.message.append",
+                threadID: card.threadID.uuidString,
+                body: "\(card.title): \(card.detail)",
+                messageID: card.id.uuidString,
+                role: ChatMessageRole.system.rawValue,
+                createdAt: card.createdAt
+            )
+        }
+    }
+
+    private func sendRemoteControlEvent(_ payload: RemoteControlEventPayload) async {
+        guard let session = remoteControlStatus.session else {
+            return
+        }
+
+        let envelope = RemoteControlEnvelope(
+            sessionID: session.sessionID,
+            seq: nextRemoteControlOutboundSequence(),
+            payload: .event(payload)
+        )
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try await sendRemoteControlEnvelope(envelope, encoder: encoder)
+            await remoteControlBroker.bumpActivity()
+        } catch {
+            appendLog(.warning, "Failed to send remote event payload: \(error.localizedDescription)")
+        }
+    }
+
+    private func primeRemoteControlEventBaselines() {
+        remoteControlLastEventEntryIDsByThreadID = [:]
+        remoteControlLastTurnStateByThreadID = [:]
+        remoteControlLastPendingApprovalRequestIDs = []
+
+        if let selectedThreadID {
+            let entries = Array(transcriptStore[selectedThreadID, default: []].suffix(Self.remoteControlSnapshotMessageLimit))
+            remoteControlLastEventEntryIDsByThreadID[selectedThreadID] = Set(entries.map(\.id))
+            remoteControlLastTurnStateByThreadID[selectedThreadID] = activeTurnThreadIDs.contains(selectedThreadID)
+        }
+
+        let requestIDs = buildRemoteApprovalSnapshots().compactMap { Int($0.requestID) }
+        remoteControlLastPendingApprovalRequestIDs = Set(requestIDs)
     }
 
     private func nextRemoteControlOutboundSequence() -> UInt64 {

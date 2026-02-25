@@ -158,11 +158,24 @@ public struct RemoteControlEventPayload: Codable, Sendable, Equatable {
     public var name: String
     public var threadID: String?
     public var body: String?
+    public var messageID: String?
+    public var role: String?
+    public var createdAt: Date?
 
-    public init(name: String, threadID: String?, body: String?) {
+    public init(
+        name: String,
+        threadID: String?,
+        body: String?,
+        messageID: String? = nil,
+        role: String? = nil,
+        createdAt: Date? = nil
+    ) {
         self.name = name
         self.threadID = threadID
         self.body = body
+        self.messageID = messageID
+        self.role = role
+        self.createdAt = createdAt
     }
 }
 

@@ -1164,6 +1164,9 @@ final class AppModel: ObservableObject {
     var remoteControlOutboundSequence: UInt64 = 0
     var remoteControlReconnectAttempt: Int = 0
     var remoteControlLastSnapshotSignature: String?
+    var remoteControlLastEventEntryIDsByThreadID: [UUID: Set<UUID>] = [:]
+    var remoteControlLastTurnStateByThreadID: [UUID: Bool] = [:]
+    var remoteControlLastPendingApprovalRequestIDs: Set<Int> = []
     var untrustedShellAcknowledgedProjectIDs: Set<UUID> = []
     var didLoadUntrustedShellAcknowledgements = false
     var didPrepareForTeardown = false

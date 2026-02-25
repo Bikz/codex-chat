@@ -27,6 +27,7 @@ Then open `http://localhost:4173`.
 - Approval queue view with remote approve/decline commands when desktop enables remote approvals.
 - Sequence tracking and gap detection.
 - Manual + automatic snapshot requests on reconnect.
+- Live delta event handling for message appends and turn status updates.
 - Reconnect backoff when backgrounding or network drops.
 
 ## Limitations

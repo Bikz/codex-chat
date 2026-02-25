@@ -34,7 +34,7 @@ This MVP delivers:
 - `apps/CodexChatApp`
   - Remote control toolbar entry and command-menu shortcut
   - `RemoteControlSheet` with QR code, copy link, and stop controls
-  - `AppModel+RemoteControl` outbound websocket client, snapshot streaming, and remote command ingestion
+  - `AppModel+RemoteControl` outbound websocket client, snapshot + delta event streaming, and remote command ingestion
 - `apps/RemoteControlRelay`
   - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws` (then `relay.auth` websocket message)
   - Pass-through websocket routing between desktop/mobile
@@ -42,6 +42,7 @@ This MVP delivers:
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)
   - Two-pane project/thread shell
   - Reconnect with backoff and snapshot re-request
+  - Live event ingestion (`thread.message.append`, `turn.status.update`, approval refresh triggers)
 
 ## Local run
 
@@ -85,7 +86,6 @@ Set environment variables before launching Codex Chat:
 
 ## Next hardening steps
 
-- Desktop relay websocket client with full snapshot + event streaming.
 - Device revocation list and explicit trusted-device management.
 - Optional end-to-end payload encryption between desktop and phone.
 - Passkey-based account option for multi-device identity over time.
