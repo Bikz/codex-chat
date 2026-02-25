@@ -25,6 +25,7 @@ pnpm start
 - Constant-time token equality checks.
 - Per-IP rate limiting on pairing endpoints.
 - Per-session mobile connection cap.
+- Origin allowlist enforcement for browser pairing + mobile websocket clients.
 - Idle timeout and retention-based cleanup.
 - Non-sensitive logs (session IDs are truncated).
 
@@ -37,3 +38,4 @@ pnpm start
 - `MAX_PAIR_REQUESTS_PER_MINUTE` (default `60`)
 - `MAX_DEVICES_PER_SESSION` (default `2`)
 - `SESSION_RETENTION_MS` (default `600000`)
+- `ALLOWED_ORIGINS` (comma-separated browser origin allowlist; defaults to relay origin plus local PWA dev origins)

@@ -8,8 +8,8 @@ This MVP delivers:
 
 - Desktop remote-session surface (toolbar + sheet + QR link + stop session)
 - Secure pairing/session primitives in `CodexChatRemoteControl`
-- Outbound-friendly relay scaffold (`apps/RemoteControlRelay`)
-- PWA scaffold with pairing, websocket reconnect, and sequence-gap snapshot requests (`apps/RemoteControlPWA`)
+- Outbound-friendly relay service (`apps/RemoteControlRelay`)
+- PWA companion with pairing, websocket reconnect, and sequence-gap snapshot requests (`apps/RemoteControlPWA`)
 
 ## Security model
 
@@ -32,12 +32,12 @@ This MVP delivers:
 - `apps/CodexChatApp`
   - Remote control toolbar entry and command-menu shortcut
   - `RemoteControlSheet` with QR code, copy link, and stop controls
-  - `AppModel+RemoteControl` session actions
+  - `AppModel+RemoteControl` outbound websocket client, snapshot streaming, and remote command ingestion
 - `apps/RemoteControlRelay`
   - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws?token=...`
   - Pass-through websocket routing between desktop/mobile
 - `apps/RemoteControlPWA`
-  - Pair via QR fragment (`#sid=...&jt=...`)
+  - Pair via QR fragment (`#sid=...&jt=...&relay=...`)
   - Two-pane project/thread shell
   - Reconnect with backoff and snapshot re-request
 
@@ -77,7 +77,6 @@ Set environment variables before launching Codex Chat:
 
 ## Known limitations
 
-- Desktop websocket streaming to relay is scaffolded and not yet wired to full transcript/runtime parity.
 - Remote approvals remain disabled in UI for this phase.
 - iOS/PWA backgrounding can drop sockets; reconnect + snapshot is required.
 - Relay state is in-memory (no persistent store yet).

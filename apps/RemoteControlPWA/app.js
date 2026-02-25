@@ -1,6 +1,7 @@
 const state = {
   sessionID: null,
   joinToken: null,
+  relayBaseURL: null,
   deviceSessionToken: null,
   wsURL: null,
   socket: null,
@@ -47,16 +48,38 @@ function parseJoinFromHash() {
   const params = new URLSearchParams(hash);
   const sessionID = params.get("sid");
   const joinToken = params.get("jt");
+  const relayBaseURL = normalizeRelayBaseURL(params.get("relay"));
   if (sessionID && joinToken) {
     state.sessionID = sessionID;
     state.joinToken = joinToken;
+    state.relayBaseURL = relayBaseURL;
     dom.sessionValue.textContent = sessionID;
-    dom.pairingHint.textContent = "Session and one-time join token detected from QR link.";
+    const relayHint = relayBaseURL ? ` Relay: ${relayBaseURL}` : "";
+    dom.pairingHint.textContent = `Session and one-time join token detected from QR link.${relayHint}`;
+    window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
   }
 }
 
 function baseRelayURL() {
-  return `${window.location.protocol}//${window.location.host}`;
+  return state.relayBaseURL || `${window.location.protocol}//${window.location.host}`;
+}
+
+function normalizeRelayBaseURL(rawValue) {
+  if (typeof rawValue !== "string" || rawValue.trim() === "") {
+    return null;
+  }
+  try {
+    const parsed = new URL(rawValue);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    parsed.pathname = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
 }
 
 function renderProjects() {
@@ -363,30 +386,34 @@ async function pairDevice() {
     return;
   }
 
-  setStatus("Pairing with desktop session...");
-  const response = await fetch(`${baseRelayURL()}/pair/join`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      sessionID: state.sessionID,
-      joinToken: state.joinToken
-    })
-  });
+  try {
+    setStatus("Pairing with desktop session...");
+    const response = await fetch(`${baseRelayURL()}/pair/join`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionID: state.sessionID,
+        joinToken: state.joinToken
+      })
+    });
 
-  const payload = await response.json();
-  if (!response.ok) {
-    setStatus(payload.message || "Pairing failed.", "error");
-    return;
+    const payload = await response.json();
+    if (!response.ok) {
+      setStatus(payload.message || "Pairing failed.", "error");
+      return;
+    }
+
+    state.deviceSessionToken = payload.deviceSessionToken;
+    state.wsURL = payload.wsURL;
+    state.sessionID = payload.sessionID;
+    dom.sessionValue.textContent = state.sessionID;
+    setStatus("Pairing successful. Connecting...");
+    connectSocket();
+  } catch (error) {
+    setStatus(`Pairing request failed: ${error instanceof Error ? error.message : "unknown error"}`, "error");
   }
-
-  state.deviceSessionToken = payload.deviceSessionToken;
-  state.wsURL = payload.wsURL;
-  state.sessionID = payload.sessionID;
-  dom.sessionValue.textContent = state.sessionID;
-  setStatus("Pairing successful. Connecting...");
-  connectSocket();
 }
 
 function wireComposer() {

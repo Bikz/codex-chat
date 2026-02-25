@@ -10,17 +10,24 @@ const MAX_JSON_BYTES = Number(process.env.MAX_JSON_BYTES || "65536");
 const MAX_PAIR_REQUESTS_PER_MINUTE = Number(process.env.MAX_PAIR_REQUESTS_PER_MINUTE || "60");
 const MAX_DEVICES_PER_SESSION = Number(process.env.MAX_DEVICES_PER_SESSION || "2");
 const SESSION_RETENTION_MS = Number(process.env.SESSION_RETENTION_MS || "600000");
+const DEFAULT_ALLOWED_ORIGINS = [
+  new URL(PUBLIC_BASE_URL).origin,
+  "http://localhost:4173",
+  "http://127.0.0.1:4173"
+];
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(","));
 
 const sessions = new Map();
 const deviceTokenIndex = new Map();
 const rateBuckets = new Map();
 
-function respondJSON(res, statusCode, payload) {
+function respondJSON(res, statusCode, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload);
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
-    "Cache-Control": "no-store"
+    "Cache-Control": "no-store",
+    ...extraHeaders
   });
   res.end(body);
 }
@@ -55,6 +62,66 @@ function readBody(req, maxBytes) {
 
     req.on("error", (error) => reject(error));
   });
+}
+
+function parseAllowedOrigins(raw) {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return new Set();
+  }
+
+  return new Set(
+    raw
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => {
+        if (value === "*") {
+          return "*";
+        }
+
+        try {
+          return new URL(value).origin;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+  );
+}
+
+function requestOrigin(req) {
+  const origin = req.headers.origin;
+  return typeof origin === "string" ? origin : null;
+}
+
+function isAllowedOrigin(origin) {
+  if (!origin) {
+    return false;
+  }
+  if (ALLOWED_ORIGINS.has("*")) {
+    return true;
+  }
+
+  let normalized;
+  try {
+    normalized = new URL(origin).origin;
+  } catch {
+    return false;
+  }
+  return ALLOWED_ORIGINS.has(normalized);
+}
+
+function corsHeadersForOrigin(origin) {
+  if (!origin || !isAllowedOrigin(origin)) {
+    return {};
+  }
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "300",
+    Vary: "Origin"
+  };
 }
 
 function randomToken(byteCount = 32) {
@@ -207,9 +274,44 @@ function buildWebSocketURL() {
   return base.toString();
 }
 
+function normalizeRelayWebSocketURL(rawValue) {
+  if (typeof rawValue !== "string" || rawValue.trim() === "") {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(rawValue);
+    if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+      return null;
+    }
+    if (!parsed.pathname || parsed.pathname === "/") {
+      parsed.pathname = "/ws";
+    }
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 const server = createServer(async (req, res) => {
   const requestURL = new URL(req.url || "/", PUBLIC_BASE_URL);
   const path = requestURL.pathname;
+  const origin = requestOrigin(req);
+  const corsHeaders = corsHeadersForOrigin(origin);
+
+  if (req.method === "OPTIONS" && (path === "/pair/start" || path === "/pair/join")) {
+    if (origin && !isAllowedOrigin(origin)) {
+      return respondJSON(res, 403, {
+        error: "origin_not_allowed",
+        message: "Origin is not allowed."
+      });
+    }
+    res.writeHead(204, corsHeaders);
+    res.end();
+    return;
+  }
 
   if (req.method === "GET" && path === "/healthz") {
     return respondJSON(res, 200, {
@@ -220,11 +322,18 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && (path === "/pair/start" || path === "/pair/join")) {
+    if (origin && !isAllowedOrigin(origin)) {
+      return respondJSON(res, 403, {
+        error: "origin_not_allowed",
+        message: "Origin is not allowed."
+      }, corsHeaders);
+    }
+
     if (isRateLimited(clientIP(req))) {
       return respondJSON(res, 429, {
         error: "rate_limited",
         message: "Too many pairing attempts. Try again in a minute."
-      });
+      }, corsHeaders);
     }
   }
 
@@ -236,19 +345,20 @@ const server = createServer(async (req, res) => {
       const desktopSessionToken = body.desktopSessionToken;
       const joinTokenExpiresAtMs = Date.parse(body.joinTokenExpiresAt);
       const idleTimeoutSeconds = Number(body.idleTimeoutSeconds || 1800);
+      const resolvedRelayWebSocketURL = normalizeRelayWebSocketURL(body.relayWebSocketURL) || buildWebSocketURL();
 
       if (!isOpaqueToken(sessionID, 16) || !isOpaqueToken(joinToken, 22) || !isOpaqueToken(desktopSessionToken, 22)) {
         return respondJSON(res, 400, {
           error: "invalid_pair_start",
           message: "sessionID, joinToken, and desktopSessionToken must be high-entropy opaque identifiers."
-        });
+        }, corsHeaders);
       }
 
       if (!Number.isFinite(joinTokenExpiresAtMs) || joinTokenExpiresAtMs <= nowMs()) {
         return respondJSON(res, 400, {
           error: "expired_join_token",
           message: "joinTokenExpiresAt must be in the future."
-        });
+        }, corsHeaders);
       }
 
       const existing = sessions.get(sessionID);
@@ -265,6 +375,7 @@ const server = createServer(async (req, res) => {
         deviceSessionTokens: new Set(),
         mobileSockets: new Map(),
         desktopSocket: null,
+        relayWebSocketURL: resolvedRelayWebSocketURL,
         idleTimeoutSeconds: Math.max(60, Math.min(idleTimeoutSeconds, 86_400)),
         createdAt: nowMs(),
         lastActivityAt: nowMs()
@@ -274,13 +385,13 @@ const server = createServer(async (req, res) => {
       return respondJSON(res, 200, {
         accepted: true,
         sessionID,
-        wsURL: buildWebSocketURL()
-      });
+        wsURL: resolvedRelayWebSocketURL
+      }, corsHeaders);
     } catch (error) {
       return respondJSON(res, 400, {
         error: "invalid_request",
         message: error instanceof Error ? error.message : "Invalid request body"
-      });
+      }, corsHeaders);
     }
   }
 
@@ -294,7 +405,7 @@ const server = createServer(async (req, res) => {
         return respondJSON(res, 400, {
           error: "invalid_pair_join",
           message: "sessionID and joinToken are required."
-        });
+        }, corsHeaders);
       }
 
       const session = sessions.get(sessionID);
@@ -302,35 +413,35 @@ const server = createServer(async (req, res) => {
         return respondJSON(res, 404, {
           error: "session_not_found",
           message: "Remote session not found."
-        });
+        }, corsHeaders);
       }
 
       if (nowMs() >= session.joinTokenExpiresAtMs) {
         return respondJSON(res, 410, {
           error: "join_token_expired",
           message: "Join token has expired."
-        });
+        }, corsHeaders);
       }
 
       if (session.joinTokenUsedAtMs !== null) {
         return respondJSON(res, 409, {
           error: "join_token_already_used",
           message: "Join token has already been redeemed. Start a new session from desktop."
-        });
+        }, corsHeaders);
       }
 
       if (!safeTokenEquals(session.joinToken, joinToken)) {
         return respondJSON(res, 403, {
           error: "invalid_join_token",
           message: "Join token is invalid."
-        });
+        }, corsHeaders);
       }
 
       if (session.deviceSessionTokens.size >= MAX_DEVICES_PER_SESSION) {
         return respondJSON(res, 409, {
           error: "device_cap_reached",
           message: `This session allows at most ${MAX_DEVICES_PER_SESSION} connected devices.`
-        });
+        }, corsHeaders);
       }
 
       const deviceSessionToken = randomToken(32);
@@ -344,13 +455,13 @@ const server = createServer(async (req, res) => {
         accepted: true,
         sessionID,
         deviceSessionToken,
-        wsURL: buildWebSocketURL()
-      });
+        wsURL: session.relayWebSocketURL || buildWebSocketURL()
+      }, corsHeaders);
     } catch (error) {
       return respondJSON(res, 400, {
         error: "invalid_request",
         message: error instanceof Error ? error.message : "Invalid request body"
-      });
+      }, corsHeaders);
     }
   }
 
@@ -472,6 +583,14 @@ server.on("upgrade", (request, socket, head) => {
     socket.destroy();
     return;
   }
+  if (authContext.role === "mobile") {
+    const origin = requestOrigin(request);
+    if (!origin || !isAllowedOrigin(origin)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+  }
 
   wss.handleUpgrade(request, socket, head, (webSocket) => {
     wss.emit("connection", webSocket, request, authContext);
@@ -483,4 +602,9 @@ setInterval(scheduleSessionSweep, 30_000).unref();
 server.listen(PORT, HOST, () => {
   console.info(`[relay] listening on ${HOST}:${PORT}`);
   console.info(`[relay] public base URL: ${PUBLIC_BASE_URL}`);
+  if (ALLOWED_ORIGINS.has("*")) {
+    console.info("[relay] allowed origins: *");
+  } else {
+    console.info(`[relay] allowed origins: ${Array.from(ALLOWED_ORIGINS).join(", ")}`);
+  }
 });
