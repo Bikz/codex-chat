@@ -16,7 +16,9 @@ const state = {
   pendingApprovals: [],
   selectedProjectID: null,
   selectedThreadID: null,
-  messagesByThreadID: new Map()
+  messagesByThreadID: new Map(),
+  turnStateByThreadID: new Map(),
+  unreadByThreadID: new Map()
 };
 
 const dom = {
@@ -114,6 +116,16 @@ function renderThreads() {
   const visibleThreads = state.selectedProjectID
     ? state.threads.filter((thread) => thread.projectID === state.selectedProjectID)
     : state.threads;
+  const pendingApprovalsByThreadID = new Map();
+  for (const approval of state.pendingApprovals) {
+    if (!approval?.threadID) {
+      continue;
+    }
+    pendingApprovalsByThreadID.set(
+      approval.threadID,
+      (pendingApprovalsByThreadID.get(approval.threadID) || 0) + 1
+    );
+  }
 
   if (visibleThreads.length === 0) {
     const li = document.createElement("li");
@@ -124,10 +136,46 @@ function renderThreads() {
 
   for (const thread of visibleThreads) {
     const li = document.createElement("li");
-    li.textContent = thread.title;
+    const row = document.createElement("div");
+    row.className = "thread-row";
+
+    const title = document.createElement("span");
+    title.className = "thread-title";
+    title.textContent = thread.title;
+
+    const badges = document.createElement("span");
+    badges.className = "thread-badges";
+
+    const isRunning = state.turnStateByThreadID.get(thread.id) === true;
+    if (isRunning) {
+      const runningBadge = document.createElement("span");
+      runningBadge.className = "thread-badge running";
+      runningBadge.textContent = "Running";
+      badges.appendChild(runningBadge);
+    }
+
+    const approvalCount = pendingApprovalsByThreadID.get(thread.id) || 0;
+    if (approvalCount > 0) {
+      const approvalBadge = document.createElement("span");
+      approvalBadge.className = "thread-badge approval";
+      approvalBadge.textContent = approvalCount === 1 ? "1 approval" : `${approvalCount} approvals`;
+      badges.appendChild(approvalBadge);
+    }
+
+    const hasUnread = state.unreadByThreadID.get(thread.id) === true;
+    if (hasUnread && thread.id !== state.selectedThreadID) {
+      const unreadBadge = document.createElement("span");
+      unreadBadge.className = "thread-badge unread";
+      unreadBadge.textContent = "New";
+      badges.appendChild(unreadBadge);
+    }
+
+    row.append(title, badges);
+    li.appendChild(row);
     li.classList.toggle("active", thread.id === state.selectedThreadID);
     li.addEventListener("click", () => {
       state.selectedThreadID = thread.id;
+      state.unreadByThreadID.set(thread.id, false);
       dom.threadTitle.textContent = thread.title;
       sendCommand("thread.select", { threadID: thread.id });
       renderThreads();
@@ -232,12 +280,26 @@ function approvalButton(label, approval, decision, isPrimary = false) {
   return button;
 }
 
+function messageSignature(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return "";
+  }
+  const lastMessage = messages[messages.length - 1];
+  return `${lastMessage.id || ""}:${lastMessage.createdAt || ""}:${lastMessage.text || ""}`;
+}
+
 function applySnapshot(snapshot) {
   state.projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
   state.threads = Array.isArray(snapshot.threads) ? snapshot.threads : [];
   state.pendingApprovals = Array.isArray(snapshot.pendingApprovals) ? snapshot.pendingApprovals : [];
   state.selectedProjectID = snapshot.selectedProjectID || state.selectedProjectID;
   state.selectedThreadID = snapshot.selectedThreadID || state.selectedThreadID;
+  if (state.selectedThreadID) {
+    state.unreadByThreadID.set(state.selectedThreadID, false);
+  }
+  if (snapshot.turnState?.threadID) {
+    state.turnStateByThreadID.set(snapshot.turnState.threadID, Boolean(snapshot.turnState.isTurnInProgress));
+  }
 
   const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
   const nextByThread = new Map();
@@ -252,8 +314,25 @@ function applySnapshot(snapshot) {
   }
 
   for (const [threadID, bucket] of nextByThread.entries()) {
+    const previousBucket = state.messagesByThreadID.get(threadID) || [];
     const normalizedBucket = bucket.slice(-240);
+    const didChange = messageSignature(previousBucket) !== messageSignature(normalizedBucket);
+    if (didChange && threadID !== state.selectedThreadID) {
+      state.unreadByThreadID.set(threadID, true);
+    }
     state.messagesByThreadID.set(threadID, normalizedBucket);
+  }
+
+  const knownThreadIDs = new Set(state.threads.map((thread) => thread.id));
+  for (const threadID of state.turnStateByThreadID.keys()) {
+    if (!knownThreadIDs.has(threadID)) {
+      state.turnStateByThreadID.delete(threadID);
+    }
+  }
+  for (const threadID of state.unreadByThreadID.keys()) {
+    if (!knownThreadIDs.has(threadID)) {
+      state.unreadByThreadID.delete(threadID);
+    }
   }
 
   renderProjects();
@@ -290,8 +369,15 @@ function appendMessageFromEvent(eventPayload) {
 
   if (!state.selectedThreadID) {
     state.selectedThreadID = threadID;
+  } else if (state.selectedThreadID !== threadID) {
+    state.unreadByThreadID.set(threadID, true);
   }
 
+  if (state.selectedThreadID === threadID) {
+    state.unreadByThreadID.set(threadID, false);
+  }
+
+  renderThreads();
   renderMessages();
 }
 
@@ -393,8 +479,12 @@ function onSocketMessage(event) {
       return;
     }
     if (eventPayload.name === "turn.status.update") {
-      const threadLabel = eventPayload.threadID ? ` (${eventPayload.threadID.slice(0, 8)})` : "";
       const stateLabel = eventPayload.body || "updated";
+      if (eventPayload.threadID) {
+        state.turnStateByThreadID.set(eventPayload.threadID, stateLabel === "running");
+      }
+      renderThreads();
+      const threadLabel = eventPayload.threadID ? ` (${eventPayload.threadID.slice(0, 8)})` : "";
       setStatus(`Turn status${threadLabel}: ${stateLabel}.`);
       return;
     }

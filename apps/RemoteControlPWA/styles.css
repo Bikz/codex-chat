@@ -146,6 +146,49 @@ button.primary {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.thread-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.thread-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.thread-badge {
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  font-size: 0.66rem;
+  padding: 0.1rem 0.35rem;
+  color: var(--muted);
+}
+
+.thread-badge.running {
+  border-color: rgba(38, 196, 133, 0.45);
+  color: var(--accent);
+}
+
+.thread-badge.unread {
+  border-color: rgba(255, 191, 71, 0.45);
+  color: var(--warning);
+}
+
+.thread-badge.approval {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #ff9da0;
+}
+
 .approval-list li {
   cursor: default;
 }
