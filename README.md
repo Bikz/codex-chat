@@ -81,6 +81,7 @@ make quick
 ```
 
 Runs metadata/parity checks, format check, lint, and fast tests.
+This is the only check we keep in hosted GitHub Actions.
 
 ### OSS smoke checks
 
@@ -124,6 +125,7 @@ make prepush-local
 ```
 
 Runs `quick`, targeted smoke, and Team A reliability harness before push.
+This is the canonical local CI gate for contributors.
 
 Install an optional local `pre-push` hook:
 
@@ -171,6 +173,15 @@ make release-dmg
 ```
 
 Builds signed/notarized DMG artifacts when signing credentials are configured.
+
+### Production release publish (local-first CD)
+
+```sh
+make release-prod
+```
+
+Builds/signs/notarizes locally and publishes GitHub release assets from your machine.
+Set `USE_GITHUB_RELEASE_WORKFLOW=1` to opt into the manual GitHub-hosted release workflow path.
 
 ## Test Layout
 

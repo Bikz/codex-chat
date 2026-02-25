@@ -48,11 +48,16 @@ swift run CodexChatCLI repro --fixture basic-turn
 
 Runtime protocol mismatches (`unknown variant`, `missing field`, `invalid request`) usually indicate an outdated `codex` CLI; update it and retry first.
 
+## CI/CD Policy
+
+- Local-first is required for contributor validation and release readiness.
+- GitHub Actions is budget mode and runs hosted quick smoke only (`make quick`).
+- Run smoke/reliability/full checks locally before merge.
+
 ## Validation Before PR
 
 ```sh
-make quick
-make oss-smoke
+make prepush-local
 pnpm -s run check
 ```
 

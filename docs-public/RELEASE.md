@@ -15,16 +15,16 @@ SwiftPM GUI binaries are not release inputs.
 ## Architecture Support
 
 - Current distribution: Apple Silicon (`arm64`) only.
-- CI/release workflow enforces `arm64` runner/host.
+- Local release host is enforced as `arm64` by `scripts/release/build-notarized-dmg.sh`.
 
 ## Trigger
 
-- Tag push: `v*` (example `v0.2.0`)
-- Workflow: `.github/workflows/release-dmg.yml`
+- Canonical trigger: run `make release-prod` locally.
+- Optional hosted path: manual `workflow_dispatch` on `.github/workflows/release-dmg.yml`.
 
 ## Auto-Increment Version + Build
 
-- Preferred production release command (CI-first with automatic local fallback):
+- Preferred production release command (local-first):
 
 ```sh
 make release-prod
@@ -33,15 +33,16 @@ make release-prod
 Optional controls:
 
 - `VERSION=v0.0.7 make release-prod` (force a specific version)
-- `RELEASE_TIMEOUT_MINUTES=30 make release-prod` (CI wait SLO)
-- `ENABLE_LOCAL_FALLBACK=0 make release-prod` (fail instead of local fallback)
+- `USE_GITHUB_RELEASE_WORKFLOW=1 make release-prod` (opt into manual hosted workflow mode)
+- `RELEASE_TIMEOUT_MINUTES=30 make release-prod` (only applies when hosted workflow mode is enabled)
+- `ENABLE_LOCAL_FALLBACK=0 make release-prod` (only applies when hosted workflow mode is enabled)
 
 `release-prod` behavior:
 
 - Idempotent retries: re-running a version will reuse existing tag/release and only upload missing/replaceable assets.
-- CI-first: pushes/uses tag and waits for `.github/workflows/release-dmg.yml`.
-- Timeout + fallback: if CI fails/times out, it automatically runs local signed/notarized DMG build and uploads assets.
-- Diagnostics: prints failing GitHub Actions run details and failed logs before fallback.
+- Local-first: creates/uses release tag, runs signed/notarized local build, and uploads assets to GitHub release.
+- Hosted workflow mode (`USE_GITHUB_RELEASE_WORKFLOW=1`): waits on `.github/workflows/release-dmg.yml`, then falls back locally if enabled.
+- Hosted workflow diagnostics: prints failing GitHub Actions run details and failed logs before local fallback.
 - Post-release verification: asserts release is not draft/prerelease and contains both required assets.
 
 - Version auto-increment helper (patch bump, starting at `v0.0.1` when no tags exist):
@@ -50,15 +51,26 @@ Optional controls:
 make release-next-version
 ```
 
-- Create + push next release tag (triggers GitHub release workflow):
+- Create + push next release tag:
 
 ```sh
 make release-tag-next
 ```
 
-- Build number is already auto-incremented in CI via `GITHUB_RUN_NUMBER`.
+- Local builds default `BUILD_NUMBER=1` unless explicitly provided.
 
-## Required Secrets
+## Required Local Credentials
+
+- Local keychain contains your Apple Developer ID signing identity.
+- Environment variables for local signing/notarization:
+  - `CODESIGN_IDENTITY`
+  - `NOTARY_KEY_ID`
+  - `NOTARY_ISSUER_ID`
+  - `NOTARY_KEY_FILE` (path to local `AuthKey_<KEY_ID>.p8`)
+
+## Optional Hosted Workflow Secrets
+
+Only required when running `.github/workflows/release-dmg.yml` manually:
 
 - `APPLE_DEVELOPER_ID_CERT_P12_BASE64`
 - `APPLE_DEVELOPER_ID_CERT_PASSWORD`

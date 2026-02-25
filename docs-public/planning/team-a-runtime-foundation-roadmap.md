@@ -14,7 +14,7 @@ Build the most trusted autonomous coding workstation on macOS by making runtime 
 ## Strategy Shift (Now)
 
 1. Make local reliability harness execution mandatory before push.
-2. Keep GitHub-hosted CI minimal: fast checks + targeted smoke only.
+2. Keep GitHub-hosted CI minimal: hosted quick smoke only.
 3. Run deep reliability suites locally for now, with deterministic scripts and repeatable outputs.
 
 ## Implementation Status (Current Branch)
@@ -22,7 +22,7 @@ Build the most trusted autonomous coding workstation on macOS by making runtime 
 1. Completed:
 - Local reliability harness + pre-push gate (`make reliability-local`, `make prepush-local`).
 - Optional pre-push hook installer (`make install-local-hooks`).
-- Hosted CI minimization to required `fast-checks` + `full-checks` where `full-checks` runs targeted smoke.
+- Hosted CI minimization to required quick smoke checks only (`make quick`).
 - Reliability scorecard generator (`make reliability-scorecard`) with JSON + markdown artifacts.
 - Reliability diagnostics bundle generator (`make reliability-bundle`) with portable archive output.
 - Local replay and ledger export CLI (`CodexChatCLI replay`, `CodexChatCLI ledger export`).
@@ -45,7 +45,7 @@ Build the most trusted autonomous coding workstation on macOS by making runtime 
 - KR3: At least 90% of runtime/data regressions are caught by harness + fast CI before merge.
 
 2. Objective: Reduce hosted CI spend without reducing safety.
-- KR1: PR required checks run only `make quick` and targeted smoke.
+- KR1: PR required checks run only hosted quick smoke (`make quick`).
 - KR2: Remove heavy hosted PR jobs from default CI path.
 - KR3: Keep required status checks stable so branch protection remains predictable.
 
@@ -61,7 +61,7 @@ Build the most trusted autonomous coding workstation on macOS by making runtime 
 1. Ship local reliability harness script with deterministic runtime/data invariant suites.
 2. Add `make reliability-local` and `make prepush-local`.
 3. Add optional local pre-push hook installer.
-4. Slim hosted `ci.yml` to fast checks and targeted smoke checks only.
+4. Slim hosted `ci.yml` to quick smoke checks only.
 
 Exit criteria:
 - Engineers can run one command before push for Team A reliability confidence.
@@ -102,7 +102,7 @@ Exit criteria:
 ### P0
 
 1. Local reliability harness and pre-push flow.
-2. Hosted CI minimization to `quick + targeted smoke`.
+2. Hosted CI minimization to hosted quick smoke only.
 3. Documentation for how every engineer runs reliability checks locally.
 
 ### P1
@@ -132,7 +132,7 @@ Assumption: Remaining P1/P2 entries in this roadmap represent strategic investme
 - Mitigation: Keep harness deterministic, script-driven, and versioned in repo.
 
 2. Risk: Reduced hosted CI coverage misses regressions.
-- Mitigation: Preserve required quick + smoke checks and require local pre-push reliability harness.
+- Mitigation: Preserve required hosted quick smoke checks and require local pre-push reliability harness.
 
 3. Risk: Reliability work competes with feature velocity.
 - Mitigation: Keep Team A scope contract-first and automate repeatable checks to reduce review overhead.

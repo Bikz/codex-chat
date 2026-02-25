@@ -37,6 +37,7 @@ This folder contains contributor-facing documentation tracked in git.
 - Canonical GUI entrypoint is `apps/CodexChatHost`.
 - `apps/CodexChatApp` is shared logic + contributor CLI (`CodexChatCLI`).
 - Preferred onboarding command is `bash scripts/bootstrap.sh`.
-- Preferred OSS smoke command is `make oss-smoke`.
+- Hosted GitHub Actions is budget mode and runs quick smoke only (`make quick`).
+- Preferred local gate before push is `make prepush-local`.
 - Shell workspace UI favors minimal chrome: icon-only multi-shell rail on the left, near full-bleed terminal space on the right, and monochrome shell surfaces (white/light, black/dark).
 - Live activity traces use compact one-word status labels by default and only expand into a trace box when rich trace details are available.

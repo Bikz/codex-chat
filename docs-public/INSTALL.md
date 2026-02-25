@@ -20,10 +20,12 @@ bash scripts/bootstrap.sh
 ## Validate
 
 ```sh
-make quick
-make oss-smoke
+make prepush-local
 pnpm -s run check
 ```
+
+`prepush-local` runs `make quick`, `make oss-smoke`, and `make reliability-local` locally.
+Hosted GitHub Actions is intentionally limited to quick smoke (`make quick`) only.
 
 ## Run In Xcode (Canonical)
 

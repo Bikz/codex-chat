@@ -9,6 +9,7 @@ RELEASE_TIMEOUT_MINUTES="${RELEASE_TIMEOUT_MINUTES:-45}"
 RUN_DISCOVERY_TIMEOUT_SECONDS="${RUN_DISCOVERY_TIMEOUT_SECONDS:-240}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-15}"
 ENABLE_LOCAL_FALLBACK="${ENABLE_LOCAL_FALLBACK:-1}"
+USE_GITHUB_RELEASE_WORKFLOW="${USE_GITHUB_RELEASE_WORKFLOW:-0}"
 
 VERSION="${VERSION:-${1:-}}"
 
@@ -195,7 +196,7 @@ build_local_release() {
   ); then
     git worktree remove --force "$worktree_dir" >/dev/null 2>&1 || true
     rm -rf "$worktree_dir"
-    fail "local fallback build failed for $VERSION"
+    fail "local release build failed for $VERSION"
   fi
 
   git worktree remove --force "$worktree_dir" >/dev/null 2>&1 || true
@@ -253,6 +254,17 @@ main() {
   fi
 
   ensure_tag_exists_remote
+
+  if [[ "$USE_GITHUB_RELEASE_WORKFLOW" != "1" ]]; then
+    log "Local-first CD mode enabled. Building and publishing artifacts from this machine."
+    build_local_release
+    publish_local_assets
+    verify_release
+    log "Release completed for $VERSION"
+    return 0
+  fi
+
+  log "GitHub workflow CD mode enabled. Waiting for workflow: $WORKFLOW_FILE"
 
   local target_sha
   target_sha="$(git rev-list -n 1 "$VERSION")"

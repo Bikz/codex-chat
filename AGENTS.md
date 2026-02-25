@@ -29,10 +29,16 @@ The bar is production-quality, reliability-first software.
 ## Delivery Loop
 1. Clarify acceptance criteria and affected user journey.
 2. Implement in small increments.
-3. Run fast checks (`make quick`), contributor smoke checks (`make oss-smoke`), then full checks (`pnpm -s run check`).
+3. Run local validation before push (`make prepush-local`), then run full checks (`pnpm -s run check`) before merge.
 4. Add/adjust tests for changed behavior.
 5. Update docs when behavior, architecture, or ops guidance changes.
 6. Commit atomically with clear scope in the message.
+
+## CI/CD Posture
+- Default to local-first CI/CD to control hosted budget and keep feedback fast.
+- GitHub Actions stays minimal: hosted quick smoke only (`make quick`).
+- Run contributor smoke (`make oss-smoke`), reliability harness (`make reliability-local`), and full checks (`pnpm -s run check`) locally.
+- Production release artifacts are built/published locally by default (`make release-prod`); GitHub-hosted release workflow is manual/optional.
 
 ## Architecture Standards
 - Keep modules focused (`apps/`, `packages/` boundaries must remain clear).
