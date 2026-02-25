@@ -13,7 +13,7 @@ pnpm start
 ## Endpoints
 
 - `POST /pair/start`: Desktop registers a one-time join token and desktop session token.
-- `POST /pair/join`: Mobile redeems one-time join token and receives a device session token.
+- `POST /pair/join`: Mobile requests pairing; relay waits for explicit desktop approval, then issues a device session token.
 - `GET /healthz`: Basic liveness and active session count.
 - `GET /ws?token=<session_token>`: WebSocket channel for desktop/mobile routing.
 
@@ -21,6 +21,7 @@ pnpm start
 
 - High-entropy opaque token validation (`[A-Za-z0-9_-]`, minimum length).
 - One-time join token redemption.
+- Desktop approval required for each join-token redemption attempt.
 - Join-token expiry enforcement.
 - Constant-time token equality checks.
 - Per-IP rate limiting on pairing endpoints.
@@ -38,4 +39,5 @@ pnpm start
 - `MAX_PAIR_REQUESTS_PER_MINUTE` (default `60`)
 - `MAX_DEVICES_PER_SESSION` (default `2`)
 - `SESSION_RETENTION_MS` (default `600000`)
+- `PAIR_APPROVAL_TIMEOUT_MS` (default `45000`)
 - `ALLOWED_ORIGINS` (comma-separated browser origin allowlist; defaults to relay origin plus local PWA dev origins)

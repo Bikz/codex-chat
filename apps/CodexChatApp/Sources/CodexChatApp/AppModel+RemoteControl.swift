@@ -8,6 +8,11 @@ private struct RemoteRelayControlSignal: Decodable {
     let type: String
     let sessionID: String?
     let connectedDeviceCount: Int?
+    let requestID: String?
+    let requesterIP: String?
+    let requestedAt: Date?
+    let expiresAt: Date?
+    let approved: Bool?
     let reason: String?
     let lastSeq: UInt64?
 }
@@ -172,6 +177,7 @@ extension AppModel {
         remoteControlReconnectTask = nil
         remoteControlWebSocketTask?.cancel(with: .normalClosure, reason: nil)
         remoteControlWebSocketTask = nil
+        remoteControlPendingPairRequest = nil
         remoteControlLastSnapshotSignature = nil
         appendLog(.debug, "Remote control websocket closed: \(reason)")
     }
@@ -317,9 +323,21 @@ extension AppModel {
             }
         case "relay.snapshot_request":
             await sendRemoteControlSnapshot(reason: .snapshotRequest, force: true)
+        case "relay.pair_request":
+            handleRemotePairRequestSignal(signal)
+        case "relay.pair_result":
+            handleRemotePairResultSignal(signal)
         default:
             break
         }
+    }
+
+    func approveRemoteControlPairRequest() {
+        sendRemotePairDecision(approved: true)
+    }
+
+    func denyRemoteControlPairRequest() {
+        sendRemotePairDecision(approved: false)
     }
 
     private func startRemoteControlSnapshotPump() {
@@ -401,6 +419,17 @@ extension AppModel {
             throw URLError(.cannotParseResponse)
         }
         try await websocketTask.send(.string(payloadString))
+    }
+
+    private func sendRemoteControlSignal(_ payload: [String: Any]) async throws {
+        guard let websocketTask = remoteControlWebSocketTask else {
+            throw URLError(.networkConnectionLost)
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        guard let raw = String(data: data, encoding: .utf8) else {
+            throw URLError(.cannotParseResponse)
+        }
+        try await websocketTask.send(.string(raw))
     }
 
     private func nextRemoteControlOutboundSequence() -> UInt64 {
@@ -577,6 +606,71 @@ extension AppModel {
 
         let requestID = command.approvalRequestID.flatMap(Int.init)
         submitRemoteApprovalDecision(decision, requestID: requestID)
+    }
+
+    private func handleRemotePairRequestSignal(_ signal: RemoteRelayControlSignal) {
+        guard let requestID = signal.requestID,
+              !requestID.isEmpty
+        else {
+            return
+        }
+
+        remoteControlPendingPairRequest = RemoteControlPairRequestPrompt(
+            requestID: requestID,
+            requesterIP: signal.requesterIP,
+            requestedAt: signal.requestedAt,
+            expiresAt: signal.expiresAt
+        )
+        remoteControlStatusMessage = "Remote device requested pairing approval."
+        isRemoteControlSheetVisible = true
+    }
+
+    private func handleRemotePairResultSignal(_ signal: RemoteRelayControlSignal) {
+        guard let requestID = signal.requestID else {
+            return
+        }
+
+        if remoteControlPendingPairRequest?.requestID == requestID {
+            remoteControlPendingPairRequest = nil
+        }
+
+        if let approved = signal.approved {
+            remoteControlStatusMessage = approved
+                ? "Approved remote pairing request."
+                : "Denied remote pairing request."
+        }
+    }
+
+    private func sendRemotePairDecision(approved: Bool) {
+        guard let pendingRequest = remoteControlPendingPairRequest else {
+            return
+        }
+        guard let session = remoteControlStatus.session else {
+            remoteControlStatusMessage = "Remote session is no longer active."
+            remoteControlPendingPairRequest = nil
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                try await sendRemoteControlSignal(
+                    [
+                        "type": "relay.pair_decision",
+                        "sessionID": session.sessionID,
+                        "requestID": pendingRequest.requestID,
+                        "approved": approved,
+                    ]
+                )
+                remoteControlPendingPairRequest = nil
+                remoteControlStatusMessage = approved
+                    ? "Approved remote pairing request."
+                    : "Denied remote pairing request."
+            } catch {
+                remoteControlStatusMessage = "Failed to send pairing decision: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func remoteApprovalDecision(from rawDecision: String) -> RuntimeApprovalDecision? {

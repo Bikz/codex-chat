@@ -16,6 +16,7 @@ This MVP delivers:
 - Desktop is the trust boundary for Codex/OpenAI credentials.
 - Pairing uses high-entropy opaque tokens.
 - Join tokens are short-lived and single-use.
+- Desktop must explicitly approve each pairing request before the relay issues a mobile session token.
 - Relay uses constant-time token comparison and strict token format validation.
 - Pairing endpoints are rate-limited per client IP.
 - Device connections per session are capped.
@@ -84,7 +85,6 @@ Set environment variables before launching Codex Chat:
 ## Next hardening steps
 
 - Desktop relay websocket client with full snapshot + event streaming.
-- Local desktop confirmation prompt for pair-join requests.
 - Device revocation list and explicit trusted-device management.
 - Optional end-to-end payload encryption between desktop and phone.
 - Passkey-based account option for multi-device identity over time.

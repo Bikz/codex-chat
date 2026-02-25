@@ -15,8 +15,9 @@ Then open `http://localhost:4173`.
 
 1. Desktop starts a remote session and shows QR link with `#sid=<session>&jt=<join_token>&relay=<relay_base_url>`.
 2. PWA opens from that link and calls `POST /pair/join` on the relay.
-3. Relay returns `deviceSessionToken` + `wsURL`.
-4. PWA opens `wsURL?token=<deviceSessionToken>`.
+3. Desktop must explicitly approve the pairing request in the Remote Control sheet.
+4. Relay returns `deviceSessionToken` + `wsURL`.
+5. PWA opens `wsURL?token=<deviceSessionToken>`.
 
 ## MVP behavior
 

@@ -10,6 +10,7 @@ const MAX_JSON_BYTES = Number(process.env.MAX_JSON_BYTES || "65536");
 const MAX_PAIR_REQUESTS_PER_MINUTE = Number(process.env.MAX_PAIR_REQUESTS_PER_MINUTE || "60");
 const MAX_DEVICES_PER_SESSION = Number(process.env.MAX_DEVICES_PER_SESSION || "2");
 const SESSION_RETENTION_MS = Number(process.env.SESSION_RETENTION_MS || "600000");
+const PAIR_APPROVAL_TIMEOUT_MS = Number(process.env.PAIR_APPROVAL_TIMEOUT_MS || "45000");
 const DEFAULT_ALLOWED_ORIGINS = [
   new URL(PUBLIC_BASE_URL).origin,
   "http://localhost:4173",
@@ -192,6 +193,11 @@ function closeSession(sessionId, reason) {
     return;
   }
 
+  resolvePendingJoinRequest(session, {
+    approved: false,
+    reason: "session_closed"
+  });
+
   for (const token of session.deviceSessionTokens) {
     deviceTokenIndex.delete(token);
   }
@@ -208,6 +214,52 @@ function closeSession(sessionId, reason) {
 
   sessions.delete(sessionId);
   console.info(`[relay] closed session=${sessionLogID(sessionId)} reason=${reason}`);
+}
+
+function resolvePendingJoinRequest(session, result) {
+  const pending = session.pendingJoinRequest;
+  if (!pending) {
+    return;
+  }
+
+  session.pendingJoinRequest = null;
+  clearTimeout(pending.timeoutHandle);
+  pending.resolve(result);
+}
+
+function startPendingJoinRequest(session, requesterIP) {
+  if (session.pendingJoinRequest) {
+    return null;
+  }
+
+  const now = nowMs();
+  const joinTokenRemaining = session.joinTokenExpiresAtMs - now;
+  const timeoutMs = Math.max(5_000, Math.min(PAIR_APPROVAL_TIMEOUT_MS, joinTokenRemaining));
+  const requestID = randomToken(10);
+  let resolveDecision = null;
+  const decisionPromise = new Promise((resolve) => {
+    resolveDecision = resolve;
+  });
+
+  const pending = {
+    requestID,
+    requesterIP,
+    requestedAtMs: now,
+    expiresAtMs: now + timeoutMs,
+    timeoutHandle: null,
+    decisionPromise,
+    resolve: resolveDecision
+  };
+
+  pending.timeoutHandle = setTimeout(() => {
+    resolvePendingJoinRequest(session, {
+      approved: false,
+      reason: "approval_timeout"
+    });
+  }, timeoutMs);
+
+  session.pendingJoinRequest = pending;
+  return pending;
 }
 
 function scheduleSessionSweep() {
@@ -371,6 +423,7 @@ const server = createServer(async (req, res) => {
         joinToken,
         joinTokenExpiresAtMs,
         joinTokenUsedAtMs: null,
+        pendingJoinRequest: null,
         desktopSessionToken,
         deviceSessionTokens: new Set(),
         mobileSockets: new Map(),
@@ -441,6 +494,74 @@ const server = createServer(async (req, res) => {
         return respondJSON(res, 409, {
           error: "device_cap_reached",
           message: `This session allows at most ${MAX_DEVICES_PER_SESSION} connected devices.`
+        }, corsHeaders);
+      }
+
+      if (!session.desktopSocket || session.desktopSocket.readyState !== 1) {
+        return respondJSON(res, 409, {
+          error: "desktop_not_connected",
+          message: "Desktop is not connected to relay. Re-open Remote Control on desktop and retry."
+        }, corsHeaders);
+      }
+
+      if (session.pendingJoinRequest) {
+        return respondJSON(res, 409, {
+          error: "pair_request_in_progress",
+          message: "A pairing approval request is already pending on desktop.",
+          requestID: session.pendingJoinRequest.requestID,
+          expiresAt: new Date(session.pendingJoinRequest.expiresAtMs).toISOString()
+        }, corsHeaders);
+      }
+
+      const pendingRequest = startPendingJoinRequest(session, clientIP(req));
+      if (!pendingRequest) {
+        return respondJSON(res, 500, {
+          error: "unable_to_start_pair_request",
+          message: "Unable to start pairing approval request."
+        }, corsHeaders);
+      }
+
+      sendJSON(session.desktopSocket, {
+        type: "relay.pair_request",
+        sessionID,
+        requestID: pendingRequest.requestID,
+        requesterIP: pendingRequest.requesterIP,
+        requestedAt: new Date(pendingRequest.requestedAtMs).toISOString(),
+        expiresAt: new Date(pendingRequest.expiresAtMs).toISOString()
+      });
+
+      const decision = await pendingRequest.decisionPromise;
+
+      if (!decision.approved) {
+        if (decision.reason === "approval_timeout") {
+          return respondJSON(res, 408, {
+            error: "pair_request_timed_out",
+            message: "Desktop pairing approval timed out."
+          }, corsHeaders);
+        }
+        if (decision.reason === "desktop_disconnected" || decision.reason === "session_closed") {
+          return respondJSON(res, 409, {
+            error: "desktop_not_connected",
+            message: "Desktop disconnected before pairing could be approved."
+          }, corsHeaders);
+        }
+        return respondJSON(res, 403, {
+          error: "pair_request_denied",
+          message: "Desktop denied this pairing request."
+        }, corsHeaders);
+      }
+
+      if (nowMs() >= session.joinTokenExpiresAtMs) {
+        return respondJSON(res, 410, {
+          error: "join_token_expired",
+          message: "Join token has expired."
+        }, corsHeaders);
+      }
+
+      if (!safeTokenEquals(session.joinToken, joinToken)) {
+        return respondJSON(res, 403, {
+          error: "invalid_join_token",
+          message: "Join token is invalid."
         }, corsHeaders);
       }
 
@@ -534,6 +655,28 @@ wss.on("connection", (socket, request, authContext) => {
     }
 
     if (role === "desktop") {
+      if (parsed.type === "relay.pair_decision") {
+        const requestID = typeof parsed.requestID === "string" ? parsed.requestID : "";
+        const approved = parsed.approved === true;
+        const pending = session.pendingJoinRequest;
+
+        if (!pending || !safeTokenEquals(pending.requestID, requestID)) {
+          return;
+        }
+
+        resolvePendingJoinRequest(session, {
+          approved,
+          reason: approved ? "approved" : "denied"
+        });
+        sendJSON(socket, {
+          type: "relay.pair_result",
+          sessionID,
+          requestID,
+          approved
+        });
+        return;
+      }
+
       for (const [, mobileSocket] of session.mobileSockets) {
         sendJSON(mobileSocket, parsed);
       }
@@ -557,6 +700,10 @@ wss.on("connection", (socket, request, authContext) => {
       if (liveSession.desktopSocket === socket) {
         liveSession.desktopSocket = null;
       }
+      resolvePendingJoinRequest(liveSession, {
+        approved: false,
+        reason: "desktop_disconnected"
+      });
       console.info(`[relay] desktop_disconnected session=${sessionLogID(sessionID)}`);
       return;
     }

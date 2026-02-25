@@ -458,20 +458,40 @@ async function pairDevice() {
   }
 
   try {
-    setStatus("Pairing with desktop session...");
-    const response = await fetch(`${baseRelayURL()}/pair/join`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        sessionID: state.sessionID,
-        joinToken: state.joinToken
-      })
-    });
+    setStatus("Waiting for desktop pairing approval...");
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), 60_000);
+    let response;
+    try {
+      response = await fetch(`${baseRelayURL()}/pair/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          sessionID: state.sessionID,
+          joinToken: state.joinToken
+        }),
+        signal: abortController.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const payload = await response.json();
     if (!response.ok) {
+      if (payload?.error === "pair_request_in_progress") {
+        setStatus("Pairing request already pending on desktop. Approve or deny it there first.", "warn");
+        return;
+      }
+      if (payload?.error === "pair_request_timed_out") {
+        setStatus("Desktop approval timed out. Request pairing again.", "warn");
+        return;
+      }
+      if (payload?.error === "pair_request_denied") {
+        setStatus("Desktop denied this pairing request.", "error");
+        return;
+      }
       setStatus(payload.message || "Pairing failed.", "error");
       return;
     }
@@ -483,6 +503,10 @@ async function pairDevice() {
     setStatus("Pairing successful. Connecting...");
     connectSocket();
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      setStatus("Pairing timed out while waiting for desktop approval.", "warn");
+      return;
+    }
     setStatus(`Pairing request failed: ${error instanceof Error ? error.message : "unknown error"}`, "error");
   }
 }

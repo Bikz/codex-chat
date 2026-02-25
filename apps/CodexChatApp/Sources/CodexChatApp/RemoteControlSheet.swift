@@ -16,6 +16,10 @@ struct RemoteControlSheet: View {
                 inactiveSessionView
             }
 
+            if let request = model.remoteControlPendingPairRequest {
+                pendingPairRequestView(request: request)
+            }
+
             Toggle("Allow approvals from remote", isOn: $model.allowRemoteApprovals)
                 .help("When enabled, paired remote clients can approve or decline pending actions.")
 
@@ -99,6 +103,51 @@ struct RemoteControlSheet: View {
                 model.startRemoteControlSession()
             }
         }
+    }
+
+    private func pendingPairRequestView(request: RemoteControlPairRequestPrompt) -> some View {
+        VStack(alignment: .leading, spacing: tokens.spacing.small) {
+            Label("Pairing approval needed", systemImage: "hand.raised.fill")
+                .font(.headline)
+
+            if let requesterIP = request.requesterIP,
+               !requesterIP.isEmpty
+            {
+                Text("Request from: \(requesterIP)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Request from: Unknown network address")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let expiresAt = request.expiresAt {
+                Text("Expires at: \(remoteTimestamp(expiresAt))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: tokens.spacing.small) {
+                Button("Approve") {
+                    model.approveRemoteControlPairRequest()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Deny", role: .destructive) {
+                    model.denyRemoteControlPairRequest()
+                }
+            }
+        }
+        .padding(tokens.spacing.medium)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.orange.opacity(0.1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.orange.opacity(0.25), lineWidth: 1)
+        )
     }
 
     private func qrCodeCard(url: URL) -> some View {

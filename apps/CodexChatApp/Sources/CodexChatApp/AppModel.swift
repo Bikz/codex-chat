@@ -942,6 +942,8 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @Published var remoteControlPendingPairRequest: RemoteControlPairRequestPrompt?
+
     @Published var remoteControlStatus = RemoteControlBrokerStatus(
         phase: .disconnected,
         session: nil,
