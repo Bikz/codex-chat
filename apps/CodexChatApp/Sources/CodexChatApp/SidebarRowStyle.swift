@@ -28,6 +28,13 @@ struct SidebarRowButtonStyle: ButtonStyle {
                 backgroundFill(isPressed: configuration.isPressed, isHovered: isHovered)
                     .padding(.vertical, -(SidebarLayoutSpec.listRowSpacing / 2))
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        borderColor(isPressed: configuration.isPressed, isHovered: isHovered),
+                        lineWidth: borderWidth(isPressed: configuration.isPressed, isHovered: isHovered)
+                    )
+            )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.988 : 1.0)
@@ -54,6 +61,29 @@ struct SidebarRowButtonStyle: ButtonStyle {
         } else {
             Color.clear
         }
+    }
+
+    private func borderColor(isPressed: Bool, isHovered: Bool) -> Color {
+        if isActive {
+            return Color(hex: tokens.palette.accentHex).opacity(0.58)
+        }
+        if isPressed {
+            return Color.primary.opacity(tokens.surfaces.hairlineOpacity * 1.65)
+        }
+        if isHovered {
+            return Color.primary.opacity(tokens.surfaces.hairlineOpacity * 1.35)
+        }
+        return .clear
+    }
+
+    private func borderWidth(isPressed: Bool, isHovered: Bool) -> CGFloat {
+        if isActive {
+            return 1.15
+        }
+        if isPressed || isHovered {
+            return 1
+        }
+        return 0
     }
 }
 

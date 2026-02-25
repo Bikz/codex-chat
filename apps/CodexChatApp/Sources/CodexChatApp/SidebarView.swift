@@ -500,6 +500,9 @@ struct SidebarView: View {
             .padding(.horizontal, SidebarLayoutSpec.threadRowHorizontalPadding + SidebarLayoutSpec.selectedRowInset)
             .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
             .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Loading project chats")
+            .accessibilityHint("Project thread list is still loading.")
         } else if let message = projectThreadLoadErrorsByProjectID[project.id] {
             projectThreadLoadErrorRow(projectID: project.id, message: message)
         } else {
@@ -618,6 +621,8 @@ struct SidebarView: View {
         .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
         .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityHint("Sidebar status update.")
     }
 
     private func sidebarRetryRow(
@@ -655,6 +660,9 @@ struct SidebarView: View {
         .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
         .frame(maxWidth: .infinity, minHeight: SidebarLayoutSpec.rowMinHeight, alignment: .leading)
         .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(message)")
+        .accessibilityHint("Retry loading chats.")
     }
 
     private func projectThreadLoadErrorRow(projectID: UUID, message: String) -> some View {
@@ -976,6 +984,9 @@ struct SidebarView: View {
     }
 
     private var searchFieldBorderColor: Color {
+        if isSearchFocused {
+            return Color(hex: tokens.palette.accentHex).opacity(colorScheme == .dark ? 0.56 : 0.44)
+        }
         if colorScheme == .dark {
             return Color.white.opacity(0.09)
         }
