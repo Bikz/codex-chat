@@ -109,6 +109,18 @@ public struct CodexChatDesktopScene: Scene {
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
 
+                Button("Star or Unstar Selected Chat") {
+                    model.togglePinForSelectedThread()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(model.selectedThreadID == nil)
+
+                Button("Archive Selected Chat") {
+                    model.archiveSelectedThread()
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(model.selectedThreadID == nil)
+
                 Button("Show Skills & Mods") {
                     model.openSkillsAndMods()
                 }

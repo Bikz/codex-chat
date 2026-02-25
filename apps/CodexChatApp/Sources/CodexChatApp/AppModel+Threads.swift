@@ -159,6 +159,11 @@ extension AppModel {
         }
     }
 
+    func togglePinForSelectedThread() {
+        guard let selectedThreadID else { return }
+        togglePin(threadID: selectedThreadID)
+    }
+
     func archiveThread(threadID: UUID) {
         Task {
             guard let threadRepository else { return }
@@ -180,6 +185,11 @@ extension AppModel {
                 appendLog(.error, "Archive thread failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    func archiveSelectedThread() {
+        guard let selectedThreadID else { return }
+        archiveThread(threadID: selectedThreadID)
     }
 
     func unarchiveThread(threadID: UUID) {

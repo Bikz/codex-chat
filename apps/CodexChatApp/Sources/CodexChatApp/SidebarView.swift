@@ -365,6 +365,20 @@ struct SidebarView: View {
             .accessibilityLabel(project.name)
             .accessibilityHint("Opens this project and expands or collapses its thread list.")
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            .contextMenu {
+                Button("New chat") {
+                    if model.selectedProjectID != project.id {
+                        model.selectProject(project.id)
+                    }
+                    model.createThread(in: project.id)
+                }
+                Button("Project settings") {
+                    if model.selectedProjectID != project.id {
+                        model.selectProject(project.id)
+                    }
+                    model.showProjectSettings()
+                }
+            }
 
             HStack(spacing: SidebarLayoutSpec.projectControlSlotSpacing) {
                 Button {
@@ -585,6 +599,16 @@ struct SidebarView: View {
             .accessibilityLabel(thread.title)
             .accessibilityHint(threadStatusHint(threadID: thread.id))
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            .contextMenu {
+                Button(thread.isPinned ? "Remove star" : "Star chat") {
+                    model.togglePin(threadID: thread.id)
+                }
+                Button("Archive chat") {
+                    suppressThreadSelectionInteraction()
+                    hoveredThreadID = nil
+                    model.archiveThread(threadID: thread.id)
+                }
+            }
 
             ZStack(alignment: .trailing) {
                 Group {
@@ -631,7 +655,7 @@ struct SidebarView: View {
                     }
                 }
                 .frame(width: SidebarLayoutSpec.threadMetaColumnWidth, alignment: .trailing)
-                .opacity(isHovered ? 0 : 1)
+                .opacity(controlsVisible ? 0 : 1)
                 .allowsHitTesting(false)
 
                 HStack(spacing: SidebarLayoutSpec.threadControlSlotSpacing) {
@@ -865,11 +889,11 @@ struct SidebarView: View {
 
     static func threadTrailingControlsVisible(
         isHovered: Bool,
-        isSelected _: Bool,
+        isSelected: Bool,
         isSelectionSuppressed: Bool
     ) -> Bool {
         guard !isSelectionSuppressed else { return false }
-        return isHovered
+        return isHovered || isSelected
     }
 
     private func retryGeneralThreads() {

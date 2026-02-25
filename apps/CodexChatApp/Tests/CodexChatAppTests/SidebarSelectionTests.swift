@@ -79,7 +79,7 @@ final class SidebarSelectionTests: XCTestCase {
         )
     }
 
-    func testThreadTrailingControlsOnlyAppearOnHover() {
+    func testThreadTrailingControlsAppearOnHoverOrSelection() {
         XCTAssertFalse(
             SidebarView.threadTrailingControlsVisible(
                 isHovered: true,
@@ -87,7 +87,7 @@ final class SidebarSelectionTests: XCTestCase {
                 isSelectionSuppressed: true
             )
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             SidebarView.threadTrailingControlsVisible(
                 isHovered: false,
                 isSelected: true,
