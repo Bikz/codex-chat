@@ -30,6 +30,11 @@ extension AppModel {
     private static let defaultRemoteControlRelayWSURL = "wss://remote.codexchat.app/ws"
     private static let remoteControlSnapshotPumpNanoseconds: UInt64 = 700_000_000
     private static let remoteControlSnapshotMessageLimit = 160
+    private static let remoteControlSnapshotOtherMessageLimit = 24
+    private static let remoteControlSnapshotTextBudgetBytes = 40000
+    private static let remoteControlSnapshotTextLimitBytes = 2000
+    private static let remoteControlSnapshotMessageCountLimit = 120
+    private static let remoteControlSyncThreadLimit = 12
     private static let remoteControlInboundSequenceTrackerLimit = 24
 
     var isRemoteControlSessionActive: Bool {
@@ -484,48 +489,65 @@ extension AppModel {
     }
 
     private func sendRemoteControlMessageEventsIfNeeded() async {
-        guard let selectedThreadID else {
+        let threadIDs = remoteControlSyncThreadIDs()
+        guard !threadIDs.isEmpty else {
             remoteControlLastEventEntryIDsByThreadID = [:]
             return
         }
 
-        let entries = Array(transcriptStore[selectedThreadID, default: []].suffix(Self.remoteControlSnapshotMessageLimit))
-        let previousIDs = remoteControlLastEventEntryIDsByThreadID[selectedThreadID, default: []]
-        var nextIDs = Set<UUID>()
+        var nextByThread: [UUID: Set<UUID>] = [:]
+        for threadID in threadIDs {
+            let messageLimit = remoteControlSnapshotLimit(for: threadID)
+            let entries = Array(transcriptStore[threadID, default: []].suffix(messageLimit))
+            let nextIDs = Set(entries.map(\.id))
 
-        for entry in entries {
-            nextIDs.insert(entry.id)
-            guard !previousIDs.contains(entry.id),
-                  let eventPayload = remoteControlEventPayload(for: entry)
-            else {
+            guard let previousIDs = remoteControlLastEventEntryIDsByThreadID[threadID] else {
+                nextByThread[threadID] = nextIDs
                 continue
             }
-            await sendRemoteControlEvent(eventPayload)
+
+            for entry in entries {
+                guard !previousIDs.contains(entry.id),
+                      let eventPayload = remoteControlEventPayload(for: entry)
+                else {
+                    continue
+                }
+                await sendRemoteControlEvent(eventPayload)
+            }
+
+            nextByThread[threadID] = nextIDs
         }
 
-        remoteControlLastEventEntryIDsByThreadID = [selectedThreadID: nextIDs]
+        remoteControlLastEventEntryIDsByThreadID = nextByThread
     }
 
     private func sendRemoteControlTurnStateEventIfNeeded() async {
-        guard let selectedThreadID else {
+        let threadIDs = remoteControlSyncThreadIDs()
+        guard !threadIDs.isEmpty else {
             remoteControlLastTurnStateByThreadID = [:]
             return
         }
 
-        let isRunning = activeTurnThreadIDs.contains(selectedThreadID)
-        let previousValue = remoteControlLastTurnStateByThreadID[selectedThreadID]
-        guard previousValue != isRunning else {
-            return
+        var nextTurnStateByThreadID: [UUID: Bool] = [:]
+        for threadID in threadIDs {
+            let isRunning = activeTurnThreadIDs.contains(threadID)
+            let previousValue = remoteControlLastTurnStateByThreadID[threadID]
+            if previousValue == nil, !isRunning {
+                nextTurnStateByThreadID[threadID] = isRunning
+                continue
+            }
+            if previousValue != isRunning {
+                await sendRemoteControlEvent(
+                    RemoteControlEventPayload(
+                        name: "turn.status.update",
+                        threadID: threadID.uuidString,
+                        body: isRunning ? "running" : "idle"
+                    )
+                )
+            }
+            nextTurnStateByThreadID[threadID] = isRunning
         }
-
-        await sendRemoteControlEvent(
-            RemoteControlEventPayload(
-                name: "turn.status.update",
-                threadID: selectedThreadID.uuidString,
-                body: isRunning ? "running" : "idle"
-            )
-        )
-        remoteControlLastTurnStateByThreadID = [selectedThreadID: isRunning]
+        remoteControlLastTurnStateByThreadID = nextTurnStateByThreadID
     }
 
     private func sendRemoteControlApprovalEventsIfNeeded() async {
@@ -616,10 +638,11 @@ extension AppModel {
         remoteControlLastTurnStateByThreadID = [:]
         remoteControlLastPendingApprovalRequestIDs = []
 
-        if let selectedThreadID {
-            let entries = Array(transcriptStore[selectedThreadID, default: []].suffix(Self.remoteControlSnapshotMessageLimit))
-            remoteControlLastEventEntryIDsByThreadID[selectedThreadID] = Set(entries.map(\.id))
-            remoteControlLastTurnStateByThreadID[selectedThreadID] = activeTurnThreadIDs.contains(selectedThreadID)
+        for threadID in remoteControlSyncThreadIDs() {
+            let messageLimit = remoteControlSnapshotLimit(for: threadID)
+            let entries = Array(transcriptStore[threadID, default: []].suffix(messageLimit))
+            remoteControlLastEventEntryIDsByThreadID[threadID] = Set(entries.map(\.id))
+            remoteControlLastTurnStateByThreadID[threadID] = activeTurnThreadIDs.contains(threadID)
         }
 
         let requestIDs = buildRemoteApprovalSnapshots().compactMap { Int($0.requestID) }
@@ -676,7 +699,14 @@ extension AppModel {
         let threadUpdatedStamp = (threads + generalThreads)
             .map(\.updatedAt.timeIntervalSince1970)
             .max() ?? 0
-        let selectedThreadRevision = selectedThreadID.flatMap { transcriptRevisionsByThreadID[$0] } ?? 0
+        let syncThreadIDs = remoteControlSyncThreadIDs()
+        let revisionSignature = syncThreadIDs
+            .map { "\($0.uuidString):\(transcriptRevisionsByThreadID[$0] ?? 0)" }
+            .joined(separator: ",")
+        let activeThreadSignature = activeTurnThreadIDs
+            .map(\.uuidString)
+            .sorted()
+            .joined(separator: ",")
 
         return [
             "p:\(projects.count)",
@@ -685,10 +715,10 @@ extension AppModel {
             "tAt:\(threadUpdatedStamp)",
             "sp:\(selectedProjectID?.uuidString ?? "nil")",
             "st:\(selectedThreadID?.uuidString ?? "nil")",
-            "tr:\(selectedThreadRevision)",
+            "trs:\(revisionSignature)",
             "turn:\(isTurnInProgress)",
             "approval:\(totalPendingApprovalCount)",
-            "active:\(activeTurnThreadIDs.count)",
+            "active:\(activeThreadSignature)",
         ].joined(separator: "|")
     }
 
@@ -710,29 +740,28 @@ extension AppModel {
             )
         }
 
-        let selectedEntries: [TranscriptEntry] = {
-            guard let selectedThreadID else { return [] }
-            return Array(transcriptStore[selectedThreadID, default: []].suffix(Self.remoteControlSnapshotMessageLimit))
-        }()
+        let syncThreadIDs = remoteControlSyncThreadIDs()
+        var messageSnapshots: [RemoteControlMessageSnapshot] = []
+        var remainingTextBudget = Self.remoteControlSnapshotTextBudgetBytes
 
-        let messageSnapshots = selectedEntries.compactMap { entry -> RemoteControlMessageSnapshot? in
-            switch entry {
-            case let .message(message):
-                return RemoteControlMessageSnapshot(
-                    id: message.id.uuidString,
-                    threadID: message.threadId.uuidString,
-                    role: message.role.rawValue,
-                    text: message.text,
-                    createdAt: message.createdAt
-                )
-            case let .actionCard(action):
-                return RemoteControlMessageSnapshot(
-                    id: action.id.uuidString,
-                    threadID: action.threadID.uuidString,
-                    role: ChatMessageRole.system.rawValue,
-                    text: "\(action.title): \(action.detail)",
-                    createdAt: action.createdAt
-                )
+        threadLoop: for threadID in syncThreadIDs {
+            let messageLimit = remoteControlSnapshotLimit(for: threadID)
+            let entries = Array(transcriptStore[threadID, default: []].suffix(messageLimit))
+
+            for entry in entries {
+                guard messageSnapshots.count < Self.remoteControlSnapshotMessageCountLimit else {
+                    break threadLoop
+                }
+                guard let snapshot = remoteControlMessageSnapshot(
+                    from: entry,
+                    remainingTextBudget: &remainingTextBudget
+                ) else {
+                    continue
+                }
+                messageSnapshots.append(snapshot)
+                if remainingTextBudget <= 0 {
+                    break threadLoop
+                }
             }
         }
 
@@ -756,6 +785,135 @@ extension AppModel {
             turnState: turnState,
             pendingApprovals: approvalSnapshots
         )
+    }
+
+    private func remoteControlSyncThreadIDs() -> [UUID] {
+        var orderedThreadIDs: [UUID] = []
+        var seen = Set<UUID>()
+
+        func appendThreadID(_ threadID: UUID?) {
+            guard let threadID, seen.insert(threadID).inserted else {
+                return
+            }
+            orderedThreadIDs.append(threadID)
+        }
+
+        appendThreadID(selectedThreadID)
+
+        for threadID in activeTurnThreadIDs.sorted(by: { $0.uuidString < $1.uuidString }) {
+            appendThreadID(threadID)
+        }
+
+        for threadID in remoteControlPendingApprovalThreadIDs() {
+            appendThreadID(threadID)
+        }
+
+        for thread in threads + generalThreads {
+            appendThreadID(thread.id)
+            if orderedThreadIDs.count >= Self.remoteControlSyncThreadLimit {
+                break
+            }
+        }
+
+        if orderedThreadIDs.count > Self.remoteControlSyncThreadLimit {
+            orderedThreadIDs = Array(orderedThreadIDs.prefix(Self.remoteControlSyncThreadLimit))
+        }
+        return orderedThreadIDs
+    }
+
+    private func remoteControlPendingApprovalThreadIDs() -> [UUID] {
+        var pendingThreadIDs = Set<UUID>()
+        for (threadID, requests) in approvalStateMachine.pendingByThreadID where !requests.isEmpty {
+            pendingThreadIDs.insert(threadID)
+        }
+        if let activeApprovalRequest,
+           let threadID = approvalStateMachine.threadID(for: activeApprovalRequest.id)
+        {
+            pendingThreadIDs.insert(threadID)
+        }
+        return pendingThreadIDs.sorted(by: { $0.uuidString < $1.uuidString })
+    }
+
+    private func remoteControlSnapshotLimit(for threadID: UUID) -> Int {
+        threadID == selectedThreadID
+            ? Self.remoteControlSnapshotMessageLimit
+            : Self.remoteControlSnapshotOtherMessageLimit
+    }
+
+    private func remoteControlMessageSnapshot(
+        from entry: TranscriptEntry,
+        remainingTextBudget: inout Int
+    ) -> RemoteControlMessageSnapshot? {
+        let id: String
+        let threadID: String
+        let role: String
+        let createdAt: Date
+        let rawText: String
+
+        switch entry {
+        case let .message(message):
+            id = message.id.uuidString
+            threadID = message.threadId.uuidString
+            role = message.role.rawValue
+            createdAt = message.createdAt
+            rawText = message.text
+        case let .actionCard(action):
+            id = action.id.uuidString
+            threadID = action.threadID.uuidString
+            role = ChatMessageRole.system.rawValue
+            createdAt = action.createdAt
+            rawText = "\(action.title): \(action.detail)"
+        }
+
+        guard remainingTextBudget > 0 || rawText.isEmpty else {
+            return nil
+        }
+
+        let perMessageLimit = min(Self.remoteControlSnapshotTextLimitBytes, max(remainingTextBudget, 0))
+        let text = rawText.isEmpty
+            ? rawText
+            : truncateRemoteSnapshotText(rawText, maxUTF8Bytes: max(perMessageLimit, 0))
+        let textBytes = text.utf8.count
+        if textBytes > 0 {
+            remainingTextBudget = max(0, remainingTextBudget - textBytes)
+        }
+
+        return RemoteControlMessageSnapshot(
+            id: id,
+            threadID: threadID,
+            role: role,
+            text: text,
+            createdAt: createdAt
+        )
+    }
+
+    private func truncateRemoteSnapshotText(_ text: String, maxUTF8Bytes: Int) -> String {
+        guard maxUTF8Bytes > 0 else {
+            return ""
+        }
+        if text.utf8.count <= maxUTF8Bytes {
+            return text
+        }
+
+        let reserveForSuffix = maxUTF8Bytes > 3 ? 3 : 0
+        let contentBudget = maxUTF8Bytes - reserveForSuffix
+        var output = ""
+        output.reserveCapacity(min(text.count, contentBudget))
+        var usedBytes = 0
+
+        for character in text {
+            let charBytes = String(character).utf8.count
+            if usedBytes + charBytes > contentBudget {
+                break
+            }
+            output.append(character)
+            usedBytes += charBytes
+        }
+
+        if reserveForSuffix > 0, output.utf8.count < text.utf8.count {
+            output.append("...")
+        }
+        return output
     }
 
     private func applyRemoteControlCommand(_ command: RemoteControlCommandPayload) {

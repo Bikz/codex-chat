@@ -239,16 +239,21 @@ function applySnapshot(snapshot) {
   state.selectedProjectID = snapshot.selectedProjectID || state.selectedProjectID;
   state.selectedThreadID = snapshot.selectedThreadID || state.selectedThreadID;
 
-  state.messagesByThreadID.clear();
   const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+  const nextByThread = new Map();
   for (const message of messages) {
     const threadID = message.threadID;
     if (!threadID) {
       continue;
     }
-    const bucket = state.messagesByThreadID.get(threadID) || [];
+    const bucket = nextByThread.get(threadID) || [];
     bucket.push(message);
-    state.messagesByThreadID.set(threadID, bucket);
+    nextByThread.set(threadID, bucket);
+  }
+
+  for (const [threadID, bucket] of nextByThread.entries()) {
+    const normalizedBucket = bucket.slice(-240);
+    state.messagesByThreadID.set(threadID, normalizedBucket);
   }
 
   renderProjects();
@@ -278,6 +283,9 @@ function appendMessageFromEvent(eventPayload) {
     text,
     createdAt: eventPayload.createdAt || new Date().toISOString()
   });
+  if (bucket.length > 240) {
+    bucket.splice(0, bucket.length - 240);
+  }
   state.messagesByThreadID.set(threadID, bucket);
 
   if (!state.selectedThreadID) {

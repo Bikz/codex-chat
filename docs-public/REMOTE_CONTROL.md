@@ -34,7 +34,7 @@ This MVP delivers:
 - `apps/CodexChatApp`
   - Remote control toolbar entry and command-menu shortcut
   - `RemoteControlSheet` with QR code, copy link, and stop controls
-  - `AppModel+RemoteControl` outbound websocket client, snapshot + delta event streaming, and remote command ingestion
+  - `AppModel+RemoteControl` outbound websocket client, multi-thread snapshot + delta event streaming, and remote command ingestion
 - `apps/RemoteControlRelay`
   - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws` (then `relay.auth` websocket message)
   - Pass-through websocket routing between desktop/mobile
@@ -43,6 +43,7 @@ This MVP delivers:
   - Two-pane project/thread shell
   - Reconnect with backoff and snapshot re-request
   - Live event ingestion (`thread.message.append`, `turn.status.update`, approval refresh triggers)
+  - Snapshot merge logic that preserves cached thread history and keeps per-thread memory bounded
 
 ## Local run
 
@@ -83,6 +84,7 @@ Set environment variables before launching Codex Chat:
 - Remote approvals are off by default and must be explicitly enabled in the desktop Remote Control sheet.
 - iOS/PWA backgrounding can drop sockets; reconnect + snapshot is required.
 - Relay state is in-memory (no persistent store yet).
+- Desktop snapshot payloads are size-bounded for relay safety, so very large transcripts stream incrementally instead of all-at-once.
 
 ## Next hardening steps
 
