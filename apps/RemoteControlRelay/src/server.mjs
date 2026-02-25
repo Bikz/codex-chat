@@ -198,8 +198,10 @@ function closeSession(sessionId, reason) {
     reason: "session_closed"
   });
 
-  for (const token of session.deviceSessionTokens) {
-    deviceTokenIndex.delete(token);
+  for (const device of session.devices.values()) {
+    if (device.currentSessionToken) {
+      deviceTokenIndex.delete(device.currentSessionToken);
+    }
   }
 
   if (session.desktopSocket && session.desktopSocket.readyState === 1) {
@@ -298,6 +300,36 @@ function relayDeviceCount(session) {
   });
 }
 
+function closeExistingMobileSocketForDevice(session, deviceID, reason) {
+  for (const [connectionID, mobileSocket] of session.mobileSockets) {
+    if (mobileSocket.deviceID === deviceID) {
+      session.mobileSockets.delete(connectionID);
+      if (mobileSocket.readyState === 1) {
+        mobileSocket.close(1000, reason);
+      }
+      break;
+    }
+  }
+}
+
+function rotateDeviceSessionToken(session, deviceID) {
+  const device = session.devices.get(deviceID);
+  if (!device) {
+    return null;
+  }
+
+  const nextToken = randomToken(32);
+  if (device.currentSessionToken) {
+    deviceTokenIndex.delete(device.currentSessionToken);
+  }
+  device.currentSessionToken = nextToken;
+  deviceTokenIndex.set(nextToken, {
+    sessionID: session.sessionID,
+    deviceID
+  });
+  return nextToken;
+}
+
 function resolveWebSocketAuth(token) {
   if (!isOpaqueToken(token, 22)) {
     return null;
@@ -309,9 +341,9 @@ function resolveWebSocketAuth(token) {
     }
   }
 
-  const sessionID = deviceTokenIndex.get(token);
-  if (sessionID) {
-    return { role: "mobile", sessionID };
+  const mobileAuth = deviceTokenIndex.get(token);
+  if (mobileAuth) {
+    return { role: "mobile", sessionID: mobileAuth.sessionID, deviceID: mobileAuth.deviceID };
   }
 
   return null;
@@ -425,7 +457,7 @@ const server = createServer(async (req, res) => {
         joinTokenUsedAtMs: null,
         pendingJoinRequest: null,
         desktopSessionToken,
-        deviceSessionTokens: new Set(),
+        devices: new Map(),
         mobileSockets: new Map(),
         desktopSocket: null,
         relayWebSocketURL: resolvedRelayWebSocketURL,
@@ -490,7 +522,7 @@ const server = createServer(async (req, res) => {
         }, corsHeaders);
       }
 
-      if (session.deviceSessionTokens.size >= MAX_DEVICES_PER_SESSION) {
+      if (session.devices.size >= MAX_DEVICES_PER_SESSION) {
         return respondJSON(res, 409, {
           error: "device_cap_reached",
           message: `This session allows at most ${MAX_DEVICES_PER_SESSION} connected devices.`
@@ -565,16 +597,24 @@ const server = createServer(async (req, res) => {
         }, corsHeaders);
       }
 
+      const deviceID = randomToken(12);
       const deviceSessionToken = randomToken(32);
       session.joinTokenUsedAtMs = nowMs();
-      session.deviceSessionTokens.add(deviceSessionToken);
+      session.devices.set(deviceID, {
+        deviceID,
+        currentSessionToken: deviceSessionToken
+      });
       session.lastActivityAt = nowMs();
-      deviceTokenIndex.set(deviceSessionToken, sessionID);
+      deviceTokenIndex.set(deviceSessionToken, {
+        sessionID,
+        deviceID
+      });
 
       console.info(`[relay] pair_join session=${sessionLogID(sessionID)}`);
       return respondJSON(res, 200, {
         accepted: true,
         sessionID,
+        deviceID,
         deviceSessionToken,
         wsURL: session.relayWebSocketURL || buildWebSocketURL()
       }, corsHeaders);
@@ -616,18 +656,34 @@ wss.on("connection", (socket, request, authContext) => {
     });
     console.info(`[relay] desktop_connected session=${sessionLogID(sessionID)}`);
   } else {
+    if (!authContext.deviceID || !session.devices.has(authContext.deviceID)) {
+      socket.close(1008, "device_not_found");
+      return;
+    }
+
+    closeExistingMobileSocketForDevice(session, authContext.deviceID, "device_reconnected");
+
     if (session.mobileSockets.size >= MAX_DEVICES_PER_SESSION) {
       socket.close(1008, "device_cap_reached");
       return;
     }
 
     const connectionID = randomToken(10);
+    const rotatedToken = rotateDeviceSessionToken(session, authContext.deviceID);
+    if (!rotatedToken) {
+      socket.close(1011, "token_rotation_failed");
+      return;
+    }
+
     socket.connectionID = connectionID;
+    socket.deviceID = authContext.deviceID;
     session.mobileSockets.set(connectionID, socket);
     sendJSON(socket, {
       type: "auth_ok",
       role,
       sessionID,
+      deviceID: authContext.deviceID,
+      nextDeviceSessionToken: rotatedToken,
       connectedDeviceCount: session.mobileSockets.size
     });
     relayDeviceCount(session);

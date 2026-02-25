@@ -17,6 +17,7 @@ This MVP delivers:
 - Pairing uses high-entropy opaque tokens.
 - Join tokens are short-lived and single-use.
 - Desktop must explicitly approve each pairing request before the relay issues a mobile session token.
+- Mobile session tokens rotate on every successful websocket authentication.
 - Relay uses constant-time token comparison and strict token format validation.
 - Pairing endpoints are rate-limited per client IP.
 - Device connections per session are capped.

@@ -23,6 +23,7 @@ pnpm start
 - One-time join token redemption.
 - Desktop approval required for each join-token redemption attempt.
 - Join-token expiry enforcement.
+- Mobile websocket auth rotates the device session token on each successful connect.
 - Constant-time token equality checks.
 - Per-IP rate limiting on pairing endpoints.
 - Per-session mobile connection cap.

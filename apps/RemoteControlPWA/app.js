@@ -1,6 +1,7 @@
 const state = {
   sessionID: null,
   joinToken: null,
+  deviceID: null,
   relayBaseURL: null,
   deviceSessionToken: null,
   wsURL: null,
@@ -319,6 +320,12 @@ function onSocketMessage(event) {
   }
 
   if (message.type === "auth_ok") {
+    if (typeof message.nextDeviceSessionToken === "string" && message.nextDeviceSessionToken.length > 0) {
+      state.deviceSessionToken = message.nextDeviceSessionToken;
+    }
+    if (typeof message.deviceID === "string" && message.deviceID.length > 0) {
+      state.deviceID = message.deviceID;
+    }
     setStatus("WebSocket authenticated.");
     return;
   }
@@ -497,6 +504,7 @@ async function pairDevice() {
     }
 
     state.deviceSessionToken = payload.deviceSessionToken;
+    state.deviceID = payload.deviceID || state.deviceID;
     state.wsURL = payload.wsURL;
     state.sessionID = payload.sessionID;
     dom.sessionValue.textContent = state.sessionID;
