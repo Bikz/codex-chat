@@ -901,6 +901,7 @@ final class AppModel: ObservableObject {
     @Published var onboardingMode: OnboardingMode = .inactive
     @Published var expandedProjectIDs: Set<UUID> = []
     @Published var showAllProjects: Bool = false
+    @Published var sidebarToggleRequestID = 0
     @Published var composerText = ""
     @Published var composerFocusRequestID = 0
     @Published var composerMemoryMode: ComposerMemoryMode = .projectDefault
@@ -1708,6 +1709,10 @@ final class AppModel: ObservableObject {
 
     var canReviewChanges: Bool {
         !selectedThreadChanges.isEmpty
+    }
+
+    func requestSidebarToggle() {
+        sidebarToggleRequestID &+= 1
     }
 
     func refreshAccountState(refreshToken: Bool = false) async throws {

@@ -5,6 +5,7 @@ import SwiftUI
 struct ContentView: View {
     enum ToolbarIcon: String, CaseIterable {
         case pendingApprovals = "exclamationmark.bubble"
+        case sidebarFocus = "sidebar.left"
         case reviewChanges = "doc.text.magnifyingglass"
         case revealChatFile = "doc.text"
         case shellWorkspace = "terminal"
@@ -13,11 +14,12 @@ struct ContentView: View {
     }
 
     static let splitBackgroundExtensionEdges: Edge.Set = .top
-    static let usesCustomSidebarToolbarButton = false
+    static let usesCustomSidebarToolbarButton = true
 
     static func primaryToolbarSystemImages(canToggleModsBar: Bool) -> [String] {
         var images = [
             ToolbarIcon.pendingApprovals.rawValue,
+            ToolbarIcon.sidebarFocus.rawValue,
             ToolbarIcon.reviewChanges.rawValue,
             ToolbarIcon.revealChatFile.rawValue,
             ToolbarIcon.shellWorkspace.rawValue,
@@ -55,6 +57,15 @@ struct ContentView: View {
         .toolbar {
             if !model.isOnboardingActive {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        toggleSidebarVisibility()
+                    } label: {
+                        Label("Toggle Sidebar", systemImage: ToolbarIcon.sidebarFocus.rawValue)
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Toggle sidebar visibility")
+                    .help("Toggle sidebar")
+
                     if model.totalPendingApprovalCount > 0 {
                         Button {
                             model.openApprovalInbox()
@@ -227,6 +238,9 @@ struct ContentView: View {
         }
         .onChange(of: model.isOnboardingActive) { _, isOnboardingActive in
             syncSplitViewVisibility(isOnboardingActive: isOnboardingActive)
+        }
+        .onChange(of: model.sidebarToggleRequestID) { _, _ in
+            toggleSidebarVisibility()
         }
     }
 

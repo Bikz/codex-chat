@@ -109,6 +109,11 @@ public struct CodexChatDesktopScene: Scene {
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
 
+                Button("Toggle Sidebar") {
+                    model.requestSidebarToggle()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+
                 Button("Star or Unstar Selected Chat") {
                     model.togglePinForSelectedThread()
                 }

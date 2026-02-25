@@ -9,6 +9,7 @@ final class ContentViewTests: XCTestCase {
             ContentView.primaryToolbarSystemImages(canToggleModsBar: false),
             [
                 ContentView.ToolbarIcon.pendingApprovals.rawValue,
+                ContentView.ToolbarIcon.sidebarFocus.rawValue,
                 ContentView.ToolbarIcon.reviewChanges.rawValue,
                 ContentView.ToolbarIcon.revealChatFile.rawValue,
                 ContentView.ToolbarIcon.shellWorkspace.rawValue,
@@ -22,6 +23,7 @@ final class ContentViewTests: XCTestCase {
             ContentView.primaryToolbarSystemImages(canToggleModsBar: true),
             [
                 ContentView.ToolbarIcon.pendingApprovals.rawValue,
+                ContentView.ToolbarIcon.sidebarFocus.rawValue,
                 ContentView.ToolbarIcon.reviewChanges.rawValue,
                 ContentView.ToolbarIcon.revealChatFile.rawValue,
                 ContentView.ToolbarIcon.shellWorkspace.rawValue,
@@ -31,8 +33,8 @@ final class ContentViewTests: XCTestCase {
         )
     }
 
-    func testPrimaryToolbarSystemImagesDoNotContainSidebarLeftToggle() {
-        XCTAssertFalse(
+    func testPrimaryToolbarSystemImagesContainSidebarLeftToggle() {
+        XCTAssertTrue(
             ContentView.primaryToolbarSystemImages(canToggleModsBar: true).contains("sidebar.left")
         )
     }
@@ -42,8 +44,8 @@ final class ContentViewTests: XCTestCase {
         XCTAssertEqual(Set(images).count, images.count)
     }
 
-    func testCustomSidebarToolbarButtonRemainsDisabled() {
-        XCTAssertFalse(ContentView.usesCustomSidebarToolbarButton)
+    func testCustomSidebarToolbarButtonIsEnabled() {
+        XCTAssertTrue(ContentView.usesCustomSidebarToolbarButton)
     }
 
     func testSplitBackgroundExtensionRemainsTopEdgeOnly() {
