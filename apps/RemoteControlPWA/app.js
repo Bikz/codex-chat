@@ -289,27 +289,29 @@ function appendMessageFromEvent(eventPayload) {
 
 function processSequence(seq) {
   if (typeof seq !== "number") {
-    return;
+    return "accepted";
   }
 
   if (state.lastIncomingSeq === null) {
     state.lastIncomingSeq = seq;
     dom.seqValue.textContent = String(seq);
-    return;
+    return "accepted";
   }
 
   const expectedNext = state.lastIncomingSeq + 1;
   if (seq === expectedNext) {
     state.lastIncomingSeq = seq;
     dom.seqValue.textContent = String(seq);
-    return;
+    return "accepted";
   }
 
   if (seq > expectedNext) {
     state.lastIncomingSeq = seq;
     dom.seqValue.textContent = String(seq);
-    requestSnapshot("gap_detected");
+    return "gap";
   }
+
+  return "stale";
 }
 
 function onSocketMessage(event) {
@@ -321,10 +323,6 @@ function onSocketMessage(event) {
     return;
   }
 
-  if (typeof message.seq === "number") {
-    processSequence(message.seq);
-  }
-
   if (message.type === "auth_ok") {
     if (typeof message.nextDeviceSessionToken === "string" && message.nextDeviceSessionToken.length > 0) {
       state.deviceSessionToken = message.nextDeviceSessionToken;
@@ -334,6 +332,25 @@ function onSocketMessage(event) {
     }
     setStatus("WebSocket authenticated.");
     requestSnapshot("initial_sync");
+    return;
+  }
+
+  if (message.sessionID && state.sessionID && message.sessionID !== state.sessionID) {
+    setStatus("Ignored message for mismatched session.", "warn");
+    return;
+  }
+
+  if (typeof message.schemaVersion === "number" && message.schemaVersion !== 1) {
+    setStatus("Ignored message with unsupported schema version.", "warn");
+    return;
+  }
+
+  const sequenceDecision = processSequence(message.seq);
+  if (sequenceDecision === "stale") {
+    return;
+  }
+  if (sequenceDecision === "gap") {
+    requestSnapshot("gap_detected");
     return;
   }
 
@@ -391,6 +408,11 @@ function connectSocket() {
   if (!state.wsURL || !state.deviceSessionToken) {
     setStatus("Missing WebSocket URL or device token.", "error");
     return;
+  }
+
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
   }
 
   closeSocket();
@@ -527,6 +549,7 @@ async function pairDevice() {
     state.deviceID = payload.deviceID || state.deviceID;
     state.wsURL = payload.wsURL;
     state.sessionID = payload.sessionID;
+    state.joinToken = null;
     dom.sessionValue.textContent = state.sessionID;
     setStatus("Pairing successful. Connecting...");
     connectSocket();

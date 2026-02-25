@@ -259,6 +259,8 @@ test("pair join requires desktop approval and rotates device session tokens", as
         sessionID,
         seq: 1,
         timestamp: new Date().toISOString(),
+        relayConnectionID: "spoofed-connection",
+        relayDeviceID: "spoofed-device",
         payload: {
           type: "command",
           payload: {
@@ -274,7 +276,9 @@ test("pair join requires desktop approval and rotates device session tokens", as
       (message) => message?.payload?.type === "command"
     );
     assert.equal(typeof desktopForwardedCommand.relayConnectionID, "string");
+    assert.notEqual(desktopForwardedCommand.relayConnectionID, "spoofed-connection");
     assert.equal(desktopForwardedCommand.relayDeviceID, joinPayload.deviceID);
+    assert.notEqual(desktopForwardedCommand.relayDeviceID, "spoofed-device");
 
     mobileSocket.close();
     await wait(180);
