@@ -561,7 +561,10 @@ extension AppModel {
 
     @discardableResult
     func activateProjectFromSidebar(_ projectID: UUID) -> Bool {
-        beginDraftChat(in: projectID)
+        let isSelectingDifferentProject = selectedProjectID != projectID
+        if isSelectingDifferentProject || selectedThreadID == nil {
+            selectProject(projectID)
+        }
         toggleProjectExpanded(projectID)
         return expandedProjectIDs.contains(projectID)
     }

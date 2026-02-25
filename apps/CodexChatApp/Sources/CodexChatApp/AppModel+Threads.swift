@@ -23,6 +23,16 @@ extension AppModel {
     }
 
     func selectProject(_ projectID: UUID?) {
+        let previousProjectID = selectedProjectID
+        selectedProjectID = projectID
+        selectedThreadID = nil
+        if draftChatProjectID != projectID {
+            draftChatProjectID = nil
+        }
+        detailDestination = .thread
+        refreshConversationState()
+        appendLog(.debug, "Selected project: \(projectID?.uuidString ?? "none")")
+
         let transitionGeneration = beginSelectionTransition()
         let task = Task { [weak self] in
             guard let self else { return }
@@ -37,15 +47,6 @@ extension AppModel {
                 finishSelectionTransition(transitionGeneration)
             }
 
-            let previousProjectID = selectedProjectID
-            selectedProjectID = projectID
-            selectedThreadID = nil
-            if draftChatProjectID != projectID {
-                draftChatProjectID = nil
-            }
-            refreshConversationState()
-            appendLog(.debug, "Selected project: \(projectID?.uuidString ?? "none")")
-
             do {
                 try await persistSelection()
                 guard isCurrentSelectionTransition(transitionGeneration) else { return }
@@ -57,6 +58,9 @@ extension AppModel {
                     try await persistSelection()
                 }
                 let hydratedThreadID = selectedThreadID
+                if hydratedThreadID != nil {
+                    detailDestination = .thread
+                }
                 if let hydratedThreadID {
                     scheduleSelectedThreadHydration(
                         threadID: hydratedThreadID,

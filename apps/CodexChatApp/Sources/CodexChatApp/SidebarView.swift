@@ -363,7 +363,7 @@ struct SidebarView: View {
             ))
             .contentShape(RoundedRectangle(cornerRadius: SidebarLayoutSpec.selectedRowCornerRadius, style: .continuous))
             .accessibilityLabel(project.name)
-            .accessibilityHint("Starts a new draft chat and expands or collapses this project's thread list.")
+            .accessibilityHint("Opens this project and expands or collapses its thread list.")
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
             HStack(spacing: SidebarLayoutSpec.projectControlSlotSpacing) {
