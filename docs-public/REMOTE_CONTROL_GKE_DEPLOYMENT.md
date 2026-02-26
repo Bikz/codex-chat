@@ -26,6 +26,10 @@ Resources included:
 
 - `Deployment`
 - `Service`
+- `Ingress`
+- `BackendConfig` (Cloud Armor policy attachment)
+- `FrontendConfig` (HTTPS redirect)
+- `ManagedCertificate`
 - `HorizontalPodAutoscaler`
 - `PodDisruptionBudget`
 - `ConfigMap` + secret template
@@ -38,6 +42,11 @@ Set these secret values before deploy:
 - `ALLOWED_ORIGINS`
 - `REDIS_URL`
 - `NATS_URL`
+
+Set these non-secret ingress/platform values before deploy:
+
+- ingress host + certificate domains (base uses `remote.codexchat.app`, staging/canary overlays patch this)
+- Cloud Armor policy name in `infra/remote-control-relay/gke/base/backendconfig.yaml`
 
 Defaults and non-secret runtime tunables are in:
 
@@ -55,7 +64,13 @@ docker push gcr.io/PROJECT_ID/remote-control-relay-rust:TAG
 
 2. Update image tag in `deployment.yaml`
 
-3. Configure secrets
+3. Review ingress domain + Cloud Armor policy placeholders
+
+- `infra/remote-control-relay/gke/base/ingress.yaml`
+- `infra/remote-control-relay/gke/base/managedcertificate.yaml`
+- `infra/remote-control-relay/gke/base/backendconfig.yaml`
+
+4. Configure secrets
 
 ```bash
 cp infra/remote-control-relay/gke/secret-template.yaml /tmp/relay-secrets.yaml
@@ -64,7 +79,7 @@ cp infra/remote-control-relay/gke/secret-template.yaml /tmp/relay-secrets.yaml
 
 `secret-template.yaml` is a reference file only and is intentionally not included in `kustomization.yaml`.
 
-4. Apply manifests
+5. Apply manifests
 
 ```bash
 kubectl apply -f /tmp/relay-secrets.yaml
@@ -85,7 +100,7 @@ Validate an overlay:
 RELAY_GKE_KUSTOMIZE_DIR=infra/remote-control-relay/gke/overlays/staging make remote-control-gke-validate
 ```
 
-5. Verify rollout
+6. Verify rollout
 
 ```bash
 kubectl -n codexchat-remote-control rollout status deploy/remote-control-relay

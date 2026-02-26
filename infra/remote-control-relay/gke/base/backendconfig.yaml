@@ -1,0 +1,12 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: remote-control-relay-backendconfig
+  labels:
+    app.kubernetes.io/name: remote-control-relay
+spec:
+  timeoutSec: 30
+  connectionDraining:
+    drainingTimeoutSec: 20
+  securityPolicy:
+    name: remote-control-relay-cloud-armor

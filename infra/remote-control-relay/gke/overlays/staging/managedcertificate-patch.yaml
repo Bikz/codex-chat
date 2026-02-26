@@ -1,0 +1,7 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: remote-control-relay-cert
+spec:
+  domains:
+    - staging-remote.codexchat.app

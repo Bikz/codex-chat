@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: remote-control-relay
+  labels:
+    app.kubernetes.io/name: remote-control-relay
+  annotations:
+    kubernetes.io/ingress.class: gce
+    networking.gke.io/managed-certificates: remote-control-relay-cert
+    networking.gke.io/v1beta1.FrontendConfig: remote-control-relay-frontendconfig
+spec:
+  rules:
+    - host: remote.codexchat.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: remote-control-relay
+                port:
+                  number: 80

@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: remote-control-relay
+spec:
+  rules:
+    - host: staging-remote.codexchat.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: remote-control-relay
+                port:
+                  number: 80

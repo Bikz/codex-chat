@@ -271,6 +271,7 @@ Implemented so far (2026-02-26):
 - Added baseline GKE manifests under `infra/remote-control-relay/gke`:
   - namespace, service account, config/secret templates
   - deployment, service, HPA, PDB
+  - ingress, managed certificate, frontend config, backend config (Cloud Armor attachment point)
 - Added rollout overlays for `staging` and `prod-canary`.
 - Added deployment guide: `docs-public/REMOTE_CONTROL_GKE_DEPLOYMENT.md`.
 - Added relay operations runbook: `docs-public/REMOTE_CONTROL_RELAY_RUNBOOK.md`.

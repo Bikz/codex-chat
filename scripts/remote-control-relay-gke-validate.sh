@@ -34,8 +34,12 @@ required_kinds=(
   "Namespace"
   "ServiceAccount"
   "ConfigMap"
+  "BackendConfig"
+  "FrontendConfig"
+  "ManagedCertificate"
   "Deployment"
   "Service"
+  "Ingress"
   "HorizontalPodAutoscaler"
   "PodDisruptionBudget"
 )

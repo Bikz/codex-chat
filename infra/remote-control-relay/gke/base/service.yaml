@@ -4,6 +4,9 @@ metadata:
   name: remote-control-relay
   labels:
     app.kubernetes.io/name: remote-control-relay
+  annotations:
+    cloud.google.com/backend-config: '{"default":"remote-control-relay-backendconfig"}'
+    cloud.google.com/neg: '{"ingress": true}'
 spec:
   selector:
     app.kubernetes.io/name: remote-control-relay

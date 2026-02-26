@@ -7,5 +7,9 @@ resources:
   - configmap.yaml
   - deployment.yaml
   - service.yaml
+  - backendconfig.yaml
+  - frontendconfig.yaml
+  - managedcertificate.yaml
+  - ingress.yaml
   - hpa.yaml
   - pdb.yaml

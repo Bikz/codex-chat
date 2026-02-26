@@ -1,0 +1,9 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: remote-control-relay-cert
+  labels:
+    app.kubernetes.io/name: remote-control-relay
+spec:
+  domains:
+    - remote.codexchat.app

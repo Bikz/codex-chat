@@ -5,3 +5,5 @@ resources:
 patches:
   - path: deployment-patch.yaml
   - path: hpa-patch.yaml
+  - path: ingress-patch.yaml
+  - path: managedcertificate-patch.yaml
