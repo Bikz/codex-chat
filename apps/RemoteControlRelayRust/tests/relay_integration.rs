@@ -911,6 +911,76 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
 }
 
 #[tokio::test]
+async fn replayed_mobile_command_sequence_is_rejected() {
+    let (task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|_| {}).await;
+
+    let command_payload = json!({
+        "schemaVersion": 1,
+        "sessionID": session_id,
+        "seq": 1,
+        "payload": {
+            "type": "command",
+            "payload": {
+                "name": "thread.select",
+                "threadID": "11111111-1111-1111-1111-111111111111"
+            }
+        }
+    })
+    .to_string();
+
+    mobile_socket
+        .send(Message::Text(command_payload.clone().into()))
+        .await
+        .expect("send first command");
+
+    let forwarded = tokio::time::timeout(Duration::from_millis(1_000), desktop_socket.next())
+        .await
+        .expect("first command forwarded")
+        .expect("forwarded frame")
+        .expect("forwarded message");
+    let forwarded_json: Value =
+        serde_json::from_str(forwarded.to_text().expect("forwarded text")).expect("forwarded json");
+    assert_eq!(
+        forwarded_json
+            .pointer("/payload/payload/name")
+            .and_then(Value::as_str),
+        Some("thread.select")
+    );
+
+    mobile_socket
+        .send(Message::Text(command_payload.into()))
+        .await
+        .expect("send replayed command");
+
+    let relay_error = tokio::time::timeout(Duration::from_millis(1_000), mobile_socket.next())
+        .await
+        .expect("expected replay rejection")
+        .expect("replay rejection frame")
+        .expect("replay rejection message");
+    let relay_error_json: Value =
+        serde_json::from_str(relay_error.to_text().expect("replay rejection text"))
+            .expect("replay rejection json");
+    assert_eq!(
+        relay_error_json.get("type").and_then(Value::as_str),
+        Some("relay.error")
+    );
+    assert_eq!(
+        relay_error_json.get("error").and_then(Value::as_str),
+        Some("replayed_command")
+    );
+
+    let desktop_next =
+        tokio::time::timeout(Duration::from_millis(250), desktop_socket.next()).await;
+    assert!(
+        desktop_next.is_err(),
+        "desktop unexpectedly received replayed payload"
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
 async fn redis_persistence_restores_session_after_restart_when_configured() {
     let Some(redis_url) = std::env::var("REMOTE_CONTROL_REDIS_TEST_URL")
         .ok()

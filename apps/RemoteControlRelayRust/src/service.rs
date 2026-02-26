@@ -59,6 +59,7 @@ struct SessionRecord {
     mobile_sockets: HashMap<String, SocketHandle>,
     devices: HashMap<String, DeviceRecord>,
     command_rate_buckets: HashMap<String, RateBucket>,
+    command_sequence_by_connection_id: HashMap<String, u64>,
     pending_join_request: Option<PendingJoinRequest>,
 }
 
@@ -169,6 +170,7 @@ impl PersistedSessionRecord {
             mobile_sockets: HashMap::new(),
             devices: self.devices,
             command_rate_buckets: HashMap::new(),
+            command_sequence_by_connection_id: HashMap::new(),
             pending_join_request: None,
         })
     }
@@ -585,6 +587,7 @@ async fn pair_start(
             mobile_sockets: HashMap::new(),
             devices: HashMap::new(),
             command_rate_buckets: HashMap::new(),
+            command_sequence_by_connection_id: HashMap::new(),
             pending_join_request: None,
         },
     );
@@ -1331,6 +1334,7 @@ async fn handle_socket(
                         session,
                         parsed.as_ref(),
                         auth.session_id(),
+                        connection_id,
                         device_id,
                         &state.config,
                     ) {
@@ -1434,6 +1438,7 @@ fn validate_mobile_payload(
     session: &mut SessionRecord,
     parsed: Option<&Value>,
     expected_session_id: &str,
+    connection_id: &str,
     device_id: &str,
     config: &RelayConfig,
 ) -> Result<(), RelayValidationError> {
@@ -1522,6 +1527,21 @@ fn validate_mobile_payload(
             code: "invalid_command",
             message: "Command name is required.".to_string(),
         })?;
+    let command_seq =
+        parsed
+            .get("seq")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| RelayValidationError {
+                code: "invalid_command",
+                message: "Command envelopes must include numeric seq.".to_string(),
+            })?;
+
+    if !consume_connection_command_sequence(session, connection_id, command_seq) {
+        return Err(RelayValidationError {
+            code: "replayed_command",
+            message: "Command sequence was replayed or out of order.".to_string(),
+        });
+    }
 
     if !consume_device_command_budget(session, device_id, config.max_remote_commands_per_minute) {
         return Err(RelayValidationError {
@@ -1669,6 +1689,22 @@ fn consume_device_command_budget(
 
     bucket.count += 1;
     bucket.count <= max_commands_per_minute
+}
+
+fn consume_connection_command_sequence(
+    session: &mut SessionRecord,
+    connection_id: &str,
+    sequence: u64,
+) -> bool {
+    let entry = session
+        .command_sequence_by_connection_id
+        .entry(connection_id.to_string())
+        .or_insert(0);
+    if sequence <= *entry {
+        return false;
+    }
+    *entry = sequence;
+    true
 }
 
 fn is_small_identifier(value: &str) -> bool {
@@ -1897,6 +1933,9 @@ async fn disconnect_socket(state: &SharedRelayState, auth: &AuthenticatedSocket)
             device_id: _,
         } => {
             session.mobile_sockets.remove(connection_id);
+            session
+                .command_sequence_by_connection_id
+                .remove(connection_id);
             send_device_count(session);
             info!(
                 "[relay-rs] mobile_disconnected session={} devices={}",
@@ -1920,6 +1959,7 @@ fn close_existing_mobile_socket_for_device(
 
     if let Some(key) = key {
         if let Some(handle) = session.mobile_sockets.remove(&key) {
+            session.command_sequence_by_connection_id.remove(&key);
             let _ = handle
                 .tx
                 .send(json!({ "type": "disconnect", "reason": reason }).to_string());
@@ -2144,6 +2184,7 @@ mod tests {
                     },
                 )]),
                 command_rate_buckets: HashMap::new(),
+                command_sequence_by_connection_id: HashMap::new(),
                 pending_join_request: None,
             },
         );
