@@ -450,6 +450,19 @@ async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
         other => panic!("unexpected websocket frame: {other:?}"),
     }
 
+    let metrics_response = reqwest::get(format!("{base}/metricsz"))
+        .await
+        .expect("metrics request");
+    assert_eq!(metrics_response.status(), StatusCode::OK);
+    let metrics_body: Value = metrics_response.json().await.expect("metrics body");
+    assert_eq!(
+        metrics_body
+            .get("outboundSendFailures")
+            .and_then(Value::as_u64),
+        Some(0),
+        "capacity rejection should not be counted as an outbound send failure when disconnect frame is queued"
+    );
+
     task.abort();
 }
 

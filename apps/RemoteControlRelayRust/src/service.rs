@@ -2602,11 +2602,12 @@ async fn authenticate_socket(
             "[relay-rs] rejected websocket auth at capacity active={} limit={}",
             current_active_connections, state.config.max_active_websocket_connections
         );
-        let _ = try_send_payload(
+        if !try_send_payload(
             tx,
             json!({ "type": "disconnect", "reason": "relay_over_capacity" }).to_string(),
-        );
-        relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
+        ) {
+            relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
+        }
         return None;
     }
 
