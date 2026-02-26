@@ -105,3 +105,4 @@ Set environment variables before launching Codex Chat:
 - Passkey-based account option for multi-device identity over time.
 - GKE deployment baseline is documented in `docs-public/REMOTE_CONTROL_GKE_DEPLOYMENT.md`.
 - Relay incident/rollback operations are documented in `docs-public/REMOTE_CONTROL_RELAY_RUNBOOK.md`.
+- Local rollout gate automation is available via `make remote-control-stage-gate`.

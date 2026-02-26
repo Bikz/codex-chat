@@ -101,6 +101,12 @@ kubectl apply -k infra/remote-control-relay/gke/overlays/prod-canary
 kubectl apply -k infra/remote-control-relay/gke
 ```
 
+Local stage-gate (load + soak + manifest preflight):
+
+```bash
+make remote-control-stage-gate
+```
+
 ## Operational Notes
 
 - HPA starts at `minReplicas: 3` and scales to `maxReplicas: 60`.

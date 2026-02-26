@@ -292,6 +292,13 @@ Scope:
 - Stage gates by SLO + security + support readiness.
 - Launch docs/support playbooks.
 
+Implemented so far (2026-02-26):
+- Added local stage-gate automation script `scripts/remote-control-stage-gate.sh`.
+- Stage gate checks now validate:
+  - load artifact status and budgets
+  - soak summary status and failure counts
+  - GKE manifest validation preflight
+
 Acceptance criteria:
 - Two consecutive weeks of stable beta SLOs.
 - No open critical launch blockers.
