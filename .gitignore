@@ -25,6 +25,11 @@ node_modules/
 *.log
 .tmp/
 .codexchat/
+/.codex-artifacts/
+/chats/
+/memory/
+/output/
+/tmp/
 
 # Local editor and env
 .idea/
