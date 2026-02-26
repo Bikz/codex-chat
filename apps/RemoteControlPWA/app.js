@@ -709,14 +709,15 @@ function scheduleReconnect() {
 function sendRaw(payload) {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
     setStatus("Not connected. Unable to send command.", "warn");
-    return;
+    return false;
   }
   state.socket.send(JSON.stringify(payload));
+  return true;
 }
 
 function sendCommand(name, options = {}) {
   if (!state.sessionID) {
-    return;
+    return false;
   }
 
   const envelope = {
@@ -737,7 +738,7 @@ function sendCommand(name, options = {}) {
     }
   };
 
-  sendRaw(envelope);
+  return sendRaw(envelope);
 }
 
 function requestSnapshot(reason) {
@@ -826,22 +827,15 @@ function wireComposer() {
       return;
     }
 
-    sendCommand("thread.send_message", {
+    const sent = sendCommand("thread.send_message", {
       threadID: state.selectedThreadID,
       text
     });
-
-    const bucket = state.messagesByThreadID.get(state.selectedThreadID) || [];
-    bucket.push({
-      id: `local-${Date.now()}`,
-      threadID: state.selectedThreadID,
-      role: "user",
-      text,
-      createdAt: new Date().toISOString()
-    });
-    state.messagesByThreadID.set(state.selectedThreadID, bucket);
+    if (!sent) {
+      return;
+    }
     dom.composerInput.value = "";
-    renderMessages();
+    setStatus("Message sent. Waiting for desktop confirmation...");
   });
 }
 
