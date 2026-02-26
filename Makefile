@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: quick ci format format-check lint test-fast test periphery release-dmg release-prod release-next-version release-tag-next host-metadata-check parity-check oss-smoke reliability-local reliability-scorecard reliability-bundle remote-control-load prepush-local install-local-hooks bootstrap
+.PHONY: quick ci format format-check lint test-fast test periphery release-dmg release-prod release-next-version release-tag-next host-metadata-check parity-check oss-smoke reliability-local reliability-scorecard reliability-bundle remote-control-load remote-control-soak prepush-local install-local-hooks bootstrap
 
 quick: host-metadata-check parity-check format-check lint test-fast
 
@@ -56,6 +56,9 @@ reliability-bundle:
 
 remote-control-load:
 	./scripts/remote-control-relay-load.sh
+
+remote-control-soak:
+	./scripts/remote-control-relay-soak.sh
 
 prepush-local: quick oss-smoke reliability-local
 

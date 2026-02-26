@@ -50,6 +50,12 @@ Run the relay load harness (ignored by default in normal test runs):
 make remote-control-load
 ```
 
+Run repeated soak loops (uses `RELAY_SOAK_LOOPS`, default `5`):
+
+```bash
+RELAY_SOAK_LOOPS=10 make remote-control-soak
+```
+
 Equivalent direct command:
 
 ```bash
