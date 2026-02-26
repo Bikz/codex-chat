@@ -8,5 +8,13 @@ spec:
   timeoutSec: 30
   connectionDraining:
     drainingTimeoutSec: 20
+  healthCheck:
+    type: HTTP
+    requestPath: /healthz
+    port: 8787
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
   securityPolicy:
     name: remote-control-relay-cloud-armor
