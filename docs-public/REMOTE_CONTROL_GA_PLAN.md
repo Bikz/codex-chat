@@ -134,6 +134,11 @@ Scope:
 - Strong origin/session binding and websocket auth timeout enforcement.
 - Audit-safe structured logging and PII minimization.
 
+Implemented so far (2026-02-26):
+- Added O(1) desktop websocket-auth lookup via desktop-session-token index in Rust relay (removes linear scan over sessions during auth).
+- Added per-authenticated-socket websocket message throughput limiting (`MAX_WS_MESSAGES_PER_MINUTE`, default `1200`) with explicit disconnect (`reason: socket_rate_limited`) on abuse.
+- Added equivalent desktop-token auth index path in legacy Node relay to keep compatibility baseline hardened.
+
 Acceptance criteria:
 - Threat checklist has no open critical/high findings.
 - Security controls are test-covered and enforced in code.

@@ -24,6 +24,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
 const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(","));
 
 const sessions = new Map();
+const desktopTokenIndex = new Map();
 const deviceTokenIndex = new Map();
 const rateBuckets = new Map();
 let pendingJoinWaiters = 0;
@@ -217,6 +218,7 @@ function closeSession(sessionId, reason) {
       deviceTokenIndex.delete(token);
     }
   }
+  desktopTokenIndex.delete(session.desktopSessionToken);
 
   if (session.desktopSocket && session.desktopSocket.readyState === 1) {
     session.desktopSocket.close(1000, reason);
@@ -368,10 +370,9 @@ function resolveWebSocketAuth(token) {
     return null;
   }
 
-  for (const session of sessions.values()) {
-    if (safeTokenEquals(session.desktopSessionToken, token)) {
-      return { role: "desktop", sessionID: session.sessionID };
-    }
+  const desktopSessionID = desktopTokenIndex.get(token);
+  if (desktopSessionID && sessions.has(desktopSessionID)) {
+    return { role: "desktop", sessionID: desktopSessionID };
   }
 
   const mobileAuth = deviceTokenIndex.get(token);
@@ -509,6 +510,7 @@ const server = createServer(async (req, res) => {
         createdAt: nowMs(),
         lastActivityAt: nowMs()
       });
+      desktopTokenIndex.set(desktopSessionToken, sessionID);
 
       console.info(`[relay] pair_start session=${sessionLogID(sessionID)}`);
       return respondJSON(res, 200, {
