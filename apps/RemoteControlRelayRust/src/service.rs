@@ -27,8 +27,8 @@ use crate::model::{
     DeviceRevokeRequest, DeviceRevokeResponse, DeviceSummary, DevicesListRequest,
     DevicesListResponse, ErrorResponse, HealthResponse, PairJoinRequest, PairJoinResponse,
     PairRefreshRequest, PairRefreshResponse, PairStartRequest, PairStartResponse, PairStopRequest,
-    PairStopResponse, RelayAuthMessage, RelayAuthOk, RelayDeviceCount, RelayPairDecision,
-    RelayPairRequest, RelayPairResult,
+    PairStopResponse, RelayAuthMessage, RelayAuthOk, RelayDeviceCount, RelayMetricsResponse,
+    RelayPairDecision, RelayPairRequest, RelayPairResult,
 };
 
 #[derive(Clone)]
@@ -285,6 +285,7 @@ pub fn build_router(state: SharedRelayState) -> Router {
 
     Router::new()
         .route("/healthz", axum::routing::get(healthz))
+        .route("/metricsz", axum::routing::get(metricsz))
         .route(
             "/pair/start",
             axum::routing::post(pair_start).options(pair_options),
@@ -895,13 +896,79 @@ async fn pair_options(
 }
 
 async fn healthz(State(state): State<SharedRelayState>) -> impl IntoResponse {
-    let sessions = state.inner.lock().await.sessions.len();
+    let relay = state.inner.lock().await;
+    let sessions = relay.sessions.len();
+    let stats = relay_runtime_stats(&relay);
     let payload = HealthResponse {
         ok: true,
         sessions,
+        active_web_sockets: stats.active_web_sockets,
+        pending_join_waiters: stats.pending_join_waiters,
+        device_tokens: stats.device_tokens,
+        bus_subscriptions: stats.bus_subscriptions,
+        cross_instance_bus_enabled: state.cross_instance_bus.is_some(),
+        redis_persistence_enabled: state.persistence.is_some(),
         now: Utc::now().to_rfc3339(),
     };
     (StatusCode::OK, Json(payload))
+}
+
+async fn metricsz(State(state): State<SharedRelayState>) -> impl IntoResponse {
+    let relay = state.inner.lock().await;
+    let sessions = relay.sessions.len();
+    let stats = relay_runtime_stats(&relay);
+    let payload = RelayMetricsResponse {
+        ok: true,
+        sessions,
+        sessions_with_desktop: stats.sessions_with_desktop,
+        sessions_with_mobile: stats.sessions_with_mobile,
+        active_web_sockets: stats.active_web_sockets,
+        pending_join_waiters: stats.pending_join_waiters,
+        device_tokens: stats.device_tokens,
+        rate_limit_buckets: stats.rate_limit_buckets,
+        bus_subscriptions: stats.bus_subscriptions,
+        cross_instance_bus_enabled: state.cross_instance_bus.is_some(),
+        redis_persistence_enabled: state.persistence.is_some(),
+        now: Utc::now().to_rfc3339(),
+    };
+    (StatusCode::OK, Json(payload))
+}
+
+struct RelayRuntimeStats {
+    sessions_with_desktop: usize,
+    sessions_with_mobile: usize,
+    active_web_sockets: usize,
+    pending_join_waiters: usize,
+    device_tokens: usize,
+    rate_limit_buckets: usize,
+    bus_subscriptions: usize,
+}
+
+fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
+    let sessions_with_desktop = relay
+        .sessions
+        .values()
+        .filter(|session| session.desktop_socket.is_some())
+        .count();
+    let sessions_with_mobile = relay
+        .sessions
+        .values()
+        .filter(|session| !session.mobile_sockets.is_empty())
+        .count();
+    let active_mobile_sockets = relay
+        .sessions
+        .values()
+        .map(|session| session.mobile_sockets.len())
+        .sum::<usize>();
+    RelayRuntimeStats {
+        sessions_with_desktop,
+        sessions_with_mobile,
+        active_web_sockets: sessions_with_desktop + active_mobile_sockets,
+        pending_join_waiters: relay.pending_join_waiters,
+        device_tokens: relay.device_token_index.len(),
+        rate_limit_buckets: relay.rate_buckets.len(),
+        bus_subscriptions: relay.bus_subscribed_sessions.len(),
+    }
 }
 
 async fn pair_start(

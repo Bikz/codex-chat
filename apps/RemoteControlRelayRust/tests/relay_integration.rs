@@ -58,7 +58,7 @@ fn random_token(byte_count: usize) -> String {
 
 async fn pair_connected_mobile(
     configure: impl FnOnce(&mut RelayConfig),
-) -> (JoinHandle<()>, TestSocket, TestSocket, String) {
+) -> (String, JoinHandle<()>, TestSocket, TestSocket, String) {
     let (base, task) = spawn_test_server_with_config(configure).await;
     let client = reqwest::Client::new();
 
@@ -195,7 +195,7 @@ async fn pair_connected_mobile(
         }
     }
 
-    (task, desktop_socket, mobile_socket, session_id)
+    (base, task, desktop_socket, mobile_socket, session_id)
 }
 
 #[tokio::test]
@@ -208,6 +208,42 @@ async fn healthz_reports_ok() {
     assert_eq!(response.status(), StatusCode::OK);
     let body: Value = response.json().await.expect("healthz body");
     assert_eq!(body.get("ok").and_then(Value::as_bool), Some(true));
+    assert_eq!(
+        body.get("activeWebSockets").and_then(Value::as_u64),
+        Some(0)
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn metricsz_reports_runtime_counters_for_connected_devices() {
+    let (base, task, _desktop_socket, _mobile_socket, _session_id) =
+        pair_connected_mobile(|config| {
+            config.token_rotation_grace_ms = 0;
+        })
+        .await;
+
+    let response = reqwest::get(format!("{base}/metricsz"))
+        .await
+        .expect("metricsz request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("metricsz body");
+
+    assert_eq!(body.get("ok").and_then(Value::as_bool), Some(true));
+    assert_eq!(
+        body.get("sessionsWithDesktop").and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        body.get("sessionsWithMobile").and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        body.get("activeWebSockets").and_then(Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(body.get("deviceTokens").and_then(Value::as_u64), Some(1));
 
     task.abort();
 }
@@ -785,7 +821,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
 
 #[tokio::test]
 async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
-    let (task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
         pair_connected_mobile(|_| {}).await;
 
     mobile_socket
@@ -838,7 +874,7 @@ async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
 
 #[tokio::test]
 async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
-    let (task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
         pair_connected_mobile(|config| {
             config.max_remote_commands_per_minute = 2;
         })
@@ -912,7 +948,7 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
 
 #[tokio::test]
 async fn replayed_mobile_command_sequence_is_rejected() {
-    let (task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
         pair_connected_mobile(|_| {}).await;
 
     let command_payload = json!({

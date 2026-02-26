@@ -144,6 +144,29 @@ pub struct ErrorResponse {
 pub struct HealthResponse {
     pub ok: bool,
     pub sessions: usize,
+    pub active_web_sockets: usize,
+    pub pending_join_waiters: usize,
+    pub device_tokens: usize,
+    pub bus_subscriptions: usize,
+    pub cross_instance_bus_enabled: bool,
+    pub redis_persistence_enabled: bool,
+    pub now: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayMetricsResponse {
+    pub ok: bool,
+    pub sessions: usize,
+    pub sessions_with_desktop: usize,
+    pub sessions_with_mobile: usize,
+    pub active_web_sockets: usize,
+    pub pending_join_waiters: usize,
+    pub device_tokens: usize,
+    pub rate_limit_buckets: usize,
+    pub bus_subscriptions: usize,
+    pub cross_instance_bus_enabled: bool,
+    pub redis_persistence_enabled: bool,
     pub now: String,
 }
 

@@ -20,6 +20,7 @@ Default URL: `http://localhost:8787`
 - `POST /devices/list`
 - `POST /devices/revoke`
 - `GET /healthz`
+- `GET /metricsz`
 - `GET /ws` (WebSocket)
 
 ## Notes
@@ -34,3 +35,4 @@ Default URL: `http://localhost:8787`
 - Optional Redis durability can be enabled with `REDIS_URL` and `REDIS_KEY_PREFIX` (persisted per session key for restart recovery).
 - Optional cross-instance fanout can be enabled with `NATS_URL` and `NATS_SUBJECT_PREFIX`.
 - With Redis + NATS configured, relay instances can restore session metadata and route desktop/mobile websocket traffic across instances without exposing inbound desktop ports.
+- `GET /metricsz` exposes live runtime counters for sessions, active websocket connections, token index size, and relay pressure indicators.
