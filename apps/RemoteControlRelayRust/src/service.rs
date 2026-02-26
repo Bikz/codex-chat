@@ -47,6 +47,14 @@ pub struct RelayState {
     pending_join_waiters: usize,
     outbound_send_failures: u64,
     slow_consumer_disconnects: u64,
+    pair_start_requests: u64,
+    pair_start_successes: u64,
+    pair_join_requests: u64,
+    pair_join_successes: u64,
+    pair_refresh_requests: u64,
+    pair_refresh_successes: u64,
+    ws_auth_attempts: u64,
+    ws_auth_successes: u64,
     last_persistence_refresh_at_ms: i64,
     bus_subscribed_sessions: HashSet<String>,
     bus_subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
@@ -346,6 +354,14 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     pending_join_waiters: 0,
                     outbound_send_failures: 0,
                     slow_consumer_disconnects: 0,
+                    pair_start_requests: 0,
+                    pair_start_successes: 0,
+                    pair_join_requests: 0,
+                    pair_join_successes: 0,
+                    pair_refresh_requests: 0,
+                    pair_refresh_successes: 0,
+                    ws_auth_attempts: 0,
+                    ws_auth_successes: 0,
                     last_persistence_refresh_at_ms: now_ms(),
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
@@ -360,6 +376,14 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     pending_join_waiters: 0,
                     outbound_send_failures: 0,
                     slow_consumer_disconnects: 0,
+                    pair_start_requests: 0,
+                    pair_start_successes: 0,
+                    pair_join_requests: 0,
+                    pair_join_successes: 0,
+                    pair_refresh_requests: 0,
+                    pair_refresh_successes: 0,
+                    ws_auth_attempts: 0,
+                    ws_auth_successes: 0,
                     last_persistence_refresh_at_ms: 0,
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
@@ -374,6 +398,14 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
             pending_join_waiters: 0,
             outbound_send_failures: 0,
             slow_consumer_disconnects: 0,
+            pair_start_requests: 0,
+            pair_start_successes: 0,
+            pair_join_requests: 0,
+            pair_join_successes: 0,
+            pair_refresh_requests: 0,
+            pair_refresh_successes: 0,
+            ws_auth_attempts: 0,
+            ws_auth_successes: 0,
             last_persistence_refresh_at_ms: 0,
             bus_subscribed_sessions: HashSet::new(),
             bus_subscription_tasks: HashMap::new(),
@@ -963,6 +995,18 @@ async fn metricsz(State(state): State<SharedRelayState>) -> impl IntoResponse {
         bus_subscriptions: stats.bus_subscriptions,
         outbound_send_failures: stats.outbound_send_failures,
         slow_consumer_disconnects: stats.slow_consumer_disconnects,
+        pair_start_requests: stats.pair_start_requests,
+        pair_start_successes: stats.pair_start_successes,
+        pair_start_failures: stats.pair_start_failures,
+        pair_join_requests: stats.pair_join_requests,
+        pair_join_successes: stats.pair_join_successes,
+        pair_join_failures: stats.pair_join_failures,
+        pair_refresh_requests: stats.pair_refresh_requests,
+        pair_refresh_successes: stats.pair_refresh_successes,
+        pair_refresh_failures: stats.pair_refresh_failures,
+        ws_auth_attempts: stats.ws_auth_attempts,
+        ws_auth_successes: stats.ws_auth_successes,
+        ws_auth_failures: stats.ws_auth_failures,
         cross_instance_bus_enabled: state.cross_instance_bus.is_some(),
         redis_persistence_enabled: state.persistence.is_some(),
         now: Utc::now().to_rfc3339(),
@@ -982,6 +1026,18 @@ struct RelayRuntimeStats {
     bus_subscriptions: usize,
     outbound_send_failures: u64,
     slow_consumer_disconnects: u64,
+    pair_start_requests: u64,
+    pair_start_successes: u64,
+    pair_start_failures: u64,
+    pair_join_requests: u64,
+    pair_join_successes: u64,
+    pair_join_failures: u64,
+    pair_refresh_requests: u64,
+    pair_refresh_successes: u64,
+    pair_refresh_failures: u64,
+    ws_auth_attempts: u64,
+    ws_auth_successes: u64,
+    ws_auth_failures: u64,
 }
 
 fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
@@ -1010,6 +1066,16 @@ fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
         .values()
         .map(|session| session.snapshot_request_rate_buckets.len())
         .sum::<usize>();
+    let pair_start_failures = relay
+        .pair_start_requests
+        .saturating_sub(relay.pair_start_successes);
+    let pair_join_failures = relay
+        .pair_join_requests
+        .saturating_sub(relay.pair_join_successes);
+    let pair_refresh_failures = relay
+        .pair_refresh_requests
+        .saturating_sub(relay.pair_refresh_successes);
+    let ws_auth_failures = relay.ws_auth_attempts.saturating_sub(relay.ws_auth_successes);
     RelayRuntimeStats {
         sessions_with_desktop,
         sessions_with_mobile,
@@ -1022,6 +1088,18 @@ fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
         bus_subscriptions: relay.bus_subscribed_sessions.len(),
         outbound_send_failures: relay.outbound_send_failures,
         slow_consumer_disconnects: relay.slow_consumer_disconnects,
+        pair_start_requests: relay.pair_start_requests,
+        pair_start_successes: relay.pair_start_successes,
+        pair_start_failures,
+        pair_join_requests: relay.pair_join_requests,
+        pair_join_successes: relay.pair_join_successes,
+        pair_join_failures,
+        pair_refresh_requests: relay.pair_refresh_requests,
+        pair_refresh_successes: relay.pair_refresh_successes,
+        pair_refresh_failures,
+        ws_auth_attempts: relay.ws_auth_attempts,
+        ws_auth_successes: relay.ws_auth_successes,
+        ws_auth_failures,
     }
 }
 
@@ -1031,6 +1109,11 @@ async fn pair_start(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<PairStartRequest>,
 ) -> axum::response::Response {
+    {
+        let mut relay = state.inner.lock().await;
+        relay.pair_start_requests = relay.pair_start_requests.saturating_add(1);
+    }
+
     if !origin_allowed(&state.config, &headers) {
         return error_response(
             StatusCode::FORBIDDEN,
@@ -1143,6 +1226,10 @@ async fn pair_start(
         );
     }
     persist_session_if_needed(&state, &request.session_id).await;
+    {
+        let mut relay = state.inner.lock().await;
+        relay.pair_start_successes = relay.pair_start_successes.saturating_add(1);
+    }
 
     (
         StatusCode::OK,
@@ -1161,6 +1248,11 @@ async fn pair_join(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<PairJoinRequest>,
 ) -> axum::response::Response {
+    {
+        let mut relay = state.inner.lock().await;
+        relay.pair_join_requests = relay.pair_join_requests.saturating_add(1);
+    }
+
     if !origin_allowed(&state.config, &headers) {
         return error_response(
             StatusCode::FORBIDDEN,
@@ -1467,6 +1559,10 @@ async fn pair_join(
     );
     drop(relay);
     persist_session_if_needed(&state, &request.session_id).await;
+    {
+        let mut relay = state.inner.lock().await;
+        relay.pair_join_successes = relay.pair_join_successes.saturating_add(1);
+    }
 
     (
         StatusCode::OK,
@@ -1487,6 +1583,11 @@ async fn pair_refresh(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<PairRefreshRequest>,
 ) -> axum::response::Response {
+    {
+        let mut relay = state.inner.lock().await;
+        relay.pair_refresh_requests = relay.pair_refresh_requests.saturating_add(1);
+    }
+
     if !origin_allowed(&state.config, &headers) {
         return error_response(
             StatusCode::FORBIDDEN,
@@ -1563,6 +1664,10 @@ async fn pair_refresh(
     };
 
     persist_session_if_needed(&state, &request.session_id).await;
+    {
+        let mut relay = state.inner.lock().await;
+        relay.pair_refresh_successes = relay.pair_refresh_successes.saturating_add(1);
+    }
 
     (
         StatusCode::OK,
@@ -1882,6 +1987,11 @@ async fn handle_socket(
     let (mut writer, mut reader) = socket.split();
     let (tx, mut rx) = mpsc::channel::<String>(state.config.max_socket_outbound_queue.max(8));
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
+    {
+        let mut relay = state.inner.lock().await;
+        relay.ws_auth_attempts = relay.ws_auth_attempts.saturating_add(1);
+    }
 
     let writer_task = tokio::spawn(async move {
         while let Some(payload) = rx.recv().await {
@@ -2641,6 +2751,7 @@ async fn authenticate_socket(
                 relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
                 return None;
             }
+            relay.ws_auth_successes = relay.ws_auth_successes.saturating_add(1);
 
             info!(
                 "[relay-rs] desktop_connected session={}",
@@ -2739,6 +2850,7 @@ async fn authenticate_socket(
                 relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
                 return None;
             }
+            relay.ws_auth_successes = relay.ws_auth_successes.saturating_add(1);
 
             info!(
                 "[relay-rs] mobile_connected session={} devices={}",
@@ -3065,6 +3177,14 @@ mod tests {
                 pending_join_waiters: 0,
                 outbound_send_failures: 0,
                 slow_consumer_disconnects: 0,
+                pair_start_requests: 0,
+                pair_start_successes: 0,
+                pair_join_requests: 0,
+                pair_join_successes: 0,
+                pair_refresh_requests: 0,
+                pair_refresh_successes: 0,
+                ws_auth_attempts: 0,
+                ws_auth_successes: 0,
                 last_persistence_refresh_at_ms: 0,
                 bus_subscribed_sessions: HashSet::new(),
                 bus_subscription_tasks: HashMap::new(),

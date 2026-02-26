@@ -225,6 +225,9 @@ Implemented so far (2026-02-26):
 - `/metricsz` now includes backpressure counters:
   - `outboundSendFailures`
   - `slowConsumerDisconnects`
+- `/metricsz` now includes pairing/auth throughput counters:
+  - `pairStart*`, `pairJoin*`, `pairRefresh*`
+  - `wsAuth*`
 - Manual load harness exists in `apps/RemoteControlRelayRust/tests/relay_load_harness.rs`.
 - Local wrappers are available:
   - `make remote-control-load`

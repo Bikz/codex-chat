@@ -260,6 +260,36 @@ async fn metricsz_reports_runtime_counters_for_connected_devices() {
         body.get("slowConsumerDisconnects").and_then(Value::as_u64),
         Some(0)
     );
+    assert_eq!(
+        body.get("pairStartRequests").and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        body.get("pairStartSuccesses").and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        body.get("pairStartFailures").and_then(Value::as_u64),
+        Some(0)
+    );
+    assert_eq!(body.get("pairJoinRequests").and_then(Value::as_u64), Some(1));
+    assert_eq!(body.get("pairJoinSuccesses").and_then(Value::as_u64), Some(1));
+    assert_eq!(body.get("pairJoinFailures").and_then(Value::as_u64), Some(0));
+    assert_eq!(
+        body.get("pairRefreshRequests").and_then(Value::as_u64),
+        Some(0)
+    );
+    assert_eq!(
+        body.get("pairRefreshSuccesses").and_then(Value::as_u64),
+        Some(0)
+    );
+    assert_eq!(
+        body.get("pairRefreshFailures").and_then(Value::as_u64),
+        Some(0)
+    );
+    assert_eq!(body.get("wsAuthAttempts").and_then(Value::as_u64), Some(2));
+    assert_eq!(body.get("wsAuthSuccesses").and_then(Value::as_u64), Some(2));
+    assert_eq!(body.get("wsAuthFailures").and_then(Value::as_u64), Some(0));
 
     task.abort();
 }
