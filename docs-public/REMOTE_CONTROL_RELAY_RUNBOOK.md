@@ -32,6 +32,10 @@ Edge protection:
 - Cloud Armor policy: `remote-control-relay-cloud-armor`
 - Pair and websocket path throttle rules are managed by:
   - `infra/remote-control-relay/gke/scripts/harden-cloud-armor.sh`
+- Kubernetes network policy baseline:
+  - `networkpolicy-default-deny-ingress.yaml`
+  - `networkpolicy-allow-relay-ingress.yaml`
+  - `networkpolicy-allow-pwa-ingress.yaml`
 
 ## SLO Guardrails (initial)
 

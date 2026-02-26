@@ -34,6 +34,7 @@ Resources included:
 - `PWA BackendConfig` (Cloud Armor attachment + health check on port 8080)
 - `FrontendConfig` (HTTPS redirect)
 - `ManagedCertificate`
+- `NetworkPolicy` baseline (default-deny ingress + explicit ingress allow rules)
 - `HorizontalPodAutoscaler`
 - `PodDisruptionBudget`
 - `ConfigMap` + secret template
@@ -84,6 +85,13 @@ docker push gcr.io/PROJECT_ID/remote-control-pwa:TAG
 - `infra/remote-control-relay/gke/base/ingress.yaml`
 - `infra/remote-control-relay/gke/base/managedcertificate.yaml`
 - `infra/remote-control-relay/gke/base/backendconfig.yaml`
+
+Network policy note:
+
+- Baseline policies allow ingress via GCLB ranges (`35.191.0.0/16`, `130.211.0.0/22`) and same-namespace traffic.
+- If your ingress path uses different proxy source ranges, patch:
+  - `infra/remote-control-relay/gke/base/networkpolicy-allow-relay-ingress.yaml`
+  - `infra/remote-control-relay/gke/base/networkpolicy-allow-pwa-ingress.yaml`
 
 4. Configure secrets
 

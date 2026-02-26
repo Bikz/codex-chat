@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-control-allow-pwa-ingress
+  labels:
+    app.kubernetes.io/name: remote-control-pwa
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-control-pwa
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # GCLB health-check and proxy ranges for external HTTP(S) load balancers.
+        - ipBlock:
+            cidr: 35.191.0.0/16
+        - ipBlock:
+            cidr: 130.211.0.0/22
+        # In-namespace traffic (debug tooling and local health checks).
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080

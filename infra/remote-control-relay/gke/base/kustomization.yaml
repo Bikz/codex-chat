@@ -14,5 +14,8 @@ resources:
   - frontendconfig.yaml
   - managedcertificate.yaml
   - ingress.yaml
+  - networkpolicy-default-deny-ingress.yaml
+  - networkpolicy-allow-relay-ingress.yaml
+  - networkpolicy-allow-pwa-ingress.yaml
   - hpa.yaml
   - pdb.yaml
