@@ -60,6 +60,7 @@ make remote-control-compat
 - Inbound websocket message throughput is capped per authenticated socket via `MAX_WS_MESSAGES_PER_MINUTE` (default `1200`).
 - Relay sends websocket ping heartbeats every `WS_HEARTBEAT_INTERVAL_MS` (default `20000`) and disconnects stalled sockets after `WS_HEARTBEAT_TIMEOUT_MS` (default `60000`).
 - `thread.send_message` command text is bounded by `MAX_REMOTE_COMMAND_TEXT_BYTES` (default `16384`).
+- Relay enforces strict allowlisted JSON fields for command and snapshot payloads; unexpected fields are rejected with `relay.error`.
 - Optional Redis durability can be enabled with `REDIS_URL` and `REDIS_KEY_PREFIX` (persisted per session key for restart recovery).
 - Optional cross-instance fanout can be enabled with `NATS_URL` and `NATS_SUBJECT_PREFIX`.
 - With Redis + NATS configured, relay instances can restore session metadata and route desktop/mobile websocket traffic across instances without exposing inbound desktop ports.

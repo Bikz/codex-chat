@@ -2403,14 +2403,31 @@ fn validate_mobile_payload(
             message: "Payload must be valid JSON.".to_string(),
         });
     };
+    let Some(parsed_object) = parsed.as_object() else {
+        return Err(RelayValidationError {
+            code: "invalid_payload",
+            message: "Payload must be a JSON object.".to_string(),
+        });
+    };
 
     if let Some(message_type) = parsed.get("type").and_then(Value::as_str) {
         if message_type == "relay.snapshot_request" {
-            if parsed
-                .get("sessionID")
-                .and_then(Value::as_str)
-                .is_some_and(|session_id| session_id != expected_session_id)
-            {
+            ensure_only_allowed_fields(
+                parsed_object,
+                &["type", "sessionID", "reason", "lastSeq"],
+                "invalid_snapshot_request",
+                "snapshot request",
+            )?;
+
+            let snapshot_session_id =
+                parsed
+                    .get("sessionID")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| RelayValidationError {
+                        code: "invalid_snapshot_request",
+                        message: "Snapshot request requires sessionID.".to_string(),
+                    })?;
+            if snapshot_session_id != expected_session_id {
                 return Err(RelayValidationError {
                     code: "invalid_session",
                     message: "Snapshot request sessionID does not match authenticated session."
@@ -2418,7 +2435,11 @@ fn validate_mobile_payload(
                 });
             }
 
-            if let Some(reason) = parsed.get("reason").and_then(Value::as_str) {
+            if let Some(reason_value) = parsed.get("reason") {
+                let reason = reason_value.as_str().ok_or_else(|| RelayValidationError {
+                    code: "invalid_snapshot_request",
+                    message: "Snapshot reason must be a string.".to_string(),
+                })?;
                 if reason.len() > 128 {
                     return Err(RelayValidationError {
                         code: "invalid_snapshot_request",
@@ -2452,6 +2473,27 @@ fn validate_mobile_payload(
         }
     }
 
+    ensure_only_allowed_fields(
+        parsed_object,
+        &["schemaVersion", "sessionID", "seq", "timestamp", "payload"],
+        "invalid_command",
+        "command envelope",
+    )?;
+
+    let envelope_session_id = parsed
+        .get("sessionID")
+        .and_then(Value::as_str)
+        .ok_or_else(|| RelayValidationError {
+            code: "invalid_command",
+            message: "Command envelope requires sessionID.".to_string(),
+        })?;
+    if envelope_session_id != expected_session_id {
+        return Err(RelayValidationError {
+            code: "invalid_session",
+            message: "Command envelope sessionID does not match authenticated session.".to_string(),
+        });
+    }
+
     let schema_version = parsed
         .get("schemaVersion")
         .and_then(Value::as_i64)
@@ -2479,6 +2521,19 @@ fn validate_mobile_payload(
             message: "Only command payloads are accepted from mobile clients.".to_string(),
         });
     }
+    let payload_wrapper = parsed
+        .get("payload")
+        .and_then(Value::as_object)
+        .ok_or_else(|| RelayValidationError {
+            code: "invalid_command",
+            message: "Command envelope payload object is required.".to_string(),
+        })?;
+    ensure_only_allowed_fields(
+        payload_wrapper,
+        &["type", "payload"],
+        "invalid_command",
+        "command wrapper",
+    )?;
 
     let command_payload = parsed
         .pointer("/payload/payload")
@@ -2487,6 +2542,19 @@ fn validate_mobile_payload(
             code: "invalid_command",
             message: "Command payload object is required.".to_string(),
         })?;
+    ensure_only_allowed_fields(
+        command_payload,
+        &[
+            "name",
+            "threadID",
+            "projectID",
+            "text",
+            "approvalRequestID",
+            "approvalDecision",
+        ],
+        "invalid_command",
+        "command payload",
+    )?;
     let command_name = command_payload
         .get("name")
         .and_then(Value::as_str)
@@ -2633,6 +2701,25 @@ fn validate_mobile_payload(
                 message: "Command name is not allowed.".to_string(),
             });
         }
+    }
+
+    Ok(())
+}
+
+fn ensure_only_allowed_fields(
+    object: &serde_json::Map<String, Value>,
+    allowed_fields: &[&str],
+    error_code: &'static str,
+    context: &str,
+) -> Result<(), RelayValidationError> {
+    if let Some(unexpected_key) = object
+        .keys()
+        .find(|key| !allowed_fields.contains(&key.as_str()))
+    {
+        return Err(RelayValidationError {
+            code: error_code,
+            message: format!("Unexpected field '{}' in {}.", unexpected_key, context),
+        });
     }
 
     Ok(())
