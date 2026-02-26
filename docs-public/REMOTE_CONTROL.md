@@ -7,6 +7,7 @@ Remote Control lets a phone/web companion drive a local Codex Chat session witho
 This MVP delivers:
 
 - Desktop remote-session surface (toolbar + sheet + QR link + stop session)
+- In-session `Add Device` action that rotates join token without ending active remote session
 - Secure pairing/session primitives in `CodexChatRemoteControl`
 - Outbound-friendly relay service (`apps/RemoteControlRelayRust`)
 - PWA companion with pairing, websocket reconnect, and sequence-gap snapshot requests (`apps/RemoteControlPWA`)
@@ -38,7 +39,7 @@ This MVP delivers:
   - `RemoteControlSheet` with QR code, copy link, and stop controls
   - `AppModel+RemoteControl` outbound websocket client, multi-thread snapshot + delta event streaming, and remote command ingestion
 - `apps/RemoteControlRelayRust`
-  - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws` (then `relay.auth` websocket message)
+  - `POST /pair/start`, `POST /pair/join`, `POST /pair/refresh`, `GET /healthz`, `GET /ws` (then `relay.auth` websocket message)
   - `POST /pair/stop`, `POST /devices/list`, `POST /devices/revoke`
   - Pass-through websocket routing between desktop/mobile with payload validation and per-device command throttling
   - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
