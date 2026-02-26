@@ -26,6 +26,27 @@ pub struct PairStartResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct PairRefreshRequest {
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "joinToken")]
+    pub join_token: String,
+    #[serde(rename = "desktopSessionToken")]
+    pub desktop_session_token: String,
+    #[serde(rename = "joinTokenExpiresAt")]
+    pub join_token_expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PairRefreshResponse {
+    pub accepted: bool,
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "wsURL")]
+    pub ws_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct PairJoinRequest {
     #[serde(rename = "sessionID")]
     pub session_id: String,

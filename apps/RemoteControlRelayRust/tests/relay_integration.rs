@@ -471,6 +471,131 @@ async fn pair_stop_closes_session_and_invalidates_join() {
 }
 
 #[tokio::test]
+async fn pair_refresh_rotates_join_token_without_stopping_session() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let original_join_token = random_token(32);
+    let refreshed_join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let start_response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": original_join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+    desktop_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": desktop_session_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("desktop auth send");
+    let _desktop_auth = desktop_socket
+        .next()
+        .await
+        .expect("desktop auth message")
+        .expect("desktop auth frame");
+
+    let refresh_response = client
+        .post(format!("{base}/pair/refresh"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": refreshed_join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+        }))
+        .send()
+        .await
+        .expect("pair refresh request");
+    assert_eq!(refresh_response.status(), StatusCode::OK);
+
+    let old_join_response = client
+        .post(format!("{base}/pair/join"))
+        .header("Origin", "http://localhost:4173")
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": original_join_token,
+        }))
+        .send()
+        .await
+        .expect("pair join old token");
+    assert_eq!(old_join_response.status(), StatusCode::FORBIDDEN);
+
+    let join_future = tokio::spawn({
+        let client = client.clone();
+        let base = base.clone();
+        let session_id = session_id.clone();
+        let refreshed_join_token = refreshed_join_token.clone();
+        async move {
+            client
+                .post(format!("{base}/pair/join"))
+                .header("Origin", "http://localhost:4173")
+                .json(&json!({
+                    "sessionID": session_id,
+                    "joinToken": refreshed_join_token,
+                }))
+                .send()
+                .await
+                .expect("pair join refreshed token")
+        }
+    });
+
+    let pair_request = desktop_socket
+        .next()
+        .await
+        .expect("pair request frame")
+        .expect("pair request message");
+    let pair_request_json: Value =
+        serde_json::from_str(pair_request.to_text().expect("pair request text"))
+            .expect("pair request json");
+    let request_id = pair_request_json
+        .get("requestID")
+        .and_then(Value::as_str)
+        .expect("requestID")
+        .to_string();
+
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.pair_decision",
+                "sessionID": session_id,
+                "requestID": request_id,
+                "approved": true,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("desktop pair decision send");
+
+    let join_response = join_future.await.expect("join task");
+    assert_eq!(join_response.status(), StatusCode::OK);
+
+    task.abort();
+}
+
+#[tokio::test]
 async fn pairing_endpoints_include_cors_headers_for_allowed_origin() {
     let (base, task) = spawn_test_server().await;
     let client = reqwest::Client::new();

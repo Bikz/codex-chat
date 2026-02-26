@@ -167,7 +167,30 @@ public struct RemoteControlTokenFactory: Sendable {
         let sessionID = try makeSessionID()
         let joinTokenLease = try makeJoinTokenLease(ttl: policy.joinTokenTTL)
         let desktopSessionToken = try makeOpaqueToken(byteCount: 32)
+        let joinURL = try makeJoinURL(
+            joinBaseURL: joinBaseURL,
+            relayWebSocketURL: relayWebSocketURL,
+            sessionID: sessionID,
+            joinToken: joinTokenLease.token
+        )
 
+        return RemoteControlSessionDescriptor(
+            sessionID: sessionID,
+            joinTokenLease: joinTokenLease,
+            joinURL: joinURL,
+            relayWebSocketURL: relayWebSocketURL,
+            desktopSessionToken: desktopSessionToken,
+            createdAt: createdAt,
+            idleTimeout: policy.idleTimeout
+        )
+    }
+
+    public func makeJoinURL(
+        joinBaseURL: URL,
+        relayWebSocketURL: URL,
+        sessionID: String,
+        joinToken: String
+    ) throws -> URL {
         guard var components = URLComponents(url: joinBaseURL, resolvingAgainstBaseURL: false) else {
             throw RemoteControlSecurityError.invalidBaseURL(joinBaseURL.absoluteString)
         }
@@ -179,7 +202,7 @@ public struct RemoteControlTokenFactory: Sendable {
 
         var fragmentItems = [
             "sid=\(sessionID)",
-            "jt=\(joinTokenLease.token)",
+            "jt=\(joinToken)",
         ]
         if let relayBaseURL = Self.relayBaseURLString(from: relayWebSocketURL) {
             fragmentItems.append("relay=\(relayBaseURL)")
@@ -189,16 +212,7 @@ public struct RemoteControlTokenFactory: Sendable {
         guard let joinURL = components.url else {
             throw RemoteControlSecurityError.invalidBaseURL(joinBaseURL.absoluteString)
         }
-
-        return RemoteControlSessionDescriptor(
-            sessionID: sessionID,
-            joinTokenLease: joinTokenLease,
-            joinURL: joinURL,
-            relayWebSocketURL: relayWebSocketURL,
-            desktopSessionToken: desktopSessionToken,
-            createdAt: createdAt,
-            idleTimeout: policy.idleTimeout
-        )
+        return joinURL
     }
 
     public static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {

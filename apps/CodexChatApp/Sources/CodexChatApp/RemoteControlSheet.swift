@@ -83,6 +83,10 @@ struct RemoteControlSheet: View {
                     model.copyRemoteControlJoinLink()
                 }
 
+                Button("Add Device") {
+                    model.refreshRemoteControlJoinToken()
+                }
+
                 Button("Stop Session", role: .destructive) {
                     model.stopRemoteControlSession()
                 }

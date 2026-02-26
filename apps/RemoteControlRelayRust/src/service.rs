@@ -26,8 +26,9 @@ use crate::config::{is_allowed_origin, RelayConfig};
 use crate::model::{
     DeviceRevokeRequest, DeviceRevokeResponse, DeviceSummary, DevicesListRequest,
     DevicesListResponse, ErrorResponse, HealthResponse, PairJoinRequest, PairJoinResponse,
-    PairStartRequest, PairStartResponse, PairStopRequest, PairStopResponse, RelayAuthMessage,
-    RelayAuthOk, RelayDeviceCount, RelayPairDecision, RelayPairRequest, RelayPairResult,
+    PairRefreshRequest, PairRefreshResponse, PairStartRequest, PairStartResponse, PairStopRequest,
+    PairStopResponse, RelayAuthMessage, RelayAuthOk, RelayDeviceCount, RelayPairDecision,
+    RelayPairRequest, RelayPairResult,
 };
 
 #[derive(Clone)]
@@ -268,6 +269,10 @@ pub fn build_router(state: SharedRelayState) -> Router {
         .route(
             "/pair/join",
             axum::routing::post(pair_join).options(pair_options),
+        )
+        .route(
+            "/pair/refresh",
+            axum::routing::post(pair_refresh).options(pair_options),
         )
         .route(
             "/pair/stop",
@@ -862,6 +867,98 @@ async fn pair_join(
             session_id: request.session_id,
             device_id,
             device_session_token,
+            ws_url,
+        }),
+    )
+        .into_response()
+}
+
+async fn pair_refresh(
+    State(state): State<SharedRelayState>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<PairRefreshRequest>,
+) -> axum::response::Response {
+    if !origin_allowed(&state.config, &headers) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "origin_not_allowed",
+            "Origin is not allowed.",
+        );
+    }
+
+    let client_ip = client_ip(&state.config, &headers, addr);
+    if is_rate_limited(&state, &client_ip).await {
+        return error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "Too many relay management requests. Try again in a minute.",
+        );
+    }
+
+    if !is_opaque_token(&request.session_id, 16)
+        || !is_opaque_token(&request.join_token, 22)
+        || !is_opaque_token(&request.desktop_session_token, 22)
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_pair_refresh",
+            "sessionID, joinToken, and desktopSessionToken are required.",
+        );
+    }
+
+    let Ok(expires_at) = DateTime::parse_from_rfc3339(&request.join_token_expires_at) else {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_pair_refresh",
+            "joinTokenExpiresAt must be a valid RFC3339 timestamp.",
+        );
+    };
+
+    let join_token_expires_at_ms = expires_at.timestamp_millis();
+    if join_token_expires_at_ms <= now_ms() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "expired_join_token",
+            "joinTokenExpiresAt must be in the future.",
+        );
+    }
+
+    let ws_url = {
+        let mut relay = state.inner.lock().await;
+        let Some(session) = relay.sessions.get_mut(&request.session_id) else {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "Remote session not found.",
+            );
+        };
+
+        if !safe_token_equals(
+            &session.desktop_session_token,
+            &request.desktop_session_token,
+        ) {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "invalid_desktop_session_token",
+                "Desktop session token is invalid.",
+            );
+        }
+
+        session.join_token = request.join_token.clone();
+        session.join_token_expires_at_ms = join_token_expires_at_ms;
+        session.join_token_used_at_ms = None;
+        session.last_activity_at_ms = now_ms();
+        session.relay_web_socket_url.clone()
+    };
+
+    persist_session_if_needed(&state, &request.session_id).await;
+
+    (
+        StatusCode::OK,
+        Json(PairRefreshResponse {
+            accepted: true,
+            session_id: request.session_id,
             ws_url,
         }),
     )

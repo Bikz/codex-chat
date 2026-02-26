@@ -43,6 +43,37 @@ actor RemoteControlHTTPRelayRegistrar: RemoteControlRelayRegistering {
         )
     }
 
+    func refreshPairing(_ request: RemoteControlPairRefreshRequest) async throws -> RemoteControlPairRefreshResponse {
+        let relayWebSocketURL = try parsedRelayWebSocketURL(from: request.relayWebSocketURL)
+        let endpointURL = try pairEndpointURL(from: relayWebSocketURL, path: "/pair/refresh")
+
+        var urlRequest = URLRequest(url: endpointURL)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 15
+        urlRequest.httpBody = try jsonEncoder.encode(request)
+
+        let (data, response) = try await urlSession.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            let details = String(data: data, encoding: .utf8) ?? "Unexpected relay response"
+            throw NSError(
+                domain: "CodexChat.RemoteControlRelay",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: details]
+            )
+        }
+
+        let decoded = try jsonDecoder.decode(RelayPairRefreshResponse.self, from: data)
+        return RemoteControlPairRefreshResponse(
+            accepted: decoded.accepted,
+            relayWebSocketURL: decoded.wsURL
+        )
+    }
+
     func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse {
         let relayWebSocketURL = try parsedRelayWebSocketURL(from: request.relayWebSocketURL)
         let endpointURL = try pairEndpointURL(from: relayWebSocketURL, path: "/pair/stop")
@@ -160,6 +191,11 @@ actor RemoteControlHTTPRelayRegistrar: RemoteControlRelayRegistering {
 }
 
 private struct RelayPairStartResponse: Decodable {
+    let accepted: Bool
+    let wsURL: String?
+}
+
+private struct RelayPairRefreshResponse: Decodable {
     let accepted: Bool
     let wsURL: String?
 }

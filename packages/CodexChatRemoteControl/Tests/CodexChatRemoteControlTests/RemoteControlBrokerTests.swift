@@ -4,6 +4,7 @@ import XCTest
 
 private actor RecordingRelayRegistrar: RemoteControlRelayRegistering {
     private(set) var requests: [RemoteControlPairStartRequest] = []
+    private(set) var refreshRequests: [RemoteControlPairRefreshRequest] = []
     private(set) var stopRequests: [RemoteControlPairStopRequest] = []
     private(set) var listRequests: [RemoteControlDevicesListRequest] = []
     private(set) var revokeRequests: [RemoteControlDeviceRevokeRequest] = []
@@ -16,6 +17,15 @@ private actor RecordingRelayRegistrar: RemoteControlRelayRegistering {
 
     func latestRequest() -> RemoteControlPairStartRequest? {
         requests.last
+    }
+
+    func refreshPairing(_ request: RemoteControlPairRefreshRequest) async throws -> RemoteControlPairRefreshResponse {
+        refreshRequests.append(request)
+        return RemoteControlPairRefreshResponse(accepted: true)
+    }
+
+    func latestRefreshRequest() -> RemoteControlPairRefreshRequest? {
+        refreshRequests.last
     }
 
     func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse {
@@ -147,5 +157,28 @@ final class RemoteControlBrokerTests: XCTestCase {
         status = await broker.currentStatus()
         XCTAssertEqual(status.trustedDevices.count, 0)
         XCTAssertEqual(status.connectedDeviceCount, 0)
+    }
+
+    func testRefreshJoinTokenPreservesSessionAndRotatesJoinURL() async throws {
+        let registrar = RecordingRelayRegistrar()
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        let descriptor = try await broker.startSession(
+            joinBaseURL: XCTUnwrap(URL(string: "https://remote.codexchat.example/rc")),
+            relayWebSocketURL: XCTUnwrap(URL(string: "wss://relay.codexchat.example/ws"))
+        )
+
+        let refreshed = try await broker.refreshJoinToken(
+            joinBaseURL: XCTUnwrap(URL(string: "https://remote.codexchat.example/rc"))
+        )
+
+        XCTAssertEqual(refreshed.sessionID, descriptor.sessionID)
+        XCTAssertEqual(refreshed.desktopSessionToken, descriptor.desktopSessionToken)
+        XCTAssertNotEqual(refreshed.joinTokenLease.token, descriptor.joinTokenLease.token)
+        XCTAssertNotEqual(refreshed.joinURL, descriptor.joinURL)
+
+        let refreshRequest = await registrar.latestRefreshRequest()
+        XCTAssertEqual(refreshRequest?.sessionID, descriptor.sessionID)
+        XCTAssertEqual(refreshRequest?.desktopSessionToken, descriptor.desktopSessionToken)
+        XCTAssertEqual(refreshRequest?.joinToken, refreshed.joinTokenLease.token)
     }
 }

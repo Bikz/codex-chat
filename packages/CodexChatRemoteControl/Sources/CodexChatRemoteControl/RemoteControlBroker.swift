@@ -38,6 +38,41 @@ public struct RemoteControlPairStartResponse: Codable, Sendable, Equatable {
     }
 }
 
+public struct RemoteControlPairRefreshRequest: Codable, Sendable, Equatable {
+    public var schemaVersion: Int
+    public var sessionID: String
+    public var relayWebSocketURL: String
+    public var joinToken: String
+    public var joinTokenExpiresAt: Date
+    public var desktopSessionToken: String
+
+    public init(
+        schemaVersion: Int = RemoteControlProtocol.schemaVersion,
+        sessionID: String,
+        relayWebSocketURL: String,
+        joinToken: String,
+        joinTokenExpiresAt: Date,
+        desktopSessionToken: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.sessionID = sessionID
+        self.relayWebSocketURL = relayWebSocketURL
+        self.joinToken = joinToken
+        self.joinTokenExpiresAt = joinTokenExpiresAt
+        self.desktopSessionToken = desktopSessionToken
+    }
+}
+
+public struct RemoteControlPairRefreshResponse: Codable, Sendable, Equatable {
+    public var accepted: Bool
+    public var relayWebSocketURL: String?
+
+    public init(accepted: Bool, relayWebSocketURL: String? = nil) {
+        self.accepted = accepted
+        self.relayWebSocketURL = relayWebSocketURL
+    }
+}
+
 public struct RemoteControlPairStopRequest: Codable, Sendable, Equatable {
     public var schemaVersion: Int
     public var sessionID: String
@@ -152,6 +187,7 @@ public struct RemoteControlDeviceRevokeResponse: Codable, Sendable, Equatable {
 
 public protocol RemoteControlRelayRegistering: Sendable {
     func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse
+    func refreshPairing(_ request: RemoteControlPairRefreshRequest) async throws -> RemoteControlPairRefreshResponse
     func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse
     func listDevices(_ request: RemoteControlDevicesListRequest) async throws -> RemoteControlDevicesListResponse
     func revokeDevice(_ request: RemoteControlDeviceRevokeRequest) async throws -> RemoteControlDeviceRevokeResponse
@@ -163,6 +199,11 @@ public struct NoopRemoteControlRelayRegistrar: RemoteControlRelayRegistering {
     public func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse {
         _ = request
         return RemoteControlPairStartResponse(accepted: true)
+    }
+
+    public func refreshPairing(_ request: RemoteControlPairRefreshRequest) async throws -> RemoteControlPairRefreshResponse {
+        _ = request
+        return RemoteControlPairRefreshResponse(accepted: true)
     }
 
     public func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse {
@@ -277,6 +318,46 @@ public actor RemoteControlBroker {
         scheduleIdleTimeout(seconds: effectiveDescriptor.idleTimeout)
 
         return effectiveDescriptor
+    }
+
+    @discardableResult
+    public func refreshJoinToken(
+        joinBaseURL: URL,
+        policy: RemoteControlPairingSecurityPolicy = .init()
+    ) async throws -> RemoteControlSessionDescriptor {
+        guard var session = status.session else {
+            throw URLError(.badURL)
+        }
+
+        let refreshedLease = try tokenFactory.makeJoinTokenLease(ttl: policy.joinTokenTTL)
+        let refreshedJoinURL = try tokenFactory.makeJoinURL(
+            joinBaseURL: joinBaseURL,
+            relayWebSocketURL: session.relayWebSocketURL,
+            sessionID: session.sessionID,
+            joinToken: refreshedLease.token
+        )
+        let request = RemoteControlPairRefreshRequest(
+            sessionID: session.sessionID,
+            relayWebSocketURL: session.relayWebSocketURL.absoluteString,
+            joinToken: refreshedLease.token,
+            joinTokenExpiresAt: refreshedLease.expiresAt,
+            desktopSessionToken: session.desktopSessionToken
+        )
+        let relayResponse = try await relayRegistrar.refreshPairing(request)
+        guard relayResponse.accepted else {
+            throw URLError(.cannotConnectToHost)
+        }
+
+        if let relayWebSocketURL = relayResponse.relayWebSocketURL,
+           let parsedURL = URL(string: relayWebSocketURL)
+        {
+            session.relayWebSocketURL = parsedURL
+        }
+        session.joinTokenLease = refreshedLease
+        session.joinURL = refreshedJoinURL
+        status.session = session
+        bumpActivity()
+        return session
     }
 
     public func updateConnectedDeviceCount(_ count: Int) {

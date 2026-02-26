@@ -124,6 +124,26 @@ extension AppModel {
         remoteControlStatusMessage = "Copied remote link to clipboard."
     }
 
+    func refreshRemoteControlJoinToken() {
+        guard let urls = resolvedRemoteControlURLs() else {
+            return
+        }
+
+        remoteControlStatusMessage = "Generating a new join token..."
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let descriptor = try await remoteControlBroker.refreshJoinToken(joinBaseURL: urls.joinURL)
+                await refreshRemoteControlStatus()
+                remoteControlStatusMessage = "New join token ready. It expires at \(Self.remoteTimestamp(descriptor.joinTokenLease.expiresAt))."
+            } catch {
+                await refreshRemoteControlStatus()
+                remoteControlStatusMessage = "Failed to refresh join token: \(error.localizedDescription)"
+                appendLog(.warning, "Failed to refresh remote join token: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func refreshRemoteControlStatus() async {
         remoteControlStatus = await remoteControlBroker.currentStatus()
         guard remoteControlStatus.phase == .active else {

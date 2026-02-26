@@ -15,6 +15,7 @@ Default URL: `http://localhost:8787`
 
 - `POST /pair/start`
 - `POST /pair/join`
+- `POST /pair/refresh`
 - `POST /pair/stop`
 - `POST /devices/list`
 - `POST /devices/revoke`
