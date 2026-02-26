@@ -2475,7 +2475,15 @@ fn validate_mobile_payload(
 
     ensure_only_allowed_fields(
         parsed_object,
-        &["schemaVersion", "sessionID", "seq", "timestamp", "payload"],
+        &[
+            "schemaVersion",
+            "sessionID",
+            "seq",
+            "timestamp",
+            "payload",
+            "relayConnectionID",
+            "relayDeviceID",
+        ],
         "invalid_command",
         "command envelope",
     )?;

@@ -81,11 +81,11 @@ async function openWebSocket(url, { origin } = {}) {
   });
 }
 
-async function nextJSONMessage(socket, timeoutMs = 5000) {
+async function nextJSONMessage(socket, timeoutMs = 5000, context = "unknown") {
   return await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error("Timed out waiting for websocket message"));
+      reject(new Error(`Timed out waiting for websocket message [${context}]`));
     }, timeoutMs);
 
     const onMessage = (raw) => {
@@ -107,16 +107,16 @@ async function nextJSONMessage(socket, timeoutMs = 5000) {
   });
 }
 
-async function nextMatchingJSONMessage(socket, predicate, timeoutMs = 5000) {
+async function nextMatchingJSONMessage(socket, predicate, timeoutMs = 5000, context = "unknown") {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const remaining = Math.max(50, deadline - Date.now());
-    const message = await nextJSONMessage(socket, remaining);
+    const message = await nextJSONMessage(socket, remaining, context);
     if (predicate(message)) {
       return message;
     }
   }
-  throw new Error("Timed out waiting for matching websocket message");
+  throw new Error(`Timed out waiting for matching websocket message [${context}]`);
 }
 
 async function closeSocket(socket) {
@@ -281,7 +281,7 @@ async function runScenario(relayKind) {
         token: desktopSessionToken
       })
     );
-    const desktopAuth = await nextJSONMessage(desktopSocket);
+    const desktopAuth = await nextJSONMessage(desktopSocket, 5000, `${relayKind}:desktop-auth`);
 
     const joinPromise = fetch(`${relay.baseURL}/pair/join`, {
       method: "POST",
@@ -297,7 +297,9 @@ async function runScenario(relayKind) {
 
     const pairRequest = await nextMatchingJSONMessage(
       desktopSocket,
-      (message) => message?.type === "relay.pair_request"
+      (message) => message?.type === "relay.pair_request",
+      5000,
+      `${relayKind}:pair-request`
     );
     desktopSocket.send(
       JSON.stringify({
@@ -319,7 +321,7 @@ async function runScenario(relayKind) {
         token: firstToken
       })
     );
-    const mobileAuth = await nextJSONMessage(mobileSocket);
+    const mobileAuth = await nextJSONMessage(mobileSocket, 5000, `${relayKind}:mobile-auth`);
     const rotatedToken = mobileAuth.nextDeviceSessionToken;
 
     mobileSocket.send(
@@ -342,7 +344,9 @@ async function runScenario(relayKind) {
 
     const forwarded = await nextMatchingJSONMessage(
       desktopSocket,
-      (message) => message?.payload?.type === "command"
+      (message) => message?.payload?.type === "command",
+      5000,
+      `${relayKind}:forwarded-command`
     );
 
     await closeSocket(mobileSocket);
@@ -357,7 +361,7 @@ async function runScenario(relayKind) {
         token: rotatedToken
       })
     );
-    const secondAuth = await nextJSONMessage(secondMobileSocket);
+    const secondAuth = await nextJSONMessage(secondMobileSocket, 5000, `${relayKind}:second-mobile-auth`);
 
     return {
       pairStartOK: pairStartResponse.status === 200,

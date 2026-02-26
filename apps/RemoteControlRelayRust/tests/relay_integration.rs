@@ -1138,6 +1138,61 @@ async fn mobile_command_with_unexpected_field_is_rejected_and_not_forwarded() {
 }
 
 #[tokio::test]
+async fn mobile_command_ignores_spoofed_relay_metadata_and_forwards() {
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|_| {}).await;
+
+    mobile_socket
+        .send(Message::Text(
+            json!({
+                "schemaVersion": 1,
+                "sessionID": session_id,
+                "seq": 1,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "relayConnectionID": "spoofed-connection",
+                "relayDeviceID": "spoofed-device",
+                "payload": {
+                    "type": "command",
+                    "payload": {
+                        "name": "thread.select",
+                        "threadID": "11111111-1111-1111-1111-111111111111"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send command with spoofed metadata");
+
+    let forwarded = tokio::time::timeout(Duration::from_millis(1_000), desktop_socket.next())
+        .await
+        .expect("expected forwarded command")
+        .expect("forwarded frame")
+        .expect("forwarded message");
+    let forwarded_json: Value =
+        serde_json::from_str(forwarded.to_text().expect("forwarded text")).expect("forwarded json");
+    assert_eq!(
+        forwarded_json
+            .pointer("/payload/payload/name")
+            .and_then(Value::as_str),
+        Some("thread.select")
+    );
+    assert_ne!(
+        forwarded_json
+            .get("relayConnectionID")
+            .and_then(Value::as_str),
+        Some("spoofed-connection")
+    );
+    assert_ne!(
+        forwarded_json.get("relayDeviceID").and_then(Value::as_str),
+        Some("spoofed-device")
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
 async fn invalid_snapshot_request_with_negative_last_seq_is_rejected() {
     let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
         pair_connected_mobile(|_| {}).await;
