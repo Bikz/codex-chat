@@ -971,6 +971,26 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .expect("deviceID")
         .to_string();
 
+    let rejected_list_response = client
+        .post(format!("{base}/devices/list"))
+        .header("Origin", "https://evil.example")
+        .json(&json!({
+            "sessionID": session_id,
+            "desktopSessionToken": desktop_session_token,
+        }))
+        .send()
+        .await
+        .expect("devices list disallowed origin");
+    assert_eq!(rejected_list_response.status(), StatusCode::FORBIDDEN);
+    let rejected_list_payload: Value = rejected_list_response
+        .json()
+        .await
+        .expect("devices list disallowed origin payload");
+    assert_eq!(
+        rejected_list_payload.get("error").and_then(Value::as_str),
+        Some("origin_not_allowed")
+    );
+
     let list_response = client
         .post(format!("{base}/devices/list"))
         .json(&json!({
@@ -994,6 +1014,27 @@ async fn devices_list_and_revoke_remove_trusted_device() {
     assert_eq!(
         devices[0].get("deviceName").and_then(Value::as_str),
         Some("Bikram iPhone")
+    );
+
+    let rejected_revoke_response = client
+        .post(format!("{base}/devices/revoke"))
+        .header("Origin", "https://evil.example")
+        .json(&json!({
+            "sessionID": session_id,
+            "desktopSessionToken": desktop_session_token,
+            "deviceID": device_id,
+        }))
+        .send()
+        .await
+        .expect("device revoke disallowed origin");
+    assert_eq!(rejected_revoke_response.status(), StatusCode::FORBIDDEN);
+    let rejected_revoke_payload: Value = rejected_revoke_response
+        .json()
+        .await
+        .expect("device revoke disallowed origin payload");
+    assert_eq!(
+        rejected_revoke_payload.get("error").and_then(Value::as_str),
+        Some("origin_not_allowed")
     );
 
     let revoke_response = client
