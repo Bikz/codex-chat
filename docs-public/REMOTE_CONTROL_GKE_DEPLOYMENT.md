@@ -17,6 +17,11 @@ Kubernetes manifests live in:
 
 - `infra/remote-control-relay/gke/`
 
+Overlays:
+
+- `infra/remote-control-relay/gke/overlays/staging`
+- `infra/remote-control-relay/gke/overlays/prod-canary`
+
 Resources included:
 
 - `Deployment`
@@ -36,7 +41,7 @@ Set these secret values before deploy:
 
 Defaults and non-secret runtime tunables are in:
 
-- `infra/remote-control-relay/gke/configmap.yaml`
+- `infra/remote-control-relay/gke/base/configmap.yaml`
 
 ## Deploy
 
@@ -74,11 +79,26 @@ make remote-control-gke-validate
 
 If no kube context is configured, the validator still renders and structure-checks manifests locally and skips cluster API discovery.
 
+Validate an overlay:
+
+```bash
+RELAY_GKE_KUSTOMIZE_DIR=infra/remote-control-relay/gke/overlays/staging make remote-control-gke-validate
+```
+
 5. Verify rollout
 
 ```bash
 kubectl -n codexchat-remote-control rollout status deploy/remote-control-relay
 kubectl -n codexchat-remote-control get pods,svc,hpa,pdb
+```
+
+Canary-first rollout example:
+
+```bash
+kubectl apply -f /tmp/relay-secrets.yaml
+kubectl apply -k infra/remote-control-relay/gke/overlays/prod-canary
+# observe metrics and error budgets
+kubectl apply -k infra/remote-control-relay/gke
 ```
 
 ## Operational Notes

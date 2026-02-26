@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-KUSTOMIZE_DIR="$REPO_ROOT/infra/remote-control-relay/gke"
+KUSTOMIZE_DIR="${RELAY_GKE_KUSTOMIZE_DIR:-$REPO_ROOT/infra/remote-control-relay/gke}"
 
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "error: kubectl is required for GKE manifest validation" >&2
@@ -15,8 +15,13 @@ if [[ ! -f "$KUSTOMIZE_DIR/kustomization.yaml" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$KUSTOMIZE_DIR/secret-template.yaml" ]]; then
-  echo "error: missing secret template at $KUSTOMIZE_DIR/secret-template.yaml" >&2
+SECRET_TEMPLATE_PATH="$KUSTOMIZE_DIR/secret-template.yaml"
+if [[ ! -f "$SECRET_TEMPLATE_PATH" ]]; then
+  SECRET_TEMPLATE_PATH="$REPO_ROOT/infra/remote-control-relay/gke/secret-template.yaml"
+fi
+
+if [[ ! -f "$SECRET_TEMPLATE_PATH" ]]; then
+  echo "error: missing secret template at $REPO_ROOT/infra/remote-control-relay/gke/secret-template.yaml" >&2
   exit 1
 fi
 
@@ -42,7 +47,7 @@ for kind in "${required_kinds[@]}"; do
   fi
 done
 
-echo "[remote-control-gke-validate] note: secret-template.yaml is intentionally excluded from kustomize apply"
+echo "[remote-control-gke-validate] note: secret-template.yaml is intentionally excluded from kustomize apply ($SECRET_TEMPLATE_PATH)"
 
 if kubectl cluster-info >/dev/null 2>&1; then
   kubectl apply --dry-run=client --validate=false -f "$rendered" >/dev/null
