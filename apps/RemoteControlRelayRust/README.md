@@ -56,6 +56,18 @@ Run repeated soak loops (uses `RELAY_SOAK_LOOPS`, default `5`):
 RELAY_SOAK_LOOPS=10 make remote-control-soak
 ```
 
+Evaluate the latest load artifact against gate thresholds:
+
+```bash
+make remote-control-gate
+```
+
+Run load harness and enforce gate in one step:
+
+```bash
+make remote-control-load-gated
+```
+
 Equivalent direct command:
 
 ```bash
@@ -78,3 +90,10 @@ Environment variables:
 - `RELAY_LOAD_BASE_URL` (optional; when set, harness targets that relay instead of spawning local in-process relay)
 - `RELAY_LOAD_ORIGIN` (default `http://localhost:4173`)
 - `RELAY_LOAD_RESULTS_PATH` (default `output/remote-control/relay-load-result.json`; writes machine-readable JSON summary for each run)
+- `RELAY_GATE_RESULTS_PATH` (default `output/remote-control/relay-load-result.json`; path the gate script reads)
+- `RELAY_GATE_REQUIRE_STATUS` (default `ok`)
+- `RELAY_GATE_MAX_P95_MS` (optional; overrides JSON budget when provided)
+- `RELAY_GATE_MAX_ERRORS` (default `0`)
+- `RELAY_GATE_MAX_OUTBOUND_SEND_FAILURES` (default `0`)
+- `RELAY_GATE_MAX_SLOW_CONSUMER_DISCONNECTS` (default `0`)
+- `RELAY_GATE_MIN_SAMPLE_COUNT` (default `1`)

@@ -229,6 +229,8 @@ Implemented so far (2026-02-26):
 - Local wrappers are available:
   - `make remote-control-load`
   - `make remote-control-soak`
+  - `make remote-control-gate`
+  - `make remote-control-load-gated`
 
 Acceptance criteria:
 - 24h soak test meets defined SLO thresholds.

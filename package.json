@@ -10,6 +10,8 @@
     "ci": "make ci",
     "remote:relay:load": "bash scripts/remote-control-relay-load.sh",
     "remote:relay:soak": "bash scripts/remote-control-relay-soak.sh",
+    "remote:relay:gate": "bash scripts/remote-control-relay-gate.sh",
+    "remote:relay:load:gated": "make remote-control-load-gated",
     "swift:build": "bash scripts/swift-build-all.sh",
     "swift:test": "bash scripts/swift-test-all.sh",
     "check": "pnpm run swift:build && pnpm run swift:test",

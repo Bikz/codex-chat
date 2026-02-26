@@ -99,7 +99,7 @@ Set environment variables before launching Codex Chat:
 ## Next hardening steps
 
 - Multi-instance soak/load tests with Redis + NATS under reconnect churn.
-- Manual relay load harness is available at `apps/RemoteControlRelayRust/tests/relay_load_harness.rs`, with wrappers `make remote-control-load` and `make remote-control-soak`.
+- Manual relay load harness is available at `apps/RemoteControlRelayRust/tests/relay_load_harness.rs`, with wrappers `make remote-control-load`, `make remote-control-soak`, and `make remote-control-gate` (`make remote-control-load-gated` for one-shot load + gate).
 - OpenTelemetry metrics/tracing export and SLO alerting runbooks.
 - Optional end-to-end payload encryption between desktop and phone.
 - Passkey-based account option for multi-device identity over time.
