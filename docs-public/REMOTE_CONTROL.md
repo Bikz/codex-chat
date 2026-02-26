@@ -27,6 +27,7 @@ This MVP delivers:
 - Device connections per session are capped.
 - Global websocket admission is capped.
 - Per-socket outbound queues are bounded to enforce relay backpressure.
+- Slow-consumer sockets are proactively disconnected (`reason: slow_consumer`) so clients reconnect and request a fresh snapshot instead of receiving stale partial streams.
 - Relay logs avoid raw token output and truncate session identifiers.
 - Sessions auto-expire through idle timeout and retention cleanup.
 

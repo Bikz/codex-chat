@@ -16,7 +16,7 @@ use rand::RngCore;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, watch, Mutex};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::{sleep, timeout};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
@@ -73,6 +73,7 @@ struct SessionRecord {
 #[derive(Clone)]
 struct SocketHandle {
     tx: mpsc::Sender<String>,
+    shutdown: watch::Sender<bool>,
     device_id: Option<String>,
 }
 
@@ -629,7 +630,9 @@ async fn handle_session_envelope(
         match envelope.target.as_str() {
             "desktop" => {
                 if let Some(desktop) = &session.desktop_socket {
-                    let _ = try_send_payload(&desktop.tx, envelope.payload.clone());
+                    if !try_send_payload(&desktop.tx, envelope.payload.clone()) {
+                        request_socket_disconnect(desktop, "slow_consumer");
+                    }
                 }
                 if let Some(reason) = disconnect_reason {
                     close_reason = Some(reason);
@@ -649,7 +652,9 @@ async fn handle_session_envelope(
                     revoked_device_id = Some(target_device_id.to_string());
                 } else {
                     for mobile in session.mobile_sockets.values() {
-                        let _ = try_send_payload(&mobile.tx, envelope.payload.clone());
+                        if !try_send_payload(&mobile.tx, envelope.payload.clone()) {
+                            request_socket_disconnect(mobile, "slow_consumer");
+                        }
                     }
                     if let Some(reason) = disconnect_reason {
                         close_reason = Some(reason);
@@ -1262,13 +1267,20 @@ async fn pair_join(
                 serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
 
             let mut publish_remote_payload = None;
+            let mut delivered_to_local_desktop = false;
             if let Some(desktop) = &session.desktop_socket {
-                let _ = try_send_payload(&desktop.tx, encoded_payload.clone());
-            } else if state.cross_instance_bus.is_some() {
+                if try_send_payload(&desktop.tx, encoded_payload.clone()) {
+                    delivered_to_local_desktop = true;
+                } else {
+                    request_socket_disconnect(desktop, "slow_consumer");
+                }
+            }
+
+            if !delivered_to_local_desktop && state.cross_instance_bus.is_some() {
                 publish_remote_payload = Some(encoded_payload);
             }
 
-            if publish_remote_payload.is_none() && session.desktop_socket.is_none() {
+            if publish_remote_payload.is_none() && !delivered_to_local_desktop {
                 return error_response(
                     StatusCode::CONFLICT,
                     "desktop_not_connected",
@@ -1808,6 +1820,7 @@ async fn handle_socket(
 ) {
     let (mut writer, mut reader) = socket.split();
     let (tx, mut rx) = mpsc::channel::<String>(state.config.max_socket_outbound_queue.max(8));
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
     let writer_task = tokio::spawn(async move {
         while let Some(payload) = rx.recv().await {
@@ -1845,103 +1858,126 @@ async fn handle_socket(
         return;
     }
 
-    let auth = authenticate_socket(&state, &auth_message.token, origin.as_deref(), &tx).await;
+    let auth = authenticate_socket(
+        &state,
+        &auth_message.token,
+        origin.as_deref(),
+        &tx,
+        &shutdown_tx,
+    )
+    .await;
     let Some(auth) = auth else {
         close_writer_task(writer_task, tx).await;
         return;
     };
 
-    while let Some(message) = reader.next().await {
-        let Ok(Message::Text(raw)) = message else {
-            continue;
-        };
-        if raw.len() > state.config.max_ws_message_bytes {
-            let _ = try_send_payload(
-                &tx,
-                json!({
-                    "type": "disconnect",
-                    "reason": "message_too_large"
-                })
-                .to_string(),
-            );
-            break;
-        }
-
-        let parsed = serde_json::from_str::<Value>(&raw).ok();
-
-        let mut relay = state.inner.lock().await;
-        if !relay.sessions.contains_key(auth.session_id()) {
-            continue;
-        }
-
-        if let Some(session) = relay.sessions.get_mut(auth.session_id()) {
-            session.last_activity_at_ms = now_ms();
-
-            if let Some(parsed) = parsed.as_ref() {
-                if parsed
-                    .get("sessionID")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| id != auth.session_id())
-                {
-                    continue;
+    loop {
+        tokio::select! {
+            changed = shutdown_rx.changed() => {
+                if changed.is_err() || *shutdown_rx.borrow() {
+                    break;
                 }
             }
+            message = reader.next() => {
+                let Some(message) = message else {
+                    break;
+                };
+                let Ok(Message::Text(raw)) = message else {
+                    continue;
+                };
+                if raw.len() > state.config.max_ws_message_bytes {
+                    let _ = try_send_payload(
+                        &tx,
+                        json!({
+                            "type": "disconnect",
+                            "reason": "message_too_large"
+                        })
+                        .to_string(),
+                    );
+                    break;
+                }
 
-            match &auth.auth {
-                SocketAuth::Desktop => {
-                    if let Ok(pair_decision) = serde_json::from_str::<RelayPairDecision>(&raw) {
-                        if pair_decision.message_type == "relay.pair_decision" {
-                            apply_pair_decision(session, &pair_decision, Some(&tx));
-                            publish_cross_instance_control_pair_decision(
+                let parsed = serde_json::from_str::<Value>(&raw).ok();
+
+                let mut relay = state.inner.lock().await;
+                if !relay.sessions.contains_key(auth.session_id()) {
+                    continue;
+                }
+
+                if let Some(session) = relay.sessions.get_mut(auth.session_id()) {
+                    session.last_activity_at_ms = now_ms();
+
+                    if let Some(parsed) = parsed.as_ref() {
+                        if parsed
+                            .get("sessionID")
+                            .and_then(Value::as_str)
+                            .is_some_and(|id| id != auth.session_id())
+                        {
+                            continue;
+                        }
+                    }
+
+                    match &auth.auth {
+                        SocketAuth::Desktop => {
+                            if let Ok(pair_decision) = serde_json::from_str::<RelayPairDecision>(&raw) {
+                                if pair_decision.message_type == "relay.pair_decision" {
+                                    apply_pair_decision(session, &pair_decision, Some(&tx));
+                                    publish_cross_instance_control_pair_decision(
+                                        &state,
+                                        auth.session_id(),
+                                        raw.to_string(),
+                                    );
+                                    continue;
+                                }
+                            }
+
+                            for mobile in session.mobile_sockets.values() {
+                                if !try_send_payload(&mobile.tx, raw.to_string()) {
+                                    request_socket_disconnect(mobile, "slow_consumer");
+                                }
+                            }
+                            publish_cross_instance_session(
                                 &state,
                                 auth.session_id(),
+                                "mobile",
+                                None,
                                 raw.to_string(),
                             );
-                            continue;
+                        }
+                        SocketAuth::Mobile {
+                            device_id,
+                            connection_id,
+                        } => {
+                            match validate_mobile_payload(
+                                session,
+                                parsed.as_ref(),
+                                auth.session_id(),
+                                connection_id,
+                                device_id,
+                                &state.config,
+                            ) {
+                                Ok(()) => {}
+                                Err(error) => {
+                                    send_relay_error(&tx, error.code, &error.message);
+                                    continue;
+                                }
+                            }
+
+                            let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
+                            if let Some(desktop) = &session.desktop_socket {
+                                if !try_send_payload(&desktop.tx, forwarded.clone()) {
+                                    request_socket_disconnect(desktop, "slow_consumer");
+                                }
+                            }
+                            publish_cross_instance_session(
+                                &state,
+                                auth.session_id(),
+                                "desktop",
+                                None,
+                                forwarded,
+                            );
                         }
                     }
-
-                    for mobile in session.mobile_sockets.values() {
-                        let _ = try_send_payload(&mobile.tx, raw.to_string());
-                    }
-                    publish_cross_instance_session(
-                        &state,
-                        auth.session_id(),
-                        "mobile",
-                        None,
-                        raw.to_string(),
-                    );
-                }
-                SocketAuth::Mobile {
-                    device_id,
-                    connection_id,
-                } => {
-                    match validate_mobile_payload(
-                        session,
-                        parsed.as_ref(),
-                        auth.session_id(),
-                        connection_id,
-                        device_id,
-                        &state.config,
-                    ) {
-                        Ok(()) => {}
-                        Err(error) => {
-                            send_relay_error(&tx, error.code, &error.message);
-                            continue;
-                        }
-                    }
-
-                    let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
-                    if let Some(desktop) = &session.desktop_socket {
-                        let _ = try_send_payload(&desktop.tx, forwarded.clone());
-                    }
-                    publish_cross_instance_session(
-                        &state,
-                        auth.session_id(),
-                        "desktop",
-                        None,
-                        forwarded,
-                    );
                 }
             }
         }
@@ -2043,6 +2079,18 @@ fn send_relay_error(tx: &mpsc::Sender<String>, code: &str, message: &str) {
         "message": message,
     });
     let _ = try_send_payload(tx, payload.to_string());
+}
+
+fn request_socket_disconnect(handle: &SocketHandle, reason: &str) {
+    let _ = try_send_payload(
+        &handle.tx,
+        json!({
+            "type": "disconnect",
+            "reason": reason
+        })
+        .to_string(),
+    );
+    let _ = handle.shutdown.send(true);
 }
 
 fn try_send_payload(tx: &mpsc::Sender<String>, payload: String) -> bool {
@@ -2437,6 +2485,7 @@ async fn authenticate_socket(
     token: &str,
     origin: Option<&str>,
     tx: &mpsc::Sender<String>,
+    shutdown_tx: &watch::Sender<bool>,
 ) -> Option<AuthenticatedSocket> {
     let auth_context = {
         let relay = state.inner.lock().await;
@@ -2489,14 +2538,12 @@ async fn authenticate_socket(
             session.last_activity_at_ms = now_ms();
 
             if let Some(existing) = session.desktop_socket.take() {
-                let _ = try_send_payload(
-                    &existing.tx,
-                    "{\"type\":\"disconnect\",\"reason\":\"desktop_reconnected\"}".to_string(),
-                );
+                request_socket_disconnect(&existing, "desktop_reconnected");
             }
 
             session.desktop_socket = Some(SocketHandle {
                 tx: tx.clone(),
+                shutdown: shutdown_tx.clone(),
                 device_id: None,
             });
 
@@ -2508,10 +2555,12 @@ async fn authenticate_socket(
                 next_device_session_token: None,
                 connected_device_count: session.mobile_sockets.len(),
             };
-            let _ = try_send_payload(
+            if !try_send_payload(
                 tx,
                 serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
-            );
+            ) {
+                return None;
+            }
 
             info!(
                 "[relay-rs] desktop_connected session={}",
@@ -2559,6 +2608,7 @@ async fn authenticate_socket(
                     connection_id.clone(),
                     SocketHandle {
                         tx: tx.clone(),
+                        shutdown: shutdown_tx.clone(),
                         device_id: Some(device_id.clone()),
                     },
                 );
@@ -2602,10 +2652,12 @@ async fn authenticate_socket(
                 next_device_session_token: Some(next_token),
                 connected_device_count,
             };
-            let _ = try_send_payload(
+            if !try_send_payload(
                 tx,
                 serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
-            );
+            ) {
+                return None;
+            }
 
             info!(
                 "[relay-rs] mobile_connected session={} devices={}",
@@ -2718,10 +2770,7 @@ fn close_existing_mobile_socket_for_device(
     if let Some(key) = key {
         if let Some(handle) = session.mobile_sockets.remove(&key) {
             session.command_sequence_by_connection_id.remove(&key);
-            let _ = try_send_payload(
-                &handle.tx,
-                json!({ "type": "disconnect", "reason": reason }).to_string(),
-            );
+            request_socket_disconnect(&handle, reason);
         }
     }
 }
@@ -2732,7 +2781,9 @@ fn send_device_count(session: &SessionRecord) {
         return;
     };
 
-    let _ = try_send_payload(&desktop.tx, payload);
+    if !try_send_payload(&desktop.tx, payload) {
+        request_socket_disconnect(desktop, "slow_consumer");
+    }
 }
 
 fn device_count_payload(session: &SessionRecord) -> String {
@@ -2798,17 +2849,11 @@ fn close_session(relay: &mut RelayState, session_id: &str, reason: &str) {
     }
 
     if let Some(desktop) = session.desktop_socket {
-        let _ = try_send_payload(
-            &desktop.tx,
-            json!({ "type": "disconnect", "reason": reason }).to_string(),
-        );
+        request_socket_disconnect(&desktop, reason);
     }
 
     for mobile in session.mobile_sockets.into_values() {
-        let _ = try_send_payload(
-            &mobile.tx,
-            json!({ "type": "disconnect", "reason": reason }).to_string(),
-        );
+        request_socket_disconnect(&mobile, reason);
     }
 
     info!(
@@ -3089,5 +3134,43 @@ mod tests {
         let relay = state.inner.lock().await;
         assert!(!relay.sessions.contains_key(session_id));
         assert!(relay.device_token_index.is_empty());
+    }
+
+    #[test]
+    fn try_send_payload_returns_false_when_queue_is_full() {
+        let (tx, mut rx) = mpsc::channel::<String>(1);
+
+        assert!(try_send_payload(&tx, "first".to_string()));
+        assert_eq!(
+            try_send_payload(&tx, "second".to_string()),
+            false,
+            "second payload should be rejected when queue is full"
+        );
+
+        let first = rx.try_recv().expect("first payload should remain in queue");
+        assert_eq!(first, "first");
+    }
+
+    #[tokio::test]
+    async fn request_socket_disconnect_sends_disconnect_and_shutdown_signal() {
+        let (tx, mut rx) = mpsc::channel::<String>(4);
+        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let handle = SocketHandle {
+            tx,
+            shutdown: shutdown_tx,
+            device_id: Some("device-1".to_string()),
+        };
+
+        request_socket_disconnect(&handle, "slow_consumer");
+
+        let payload = rx.recv().await.expect("disconnect payload");
+        let parsed: Value = serde_json::from_str(&payload).expect("disconnect json");
+        assert_eq!(
+            parsed.get("reason").and_then(Value::as_str),
+            Some("slow_consumer")
+        );
+
+        shutdown_rx.changed().await.expect("shutdown change");
+        assert_eq!(*shutdown_rx.borrow(), true);
     }
 }

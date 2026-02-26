@@ -31,6 +31,7 @@ Default URL: `http://localhost:8787`
 - Request bodies are bounded by `MAX_JSON_BYTES` (default `65536`).
 - WebSocket frames are bounded by `MAX_WS_MESSAGE_BYTES` (default `65536`).
 - Per-socket outbound queues are bounded by `MAX_SOCKET_OUTBOUND_QUEUE` (default `256`) to avoid unbounded memory growth under slow clients.
+- When a socket's outbound queue is saturated, relay forces a `disconnect` (`reason: slow_consumer`) so clients can reconnect and resync instead of silently dropping events.
 - WebSocket admission can be bounded by `MAX_ACTIVE_WEBSOCKET_CONNECTIONS` (default `10000`).
 - Remote mobile commands are throttled per device via `MAX_REMOTE_COMMANDS_PER_MINUTE` (default `240`).
 - Remote mobile commands are also throttled per session via `MAX_REMOTE_SESSION_COMMANDS_PER_MINUTE` (default `480`).
