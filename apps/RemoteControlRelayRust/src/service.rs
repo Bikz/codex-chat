@@ -42,6 +42,7 @@ pub struct SharedRelayState {
 
 pub struct RelayState {
     sessions: HashMap<String, SessionRecord>,
+    desktop_token_index: HashMap<String, String>,
     device_token_index: HashMap<String, DeviceTokenContext>,
     rate_buckets: HashMap<String, RateBucket>,
     pending_join_waiters: usize,
@@ -348,6 +349,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     token_count
                 );
                 RelayState {
+                    desktop_token_index: build_desktop_token_index(&sessions),
                     device_token_index: build_device_token_index(&sessions),
                     sessions,
                     rate_buckets: HashMap::new(),
@@ -371,6 +373,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                 warn!("[relay-rs] failed to restore persisted relay state: {error}");
                 RelayState {
                     sessions: HashMap::new(),
+                    desktop_token_index: HashMap::new(),
                     device_token_index: HashMap::new(),
                     rate_buckets: HashMap::new(),
                     pending_join_waiters: 0,
@@ -393,6 +396,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
     } else {
         RelayState {
             sessions: HashMap::new(),
+            desktop_token_index: HashMap::new(),
             device_token_index: HashMap::new(),
             rate_buckets: HashMap::new(),
             pending_join_waiters: 0,
@@ -765,6 +769,13 @@ fn build_device_token_index(
     token_index
 }
 
+fn build_desktop_token_index(sessions: &HashMap<String, SessionRecord>) -> HashMap<String, String> {
+    sessions
+        .iter()
+        .map(|(session_id, session)| (session.desktop_session_token.clone(), session_id.clone()))
+        .collect()
+}
+
 async fn persist_session_if_needed(state: &SharedRelayState, session_id: &str) {
     let Some(persistence) = state.persistence.as_ref().cloned() else {
         return;
@@ -818,15 +829,21 @@ async fn refresh_sessions_from_persistence(state: &SharedRelayState, force: bool
     relay.last_persistence_refresh_at_ms = now;
 
     for (session_id, loaded_session) in loaded_sessions {
+        let mut replaced_desktop_token: Option<String> = None;
         match relay.sessions.get_mut(&session_id) {
             Some(existing) => {
                 if existing.desktop_socket.is_none() && existing.mobile_sockets.is_empty() {
+                    replaced_desktop_token = Some(existing.desktop_session_token.clone());
                     *existing = loaded_session;
                 }
             }
             None => {
                 relay.sessions.insert(session_id.clone(), loaded_session);
             }
+        }
+
+        if let Some(token) = replaced_desktop_token {
+            relay.desktop_token_index.remove(&token);
         }
 
         let device_tokens = relay
@@ -852,6 +869,17 @@ async fn refresh_sessions_from_persistence(state: &SharedRelayState, force: bool
                     device_id,
                     expires_at_ms: None,
                 });
+        }
+
+        if let Some(desktop_token) = relay
+            .sessions
+            .get(&session_id)
+            .map(|session| session.desktop_session_token.clone())
+        {
+            relay
+                .desktop_token_index
+                .entry(desktop_token)
+                .or_insert(session_id.clone());
         }
     }
 
@@ -1164,6 +1192,7 @@ async fn pair_start(
         .as_deref()
         .and_then(normalize_relay_web_socket_url)
         .unwrap_or_else(|| state.config.websocket_url());
+    let desktop_session_token = request.desktop_session_token.clone();
     let idle_timeout_seconds = request
         .idle_timeout_seconds
         .unwrap_or(1_800)
@@ -1186,7 +1215,7 @@ async fn pair_start(
             join_token: request.join_token,
             join_token_expires_at_ms,
             join_token_used_at_ms: None,
-            desktop_session_token: request.desktop_session_token,
+            desktop_session_token: desktop_session_token.clone(),
             relay_web_socket_url: relay_web_socket_url.clone(),
             idle_timeout_seconds,
             created_at_ms: now_ms(),
@@ -1200,6 +1229,10 @@ async fn pair_start(
             command_sequence_by_connection_id: HashMap::new(),
             pending_join_request: None,
         },
+    );
+    relay.desktop_token_index.insert(
+        desktop_session_token,
+        request.session_id.clone(),
     );
 
     info!(
@@ -2042,6 +2075,11 @@ async fn handle_socket(
         return;
     };
 
+    let mut ws_message_rate_bucket = RateBucket {
+        count: 0,
+        window_ends_at_ms: now_ms() + 60_000,
+    };
+
     loop {
         tokio::select! {
             changed = shutdown_rx.changed() => {
@@ -2062,6 +2100,21 @@ async fn handle_socket(
                         json!({
                             "type": "disconnect",
                             "reason": "message_too_large"
+                        })
+                        .to_string(),
+                    );
+                    break;
+                }
+
+                if !consume_rate_bucket(
+                    &mut ws_message_rate_bucket,
+                    state.config.max_ws_messages_per_minute,
+                ) {
+                    let _ = try_send_payload(
+                        &tx,
+                        json!({
+                            "type": "disconnect",
+                            "reason": "socket_rate_limited"
                         })
                         .to_string(),
                     );
@@ -2557,15 +2610,7 @@ fn consume_device_command_budget(
             count: 0,
             window_ends_at_ms: now + 60_000,
         });
-
-    if now >= bucket.window_ends_at_ms {
-        bucket.count = 1;
-        bucket.window_ends_at_ms = now + 60_000;
-        return true;
-    }
-
-    bucket.count += 1;
-    bucket.count <= max_commands_per_minute
+    consume_rate_bucket(bucket, max_commands_per_minute)
 }
 
 fn consume_session_command_budget(
@@ -2583,15 +2628,7 @@ fn consume_session_command_budget(
             count: 0,
             window_ends_at_ms: now + 60_000,
         });
-
-    if now >= bucket.window_ends_at_ms {
-        bucket.count = 1;
-        bucket.window_ends_at_ms = now + 60_000;
-        return true;
-    }
-
-    bucket.count += 1;
-    bucket.count <= max_commands_per_minute
+    consume_rate_bucket(bucket, max_commands_per_minute)
 }
 
 fn consume_snapshot_request_budget(
@@ -2611,15 +2648,23 @@ fn consume_snapshot_request_budget(
             count: 0,
             window_ends_at_ms: now + 60_000,
         });
+    consume_rate_bucket(bucket, max_requests_per_minute)
+}
 
+fn consume_rate_bucket(bucket: &mut RateBucket, limit_per_minute: usize) -> bool {
+    if limit_per_minute == 0 {
+        return false;
+    }
+
+    let now = now_ms();
     if now >= bucket.window_ends_at_ms {
         bucket.count = 1;
         bucket.window_ends_at_ms = now + 60_000;
         return true;
     }
 
-    bucket.count += 1;
-    bucket.count <= max_requests_per_minute
+    bucket.count = bucket.count.saturating_add(1);
+    bucket.count <= limit_per_minute
 }
 
 fn consume_connection_command_sequence(
@@ -2878,10 +2923,10 @@ fn resolve_auth_context(relay: &RelayState, token: &str) -> Option<AuthContext> 
         return None;
     }
 
-    for session in relay.sessions.values() {
-        if safe_token_equals(&session.desktop_session_token, token) {
+    if let Some(session_id) = relay.desktop_token_index.get(token) {
+        if relay.sessions.contains_key(session_id) {
             return Some(AuthContext::Desktop {
-                session_id: session.session_id.clone(),
+                session_id: session_id.clone(),
             });
         }
     }
@@ -3040,6 +3085,7 @@ fn close_session(relay: &mut RelayState, session_id: &str, reason: &str) {
     {
         relay.device_token_index.remove(&token);
     }
+    relay.desktop_token_index.remove(&session.desktop_session_token);
 
     if let Some(desktop) = session.desktop_socket {
         request_socket_disconnect(&desktop, reason);
@@ -3171,6 +3217,7 @@ mod tests {
         SharedRelayState {
             config: RelayConfig::from_env(),
             inner: Arc::new(Mutex::new(RelayState {
+                desktop_token_index: build_desktop_token_index(&sessions),
                 device_token_index: build_device_token_index(&sessions),
                 sessions,
                 rate_buckets: HashMap::new(),
@@ -3278,6 +3325,27 @@ mod tests {
             .expect("device token context should exist");
         assert_eq!(token_context.session_id, "session-1");
         assert_eq!(token_context.device_id, "device-1");
+
+        let desktop_index = build_desktop_token_index(&restored_sessions);
+        assert_eq!(
+            desktop_index.get("desktop-token").map(String::as_str),
+            Some("session-1")
+        );
+    }
+
+    #[test]
+    fn consume_rate_bucket_enforces_limit_and_recovers_next_window() {
+        let mut bucket = RateBucket {
+            count: 0,
+            window_ends_at_ms: now_ms() + 60_000,
+        };
+
+        assert!(consume_rate_bucket(&mut bucket, 2));
+        assert!(consume_rate_bucket(&mut bucket, 2));
+        assert!(!consume_rate_bucket(&mut bucket, 2));
+
+        bucket.window_ends_at_ms = now_ms() - 1;
+        assert!(consume_rate_bucket(&mut bucket, 2));
     }
 
     #[tokio::test]

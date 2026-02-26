@@ -22,12 +22,14 @@ This MVP delivers:
 - Mobile session tokens rotate on every successful websocket authentication.
 - Relay uses constant-time token comparison and strict token format validation.
 - Pairing endpoints are rate-limited per client IP.
+- Authenticated websocket connections are rate-limited by inbound message throughput.
 - Mobile command envelopes are validated and rate-limited per device and per session.
 - Snapshot requests are rate-limited per device.
 - Device connections per session are capped.
 - Global websocket admission is capped.
 - Per-socket outbound queues are bounded to enforce relay backpressure.
 - Slow-consumer sockets are proactively disconnected (`reason: slow_consumer`) so clients reconnect and request a fresh snapshot instead of receiving stale partial streams.
+- Desktop websocket auth uses token indexing (no linear scan over sessions).
 - Relay logs avoid raw token output and truncate session identifiers.
 - Sessions auto-expire through idle timeout and retention cleanup.
 
