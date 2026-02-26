@@ -87,6 +87,8 @@ struct RemoteControlSheet: View {
                     model.stopRemoteControlSession()
                 }
             }
+
+            trustedDevicesSection
         }
     }
 
@@ -148,6 +150,45 @@ struct RemoteControlSheet: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(.orange.opacity(0.25), lineWidth: 1)
         )
+    }
+
+    private var trustedDevicesSection: some View {
+        VStack(alignment: .leading, spacing: tokens.spacing.small) {
+            Text("Trusted Devices")
+                .font(.headline)
+
+            if model.remoteControlStatus.trustedDevices.isEmpty {
+                Text("No trusted devices paired yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.remoteControlStatus.trustedDevices) { device in
+                    HStack(alignment: .top, spacing: tokens.spacing.small) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(device.deviceName)
+                                .font(.subheadline.weight(.semibold))
+                            Text(device.connected ? "Connected now" : "Offline")
+                                .font(.caption)
+                                .foregroundStyle(device.connected ? .green : .secondary)
+                            Text("Last seen \(remoteTimestamp(device.lastSeenAt))")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: tokens.spacing.small)
+                        Button("Revoke", role: .destructive) {
+                            model.revokeRemoteControlTrustedDevice(device.deviceID)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.secondary.opacity(0.08))
+                    )
+                }
+            }
+        }
     }
 
     private func qrCodeCard(url: URL) -> some View {

@@ -5,6 +5,9 @@ import XCTest
 private actor RecordingRelayRegistrar: RemoteControlRelayRegistering {
     private(set) var requests: [RemoteControlPairStartRequest] = []
     private(set) var stopRequests: [RemoteControlPairStopRequest] = []
+    private(set) var listRequests: [RemoteControlDevicesListRequest] = []
+    private(set) var revokeRequests: [RemoteControlDeviceRevokeRequest] = []
+    var devicesResponse: [RemoteControlTrustedDevice] = []
 
     func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse {
         requests.append(request)
@@ -22,6 +25,29 @@ private actor RecordingRelayRegistrar: RemoteControlRelayRegistering {
 
     func latestStopRequest() -> RemoteControlPairStopRequest? {
         stopRequests.last
+    }
+
+    func listDevices(_ request: RemoteControlDevicesListRequest) async throws -> RemoteControlDevicesListResponse {
+        listRequests.append(request)
+        return RemoteControlDevicesListResponse(accepted: true, devices: devicesResponse)
+    }
+
+    func revokeDevice(_ request: RemoteControlDeviceRevokeRequest) async throws -> RemoteControlDeviceRevokeResponse {
+        revokeRequests.append(request)
+        devicesResponse.removeAll(where: { $0.deviceID == request.deviceID })
+        return RemoteControlDeviceRevokeResponse(accepted: true)
+    }
+
+    func latestListRequest() -> RemoteControlDevicesListRequest? {
+        listRequests.last
+    }
+
+    func latestRevokeRequest() -> RemoteControlDeviceRevokeRequest? {
+        revokeRequests.last
+    }
+
+    func setDevicesResponse(_ devices: [RemoteControlTrustedDevice]) {
+        devicesResponse = devices
     }
 }
 
@@ -79,5 +105,47 @@ final class RemoteControlBrokerTests: XCTestCase {
         XCTAssertEqual(status.phase, .disconnected)
         XCTAssertEqual(status.disconnectReason, "Stopped by test")
         XCTAssertNil(status.session)
+    }
+
+    func testRefreshAndRevokeTrustedDevicesUpdatesStatus() async throws {
+        let registrar = RecordingRelayRegistrar()
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        let descriptor = try await broker.startSession(
+            joinBaseURL: XCTUnwrap(URL(string: "https://remote.codexchat.example/rc")),
+            relayWebSocketURL: XCTUnwrap(URL(string: "wss://relay.codexchat.example/ws"))
+        )
+
+        let now = Date()
+        await registrar.setDevicesResponse([
+            RemoteControlTrustedDevice(
+                deviceID: "device-1",
+                deviceName: "Bikram iPhone",
+                connected: true,
+                joinedAt: now.addingTimeInterval(-60),
+                lastSeenAt: now
+            ),
+        ])
+
+        let devices = try await broker.refreshTrustedDevices()
+        XCTAssertEqual(devices.count, 1)
+
+        let listRequest = await registrar.latestListRequest()
+        XCTAssertEqual(listRequest?.sessionID, descriptor.sessionID)
+        XCTAssertEqual(listRequest?.relayWebSocketURL, descriptor.relayWebSocketURL.absoluteString)
+        XCTAssertEqual(listRequest?.desktopSessionToken, descriptor.desktopSessionToken)
+
+        var status = await broker.currentStatus()
+        XCTAssertEqual(status.trustedDevices.count, 1)
+        XCTAssertEqual(status.connectedDeviceCount, 1)
+
+        try await broker.revokeTrustedDevice(deviceID: "device-1")
+
+        let revokeRequest = await registrar.latestRevokeRequest()
+        XCTAssertEqual(revokeRequest?.sessionID, descriptor.sessionID)
+        XCTAssertEqual(revokeRequest?.deviceID, "device-1")
+
+        status = await broker.currentStatus()
+        XCTAssertEqual(status.trustedDevices.count, 0)
+        XCTAssertEqual(status.connectedDeviceCount, 0)
     }
 }

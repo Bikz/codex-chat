@@ -126,6 +126,16 @@ extension AppModel {
 
     func refreshRemoteControlStatus() async {
         remoteControlStatus = await remoteControlBroker.currentStatus()
+        guard remoteControlStatus.phase == .active else {
+            return
+        }
+
+        do {
+            _ = try await remoteControlBroker.refreshTrustedDevices()
+            remoteControlStatus = await remoteControlBroker.currentStatus()
+        } catch {
+            appendLog(.warning, "Failed to refresh remote trusted devices: \(error.localizedDescription)")
+        }
     }
 
     func updateRemoteControlConnectedDeviceCount(_ count: Int) {
@@ -133,6 +143,22 @@ extension AppModel {
             guard let self else { return }
             await remoteControlBroker.updateConnectedDeviceCount(count)
             await refreshRemoteControlStatus()
+        }
+    }
+
+    func revokeRemoteControlTrustedDevice(_ deviceID: String) {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                try await remoteControlBroker.revokeTrustedDevice(deviceID: deviceID)
+                await refreshRemoteControlStatus()
+                remoteControlStatusMessage = "Revoked remote device access."
+            } catch {
+                await refreshRemoteControlStatus()
+                remoteControlStatusMessage = "Failed to revoke remote device: \(error.localizedDescription)"
+                appendLog(.warning, "Failed to revoke remote device \(deviceID): \(error.localizedDescription)")
+            }
         }
     }
 

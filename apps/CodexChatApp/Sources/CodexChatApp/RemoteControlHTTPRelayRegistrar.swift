@@ -71,6 +71,65 @@ actor RemoteControlHTTPRelayRegistrar: RemoteControlRelayRegistering {
         return RemoteControlPairStopResponse(accepted: decoded.accepted)
     }
 
+    func listDevices(_ request: RemoteControlDevicesListRequest) async throws -> RemoteControlDevicesListResponse {
+        let relayWebSocketURL = try parsedRelayWebSocketURL(from: request.relayWebSocketURL)
+        let endpointURL = try pairEndpointURL(from: relayWebSocketURL, path: "/devices/list")
+
+        var urlRequest = URLRequest(url: endpointURL)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 15
+        urlRequest.httpBody = try jsonEncoder.encode(request)
+
+        let (data, response) = try await urlSession.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            let details = String(data: data, encoding: .utf8) ?? "Unexpected relay response"
+            throw NSError(
+                domain: "CodexChat.RemoteControlRelay",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: details]
+            )
+        }
+
+        let decoded = try jsonDecoder.decode(RelayDevicesListResponse.self, from: data)
+        return RemoteControlDevicesListResponse(
+            accepted: decoded.accepted,
+            devices: decoded.devices
+        )
+    }
+
+    func revokeDevice(_ request: RemoteControlDeviceRevokeRequest) async throws -> RemoteControlDeviceRevokeResponse {
+        let relayWebSocketURL = try parsedRelayWebSocketURL(from: request.relayWebSocketURL)
+        let endpointURL = try pairEndpointURL(from: relayWebSocketURL, path: "/devices/revoke")
+
+        var urlRequest = URLRequest(url: endpointURL)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 15
+        urlRequest.httpBody = try jsonEncoder.encode(request)
+
+        let (data, response) = try await urlSession.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            let details = String(data: data, encoding: .utf8) ?? "Unexpected relay response"
+            throw NSError(
+                domain: "CodexChat.RemoteControlRelay",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: details]
+            )
+        }
+
+        let decoded = try jsonDecoder.decode(RelayDeviceRevokeResponse.self, from: data)
+        return RemoteControlDeviceRevokeResponse(accepted: decoded.accepted)
+    }
+
     private func parsedRelayWebSocketURL(from rawValue: String) throws -> URL {
         guard let url = URL(string: rawValue) else {
             throw URLError(.badURL)
@@ -106,5 +165,14 @@ private struct RelayPairStartResponse: Decodable {
 }
 
 private struct RelayPairStopResponse: Decodable {
+    let accepted: Bool
+}
+
+private struct RelayDevicesListResponse: Decodable {
+    let accepted: Bool
+    let devices: [RemoteControlTrustedDevice]
+}
+
+private struct RelayDeviceRevokeResponse: Decodable {
     let accepted: Bool
 }

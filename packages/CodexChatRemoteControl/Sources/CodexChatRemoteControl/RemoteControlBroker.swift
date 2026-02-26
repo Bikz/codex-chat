@@ -65,9 +65,96 @@ public struct RemoteControlPairStopResponse: Codable, Sendable, Equatable {
     }
 }
 
+public struct RemoteControlTrustedDevice: Codable, Sendable, Equatable, Identifiable {
+    public var deviceID: String
+    public var deviceName: String
+    public var connected: Bool
+    public var joinedAt: Date
+    public var lastSeenAt: Date
+
+    public var id: String {
+        deviceID
+    }
+
+    public init(
+        deviceID: String,
+        deviceName: String,
+        connected: Bool,
+        joinedAt: Date,
+        lastSeenAt: Date
+    ) {
+        self.deviceID = deviceID
+        self.deviceName = deviceName
+        self.connected = connected
+        self.joinedAt = joinedAt
+        self.lastSeenAt = lastSeenAt
+    }
+}
+
+public struct RemoteControlDevicesListRequest: Codable, Sendable, Equatable {
+    public var schemaVersion: Int
+    public var sessionID: String
+    public var relayWebSocketURL: String
+    public var desktopSessionToken: String
+
+    public init(
+        schemaVersion: Int = RemoteControlProtocol.schemaVersion,
+        sessionID: String,
+        relayWebSocketURL: String,
+        desktopSessionToken: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.sessionID = sessionID
+        self.relayWebSocketURL = relayWebSocketURL
+        self.desktopSessionToken = desktopSessionToken
+    }
+}
+
+public struct RemoteControlDevicesListResponse: Codable, Sendable, Equatable {
+    public var accepted: Bool
+    public var devices: [RemoteControlTrustedDevice]
+
+    public init(accepted: Bool, devices: [RemoteControlTrustedDevice]) {
+        self.accepted = accepted
+        self.devices = devices
+    }
+}
+
+public struct RemoteControlDeviceRevokeRequest: Codable, Sendable, Equatable {
+    public var schemaVersion: Int
+    public var sessionID: String
+    public var relayWebSocketURL: String
+    public var desktopSessionToken: String
+    public var deviceID: String
+
+    public init(
+        schemaVersion: Int = RemoteControlProtocol.schemaVersion,
+        sessionID: String,
+        relayWebSocketURL: String,
+        desktopSessionToken: String,
+        deviceID: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.sessionID = sessionID
+        self.relayWebSocketURL = relayWebSocketURL
+        self.desktopSessionToken = desktopSessionToken
+        self.deviceID = deviceID
+    }
+}
+
+public struct RemoteControlDeviceRevokeResponse: Codable, Sendable, Equatable {
+    public var accepted: Bool
+
+    public init(accepted: Bool) {
+        self.accepted = accepted
+    }
+}
+
 public protocol RemoteControlRelayRegistering: Sendable {
     func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse
     func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse
+    func listDevices(_ request: RemoteControlDevicesListRequest) async throws -> RemoteControlDevicesListResponse
+    func revokeDevice(_ request: RemoteControlDeviceRevokeRequest) async throws -> RemoteControlDeviceRevokeResponse
 }
 
 public struct NoopRemoteControlRelayRegistrar: RemoteControlRelayRegistering {
@@ -82,6 +169,16 @@ public struct NoopRemoteControlRelayRegistrar: RemoteControlRelayRegistering {
         _ = request
         return RemoteControlPairStopResponse(accepted: true)
     }
+
+    public func listDevices(_ request: RemoteControlDevicesListRequest) async throws -> RemoteControlDevicesListResponse {
+        _ = request
+        return RemoteControlDevicesListResponse(accepted: true, devices: [])
+    }
+
+    public func revokeDevice(_ request: RemoteControlDeviceRevokeRequest) async throws -> RemoteControlDeviceRevokeResponse {
+        _ = request
+        return RemoteControlDeviceRevokeResponse(accepted: true)
+    }
 }
 
 public enum RemoteControlBrokerPhase: String, Sendable {
@@ -93,17 +190,20 @@ public struct RemoteControlBrokerStatus: Sendable, Equatable {
     public var phase: RemoteControlBrokerPhase
     public var session: RemoteControlSessionDescriptor?
     public var connectedDeviceCount: Int
+    public var trustedDevices: [RemoteControlTrustedDevice]
     public var disconnectReason: String?
 
     public init(
         phase: RemoteControlBrokerPhase,
         session: RemoteControlSessionDescriptor?,
         connectedDeviceCount: Int,
+        trustedDevices: [RemoteControlTrustedDevice] = [],
         disconnectReason: String?
     ) {
         self.phase = phase
         self.session = session
         self.connectedDeviceCount = connectedDeviceCount
+        self.trustedDevices = trustedDevices
         self.disconnectReason = disconnectReason
     }
 }
@@ -115,6 +215,7 @@ public actor RemoteControlBroker {
         phase: .disconnected,
         session: nil,
         connectedDeviceCount: 0,
+        trustedDevices: [],
         disconnectReason: nil
     )
     private var idleTimeoutTask: Task<Void, Never>?
@@ -169,6 +270,7 @@ public actor RemoteControlBroker {
             phase: .active,
             session: effectiveDescriptor,
             connectedDeviceCount: 0,
+            trustedDevices: [],
             disconnectReason: nil
         )
 
@@ -182,6 +284,51 @@ public actor RemoteControlBroker {
             return
         }
         status.connectedDeviceCount = max(0, count)
+        bumpActivity()
+    }
+
+    @discardableResult
+    public func refreshTrustedDevices() async throws -> [RemoteControlTrustedDevice] {
+        guard let session = status.session else {
+            status.trustedDevices = []
+            status.connectedDeviceCount = 0
+            return []
+        }
+
+        let request = RemoteControlDevicesListRequest(
+            sessionID: session.sessionID,
+            relayWebSocketURL: session.relayWebSocketURL.absoluteString,
+            desktopSessionToken: session.desktopSessionToken
+        )
+        let response = try await relayRegistrar.listDevices(request)
+        guard response.accepted else {
+            throw URLError(.cannotConnectToHost)
+        }
+
+        status.trustedDevices = response.devices
+        status.connectedDeviceCount = response.devices.filter(\.connected).count
+        bumpActivity()
+        return response.devices
+    }
+
+    public func revokeTrustedDevice(deviceID: String) async throws {
+        guard let session = status.session else {
+            throw URLError(.badURL)
+        }
+
+        let request = RemoteControlDeviceRevokeRequest(
+            sessionID: session.sessionID,
+            relayWebSocketURL: session.relayWebSocketURL.absoluteString,
+            desktopSessionToken: session.desktopSessionToken,
+            deviceID: deviceID
+        )
+        let response = try await relayRegistrar.revokeDevice(request)
+        guard response.accepted else {
+            throw URLError(.cannotConnectToHost)
+        }
+
+        status.trustedDevices.removeAll(where: { $0.deviceID == deviceID })
+        status.connectedDeviceCount = status.trustedDevices.filter(\.connected).count
         bumpActivity()
     }
 
@@ -221,6 +368,7 @@ public actor RemoteControlBroker {
             phase: .disconnected,
             session: nil,
             connectedDeviceCount: 0,
+            trustedDevices: [],
             disconnectReason: reason
         )
     }
