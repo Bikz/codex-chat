@@ -546,6 +546,7 @@ async fn sync_session_bus_subscription(state: &SharedRelayState, session_id: &st
         let subject = nats_session_subject(&bus, &session_id_owned);
         let state_clone = state.clone();
         let bus_clone = bus.clone();
+        let local_instance_id = bus.instance_id.clone();
         let handle = tokio::spawn(async move {
             let mut subscription = match bus_clone.client.subscribe(subject.clone()).await {
                 Ok(subscription) => subscription,
@@ -556,7 +557,7 @@ async fn sync_session_bus_subscription(state: &SharedRelayState, session_id: &st
             };
 
             while let Some(message) = subscription.next().await {
-                handle_session_envelope(&state_clone, &bus_clone, &message.payload).await;
+                handle_session_envelope(&state_clone, &local_instance_id, &message.payload).await;
             }
         });
         relay
@@ -583,7 +584,7 @@ async fn sync_session_bus_subscription(state: &SharedRelayState, session_id: &st
 
 async fn handle_session_envelope(
     state: &SharedRelayState,
-    bus: &RelayCrossInstanceBus,
+    local_instance_id: &str,
     payload: &[u8],
 ) {
     let Ok(envelope) = serde_json::from_slice::<CrossInstanceEnvelope>(payload) else {
@@ -592,7 +593,7 @@ async fn handle_session_envelope(
     if envelope.schema_version != 1 {
         return;
     }
-    if envelope.source_instance_id == bus.instance_id {
+    if envelope.source_instance_id == local_instance_id {
         return;
     }
 
@@ -2691,6 +2692,55 @@ fn error_response(status: StatusCode, code: &str, message: &str) -> axum::respon
 mod tests {
     use super::*;
 
+    fn make_test_state_with_session(session: SessionRecord) -> SharedRelayState {
+        let mut sessions = HashMap::new();
+        let session_id = session.session_id.clone();
+        sessions.insert(session_id, session);
+
+        SharedRelayState {
+            config: RelayConfig::from_env(),
+            inner: Arc::new(Mutex::new(RelayState {
+                device_token_index: build_device_token_index(&sessions),
+                sessions,
+                rate_buckets: HashMap::new(),
+                pending_join_waiters: 0,
+                last_persistence_refresh_at_ms: 0,
+                bus_subscribed_sessions: HashSet::new(),
+                bus_subscription_tasks: HashMap::new(),
+            })),
+            persistence: None,
+            cross_instance_bus: None,
+        }
+    }
+
+    fn make_test_session(session_id: &str, device_id: &str, token: &str) -> SessionRecord {
+        SessionRecord {
+            session_id: session_id.to_string(),
+            join_token: "join-token".to_string(),
+            join_token_expires_at_ms: now_ms() + 60_000,
+            join_token_used_at_ms: Some(now_ms()),
+            desktop_session_token: "desktop-token".to_string(),
+            relay_web_socket_url: "ws://localhost:8787/ws".to_string(),
+            idle_timeout_seconds: 1_800,
+            created_at_ms: now_ms(),
+            last_activity_at_ms: now_ms(),
+            desktop_socket: None,
+            mobile_sockets: HashMap::new(),
+            devices: HashMap::from([(
+                device_id.to_string(),
+                DeviceRecord {
+                    current_session_token: token.to_string(),
+                    name: "Test Phone".to_string(),
+                    joined_at_ms: now_ms(),
+                    last_seen_at_ms: now_ms(),
+                },
+            )]),
+            command_rate_buckets: HashMap::new(),
+            command_sequence_by_connection_id: HashMap::new(),
+            pending_join_request: None,
+        }
+    }
+
     #[test]
     fn persisted_runtime_round_trip_preserves_sessions_and_tokens() {
         let mut sessions = HashMap::new();
@@ -2743,5 +2793,64 @@ mod tests {
             .expect("device token context should exist");
         assert_eq!(token_context.session_id, "session-1");
         assert_eq!(token_context.device_id, "device-1");
+    }
+
+    #[tokio::test]
+    async fn cross_instance_targeted_revoke_removes_device_tokens_locally() {
+        let session_id = "session-1";
+        let state = make_test_state_with_session(make_test_session(
+            session_id,
+            "device-1",
+            "device-token-1",
+        ));
+
+        let envelope = CrossInstanceEnvelope {
+            schema_version: 1,
+            session_id: session_id.to_string(),
+            source_instance_id: "remote-instance".to_string(),
+            target: "mobile".to_string(),
+            target_device_id: Some("device-1".to_string()),
+            payload: json!({
+                "type": "disconnect",
+                "reason": "device_revoked"
+            })
+            .to_string(),
+        };
+        let payload = serde_json::to_vec(&envelope).expect("encode envelope");
+        handle_session_envelope(&state, "local-instance", &payload).await;
+
+        let relay = state.inner.lock().await;
+        let session = relay.sessions.get(session_id).expect("session exists");
+        assert!(session.devices.is_empty());
+        assert!(relay.device_token_index.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cross_instance_disconnect_closes_local_stale_session() {
+        let session_id = "session-1";
+        let state = make_test_state_with_session(make_test_session(
+            session_id,
+            "device-1",
+            "device-token-1",
+        ));
+
+        let envelope = CrossInstanceEnvelope {
+            schema_version: 1,
+            session_id: session_id.to_string(),
+            source_instance_id: "remote-instance".to_string(),
+            target: "mobile".to_string(),
+            target_device_id: None,
+            payload: json!({
+                "type": "disconnect",
+                "reason": "stopped_by_desktop"
+            })
+            .to_string(),
+        };
+        let payload = serde_json::to_vec(&envelope).expect("encode envelope");
+        handle_session_envelope(&state, "local-instance", &payload).await;
+
+        let relay = state.inner.lock().await;
+        assert!(!relay.sessions.contains_key(session_id));
+        assert!(relay.device_token_index.is_empty());
     }
 }
