@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOAD_RESULT_PATH="${RELAY_STAGE_GATE_LOAD_RESULT_PATH:-$REPO_ROOT/output/remote-control/relay-load-result.json}"
 SOAK_SUMMARY_PATH="${RELAY_STAGE_GATE_SOAK_SUMMARY_PATH:-$REPO_ROOT/output/remote-control/relay-soak-summary.json}"
 REPORT_PATH="${RELAY_STAGE_GATE_REPORT_PATH:-$REPO_ROOT/output/remote-control/stage-gate-report.md}"
+COMPAT_REQUIRED="${RELAY_STAGE_GATE_REQUIRE_COMPAT:-1}"
 
 if [[ ! -f "$LOAD_RESULT_PATH" ]]; then
   echo "error: missing load result artifact at $LOAD_RESULT_PATH" >&2
@@ -24,8 +25,20 @@ if ! "$REPO_ROOT/scripts/remote-control-relay-gke-validate.sh" >/tmp/remote-cont
   exit 1
 fi
 
+COMPAT_STATUS="skipped"
+if [[ "$COMPAT_REQUIRED" == "1" ]]; then
+  if ! "$REPO_ROOT/scripts/remote-control-relay-compat.sh" >/tmp/remote-control-compat.log 2>&1; then
+    echo "error: relay compatibility gate failed" >&2
+    cat /tmp/remote-control-compat.log >&2
+    exit 1
+  fi
+  COMPAT_STATUS="pass"
+fi
+
+RELAY_STAGE_GATE_COMPAT_STATUS="$COMPAT_STATUS" \
 python3 - "$LOAD_RESULT_PATH" "$SOAK_SUMMARY_PATH" "$REPORT_PATH" <<'PY'
 import json
+import os
 import pathlib
 import sys
 from datetime import datetime, timezone
@@ -33,6 +46,7 @@ from datetime import datetime, timezone
 load_path = pathlib.Path(sys.argv[1])
 soak_path = pathlib.Path(sys.argv[2])
 report_path = pathlib.Path(sys.argv[3])
+compat_status = os.environ.get("RELAY_STAGE_GATE_COMPAT_STATUS", "skipped")
 
 load = json.loads(load_path.read_text(encoding="utf-8"))
 soak = json.loads(soak_path.read_text(encoding="utf-8"))
@@ -46,6 +60,10 @@ checks = [
     ("Soak failing loops", int(soak.get("failing_loops", 1)) == 0, f"failing_loops={soak.get('failing_loops')}"),
     ("Soak total errors", int(soak.get("total_errors", 1)) == 0, f"total_errors={soak.get('total_errors')}"),
 ]
+if compat_status == "pass":
+    checks.insert(0, ("Node/Rust compatibility gate", True, "status=pass"))
+elif compat_status == "skipped":
+    checks.insert(0, ("Node/Rust compatibility gate", True, "status=skipped"))
 
 passed = [entry for entry in checks if entry[1]]
 failed = [entry for entry in checks if not entry[1]]

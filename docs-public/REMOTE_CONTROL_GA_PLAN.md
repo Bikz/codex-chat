@@ -300,6 +300,7 @@ Scope:
 Implemented so far (2026-02-26):
 - Added local stage-gate automation script `scripts/remote-control-stage-gate.sh`.
 - Stage gate checks now validate:
+  - Node-vs-Rust compatibility gate status
   - load artifact status and budgets
   - soak summary status and failure counts
   - GKE manifest validation preflight
