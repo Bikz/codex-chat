@@ -12,6 +12,7 @@
     "remote:relay:soak": "bash scripts/remote-control-relay-soak.sh",
     "remote:relay:gate": "bash scripts/remote-control-relay-gate.sh",
     "remote:relay:load:gated": "make remote-control-load-gated",
+    "remote:relay:gke:validate": "bash scripts/remote-control-relay-gke-validate.sh",
     "swift:build": "bash scripts/swift-build-all.sh",
     "swift:test": "bash scripts/swift-test-all.sh",
     "check": "pnpm run swift:build && pnpm run swift:test",

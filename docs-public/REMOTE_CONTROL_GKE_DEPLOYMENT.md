@@ -64,6 +64,14 @@ kubectl apply -f /tmp/relay-secrets.yaml
 kubectl apply -k infra/remote-control-relay/gke
 ```
 
+Optional preflight validation:
+
+```bash
+make remote-control-gke-validate
+```
+
+If no kube context is configured, the validator still renders and structure-checks manifests locally and skips cluster API discovery.
+
 5. Verify rollout
 
 ```bash

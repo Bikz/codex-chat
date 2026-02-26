@@ -19,6 +19,12 @@ docker build -t remote-control-relay-rust:local .
 docker run --rm -p 8787:8787 remote-control-relay-rust:local
 ```
 
+Validate the production GKE bundle:
+
+```bash
+make remote-control-gke-validate
+```
+
 ## Endpoints
 
 - `POST /pair/start`
