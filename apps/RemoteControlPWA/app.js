@@ -540,6 +540,10 @@ function onSocketMessage(event) {
       requestSnapshot("command_replay_rejected");
       return;
     }
+    if (errorCode === "snapshot_rate_limited") {
+      setStatus("Sync requests are happening too often. Waiting before requesting another snapshot.", "warn");
+      return;
+    }
     setStatus(errorMessage, "warn");
     return;
   }

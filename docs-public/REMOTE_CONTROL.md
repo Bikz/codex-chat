@@ -22,8 +22,10 @@ This MVP delivers:
 - Mobile session tokens rotate on every successful websocket authentication.
 - Relay uses constant-time token comparison and strict token format validation.
 - Pairing endpoints are rate-limited per client IP.
-- Mobile command envelopes are validated and rate-limited per device.
+- Mobile command envelopes are validated and rate-limited per device and per session.
+- Snapshot requests are rate-limited per device.
 - Device connections per session are capped.
+- Global websocket admission is capped.
 - Relay logs avoid raw token output and truncate session identifiers.
 - Sessions auto-expire through idle timeout and retention cleanup.
 
@@ -39,10 +41,12 @@ This MVP delivers:
   - `RemoteControlSheet` with QR code, copy link, and stop controls
   - `AppModel+RemoteControl` outbound websocket client, multi-thread snapshot + delta event streaming, and remote command ingestion
 - `apps/RemoteControlRelayRust`
-  - `POST /pair/start`, `POST /pair/join`, `POST /pair/refresh`, `GET /healthz`, `GET /ws` (then `relay.auth` websocket message)
-  - `POST /pair/stop`, `POST /devices/list`, `POST /devices/revoke`
-  - Pass-through websocket routing between desktop/mobile with payload validation and per-device command throttling
+  - `POST /pair/start`, `POST /pair/join`, `POST /pair/refresh`, `POST /pair/stop`, `POST /devices/list`, `POST /devices/revoke`
+  - `GET /healthz`, `GET /metricsz`, `GET /ws` (then `relay.auth` websocket message)
+  - Pass-through websocket routing between desktop/mobile with payload validation and per-device/per-session command throttling
+  - Per-device snapshot request throttling for reconnect abuse control
   - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
+  - Optional NATS cross-instance routing (`NATS_URL`, `NATS_SUBJECT_PREFIX`) for stateless relay fanout
 - `apps/RemoteControlPWA`
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)
   - Two-pane project/thread shell
@@ -87,11 +91,11 @@ Set environment variables before launching Codex Chat:
 
 - Remote approvals are off by default and must be explicitly enabled in the desktop Remote Control sheet.
 - iOS/PWA backgrounding can drop sockets; reconnect + snapshot is required.
-- Cross-instance websocket fanout is not implemented yet; horizontal relay routing still depends on sticky placement.
 - Desktop snapshot payloads are size-bounded for relay safety, so very large transcripts stream incrementally instead of all-at-once.
 
 ## Next hardening steps
 
-- Cross-instance routing layer (NATS JetStream) for true stateless relay pods.
+- Multi-instance soak/load tests with Redis + NATS under reconnect churn.
+- OpenTelemetry metrics/tracing export and SLO alerting runbooks.
 - Optional end-to-end payload encryption between desktop and phone.
 - Passkey-based account option for multi-device identity over time.
