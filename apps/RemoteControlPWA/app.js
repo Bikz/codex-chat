@@ -14,7 +14,9 @@ const state = {
   lastSyncedAt: null,
   isSyncStale: false,
   nextOutgoingSeq: 1,
+  awaitingGapSnapshot: false,
   canApproveRemotely: false,
+  queuedCommands: [],
   projects: [],
   threads: [],
   pendingApprovals: [],
@@ -489,8 +491,6 @@ function processSequence(seq) {
   }
 
   if (seq > expectedNext) {
-    state.lastIncomingSeq = seq;
-    dom.seqValue.textContent = String(seq);
     return "gap";
   }
 
@@ -514,8 +514,10 @@ function onSocketMessage(event) {
     if (typeof message.deviceID === "string" && message.deviceID.length > 0) {
       state.deviceID = message.deviceID;
     }
+    state.awaitingGapSnapshot = false;
     markSynced();
     setStatus("WebSocket authenticated.");
+    flushQueuedCommands();
     requestSnapshot("initial_sync");
     return;
   }
@@ -526,6 +528,7 @@ function onSocketMessage(event) {
       state.reconnectDisabledReason = reason;
       state.deviceSessionToken = null;
       state.joinToken = null;
+      state.queuedCommands = [];
     }
     setStatus(disconnectMessageForReason(reason), "warn");
     return;
@@ -561,6 +564,8 @@ function onSocketMessage(event) {
     return;
   }
 
+  const payload = message.payload;
+  const isSnapshotPayload = Boolean(payload && typeof payload === "object" && payload.type === "snapshot");
   const sequenceDecision = processSequence(message.seq);
   if (sequenceDecision === "stale") {
     return;
@@ -569,11 +574,22 @@ function onSocketMessage(event) {
     return;
   }
   if (sequenceDecision === "gap") {
-    requestSnapshot("gap_detected");
-    return;
+    if (!state.awaitingGapSnapshot) {
+      state.awaitingGapSnapshot = true;
+      setStatus("Detected missing updates. Requesting snapshot...", "warn");
+      requestSnapshot("gap_detected");
+    }
+    if (!isSnapshotPayload) {
+      return;
+    }
+    if (typeof message.seq === "number" && Number.isSafeInteger(message.seq) && message.seq >= 0) {
+      state.lastIncomingSeq = message.seq;
+      dom.seqValue.textContent = String(message.seq);
+    }
+    state.awaitingGapSnapshot = false;
+  } else if (isSnapshotPayload) {
+    state.awaitingGapSnapshot = false;
   }
-
-  const payload = message.payload;
   if (!payload || typeof payload !== "object") {
     return;
   }
@@ -715,6 +731,30 @@ function sendRaw(payload) {
   return true;
 }
 
+function flushQueuedCommands() {
+  if (!state.queuedCommands.length) {
+    return;
+  }
+
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  let sentCount = 0;
+  while (state.queuedCommands.length > 0) {
+    const command = state.queuedCommands[0];
+    if (!sendRaw(command)) {
+      break;
+    }
+    state.queuedCommands.shift();
+    sentCount += 1;
+  }
+
+  if (sentCount > 0) {
+    setStatus(`Sent ${sentCount} queued command${sentCount === 1 ? "" : "s"} after reconnect.`);
+  }
+}
+
 function sendCommand(name, options = {}) {
   if (!state.sessionID) {
     return false;
@@ -737,6 +777,27 @@ function sendCommand(name, options = {}) {
       }
     }
   };
+
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+    if (state.reconnectDisabledReason) {
+      setStatus(`${disconnectMessageForReason(state.reconnectDisabledReason)} Re-pair before sending new commands.`, "warn");
+      return false;
+    }
+    const queueableCommand = name === "thread.send_message" || name === "approval.respond";
+    if (!queueableCommand) {
+      setStatus("Not connected. Reconnect to sync this action.", "warn");
+      return false;
+    }
+    state.queuedCommands.push(envelope);
+    setStatus(
+      `Offline. Queued ${state.queuedCommands.length} command${state.queuedCommands.length === 1 ? "" : "s"} for reconnect.`,
+      "warn"
+    );
+    if (!state.reconnectDisabledReason) {
+      connectSocket();
+    }
+    return true;
+  }
 
   return sendRaw(envelope);
 }
@@ -802,6 +863,8 @@ async function pairDevice() {
     state.sessionID = payload.sessionID;
     state.joinToken = null;
     state.reconnectDisabledReason = null;
+    state.queuedCommands = [];
+    state.awaitingGapSnapshot = false;
     dom.sessionValue.textContent = state.sessionID;
     setStatus("Pairing successful. Connecting...");
     connectSocket();
@@ -827,6 +890,7 @@ function wireComposer() {
       return;
     }
 
+    const wasConnected = state.socket?.readyState === WebSocket.OPEN;
     const sent = sendCommand("thread.send_message", {
       threadID: state.selectedThreadID,
       text
@@ -835,7 +899,11 @@ function wireComposer() {
       return;
     }
     dom.composerInput.value = "";
-    setStatus("Message sent. Waiting for desktop confirmation...");
+    if (wasConnected) {
+      setStatus("Message sent to relay. Waiting for desktop confirmation...");
+    } else {
+      setStatus("Message queued locally. It will send after reconnect.", "warn");
+    }
   });
 }
 

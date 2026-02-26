@@ -30,9 +30,11 @@ Then open `http://localhost:4173`.
 - Manual + automatic snapshot requests on reconnect.
 - Live delta event handling for message appends and turn status updates.
 - Composer does not optimistically append outbound user messages; transcript updates render only after relay-confirmed events/snapshots.
+- Outbound `thread.send_message` and `approval.respond` commands queue while offline and flush only after websocket re-auth succeeds.
 - `Last synced` freshness tracking with stale-state indicator.
 - Reconnect backoff when backgrounding or network drops.
 - Foreground resume triggers an explicit snapshot resync when already connected.
+- Sequence-gap handling requests snapshot resync without advancing local sequence state until a snapshot arrives.
 - If desktop revokes the device, PWA stops auto-reconnect and requires re-pair.
 - Relay validation/rate-limit/replay errors (including snapshot-request throttling) surface as explicit status messages with recovery hints.
 - Relay load-shedding disconnects (for example `relay_over_capacity`) surface as explicit status messaging.
