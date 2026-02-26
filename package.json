@@ -8,6 +8,8 @@
     "oss:smoke": "bash scripts/oss-smoke.sh",
     "quick": "make quick",
     "ci": "make ci",
+    "remote:relay:load": "bash scripts/remote-control-relay-load.sh",
+    "remote:relay:soak": "bash scripts/remote-control-relay-soak.sh",
     "swift:build": "bash scripts/swift-build-all.sh",
     "swift:test": "bash scripts/swift-test-all.sh",
     "check": "pnpm run swift:build && pnpm run swift:test",
