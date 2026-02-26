@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,6 +36,7 @@ pub struct SharedRelayState {
     pub config: RelayConfig,
     pub inner: Arc<Mutex<RelayState>>,
     persistence: Option<RelayStatePersistence>,
+    cross_instance_bus: Option<RelayCrossInstanceBus>,
 }
 
 pub struct RelayState {
@@ -43,6 +44,8 @@ pub struct RelayState {
     device_token_index: HashMap<String, DeviceTokenContext>,
     rate_buckets: HashMap<String, RateBucket>,
     pending_join_waiters: usize,
+    bus_subscribed_sessions: HashSet<String>,
+    bus_subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
 }
 
 struct SessionRecord {
@@ -108,6 +111,22 @@ struct RelayStatePersistence {
     redis_client: redis::Client,
     session_index_key: String,
     session_key_prefix: String,
+}
+
+#[derive(Clone)]
+struct RelayCrossInstanceBus {
+    client: async_nats::Client,
+    instance_id: String,
+    subject_prefix: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct CrossInstanceEnvelope {
+    schema_version: u8,
+    session_id: String,
+    source_instance_id: String,
+    target: String,
+    payload: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -295,6 +314,7 @@ pub fn build_router(state: SharedRelayState) -> Router {
 }
 
 pub async fn new_state(config: RelayConfig) -> SharedRelayState {
+    let cross_instance_bus = build_cross_instance_bus(&config).await;
     let persistence = build_persistence(&config);
     let runtime = if let Some(persistence) = &persistence {
         match persistence.load_sessions().await {
@@ -313,6 +333,8 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     sessions,
                     rate_buckets: HashMap::new(),
                     pending_join_waiters: 0,
+                    bus_subscribed_sessions: HashSet::new(),
+                    bus_subscription_tasks: HashMap::new(),
                 }
             }
             Err(error) => {
@@ -322,6 +344,8 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     device_token_index: HashMap::new(),
                     rate_buckets: HashMap::new(),
                     pending_join_waiters: 0,
+                    bus_subscribed_sessions: HashSet::new(),
+                    bus_subscription_tasks: HashMap::new(),
                 }
             }
         }
@@ -331,6 +355,8 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
             device_token_index: HashMap::new(),
             rate_buckets: HashMap::new(),
             pending_join_waiters: 0,
+            bus_subscribed_sessions: HashSet::new(),
+            bus_subscription_tasks: HashMap::new(),
         }
     };
 
@@ -338,6 +364,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
         config,
         inner: Arc::new(Mutex::new(runtime)),
         persistence,
+        cross_instance_bus,
     };
 
     start_session_sweeper(state.clone());
@@ -358,6 +385,29 @@ fn build_persistence(config: &RelayConfig) -> Option<RelayStatePersistence> {
         redis_client,
         session_index_key: format!("{}:sessions:index:v1", config.redis_key_prefix),
         session_key_prefix: format!("{}:session:v1", config.redis_key_prefix),
+    })
+}
+
+async fn build_cross_instance_bus(config: &RelayConfig) -> Option<RelayCrossInstanceBus> {
+    let nats_url = config.nats_url.as_ref()?;
+    let client = match async_nats::connect(nats_url).await {
+        Ok(client) => client,
+        Err(error) => {
+            warn!("[relay-rs] failed to connect to NATS; cross-instance bus disabled: {error}");
+            return None;
+        }
+    };
+
+    let instance_id = random_token(10);
+    info!(
+        "[relay-rs] connected to NATS for cross-instance routing: url={} subject_prefix={} instance={}",
+        nats_url, config.nats_subject_prefix, instance_id
+    );
+
+    Some(RelayCrossInstanceBus {
+        client,
+        instance_id,
+        subject_prefix: config.nats_subject_prefix.clone(),
     })
 }
 

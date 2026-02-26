@@ -21,6 +21,8 @@ pub struct RelayConfig {
     pub max_remote_command_text_bytes: usize,
     pub redis_url: Option<String>,
     pub redis_key_prefix: String,
+    pub nats_url: Option<String>,
+    pub nats_subject_prefix: String,
     pub trust_proxy: bool,
     pub allow_legacy_query_token_auth: bool,
     pub allowed_origins: HashSet<String>,
@@ -52,6 +54,15 @@ impl RelayConfig {
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| "codexchat:remote-control:relay".to_string());
+        let nats_url = env::var("NATS_URL")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let nats_subject_prefix = env::var("NATS_SUBJECT_PREFIX")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "codexchat.remote.relay".to_string());
         let trust_proxy = parse_bool_env("TRUST_PROXY");
         let allow_legacy_query_token_auth = parse_bool_env("ALLOW_LEGACY_QUERY_TOKEN_AUTH");
 
@@ -85,6 +96,8 @@ impl RelayConfig {
             max_remote_command_text_bytes,
             redis_url,
             redis_key_prefix,
+            nats_url,
+            nats_subject_prefix,
             trust_proxy,
             allow_legacy_query_token_auth,
             allowed_origins,

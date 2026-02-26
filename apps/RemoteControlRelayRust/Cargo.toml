@@ -18,6 +18,7 @@ url = "2"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
 futures-util = "=0.3.31"
 redis = { version = "0.27", features = ["tokio-comp"] }
+async-nats = "0.37"
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
