@@ -2,6 +2,7 @@ apiVersion: cloud.google.com/v1
 kind: BackendConfig
 metadata:
   name: remote-control-pwa-backendconfig
+  namespace: codexchat-remote-control
   labels:
     app.kubernetes.io/name: remote-control-pwa
 spec:

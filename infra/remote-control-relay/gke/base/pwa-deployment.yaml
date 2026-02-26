@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: remote-control-pwa
+  namespace: codexchat-remote-control
   labels:
     app.kubernetes.io/name: remote-control-pwa
 spec:
@@ -22,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pwa
-          image: gcr.io/PROJECT_ID/remote-control-pwa:latest
+          image: us-central1-docker.pkg.dev/codexchat-rc-ga-260226/remote-control/remote-control-pwa:ga-20260226-092931
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
