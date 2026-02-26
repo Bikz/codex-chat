@@ -20,7 +20,7 @@ async fn main() {
         .parse()
         .expect("invalid host/port configuration");
 
-    let state = new_state(config.clone());
+    let state = new_state(config.clone()).await;
     let app = build_router(state);
 
     let listener = TcpListener::bind(addr)

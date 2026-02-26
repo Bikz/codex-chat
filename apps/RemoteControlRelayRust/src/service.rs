@@ -13,11 +13,13 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use rand::RngCore;
+use redis::AsyncCommands;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{sleep, timeout};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
-use tracing::info;
+use tracing::{info, warn};
 use url::Url;
 
 use crate::config::{is_allowed_origin, RelayConfig};
@@ -32,6 +34,7 @@ use crate::model::{
 pub struct SharedRelayState {
     pub config: RelayConfig,
     pub inner: Arc<Mutex<RelayState>>,
+    persistence: Option<RelayStatePersistence>,
 }
 
 pub struct RelayState {
@@ -64,6 +67,7 @@ struct SocketHandle {
     device_id: Option<String>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 struct DeviceRecord {
     current_session_token: String,
     name: String,
@@ -71,6 +75,7 @@ struct DeviceRecord {
     last_seen_at_ms: i64,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 struct DeviceTokenContext {
     session_id: String,
     device_id: String,
@@ -90,9 +95,39 @@ struct JoinDecision {
     reason: String,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 struct RateBucket {
     count: usize,
     window_ends_at_ms: i64,
+}
+
+#[derive(Clone)]
+struct RelayStatePersistence {
+    redis_client: redis::Client,
+    redis_key: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PersistedRelayState {
+    schema_version: u8,
+    sessions: Vec<PersistedSessionRecord>,
+    device_token_index: HashMap<String, DeviceTokenContext>,
+    rate_buckets: HashMap<String, RateBucket>,
+    persisted_at_ms: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PersistedSessionRecord {
+    session_id: String,
+    join_token: String,
+    join_token_expires_at_ms: i64,
+    join_token_used_at_ms: Option<i64>,
+    desktop_session_token: String,
+    relay_web_socket_url: String,
+    idle_timeout_seconds: u64,
+    created_at_ms: i64,
+    last_activity_at_ms: i64,
+    devices: HashMap<String, DeviceRecord>,
 }
 
 enum AuthContext {
@@ -103,6 +138,110 @@ enum AuthContext {
         session_id: String,
         device_id: String,
     },
+}
+
+impl PersistedRelayState {
+    fn from_runtime(runtime: &RelayState) -> Self {
+        let sessions = runtime
+            .sessions
+            .values()
+            .map(|session| PersistedSessionRecord {
+                session_id: session.session_id.clone(),
+                join_token: session.join_token.clone(),
+                join_token_expires_at_ms: session.join_token_expires_at_ms,
+                join_token_used_at_ms: session.join_token_used_at_ms,
+                desktop_session_token: session.desktop_session_token.clone(),
+                relay_web_socket_url: session.relay_web_socket_url.clone(),
+                idle_timeout_seconds: session.idle_timeout_seconds,
+                created_at_ms: session.created_at_ms,
+                last_activity_at_ms: session.last_activity_at_ms,
+                devices: session.devices.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            schema_version: 1,
+            sessions,
+            device_token_index: runtime.device_token_index.clone(),
+            rate_buckets: runtime.rate_buckets.clone(),
+            persisted_at_ms: now_ms(),
+        }
+    }
+
+    fn into_runtime(self) -> RelayState {
+        let mut sessions = HashMap::new();
+        for session in self.sessions {
+            sessions.insert(
+                session.session_id.clone(),
+                SessionRecord {
+                    session_id: session.session_id,
+                    join_token: session.join_token,
+                    join_token_expires_at_ms: session.join_token_expires_at_ms,
+                    join_token_used_at_ms: session.join_token_used_at_ms,
+                    desktop_session_token: session.desktop_session_token,
+                    relay_web_socket_url: session.relay_web_socket_url,
+                    idle_timeout_seconds: session.idle_timeout_seconds,
+                    created_at_ms: session.created_at_ms,
+                    last_activity_at_ms: session.last_activity_at_ms,
+                    desktop_socket: None,
+                    mobile_sockets: HashMap::new(),
+                    devices: session.devices,
+                    command_rate_buckets: HashMap::new(),
+                    pending_join_request: None,
+                },
+            );
+        }
+
+        RelayState {
+            sessions,
+            device_token_index: self.device_token_index,
+            rate_buckets: self.rate_buckets,
+            pending_join_waiters: 0,
+        }
+    }
+}
+
+impl RelayStatePersistence {
+    async fn load_runtime(&self) -> Result<Option<RelayState>, String> {
+        let mut connection = self
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| format!("redis connection failed: {error}"))?;
+
+        let payload: Option<String> = connection
+            .get(&self.redis_key)
+            .await
+            .map_err(|error| format!("redis get failed: {error}"))?;
+        let Some(payload) = payload else {
+            return Ok(None);
+        };
+
+        let persisted: PersistedRelayState = serde_json::from_str(&payload)
+            .map_err(|error| format!("persisted payload parse failed: {error}"))?;
+        if persisted.schema_version != 1 {
+            return Err("persisted schema version is not supported".to_string());
+        }
+
+        Ok(Some(persisted.into_runtime()))
+    }
+
+    async fn save_persisted(&self, persisted: PersistedRelayState) -> Result<(), String> {
+        let payload = serde_json::to_string(&persisted)
+            .map_err(|error| format!("persisted payload encode failed: {error}"))?;
+
+        let mut connection = self
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| format!("redis connection failed: {error}"))?;
+        connection
+            .set::<_, _, ()>(&self.redis_key, payload)
+            .await
+            .map_err(|error| format!("redis set failed: {error}"))?;
+
+        Ok(())
+    }
 }
 
 pub fn build_router(state: SharedRelayState) -> Router {
@@ -137,19 +276,81 @@ pub fn build_router(state: SharedRelayState) -> Router {
         .layer(cors_layer)
 }
 
-pub fn new_state(config: RelayConfig) -> SharedRelayState {
-    let state = SharedRelayState {
-        config,
-        inner: Arc::new(Mutex::new(RelayState {
+pub async fn new_state(config: RelayConfig) -> SharedRelayState {
+    let persistence = build_persistence(&config);
+    let runtime = if let Some(persistence) = &persistence {
+        match persistence.load_runtime().await {
+            Ok(Some(runtime)) => {
+                info!(
+                    "[relay-rs] restored {} sessions from redis persistence",
+                    runtime.sessions.len()
+                );
+                runtime
+            }
+            Ok(None) => RelayState {
+                sessions: HashMap::new(),
+                device_token_index: HashMap::new(),
+                rate_buckets: HashMap::new(),
+                pending_join_waiters: 0,
+            },
+            Err(error) => {
+                warn!("[relay-rs] failed to restore persisted relay state: {error}");
+                RelayState {
+                    sessions: HashMap::new(),
+                    device_token_index: HashMap::new(),
+                    rate_buckets: HashMap::new(),
+                    pending_join_waiters: 0,
+                }
+            }
+        }
+    } else {
+        RelayState {
             sessions: HashMap::new(),
             device_token_index: HashMap::new(),
             rate_buckets: HashMap::new(),
             pending_join_waiters: 0,
-        })),
+        }
+    };
+
+    let state = SharedRelayState {
+        config,
+        inner: Arc::new(Mutex::new(runtime)),
+        persistence,
     };
 
     start_session_sweeper(state.clone());
     state
+}
+
+fn build_persistence(config: &RelayConfig) -> Option<RelayStatePersistence> {
+    let redis_url = config.redis_url.as_ref()?;
+    let redis_client = match redis::Client::open(redis_url.as_str()) {
+        Ok(client) => client,
+        Err(error) => {
+            warn!("[relay-rs] invalid REDIS_URL; persistence disabled: {error}");
+            return None;
+        }
+    };
+
+    Some(RelayStatePersistence {
+        redis_client,
+        redis_key: format!("{}:runtime:v1", config.redis_key_prefix),
+    })
+}
+
+async fn persist_runtime_if_needed(state: &SharedRelayState) {
+    let Some(persistence) = state.persistence.as_ref().cloned() else {
+        return;
+    };
+
+    let persisted = {
+        let relay = state.inner.lock().await;
+        PersistedRelayState::from_runtime(&relay)
+    };
+
+    if let Err(error) = persistence.save_persisted(persisted).await {
+        warn!("[relay-rs] failed to persist relay runtime: {error}");
+    }
 }
 
 fn build_cors_layer(config: &RelayConfig) -> CorsLayer {
@@ -200,15 +401,26 @@ async fn sweep_sessions(state: &SharedRelayState) {
         }
     }
 
+    let mut did_mutate = false;
     for (session_id, reason) in close_ids {
         close_session(&mut relay, &session_id, &reason);
+        did_mutate = true;
     }
 
+    let token_count_before = relay.device_token_index.len();
     relay.device_token_index.retain(|_, ctx| {
         ctx.expires_at_ms
             .map(|expires| now < expires)
             .unwrap_or(true)
     });
+    if relay.device_token_index.len() != token_count_before {
+        did_mutate = true;
+    }
+    drop(relay);
+
+    if did_mutate {
+        persist_runtime_if_needed(state).await;
+    }
 }
 
 async fn pair_options(
@@ -326,6 +538,8 @@ async fn pair_start(
         "[relay-rs] pair_start session={}",
         session_log_id(&request.session_id)
     );
+    drop(relay);
+    persist_runtime_if_needed(&state).await;
 
     (
         StatusCode::OK,
@@ -588,6 +802,8 @@ async fn pair_join(
         "[relay-rs] pair_join session={}",
         session_log_id(&request.session_id)
     );
+    drop(relay);
+    persist_runtime_if_needed(&state).await;
 
     (
         StatusCode::OK,
@@ -654,6 +870,8 @@ async fn pair_stop(
         "[relay-rs] pair_stop session={}",
         session_log_id(&request.session_id)
     );
+    drop(relay);
+    persist_runtime_if_needed(&state).await;
 
     (
         StatusCode::OK,
@@ -819,6 +1037,8 @@ async fn device_revoke(
     relay.device_token_index.retain(|_, token| {
         !(token.session_id == session_id && token.device_id == request.device_id)
     });
+    drop(relay);
+    persist_runtime_if_needed(&state).await;
 
     (
         StatusCode::OK,
@@ -1462,6 +1682,18 @@ async fn authenticate_socket(
                 session_log_id(&session_id),
                 connected_device_count
             );
+            let persistence = state.persistence.as_ref().cloned();
+            let persisted_runtime = if persistence.is_some() {
+                Some(PersistedRelayState::from_runtime(&relay))
+            } else {
+                None
+            };
+            drop(relay);
+            if let (Some(persistence), Some(persisted_runtime)) = (persistence, persisted_runtime) {
+                if let Err(error) = persistence.save_persisted(persisted_runtime).await {
+                    warn!("[relay-rs] failed to persist relay runtime: {error}");
+                }
+            }
 
             Some(AuthenticatedSocket {
                 session_id,
@@ -1742,4 +1974,78 @@ fn error_response(status: StatusCode, code: &str, message: &str) -> axum::respon
         }),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_runtime_round_trip_preserves_sessions_and_tokens() {
+        let mut sessions = HashMap::new();
+        sessions.insert(
+            "session-1".to_string(),
+            SessionRecord {
+                session_id: "session-1".to_string(),
+                join_token: "join-token".to_string(),
+                join_token_expires_at_ms: 1_000,
+                join_token_used_at_ms: Some(900),
+                desktop_session_token: "desktop-token".to_string(),
+                relay_web_socket_url: "ws://localhost:8787/ws".to_string(),
+                idle_timeout_seconds: 1_800,
+                created_at_ms: 100,
+                last_activity_at_ms: 200,
+                desktop_socket: None,
+                mobile_sockets: HashMap::new(),
+                devices: HashMap::from([(
+                    "device-1".to_string(),
+                    DeviceRecord {
+                        current_session_token: "device-token".to_string(),
+                        name: "Test Phone".to_string(),
+                        joined_at_ms: 150,
+                        last_seen_at_ms: 190,
+                    },
+                )]),
+                command_rate_buckets: HashMap::new(),
+                pending_join_request: None,
+            },
+        );
+
+        let runtime = RelayState {
+            sessions,
+            device_token_index: HashMap::from([(
+                "device-token".to_string(),
+                DeviceTokenContext {
+                    session_id: "session-1".to_string(),
+                    device_id: "device-1".to_string(),
+                    expires_at_ms: None,
+                },
+            )]),
+            rate_buckets: HashMap::from([(
+                "127.0.0.1".to_string(),
+                RateBucket {
+                    count: 2,
+                    window_ends_at_ms: 4_000,
+                },
+            )]),
+            pending_join_waiters: 0,
+        };
+
+        let persisted = PersistedRelayState::from_runtime(&runtime);
+        let restored = persisted.into_runtime();
+
+        assert_eq!(restored.sessions.len(), 1);
+        assert!(restored.sessions.contains_key("session-1"));
+        assert_eq!(restored.device_token_index.len(), 1);
+        assert_eq!(restored.rate_buckets.len(), 1);
+
+        let restored_session = restored
+            .sessions
+            .get("session-1")
+            .expect("restored session missing");
+        assert_eq!(restored_session.devices.len(), 1);
+        assert!(restored_session.desktop_socket.is_none());
+        assert!(restored_session.mobile_sockets.is_empty());
+        assert!(restored_session.pending_join_request.is_none());
+    }
 }

@@ -30,3 +30,4 @@ Default URL: `http://localhost:8787`
 - WebSocket frames are bounded by `MAX_WS_MESSAGE_BYTES` (default `65536`).
 - Remote mobile commands are throttled per device via `MAX_REMOTE_COMMANDS_PER_MINUTE` (default `240`).
 - `thread.send_message` command text is bounded by `MAX_REMOTE_COMMAND_TEXT_BYTES` (default `16384`).
+- Optional Redis durability can be enabled with `REDIS_URL` and `REDIS_KEY_PREFIX`.

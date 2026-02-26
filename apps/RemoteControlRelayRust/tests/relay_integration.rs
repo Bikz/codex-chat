@@ -33,7 +33,7 @@ async fn spawn_test_server_with_config(
     config.allowed_origins = ["http://localhost:4173".to_string()].into_iter().collect();
     configure(&mut config);
 
-    let state = new_state(config);
+    let state = new_state(config).await;
     let app = build_router(state);
 
     let task = tokio::spawn(async move {
