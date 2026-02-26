@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use remote_control_relay_rust::config::RelayConfig;
@@ -10,7 +11,16 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
+type TestSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
 async fn spawn_test_server() -> (String, JoinHandle<()>) {
+    spawn_test_server_with_config(|_| {}).await
+}
+
+async fn spawn_test_server_with_config(
+    configure: impl FnOnce(&mut RelayConfig),
+) -> (String, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind listener");
@@ -21,6 +31,7 @@ async fn spawn_test_server() -> (String, JoinHandle<()>) {
     config.port = addr.port();
     config.public_base_url = format!("http://{}:{}", addr.ip(), addr.port());
     config.allowed_origins = ["http://localhost:4173".to_string()].into_iter().collect();
+    configure(&mut config);
 
     let state = new_state(config);
     let app = build_router(state);
@@ -43,6 +54,148 @@ fn random_token(byte_count: usize) -> String {
         .collect::<Vec<_>>();
     use base64::Engine;
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+async fn pair_connected_mobile(
+    configure: impl FnOnce(&mut RelayConfig),
+) -> (JoinHandle<()>, TestSocket, TestSocket, String) {
+    let (base, task) = spawn_test_server_with_config(configure).await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let start_response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+
+    desktop_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": desktop_session_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("desktop auth send");
+
+    let _desktop_auth = desktop_socket
+        .next()
+        .await
+        .expect("desktop auth message")
+        .expect("desktop auth frame");
+
+    let join_future = tokio::spawn({
+        let client = client.clone();
+        let base = base.clone();
+        let session_id = session_id.clone();
+        let join_token = join_token.clone();
+        async move {
+            client
+                .post(format!("{base}/pair/join"))
+                .header("Origin", "http://localhost:4173")
+                .json(&json!({
+                    "sessionID": session_id,
+                    "joinToken": join_token,
+                    "deviceName": "Test iPhone",
+                }))
+                .send()
+                .await
+                .expect("pair join request")
+        }
+    });
+
+    let pair_request = desktop_socket
+        .next()
+        .await
+        .expect("pair request frame")
+        .expect("pair request message");
+    let pair_request_json: Value =
+        serde_json::from_str(pair_request.to_text().expect("pair request text"))
+            .expect("pair request json");
+    let request_id = pair_request_json
+        .get("requestID")
+        .and_then(Value::as_str)
+        .expect("requestID")
+        .to_string();
+
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.pair_decision",
+                "sessionID": session_id,
+                "requestID": request_id,
+                "approved": true,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("desktop pair decision send");
+
+    let join_response = join_future.await.expect("join task");
+    assert_eq!(join_response.status(), StatusCode::OK);
+    let join_payload: Value = join_response.json().await.expect("join payload");
+    let device_token = join_payload
+        .get("deviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("device token")
+        .to_string();
+
+    let mut mobile_request = ws_url.into_client_request().expect("mobile request");
+    mobile_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+
+    let (mut mobile_socket, _) = tokio_tungstenite::connect_async(mobile_request)
+        .await
+        .expect("mobile websocket");
+
+    mobile_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": device_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("mobile auth send");
+
+    let _mobile_auth = mobile_socket
+        .next()
+        .await
+        .expect("mobile auth frame")
+        .expect("mobile auth message");
+
+    // Drain any relay bookkeeping events before assertions.
+    loop {
+        match tokio::time::timeout(Duration::from_millis(50), desktop_socket.next()).await {
+            Ok(Some(Ok(_))) => continue,
+            Ok(Some(Err(_))) | Ok(None) | Err(_) => break,
+        }
+    }
+
+    (task, desktop_socket, mobile_socket, session_id)
 }
 
 #[tokio::test]
@@ -501,6 +654,133 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .and_then(Value::as_array)
         .expect("devices array after revoke");
     assert_eq!(devices_after.len(), 0);
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
+    let (task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|_| {}).await;
+
+    mobile_socket
+        .send(Message::Text(
+            json!({
+                "schemaVersion": 1,
+                "sessionID": session_id,
+                "seq": 1,
+                "payload": {
+                    "type": "command",
+                    "payload": {
+                        "name": "terminal.exec",
+                        "threadID": "11111111-1111-1111-1111-111111111111",
+                        "text": "rm -rf /"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send invalid command");
+
+    let relay_error = tokio::time::timeout(Duration::from_millis(1_000), mobile_socket.next())
+        .await
+        .expect("expected relay error")
+        .expect("relay error frame")
+        .expect("relay error message");
+    let relay_error_json: Value =
+        serde_json::from_str(relay_error.to_text().expect("relay error text"))
+            .expect("relay error json");
+    assert_eq!(
+        relay_error_json.get("type").and_then(Value::as_str),
+        Some("relay.error")
+    );
+    assert_eq!(
+        relay_error_json.get("error").and_then(Value::as_str),
+        Some("invalid_command")
+    );
+
+    let desktop_next =
+        tokio::time::timeout(Duration::from_millis(250), desktop_socket.next()).await;
+    assert!(
+        desktop_next.is_err(),
+        "desktop unexpectedly received forwarded payload"
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
+    let (task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|config| {
+            config.max_remote_commands_per_minute = 2;
+        })
+        .await;
+
+    for seq in 1..=3_u64 {
+        mobile_socket
+            .send(Message::Text(
+                json!({
+                    "schemaVersion": 1,
+                    "sessionID": session_id,
+                    "seq": seq,
+                    "payload": {
+                        "type": "command",
+                        "payload": {
+                            "name": "thread.select",
+                            "threadID": "11111111-1111-1111-1111-111111111111"
+                        }
+                    }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send thread.select command");
+    }
+
+    for _ in 0..2 {
+        let forwarded = tokio::time::timeout(Duration::from_millis(1_000), desktop_socket.next())
+            .await
+            .expect("expected forwarded command")
+            .expect("forwarded frame")
+            .expect("forwarded message");
+        let forwarded_json: Value =
+            serde_json::from_str(forwarded.to_text().expect("forwarded text"))
+                .expect("forwarded json");
+        assert_eq!(
+            forwarded_json
+                .pointer("/payload/payload/name")
+                .and_then(Value::as_str),
+            Some("thread.select")
+        );
+    }
+
+    let relay_error = tokio::time::timeout(Duration::from_millis(1_000), mobile_socket.next())
+        .await
+        .expect("expected rate-limit error")
+        .expect("rate-limit frame")
+        .expect("rate-limit message");
+    let relay_error_json: Value =
+        serde_json::from_str(relay_error.to_text().expect("rate-limit text"))
+            .expect("rate-limit json");
+    assert_eq!(
+        relay_error_json.get("type").and_then(Value::as_str),
+        Some("relay.error")
+    );
+    assert_eq!(
+        relay_error_json.get("error").and_then(Value::as_str),
+        Some("command_rate_limited")
+    );
+
+    let desktop_next =
+        tokio::time::timeout(Duration::from_millis(250), desktop_socket.next()).await;
+    assert!(
+        desktop_next.is_err(),
+        "desktop unexpectedly received extra forwarded payload"
+    );
 
     task.abort();
 }

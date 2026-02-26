@@ -54,6 +54,7 @@ struct SessionRecord {
     desktop_socket: Option<SocketHandle>,
     mobile_sockets: HashMap<String, SocketHandle>,
     devices: HashMap<String, DeviceRecord>,
+    command_rate_buckets: HashMap<String, RateBucket>,
     pending_join_request: Option<PendingJoinRequest>,
 }
 
@@ -316,6 +317,7 @@ async fn pair_start(
             desktop_socket: None,
             mobile_sockets: HashMap::new(),
             devices: HashMap::new(),
+            command_rate_buckets: HashMap::new(),
             pending_join_request: None,
         },
     );
@@ -807,6 +809,7 @@ async fn device_revoke(
                 "Device is not linked to this session.",
             );
         };
+        session.command_rate_buckets.remove(&request.device_id);
 
         session.last_activity_at_ms = now_ms();
         close_existing_mobile_socket_for_device(session, &request.device_id, "device_revoked");
@@ -844,10 +847,12 @@ async fn ws_upgrade(
     } else {
         None
     };
+    let max_message_size = state.config.max_ws_message_bytes;
 
-    ws.on_upgrade(move |socket| async move {
-        handle_socket(state, socket, headers, addr, origin, legacy_query_token).await;
-    })
+    ws.max_message_size(max_message_size)
+        .on_upgrade(move |socket| async move {
+            handle_socket(state, socket, headers, addr, origin, legacy_query_token).await;
+        })
 }
 
 async fn handle_socket(
@@ -907,6 +912,18 @@ async fn handle_socket(
         let Ok(Message::Text(raw)) = message else {
             continue;
         };
+        if raw.len() > state.config.max_ws_message_bytes {
+            let _ = tx.send(
+                json!({
+                    "type": "disconnect",
+                    "reason": "message_too_large"
+                })
+                .to_string(),
+            );
+            break;
+        }
+
+        let parsed = serde_json::from_str::<Value>(&raw).ok();
 
         let mut relay = state.inner.lock().await;
         if !relay.sessions.contains_key(auth.session_id()) {
@@ -916,7 +933,7 @@ async fn handle_socket(
         if let Some(session) = relay.sessions.get_mut(auth.session_id()) {
             session.last_activity_at_ms = now_ms();
 
-            if let Ok(parsed) = serde_json::from_str::<Value>(&raw) {
+            if let Some(parsed) = parsed.as_ref() {
                 if parsed
                     .get("sessionID")
                     .and_then(Value::as_str)
@@ -943,6 +960,20 @@ async fn handle_socket(
                     device_id,
                     connection_id,
                 } => {
+                    match validate_mobile_payload(
+                        session,
+                        parsed.as_ref(),
+                        auth.session_id(),
+                        device_id,
+                        &state.config,
+                    ) {
+                        Ok(()) => {}
+                        Err(error) => {
+                            send_relay_error(&tx, error.code, &error.message);
+                            continue;
+                        }
+                    }
+
                     if let Some(desktop) = &session.desktop_socket {
                         let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
                         let _ = desktop.tx.send(forwarded);
@@ -1016,6 +1047,271 @@ fn inject_mobile_metadata(raw: &str, connection_id: &str, device_id: &str) -> St
     }
 
     serde_json::to_string(&value).unwrap_or_else(|_| raw.to_string())
+}
+
+struct RelayValidationError {
+    code: &'static str,
+    message: String,
+}
+
+fn send_relay_error(tx: &mpsc::UnboundedSender<String>, code: &str, message: &str) {
+    let payload = json!({
+        "type": "relay.error",
+        "error": code,
+        "message": message,
+    });
+    let _ = tx.send(payload.to_string());
+}
+
+fn validate_mobile_payload(
+    session: &mut SessionRecord,
+    parsed: Option<&Value>,
+    expected_session_id: &str,
+    device_id: &str,
+    config: &RelayConfig,
+) -> Result<(), RelayValidationError> {
+    let Some(parsed) = parsed else {
+        return Err(RelayValidationError {
+            code: "invalid_payload",
+            message: "Payload must be valid JSON.".to_string(),
+        });
+    };
+
+    if let Some(message_type) = parsed.get("type").and_then(Value::as_str) {
+        if message_type == "relay.snapshot_request" {
+            if parsed
+                .get("sessionID")
+                .and_then(Value::as_str)
+                .is_some_and(|session_id| session_id != expected_session_id)
+            {
+                return Err(RelayValidationError {
+                    code: "invalid_session",
+                    message: "Snapshot request sessionID does not match authenticated session."
+                        .to_string(),
+                });
+            }
+
+            if let Some(reason) = parsed.get("reason").and_then(Value::as_str) {
+                if reason.len() > 128 {
+                    return Err(RelayValidationError {
+                        code: "invalid_snapshot_request",
+                        message: "Snapshot reason is too long.".to_string(),
+                    });
+                }
+            }
+
+            if let Some(last_seq) = parsed.get("lastSeq") {
+                if !last_seq.is_u64() && !last_seq.is_i64() {
+                    return Err(RelayValidationError {
+                        code: "invalid_snapshot_request",
+                        message: "lastSeq must be numeric when provided.".to_string(),
+                    });
+                }
+            }
+
+            return Ok(());
+        }
+    }
+
+    let schema_version = parsed
+        .get("schemaVersion")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| RelayValidationError {
+            code: "invalid_command",
+            message: "schemaVersion is required for command envelopes.".to_string(),
+        })?;
+    if schema_version != 1 {
+        return Err(RelayValidationError {
+            code: "unsupported_schema",
+            message: "Only schemaVersion 1 is supported.".to_string(),
+        });
+    }
+
+    let payload_type = parsed
+        .pointer("/payload/type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| RelayValidationError {
+            code: "invalid_command",
+            message: "Command envelope payload.type is required.".to_string(),
+        })?;
+    if payload_type != "command" {
+        return Err(RelayValidationError {
+            code: "invalid_command",
+            message: "Only command payloads are accepted from mobile clients.".to_string(),
+        });
+    }
+
+    let command_payload = parsed
+        .pointer("/payload/payload")
+        .and_then(Value::as_object)
+        .ok_or_else(|| RelayValidationError {
+            code: "invalid_command",
+            message: "Command payload object is required.".to_string(),
+        })?;
+    let command_name = command_payload
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| RelayValidationError {
+            code: "invalid_command",
+            message: "Command name is required.".to_string(),
+        })?;
+
+    if !consume_device_command_budget(session, device_id, config.max_remote_commands_per_minute) {
+        return Err(RelayValidationError {
+            code: "command_rate_limited",
+            message: "Too many remote commands from this device. Retry shortly.".to_string(),
+        });
+    }
+
+    match command_name {
+        "thread.send_message" => {
+            let thread_id = command_payload
+                .get("threadID")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RelayValidationError {
+                    code: "invalid_command",
+                    message: "thread.send_message requires threadID.".to_string(),
+                })?;
+            if !is_small_identifier(thread_id) {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "threadID must be a compact identifier.".to_string(),
+                });
+            }
+
+            let text = command_payload
+                .get("text")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RelayValidationError {
+                    code: "invalid_command",
+                    message: "thread.send_message requires text.".to_string(),
+                })?;
+            if text.trim().is_empty() {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "Message text cannot be empty.".to_string(),
+                });
+            }
+            if text.as_bytes().len() > config.max_remote_command_text_bytes {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: format!(
+                        "Message text exceeds {} bytes.",
+                        config.max_remote_command_text_bytes
+                    ),
+                });
+            }
+        }
+        "thread.select" => {
+            let thread_id = command_payload
+                .get("threadID")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RelayValidationError {
+                    code: "invalid_command",
+                    message: "thread.select requires threadID.".to_string(),
+                })?;
+            if !is_small_identifier(thread_id) {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "threadID must be a compact identifier.".to_string(),
+                });
+            }
+        }
+        "project.select" => {
+            let project_id = command_payload
+                .get("projectID")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RelayValidationError {
+                    code: "invalid_command",
+                    message: "project.select requires projectID.".to_string(),
+                })?;
+            if !is_small_identifier(project_id) {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "projectID must be a compact identifier.".to_string(),
+                });
+            }
+        }
+        "approval.respond" => {
+            let approval_request_id = command_payload
+                .get("approvalRequestID")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RelayValidationError {
+                    code: "invalid_command",
+                    message: "approval.respond requires approvalRequestID.".to_string(),
+                })?;
+            if !approval_request_id
+                .chars()
+                .all(|char| char.is_ascii_digit())
+                || approval_request_id.len() > 32
+            {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "approvalRequestID must be numeric.".to_string(),
+                });
+            }
+
+            let decision = command_payload
+                .get("approvalDecision")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RelayValidationError {
+                    code: "invalid_command",
+                    message: "approval.respond requires approvalDecision.".to_string(),
+                })?;
+            if !matches!(decision, "approve_once" | "approve_for_session" | "decline") {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "approvalDecision is not recognized.".to_string(),
+                });
+            }
+        }
+        _ => {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "Command name is not allowed.".to_string(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn consume_device_command_budget(
+    session: &mut SessionRecord,
+    device_id: &str,
+    max_commands_per_minute: usize,
+) -> bool {
+    if max_commands_per_minute == 0 {
+        return false;
+    }
+
+    let now = now_ms();
+    let bucket = session
+        .command_rate_buckets
+        .entry(device_id.to_string())
+        .or_insert(RateBucket {
+            count: 0,
+            window_ends_at_ms: now + 60_000,
+        });
+
+    if now >= bucket.window_ends_at_ms {
+        bucket.count = 1;
+        bucket.window_ends_at_ms = now + 60_000;
+        return true;
+    }
+
+    bucket.count += 1;
+    bucket.count <= max_commands_per_minute
+}
+
+fn is_small_identifier(value: &str) -> bool {
+    if value.is_empty() || value.len() > 128 {
+        return false;
+    }
+
+    value
+        .chars()
+        .all(|char| char.is_ascii_alphanumeric() || matches!(char, '-' | '_' | ':'))
 }
 
 enum SocketAuth {

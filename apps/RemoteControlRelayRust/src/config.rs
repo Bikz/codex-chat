@@ -16,6 +16,9 @@ pub struct RelayConfig {
     pub ws_auth_timeout_ms: u64,
     pub token_rotation_grace_ms: u64,
     pub max_pending_join_waiters: usize,
+    pub max_ws_message_bytes: usize,
+    pub max_remote_commands_per_minute: usize,
+    pub max_remote_command_text_bytes: usize,
     pub trust_proxy: bool,
     pub allow_legacy_query_token_auth: bool,
     pub allowed_origins: HashSet<String>,
@@ -35,6 +38,9 @@ impl RelayConfig {
         let ws_auth_timeout_ms = parse_u64("WS_AUTH_TIMEOUT_MS", 10_000);
         let token_rotation_grace_ms = parse_u64("TOKEN_ROTATION_GRACE_MS", 15_000);
         let max_pending_join_waiters = parse_usize("MAX_PENDING_JOIN_WAITERS", 64);
+        let max_ws_message_bytes = parse_usize("MAX_WS_MESSAGE_BYTES", 65_536);
+        let max_remote_commands_per_minute = parse_usize("MAX_REMOTE_COMMANDS_PER_MINUTE", 240);
+        let max_remote_command_text_bytes = parse_usize("MAX_REMOTE_COMMAND_TEXT_BYTES", 16_384);
         let trust_proxy = parse_bool_env("TRUST_PROXY");
         let allow_legacy_query_token_auth = parse_bool_env("ALLOW_LEGACY_QUERY_TOKEN_AUTH");
 
@@ -63,6 +69,9 @@ impl RelayConfig {
             ws_auth_timeout_ms,
             token_rotation_grace_ms,
             max_pending_join_waiters,
+            max_ws_message_bytes,
+            max_remote_commands_per_minute,
+            max_remote_command_text_bytes,
             trust_proxy,
             allow_legacy_query_token_auth,
             allowed_origins,
