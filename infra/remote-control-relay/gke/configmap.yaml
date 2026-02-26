@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remote-control-relay-config
+  labels:
+    app.kubernetes.io/name: remote-control-relay
+data:
+  HOST: "0.0.0.0"
+  PORT: "8787"
+  MAX_JSON_BYTES: "65536"
+  MAX_WS_MESSAGE_BYTES: "65536"
+  MAX_SOCKET_OUTBOUND_QUEUE: "256"
+  MAX_ACTIVE_WEBSOCKET_CONNECTIONS: "30000"
+  MAX_PENDING_JOIN_WAITERS: "20000"
+  MAX_REMOTE_COMMANDS_PER_MINUTE: "240"
+  MAX_REMOTE_SESSION_COMMANDS_PER_MINUTE: "480"
+  MAX_SNAPSHOT_REQUESTS_PER_MINUTE: "60"
+  MAX_REMOTE_COMMAND_TEXT_BYTES: "16384"
+  TOKEN_ROTATION_GRACE_MS: "5000"
+  PAIR_APPROVAL_TIMEOUT_MS: "30000"
+  WS_AUTH_TIMEOUT_MS: "8000"
+  REDIS_KEY_PREFIX: "codexchat:remote-relay"
+  NATS_SUBJECT_PREFIX: "codexchat.remote.relay"

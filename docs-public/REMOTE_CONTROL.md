@@ -103,3 +103,4 @@ Set environment variables before launching Codex Chat:
 - OpenTelemetry metrics/tracing export and SLO alerting runbooks.
 - Optional end-to-end payload encryption between desktop and phone.
 - Passkey-based account option for multi-device identity over time.
+- GKE deployment baseline is documented in `docs-public/REMOTE_CONTROL_GKE_DEPLOYMENT.md`.

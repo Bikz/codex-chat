@@ -261,6 +261,12 @@ Scope:
 - Managed Redis and managed NATS (or highly-available NATS cluster).
 - Runbooks: incident response, rollback, disaster recovery.
 
+Implemented so far (2026-02-26):
+- Added baseline GKE manifests under `infra/remote-control-relay/gke`:
+  - namespace, service account, config/secret templates
+  - deployment, service, HPA, PDB
+- Added deployment guide: `docs-public/REMOTE_CONTROL_GKE_DEPLOYMENT.md`.
+
 Acceptance criteria:
 - Multi-zone failure exercises pass.
 - Canary + rollback tested in staging/prod.
