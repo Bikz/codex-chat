@@ -528,6 +528,22 @@ function onSocketMessage(event) {
     return;
   }
 
+  if (message.type === "relay.error") {
+    const errorCode = typeof message.error === "string" ? message.error : "relay_error";
+    const errorMessage = typeof message.message === "string" ? message.message : "Relay rejected the latest request.";
+    if (errorCode === "command_rate_limited") {
+      setStatus("Too many commands too quickly. Wait a moment and try again.", "warn");
+      return;
+    }
+    if (errorCode === "replayed_command") {
+      setStatus("Out-of-order command detected. Resyncing snapshot now...", "warn");
+      requestSnapshot("command_replay_rejected");
+      return;
+    }
+    setStatus(errorMessage, "warn");
+    return;
+  }
+
   if (message.sessionID && state.sessionID && message.sessionID !== state.sessionID) {
     setStatus("Ignored message for mismatched session.", "warn");
     return;
