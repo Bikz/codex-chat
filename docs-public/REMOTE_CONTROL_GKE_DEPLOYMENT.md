@@ -95,3 +95,5 @@ Before GA, validate:
 - Load + soak gates pass against production-like environment.
 - Redis + NATS failover drills preserve deterministic reconnect behavior.
 - Canary and rollback runbooks are tested in staging.
+
+Operator runbook: `docs-public/REMOTE_CONTROL_RELAY_RUNBOOK.md`.

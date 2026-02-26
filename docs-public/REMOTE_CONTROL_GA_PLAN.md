@@ -266,6 +266,7 @@ Implemented so far (2026-02-26):
   - namespace, service account, config/secret templates
   - deployment, service, HPA, PDB
 - Added deployment guide: `docs-public/REMOTE_CONTROL_GKE_DEPLOYMENT.md`.
+- Added relay operations runbook: `docs-public/REMOTE_CONTROL_RELAY_RUNBOOK.md`.
 
 Acceptance criteria:
 - Multi-zone failure exercises pass.
