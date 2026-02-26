@@ -98,6 +98,7 @@ Set environment variables before launching Codex Chat:
 
 ## Next hardening steps
 
+- Protocol compatibility gate now runs via `make remote-control-compat` (`apps/RemoteControlRelay/test/relay.compat.test.mjs`) and compares normalized pairing/auth/forwarding behavior between Node and Rust relays.
 - Multi-instance soak/load tests with Redis + NATS under reconnect churn.
 - Manual relay load harness is available at `apps/RemoteControlRelayRust/tests/relay_load_harness.rs`, with wrappers `make remote-control-load`, `make remote-control-soak`, and `make remote-control-gate` (`make remote-control-load-gated` for one-shot load + gate). Gates enforce latency, backpressure, and websocket auth-failure budgets. Soak runs emit per-loop JSON artifacts and aggregate gate summary at `output/remote-control/relay-soak-summary.json`.
 - OpenTelemetry metrics/tracing export and SLO alerting runbooks.

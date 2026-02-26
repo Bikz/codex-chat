@@ -25,6 +25,12 @@ Validate the production GKE bundle:
 make remote-control-gke-validate
 ```
 
+Run Node-vs-Rust protocol compatibility scenario:
+
+```bash
+make remote-control-compat
+```
+
 ## Endpoints
 
 - `POST /pair/start`

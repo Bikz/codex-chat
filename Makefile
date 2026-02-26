@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: quick ci format format-check lint test-fast test periphery release-dmg release-prod release-next-version release-tag-next host-metadata-check parity-check oss-smoke reliability-local reliability-scorecard reliability-bundle remote-control-load remote-control-soak remote-control-gate remote-control-load-gated remote-control-gke-validate remote-control-stage-gate prepush-local install-local-hooks bootstrap
+.PHONY: quick ci format format-check lint test-fast test periphery release-dmg release-prod release-next-version release-tag-next host-metadata-check parity-check oss-smoke reliability-local reliability-scorecard reliability-bundle remote-control-load remote-control-soak remote-control-gate remote-control-load-gated remote-control-compat remote-control-gke-validate remote-control-stage-gate prepush-local install-local-hooks bootstrap
 
 quick: host-metadata-check parity-check format-check lint test-fast
 
@@ -64,6 +64,9 @@ remote-control-gate:
 	./scripts/remote-control-relay-gate.sh
 
 remote-control-load-gated: remote-control-load remote-control-gate
+
+remote-control-compat:
+	./scripts/remote-control-relay-compat.sh
 
 remote-control-gke-validate:
 	./scripts/remote-control-relay-gke-validate.sh

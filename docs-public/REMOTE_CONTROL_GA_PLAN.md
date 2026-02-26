@@ -47,6 +47,11 @@ Scope:
 - Preserve token rotation behavior on mobile websocket auth.
 - Add compatibility tests that run the same scenarios against Node and Rust relays.
 
+Implemented so far (2026-02-26):
+- Added cross-relay compatibility harness at `apps/RemoteControlRelay/test/relay.compat.test.mjs`.
+- Local gate command available via `make remote-control-compat` (`pnpm -s run remote:relay:compat`).
+- Harness runs the same normalized scenario (pair start/join + desktop approval, token rotation, anti-spoof forwarding checks, stale-token rejection) against both Node and Rust relays and fails on behavioral drift.
+
 Acceptance criteria:
 - Desktop + PWA work unchanged against Rust relay in local/staging.
 - Existing relay integration scenarios pass against Rust.

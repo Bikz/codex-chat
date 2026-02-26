@@ -12,6 +12,7 @@
     "remote:relay:soak": "bash scripts/remote-control-relay-soak.sh",
     "remote:relay:gate": "bash scripts/remote-control-relay-gate.sh",
     "remote:relay:load:gated": "make remote-control-load-gated",
+    "remote:relay:compat": "bash scripts/remote-control-relay-compat.sh",
     "remote:relay:gke:validate": "bash scripts/remote-control-relay-gke-validate.sh",
     "remote:stage:gate": "bash scripts/remote-control-stage-gate.sh",
     "swift:build": "bash scripts/swift-build-all.sh",
