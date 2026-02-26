@@ -5,6 +5,7 @@ This document describes the production baseline for deploying the Rust relay on 
 ## Architecture
 
 - Stateless relay pods on GKE (`apps/RemoteControlRelayRust`)
+- Static PWA pods on GKE (`apps/RemoteControlPWA`)
 - Shared Redis for session/token durability
 - Shared NATS for cross-instance relay fanout
 - External HTTPS load balancer in front of relay service
@@ -26,6 +27,8 @@ Resources included:
 
 - `Deployment`
 - `Service`
+- `PWA Deployment`
+- `PWA Service`
 - `Ingress`
 - `BackendConfig` (Cloud Armor policy attachment)
 - `FrontendConfig` (HTTPS redirect)
@@ -38,7 +41,7 @@ Resources included:
 
 Set these secret values before deploy:
 
-- `PUBLIC_BASE_URL`
+- `PUBLIC_BASE_URL` (PWA route, typically `https://<domain>/rc`)
 - `ALLOWED_ORIGINS`
 - `REDIS_URL`
 - `NATS_URL`
@@ -54,15 +57,21 @@ Defaults and non-secret runtime tunables are in:
 
 ## Deploy
 
-1. Build and push image
+1. Build and push images
 
 ```bash
-cd apps/RemoteControlRelayRust
-docker build -t gcr.io/PROJECT_ID/remote-control-relay-rust:TAG .
+cd /path/to/repo
+docker build -f apps/RemoteControlRelayRust/Dockerfile -t gcr.io/PROJECT_ID/remote-control-relay-rust:TAG .
 docker push gcr.io/PROJECT_ID/remote-control-relay-rust:TAG
+
+docker build -f apps/RemoteControlPWA/Dockerfile -t gcr.io/PROJECT_ID/remote-control-pwa:TAG .
+docker push gcr.io/PROJECT_ID/remote-control-pwa:TAG
 ```
 
-2. Update image tag in `deployment.yaml`
+2. Update image tags in:
+
+- `infra/remote-control-relay/gke/base/deployment.yaml`
+- `infra/remote-control-relay/gke/base/pwa-deployment.yaml`
 
 3. Review ingress domain + Cloud Armor policy placeholders
 

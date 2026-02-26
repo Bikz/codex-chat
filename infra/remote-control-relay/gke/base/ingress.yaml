@@ -13,10 +13,45 @@ spec:
     - host: remote.codexchat.app
       http:
         paths:
-          - path: /
+          - path: /ws
             pathType: Prefix
             backend:
               service:
                 name: remote-control-relay
+                port:
+                  number: 80
+          - path: /pair
+            pathType: Prefix
+            backend:
+              service:
+                name: remote-control-relay
+                port:
+                  number: 80
+          - path: /devices
+            pathType: Prefix
+            backend:
+              service:
+                name: remote-control-relay
+                port:
+                  number: 80
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service:
+                name: remote-control-relay
+                port:
+                  number: 80
+          - path: /metricsz
+            pathType: Prefix
+            backend:
+              service:
+                name: remote-control-relay
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: remote-control-pwa
                 port:
                   number: 80
