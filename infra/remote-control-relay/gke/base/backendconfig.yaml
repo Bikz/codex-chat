@@ -5,7 +5,8 @@ metadata:
   labels:
     app.kubernetes.io/name: remote-control-relay
 spec:
-  timeoutSec: 30
+  # Keep upgraded WebSocket sessions alive; 30s is too aggressive for remote-control sockets.
+  timeoutSec: 3600
   connectionDraining:
     drainingTimeoutSec: 20
   healthCheck:

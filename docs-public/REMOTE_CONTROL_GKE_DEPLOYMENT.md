@@ -38,6 +38,11 @@ Resources included:
 - `PodDisruptionBudget`
 - `ConfigMap` + secret template
 
+Important timeout note:
+
+- Relay `BackendConfig.timeoutSec` is set to `3600` to support long-lived WebSocket `/ws` connections.
+- Reducing this value can cause periodic disconnect churn for active remote sessions.
+
 ## Required Environment
 
 Set these secret values before deploy:
