@@ -47,6 +47,12 @@ Default URL: `http://localhost:8787`
 Run the relay load harness (ignored by default in normal test runs):
 
 ```bash
+make remote-control-load
+```
+
+Equivalent direct command:
+
+```bash
 cd apps/RemoteControlRelayRust
 RELAY_LOAD_SESSIONS=200 \
 RELAY_LOAD_MESSAGES_PER_SESSION=20 \

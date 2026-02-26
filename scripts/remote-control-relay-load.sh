@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+RELAY_DIR="$REPO_ROOT/apps/RemoteControlRelayRust"
+
+if [[ ! -d "$RELAY_DIR" ]]; then
+  echo "error: relay directory not found at $RELAY_DIR" >&2
+  exit 1
+fi
+
+export RELAY_LOAD_SESSIONS="${RELAY_LOAD_SESSIONS:-200}"
+export RELAY_LOAD_MESSAGES_PER_SESSION="${RELAY_LOAD_MESSAGES_PER_SESSION:-20}"
+export RELAY_LOAD_SETUP_CONCURRENCY="${RELAY_LOAD_SETUP_CONCURRENCY:-32}"
+export RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS="${RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS:-3000}"
+export RELAY_LOAD_P95_BUDGET_MS="${RELAY_LOAD_P95_BUDGET_MS:-1000}"
+
+cat <<CONFIG
+[remote-control-load] starting harness with:
+  RELAY_LOAD_SESSIONS=$RELAY_LOAD_SESSIONS
+  RELAY_LOAD_MESSAGES_PER_SESSION=$RELAY_LOAD_MESSAGES_PER_SESSION
+  RELAY_LOAD_SETUP_CONCURRENCY=$RELAY_LOAD_SETUP_CONCURRENCY
+  RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS=$RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS
+  RELAY_LOAD_P95_BUDGET_MS=$RELAY_LOAD_P95_BUDGET_MS
+CONFIG
+
+cd "$RELAY_DIR"
+
+cargo test \
+  --test relay_load_harness \
+  relay_parallel_sessions_load_harness \
+  -- \
+  --ignored \
+  --nocapture
