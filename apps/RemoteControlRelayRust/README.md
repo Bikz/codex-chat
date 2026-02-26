@@ -41,3 +41,25 @@ Default URL: `http://localhost:8787`
 - Optional cross-instance fanout can be enabled with `NATS_URL` and `NATS_SUBJECT_PREFIX`.
 - With Redis + NATS configured, relay instances can restore session metadata and route desktop/mobile websocket traffic across instances without exposing inbound desktop ports.
 - `GET /metricsz` exposes live runtime counters for sessions, active websocket connections, token index size, and relay pressure indicators (including command/snapshot limiter buckets plus outbound send failures and slow-consumer disconnect counts).
+
+## Manual load harness
+
+Run the relay load harness (ignored by default in normal test runs):
+
+```bash
+cd apps/RemoteControlRelayRust
+RELAY_LOAD_SESSIONS=200 \
+RELAY_LOAD_MESSAGES_PER_SESSION=20 \
+RELAY_LOAD_SETUP_CONCURRENCY=32 \
+RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS=3000 \
+RELAY_LOAD_P95_BUDGET_MS=1000 \
+cargo test --test relay_load_harness relay_parallel_sessions_load_harness -- --ignored --nocapture
+```
+
+Environment variables:
+
+- `RELAY_LOAD_SESSIONS` (default `50`)
+- `RELAY_LOAD_MESSAGES_PER_SESSION` (default `10`)
+- `RELAY_LOAD_SETUP_CONCURRENCY` (default `16`)
+- `RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS` (default `2000`)
+- `RELAY_LOAD_P95_BUDGET_MS` (default `750`)
