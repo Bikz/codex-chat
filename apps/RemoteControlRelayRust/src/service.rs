@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{DefaultBodyLimit, Query, State};
+use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::{Json, Router};
 use base64::Engine;
@@ -16,14 +16,15 @@ use rand::RngCore;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{sleep, timeout};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tracing::info;
 use url::Url;
 
 use crate::config::{is_allowed_origin, RelayConfig};
 use crate::model::{
     ErrorResponse, HealthResponse, PairJoinRequest, PairJoinResponse, PairStartRequest,
-    PairStartResponse, RelayAuthMessage, RelayAuthOk, RelayDeviceCount, RelayPairDecision,
-    RelayPairRequest, RelayPairResult,
+    PairStartResponse, PairStopRequest, PairStopResponse, RelayAuthMessage, RelayAuthOk,
+    RelayDeviceCount, RelayPairDecision, RelayPairRequest, RelayPairResult,
 };
 
 #[derive(Clone)]
@@ -100,6 +101,9 @@ enum AuthContext {
 }
 
 pub fn build_router(state: SharedRelayState) -> Router {
+    let max_json_bytes = state.config.max_json_bytes;
+    let cors_layer = build_cors_layer(&state.config);
+
     Router::new()
         .route("/healthz", axum::routing::get(healthz))
         .route(
@@ -110,8 +114,14 @@ pub fn build_router(state: SharedRelayState) -> Router {
             "/pair/join",
             axum::routing::post(pair_join).options(pair_options),
         )
+        .route(
+            "/pair/stop",
+            axum::routing::post(pair_stop).options(pair_options),
+        )
         .route("/ws", axum::routing::get(ws_upgrade))
         .with_state(state)
+        .layer(DefaultBodyLimit::max(max_json_bytes))
+        .layer(cors_layer)
 }
 
 pub fn new_state(config: RelayConfig) -> SharedRelayState {
@@ -127,6 +137,24 @@ pub fn new_state(config: RelayConfig) -> SharedRelayState {
 
     start_session_sweeper(state.clone());
     state
+}
+
+fn build_cors_layer(config: &RelayConfig) -> CorsLayer {
+    let allow_origin = if config.allowed_origins.contains("*") {
+        AllowOrigin::from(Any)
+    } else {
+        let origins = config
+            .allowed_origins
+            .iter()
+            .filter_map(|origin| HeaderValue::from_str(origin).ok())
+            .collect::<Vec<_>>();
+        AllowOrigin::list(origins)
+    };
+
+    CorsLayer::new()
+        .allow_methods([Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE])
+        .allow_origin(allow_origin)
 }
 
 fn start_session_sweeper(state: SharedRelayState) {
@@ -550,6 +578,69 @@ async fn pair_join(
             device_id,
             device_session_token,
             ws_url,
+        }),
+    )
+        .into_response()
+}
+
+async fn pair_stop(
+    State(state): State<SharedRelayState>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<PairStopRequest>,
+) -> axum::response::Response {
+    if !origin_allowed(&state.config, &headers) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "origin_not_allowed",
+            "Origin is not allowed.",
+        );
+    }
+
+    let client_ip = client_ip(&state.config, &headers, addr);
+    if is_rate_limited(&state, &client_ip).await {
+        return error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "Too many relay management requests. Try again in a minute.",
+        );
+    }
+
+    if !is_opaque_token(&request.session_id, 16)
+        || !is_opaque_token(&request.desktop_session_token, 22)
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_pair_stop",
+            "sessionID and desktopSessionToken are required.",
+        );
+    }
+
+    let mut relay = state.inner.lock().await;
+    if let Some(session) = relay.sessions.get(&request.session_id) {
+        if !safe_token_equals(
+            &session.desktop_session_token,
+            &request.desktop_session_token,
+        ) {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "invalid_desktop_session_token",
+                "Desktop session token is invalid.",
+            );
+        }
+    }
+
+    close_session(&mut relay, &request.session_id, "stopped_by_desktop");
+    info!(
+        "[relay-rs] pair_stop session={}",
+        session_log_id(&request.session_id)
+    );
+
+    (
+        StatusCode::OK,
+        Json(PairStopResponse {
+            accepted: true,
+            session_id: request.session_id,
         }),
     )
         .into_response()

@@ -15,6 +15,7 @@ Default URL: `http://localhost:8787`
 
 - `POST /pair/start`
 - `POST /pair/join`
+- `POST /pair/stop`
 - `GET /healthz`
 - `GET /ws` (WebSocket)
 
@@ -22,3 +23,5 @@ Default URL: `http://localhost:8787`
 
 - This service is being developed as the production relay replacement for `apps/RemoteControlRelay`.
 - Protocol compatibility remains `schemaVersion = 1`.
+- Browser pairing routes are origin-gated and CORS-enabled for configured allowlisted origins.
+- Request bodies are bounded by `MAX_JSON_BYTES` (default `65536`).

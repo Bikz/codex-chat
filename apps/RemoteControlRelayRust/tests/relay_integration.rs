@@ -267,3 +267,77 @@ async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
 
     task.abort();
 }
+
+#[tokio::test]
+async fn pair_stop_closes_session_and_invalidates_join() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let start_response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+
+    let stop_response = client
+        .post(format!("{base}/pair/stop"))
+        .json(&json!({
+            "sessionID": session_id,
+            "desktopSessionToken": desktop_session_token,
+        }))
+        .send()
+        .await
+        .expect("pair stop request");
+    assert_eq!(stop_response.status(), StatusCode::OK);
+
+    let join_response = client
+        .post(format!("{base}/pair/join"))
+        .header("Origin", "http://localhost:4173")
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+        }))
+        .send()
+        .await
+        .expect("pair join request");
+    assert_eq!(join_response.status(), StatusCode::NOT_FOUND);
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn pairing_endpoints_include_cors_headers_for_allowed_origin() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .request(reqwest::Method::OPTIONS, format!("{base}/pair/join"))
+        .header("Origin", "http://localhost:4173")
+        .header("Access-Control-Request-Method", "POST")
+        .send()
+        .await
+        .expect("options request");
+
+    assert!(response.status().is_success());
+    assert_eq!(
+        response
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:4173")
+    );
+
+    task.abort();
+}

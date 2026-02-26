@@ -46,6 +46,21 @@ pub struct PairJoinResponse {
     pub ws_url: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct PairStopRequest {
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "desktopSessionToken")]
+    pub desktop_session_token: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PairStopResponse {
+    pub accepted: bool,
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ErrorResponse {
