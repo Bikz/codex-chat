@@ -31,6 +31,7 @@ Resources included:
 - `PWA Service`
 - `Ingress`
 - `BackendConfig` (Cloud Armor policy attachment)
+- `PWA BackendConfig` (Cloud Armor attachment + health check on port 8080)
 - `FrontendConfig` (HTTPS redirect)
 - `ManagedCertificate`
 - `HorizontalPodAutoscaler`

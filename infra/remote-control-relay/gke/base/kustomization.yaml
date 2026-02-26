@@ -9,6 +9,7 @@ resources:
   - service.yaml
   - pwa-deployment.yaml
   - pwa-service.yaml
+  - pwa-backendconfig.yaml
   - backendconfig.yaml
   - frontendconfig.yaml
   - managedcertificate.yaml

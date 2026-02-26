@@ -1,0 +1,20 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: remote-control-pwa-backendconfig
+  labels:
+    app.kubernetes.io/name: remote-control-pwa
+spec:
+  timeoutSec: 30
+  connectionDraining:
+    drainingTimeoutSec: 20
+  healthCheck:
+    type: HTTP
+    requestPath: /healthz
+    port: 8080
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+  securityPolicy:
+    name: remote-control-relay-cloud-armor
