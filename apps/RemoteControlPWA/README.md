@@ -15,6 +15,7 @@ Then open `http://localhost:4173`.
 
 1. Desktop starts a remote session and shows QR link with `#sid=<session>&jt=<join_token>&relay=<relay_base_url>`.
 2. PWA opens from that link and calls `POST /pair/join` on the relay.
+   - Join payload includes a best-effort `deviceName` inferred from the browser/device.
 3. Desktop must explicitly approve the pairing request in the Remote Control sheet.
 4. Relay returns `deviceSessionToken` + `wsURL`.
 5. PWA opens `wsURL`, then sends `{"type":"relay.auth","token":"<deviceSessionToken>"}`.
@@ -29,6 +30,7 @@ Then open `http://localhost:4173`.
 - Manual + automatic snapshot requests on reconnect.
 - Live delta event handling for message appends and turn status updates.
 - Reconnect backoff when backgrounding or network drops.
+- If desktop revokes the device, PWA stops auto-reconnect and requires re-pair.
 
 ## Limitations
 

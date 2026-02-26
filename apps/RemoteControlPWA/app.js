@@ -2,12 +2,14 @@ const state = {
   sessionID: null,
   joinToken: null,
   deviceID: null,
+  deviceName: null,
   relayBaseURL: null,
   deviceSessionToken: null,
   wsURL: null,
   socket: null,
   reconnectAttempts: 0,
   reconnectTimer: null,
+  reconnectDisabledReason: null,
   lastIncomingSeq: null,
   nextOutgoingSeq: 1,
   canApproveRemotely: false,
@@ -86,6 +88,37 @@ function normalizeRelayBaseURL(rawValue) {
   } catch {
     return null;
   }
+}
+
+function inferredDeviceName() {
+  if (typeof navigator === "undefined") {
+    return "Remote Device";
+  }
+
+  const userAgentData = navigator.userAgentData;
+  if (userAgentData && typeof userAgentData.platform === "string" && userAgentData.platform.trim() !== "") {
+    const platform = userAgentData.platform.trim();
+    return platform === "macOS" ? "Mac Browser" : `${platform} Browser`;
+  }
+
+  const ua = navigator.userAgent || "";
+  if (/iPhone/i.test(ua)) {
+    return "iPhone";
+  }
+  if (/iPad/i.test(ua)) {
+    return "iPad";
+  }
+  if (/Android/i.test(ua)) {
+    return "Android Device";
+  }
+  if (/Macintosh|Mac OS X/i.test(ua)) {
+    return "Mac Browser";
+  }
+  if (/Windows/i.test(ua)) {
+    return "Windows Browser";
+  }
+
+  return "Remote Device";
 }
 
 function renderProjects() {
@@ -418,6 +451,7 @@ function onSocketMessage(event) {
   }
 
   if (message.type === "auth_ok") {
+    state.reconnectDisabledReason = null;
     if (typeof message.nextDeviceSessionToken === "string" && message.nextDeviceSessionToken.length > 0) {
       state.deviceSessionToken = message.nextDeviceSessionToken;
     }
@@ -426,6 +460,17 @@ function onSocketMessage(event) {
     }
     setStatus("WebSocket authenticated.");
     requestSnapshot("initial_sync");
+    return;
+  }
+
+  if (message.type === "disconnect") {
+    const reason = typeof message.reason === "string" ? message.reason : "unknown";
+    if (reason === "device_revoked" || reason === "stopped_by_desktop") {
+      state.reconnectDisabledReason = reason;
+      state.deviceSessionToken = null;
+      state.joinToken = null;
+    }
+    setStatus(disconnectMessageForReason(reason), "warn");
     return;
   }
 
@@ -491,6 +536,21 @@ function onSocketMessage(event) {
   }
 }
 
+function disconnectMessageForReason(reason) {
+  switch (reason) {
+    case "device_revoked":
+      return "This device was revoked from desktop. Pair again to reconnect.";
+    case "stopped_by_desktop":
+      return "Desktop ended the remote session. Scan a new QR code to reconnect.";
+    case "device_reconnected":
+      return "Another tab or device reconnected. Attempting to resume...";
+    case "idle_timeout":
+      return "Remote session timed out due to inactivity. Start a new session on desktop.";
+    default:
+      return "Disconnected from relay.";
+  }
+}
+
 function closeSocket() {
   if (state.socket) {
     state.socket.onopen = null;
@@ -533,6 +593,10 @@ function connectSocket() {
 
   socket.onclose = () => {
     setConnectionBadge(false);
+    if (state.reconnectDisabledReason) {
+      setStatus(disconnectMessageForReason(state.reconnectDisabledReason), "warn");
+      return;
+    }
     scheduleReconnect();
   };
 
@@ -617,7 +681,8 @@ async function pairDevice() {
         },
         body: JSON.stringify({
           sessionID: state.sessionID,
-          joinToken: state.joinToken
+          joinToken: state.joinToken,
+          deviceName: state.deviceName
         }),
         signal: abortController.signal
       });
@@ -648,6 +713,7 @@ async function pairDevice() {
     state.wsURL = payload.wsURL;
     state.sessionID = payload.sessionID;
     state.joinToken = null;
+    state.reconnectDisabledReason = null;
     dom.sessionValue.textContent = state.sessionID;
     setStatus("Pairing successful. Connecting...");
     connectSocket();
@@ -717,6 +783,7 @@ function registerServiceWorker() {
 }
 
 function init() {
+  state.deviceName = inferredDeviceName();
   parseJoinFromHash();
   wireButtons();
   wireComposer();
