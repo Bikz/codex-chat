@@ -11,6 +11,8 @@ const state = {
   reconnectTimer: null,
   reconnectDisabledReason: null,
   lastIncomingSeq: null,
+  lastSyncedAt: null,
+  isSyncStale: false,
   nextOutgoingSeq: 1,
   canApproveRemotely: false,
   projects: [],
@@ -28,6 +30,7 @@ const dom = {
   pairingHint: document.getElementById("pairingHint"),
   sessionValue: document.getElementById("sessionValue"),
   seqValue: document.getElementById("seqValue"),
+  lastSyncedValue: document.getElementById("lastSyncedValue"),
   statusText: document.getElementById("statusText"),
   pairButton: document.getElementById("pairButton"),
   reconnectButton: document.getElementById("reconnectButton"),
@@ -47,8 +50,58 @@ function setStatus(text, level = "info") {
 }
 
 function setConnectionBadge(isConnected) {
-  dom.connectionBadge.textContent = isConnected ? "Connected" : "Disconnected";
+  dom.connectionBadge.textContent = isConnected ? (state.isSyncStale ? "Stale" : "Connected") : "Disconnected";
   dom.connectionBadge.classList.toggle("connected", isConnected);
+  dom.connectionBadge.classList.toggle("stale", isConnected && state.isSyncStale);
+}
+
+function updateLastSyncedLabel() {
+  if (!state.lastSyncedAt) {
+    dom.lastSyncedValue.textContent = "Never";
+    return;
+  }
+
+  const deltaMs = Date.now() - state.lastSyncedAt;
+  if (deltaMs < 5_000) {
+    dom.lastSyncedValue.textContent = "Just now";
+    return;
+  }
+
+  const deltaSeconds = Math.floor(deltaMs / 1_000);
+  if (deltaSeconds < 60) {
+    dom.lastSyncedValue.textContent = `${deltaSeconds}s ago`;
+    return;
+  }
+
+  const deltaMinutes = Math.floor(deltaSeconds / 60);
+  if (deltaMinutes < 60) {
+    dom.lastSyncedValue.textContent = `${deltaMinutes}m ago`;
+    return;
+  }
+
+  dom.lastSyncedValue.textContent = new Date(state.lastSyncedAt).toLocaleTimeString();
+}
+
+function markSynced() {
+  state.lastSyncedAt = Date.now();
+  state.isSyncStale = false;
+  updateLastSyncedLabel();
+  setConnectionBadge(state.socket?.readyState === WebSocket.OPEN);
+}
+
+function refreshSyncFreshness() {
+  updateLastSyncedLabel();
+  if (state.socket?.readyState !== WebSocket.OPEN || !state.lastSyncedAt) {
+    return;
+  }
+
+  const staleThresholdMs = 45_000;
+  const isStale = Date.now() - state.lastSyncedAt >= staleThresholdMs;
+  if (isStale && !state.isSyncStale) {
+    state.isSyncStale = true;
+    setConnectionBadge(true);
+    setStatus("Connection is live but may be stale. Use Request Snapshot to resync.", "warn");
+  }
 }
 
 function parseJoinFromHash() {
@@ -458,6 +511,7 @@ function onSocketMessage(event) {
     if (typeof message.deviceID === "string" && message.deviceID.length > 0) {
       state.deviceID = message.deviceID;
     }
+    markSynced();
     setStatus("WebSocket authenticated.");
     requestSnapshot("initial_sync");
     return;
@@ -499,12 +553,14 @@ function onSocketMessage(event) {
   }
 
   if (payload.type === "snapshot") {
+    markSynced();
     applySnapshot(payload.payload || {});
     setStatus("Snapshot synced.");
     return;
   }
 
   if (payload.type === "hello") {
+    markSynced();
     state.canApproveRemotely = Boolean(payload.payload?.supportsApprovals);
     renderApprovals();
     if (!state.canApproveRemotely) {
@@ -514,6 +570,7 @@ function onSocketMessage(event) {
   }
 
   if (payload.type === "event") {
+    markSynced();
     const eventPayload = payload.payload || {};
     if (eventPayload.name === "thread.message.append") {
       appendMessageFromEvent(eventPayload);
@@ -579,6 +636,7 @@ function connectSocket() {
 
   socket.onopen = () => {
     state.reconnectAttempts = 0;
+    state.isSyncStale = false;
     setConnectionBadge(true);
     setStatus("Connected. Authenticating...");
     socket.send(
@@ -592,6 +650,7 @@ function connectSocket() {
   socket.onmessage = onSocketMessage;
 
   socket.onclose = () => {
+    state.isSyncStale = false;
     setConnectionBadge(false);
     if (state.reconnectDisabledReason) {
       setStatus(disconnectMessageForReason(state.reconnectDisabledReason), "warn");
@@ -768,9 +827,17 @@ function wireButtons() {
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && state.socket?.readyState !== WebSocket.OPEN) {
-      connectSocket();
+    if (document.visibilityState !== "visible") {
+      return;
     }
+
+    if (state.socket?.readyState !== WebSocket.OPEN) {
+      connectSocket();
+      return;
+    }
+
+    setStatus("Resyncing after returning to foreground...");
+    requestSnapshot("visibility_resume");
   });
 }
 
@@ -791,6 +858,8 @@ function init() {
   renderThreads();
   renderMessages();
   renderApprovals();
+  refreshSyncFreshness();
+  setInterval(refreshSyncFreshness, 5_000);
   registerServiceWorker();
 }
 

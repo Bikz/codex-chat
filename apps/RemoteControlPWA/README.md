@@ -29,7 +29,9 @@ Then open `http://localhost:4173`.
 - Sequence tracking and gap detection.
 - Manual + automatic snapshot requests on reconnect.
 - Live delta event handling for message appends and turn status updates.
+- `Last synced` freshness tracking with stale-state indicator.
 - Reconnect backoff when backgrounding or network drops.
+- Foreground resume triggers an explicit snapshot resync when already connected.
 - If desktop revokes the device, PWA stops auto-reconnect and requires re-pair.
 
 ## Limitations

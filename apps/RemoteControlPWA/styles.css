@@ -97,6 +97,12 @@ h2 {
   background: rgba(111, 231, 203, 0.14);
 }
 
+.badge.stale {
+  border-color: rgba(255, 212, 135, 0.58);
+  color: var(--warning);
+  background: rgba(255, 212, 135, 0.14);
+}
+
 .layout {
   max-width: 1120px;
   margin: 0 auto;
