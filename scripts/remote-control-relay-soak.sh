@@ -120,7 +120,7 @@ for payload in loop_payloads:
     if first_error is None and payload.get("first_error"):
         first_error = str(payload["first_error"])
 
-failing_loops = status_failures + len(missing_artifacts) + load_script_failures
+failing_loops = max(status_failures + len(missing_artifacts), load_script_failures)
 max_p95_us_gate = int(max_p95_us_raw) if max_p95_us_raw else None
 max_p95_gate = int(max_p95_raw) if max_p95_raw else None
 

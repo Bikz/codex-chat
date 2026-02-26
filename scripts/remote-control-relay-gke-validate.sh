@@ -15,6 +15,11 @@ if [[ ! -f "$KUSTOMIZE_DIR/kustomization.yaml" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$KUSTOMIZE_DIR/secret-template.yaml" ]]; then
+  echo "error: missing secret template at $KUSTOMIZE_DIR/secret-template.yaml" >&2
+  exit 1
+fi
+
 rendered="$(mktemp)"
 trap 'rm -f "$rendered"' EXIT
 
@@ -24,7 +29,6 @@ required_kinds=(
   "Namespace"
   "ServiceAccount"
   "ConfigMap"
-  "Secret"
   "Deployment"
   "Service"
   "HorizontalPodAutoscaler"
@@ -32,16 +36,13 @@ required_kinds=(
 )
 
 for kind in "${required_kinds[@]}"; do
-  if ! rg -q "^kind: ${kind}$" "$rendered"; then
+  if ! grep -Eq "^kind: ${kind}$" "$rendered"; then
     echo "error: rendered manifests missing required kind '${kind}'" >&2
     exit 1
   fi
 done
 
-if rg -q "relay.example.com|remote.codexchat.example.com|<redis-host>|<nats-host>" "$rendered"; then
-  echo "warning: rendered manifests still include secret template placeholder values" >&2
-  echo "warning: provide real values before production apply" >&2
-fi
+echo "[remote-control-gke-validate] note: secret-template.yaml is intentionally excluded from kustomize apply"
 
 if kubectl cluster-info >/dev/null 2>&1; then
   kubectl apply --dry-run=client --validate=false -f "$rendered" >/dev/null

@@ -57,6 +57,8 @@ cp infra/remote-control-relay/gke/secret-template.yaml /tmp/relay-secrets.yaml
 # edit /tmp/relay-secrets.yaml with real values
 ```
 
+`secret-template.yaml` is a reference file only and is intentionally not included in `kustomization.yaml`.
+
 4. Apply manifests
 
 ```bash
