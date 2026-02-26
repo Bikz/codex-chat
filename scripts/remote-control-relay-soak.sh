@@ -64,6 +64,7 @@ max_p95_raw = os.getenv("RELAY_SOAK_MAX_P95_MS", "").strip()
 max_total_errors = int(os.getenv("RELAY_SOAK_MAX_TOTAL_ERRORS", "0"))
 max_total_outbound = int(os.getenv("RELAY_SOAK_MAX_TOTAL_OUTBOUND_SEND_FAILURES", "0"))
 max_total_slow = int(os.getenv("RELAY_SOAK_MAX_TOTAL_SLOW_CONSUMER_DISCONNECTS", "0"))
+max_total_ws_auth_failures = int(os.getenv("RELAY_SOAK_MAX_TOTAL_WS_AUTH_FAILURES", "0"))
 min_total_samples = int(os.getenv("RELAY_SOAK_MIN_TOTAL_SAMPLES", "1"))
 
 loop_payloads = []
@@ -97,6 +98,7 @@ total_samples = 0
 total_errors = 0
 total_outbound_send_failures = 0
 total_slow_consumer_disconnects = 0
+total_ws_auth_failures = 0
 first_error = None
 
 for payload in loop_payloads:
@@ -114,6 +116,7 @@ for payload in loop_payloads:
     total_errors += int(payload.get("error_count", 0) or 0)
     total_outbound_send_failures += int(payload.get("outbound_send_failures", 0) or 0)
     total_slow_consumer_disconnects += int(payload.get("slow_consumer_disconnects", 0) or 0)
+    total_ws_auth_failures += int(payload.get("ws_auth_failures", 0) or 0)
     if first_error is None and payload.get("first_error"):
         first_error = str(payload["first_error"])
 
@@ -138,6 +141,10 @@ if total_slow_consumer_disconnects > max_total_slow:
     gate_failures.append(
         f"total_slow_consumer_disconnects {total_slow_consumer_disconnects} exceeded gate {max_total_slow}"
     )
+if total_ws_auth_failures > max_total_ws_auth_failures:
+    gate_failures.append(
+        f"total_ws_auth_failures {total_ws_auth_failures} exceeded gate {max_total_ws_auth_failures}"
+    )
 if total_samples < min_total_samples:
     gate_failures.append(f"total_samples {total_samples} below minimum {min_total_samples}")
 
@@ -156,6 +163,7 @@ summary = {
     "total_errors": total_errors,
     "total_outbound_send_failures": total_outbound_send_failures,
     "total_slow_consumer_disconnects": total_slow_consumer_disconnects,
+    "total_ws_auth_failures": total_ws_auth_failures,
     "first_error": first_error,
     "gate": {
         "max_failing_loops": max_failing_loops,
@@ -164,6 +172,7 @@ summary = {
         "max_total_errors": max_total_errors,
         "max_total_outbound_send_failures": max_total_outbound,
         "max_total_slow_consumer_disconnects": max_total_slow,
+        "max_total_ws_auth_failures": max_total_ws_auth_failures,
         "min_total_samples": min_total_samples,
     },
     "gate_failures": gate_failures,
@@ -183,6 +192,7 @@ print(f"  max_p95_latency_ms={max_p95_seen}")
 print(f"  total_errors={total_errors}")
 print(f"  total_outbound_send_failures={total_outbound_send_failures}")
 print(f"  total_slow_consumer_disconnects={total_slow_consumer_disconnects}")
+print(f"  total_ws_auth_failures={total_ws_auth_failures}")
 
 if gate_failures:
     print("[remote-control-soak] FAILED", file=sys.stderr)

@@ -75,7 +75,9 @@ struct LoadHarnessSummary {
     passes_latency_budget: bool,
     outbound_send_failures: u64,
     slow_consumer_disconnects: u64,
+    ws_auth_failures: u64,
     passes_backpressure_budget: bool,
+    passes_auth_budget: bool,
     error_count: usize,
     first_error: Option<String>,
 }
@@ -496,7 +498,9 @@ async fn relay_parallel_sessions_load_harness() {
             passes_latency_budget: false,
             outbound_send_failures: 0,
             slow_consumer_disconnects: 0,
+            ws_auth_failures: 0,
             passes_backpressure_budget: false,
+            passes_auth_budget: false,
             error_count: failures.len(),
             first_error: failures.first().cloned(),
         };
@@ -541,8 +545,13 @@ async fn relay_parallel_sessions_load_harness() {
         .get("slowConsumerDisconnects")
         .and_then(Value::as_u64)
         .unwrap_or(0);
+    let ws_auth_failures = metrics
+        .get("wsAuthFailures")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     let passes_latency_budget = p95_ms <= cfg.p95_latency_budget_ms as u128;
     let passes_backpressure_budget = outbound_send_failures == 0 && slow_consumer_disconnects == 0;
+    let passes_auth_budget = ws_auth_failures == 0;
     let success_summary = LoadHarnessSummary {
         status: "ok".to_string(),
         base_url: base.clone(),
@@ -562,7 +571,9 @@ async fn relay_parallel_sessions_load_harness() {
         passes_latency_budget,
         outbound_send_failures,
         slow_consumer_disconnects,
+        ws_auth_failures,
         passes_backpressure_budget,
+        passes_auth_budget,
         error_count: 0,
         first_error: None,
     };
@@ -571,7 +582,7 @@ async fn relay_parallel_sessions_load_harness() {
     }
 
     println!(
-        "relay load harness summary: sessions={} messages_per_session={} samples={} p50={}us/{}ms p95={}us/{}ms p99={}us/{}ms max={}us/{}ms outboundSendFailures={} slowConsumerDisconnects={}",
+        "relay load harness summary: sessions={} messages_per_session={} samples={} p50={}us/{}ms p95={}us/{}ms p99={}us/{}ms max={}us/{}ms outboundSendFailures={} slowConsumerDisconnects={} wsAuthFailures={}",
         cfg.sessions,
         cfg.messages_per_session,
         samples.len(),
@@ -585,6 +596,7 @@ async fn relay_parallel_sessions_load_harness() {
         max_ms,
         outbound_send_failures,
         slow_consumer_disconnects,
+        ws_auth_failures,
     );
 
     assert!(
@@ -601,6 +613,10 @@ async fn relay_parallel_sessions_load_harness() {
     assert_eq!(
         slow_consumer_disconnects, 0,
         "expected no slow consumer disconnects during harness"
+    );
+    assert_eq!(
+        ws_auth_failures, 0,
+        "expected no websocket auth failures during harness"
     );
 
     if let Some(task) = server_task {

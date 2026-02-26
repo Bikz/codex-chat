@@ -29,6 +29,7 @@ p95_budget_ms = int(payload.get("p95_latency_budget_ms", 0) or 0)
 error_count = int(payload.get("error_count", 0) or 0)
 outbound_send_failures = int(payload.get("outbound_send_failures", 0) or 0)
 slow_consumer_disconnects = int(payload.get("slow_consumer_disconnects", 0) or 0)
+ws_auth_failures = int(payload.get("ws_auth_failures", 0) or 0)
 first_error = payload.get("first_error")
 
 required_status = os.getenv("RELAY_GATE_REQUIRE_STATUS", "ok").strip()
@@ -37,6 +38,7 @@ max_p95_raw = os.getenv("RELAY_GATE_MAX_P95_MS", "").strip()
 max_errors = int(os.getenv("RELAY_GATE_MAX_ERRORS", "0"))
 max_outbound_send_failures = int(os.getenv("RELAY_GATE_MAX_OUTBOUND_SEND_FAILURES", "0"))
 max_slow_consumer_disconnects = int(os.getenv("RELAY_GATE_MAX_SLOW_CONSUMER_DISCONNECTS", "0"))
+max_ws_auth_failures = int(os.getenv("RELAY_GATE_MAX_WS_AUTH_FAILURES", "0"))
 min_sample_count = int(os.getenv("RELAY_GATE_MIN_SAMPLE_COUNT", "1"))
 
 if max_p95_us_raw:
@@ -64,6 +66,7 @@ else:
 print(f"  error_count={error_count}")
 print(f"  outbound_send_failures={outbound_send_failures}")
 print(f"  slow_consumer_disconnects={slow_consumer_disconnects}")
+print(f"  ws_auth_failures={ws_auth_failures}")
 
 failures = []
 
@@ -85,6 +88,10 @@ if outbound_send_failures > max_outbound_send_failures:
 if slow_consumer_disconnects > max_slow_consumer_disconnects:
     failures.append(
         f"slow_consumer_disconnects {slow_consumer_disconnects} exceeded gate {max_slow_consumer_disconnects}"
+    )
+if ws_auth_failures > max_ws_auth_failures:
+    failures.append(
+        f"ws_auth_failures {ws_auth_failures} exceeded gate {max_ws_auth_failures}"
     )
 
 if failures:

@@ -102,6 +102,7 @@ Environment variables:
 - `RELAY_GATE_MAX_ERRORS` (default `0`)
 - `RELAY_GATE_MAX_OUTBOUND_SEND_FAILURES` (default `0`)
 - `RELAY_GATE_MAX_SLOW_CONSUMER_DISCONNECTS` (default `0`)
+- `RELAY_GATE_MAX_WS_AUTH_FAILURES` (default `0`)
 - `RELAY_GATE_MIN_SAMPLE_COUNT` (default `1`)
 - `RELAY_SOAK_LOOPS` (default `5`)
 - `RELAY_SOAK_RESULTS_DIR` (default `output/remote-control/soak-runs`)
@@ -112,4 +113,5 @@ Environment variables:
 - `RELAY_SOAK_MAX_TOTAL_ERRORS` (default `0`)
 - `RELAY_SOAK_MAX_TOTAL_OUTBOUND_SEND_FAILURES` (default `0`)
 - `RELAY_SOAK_MAX_TOTAL_SLOW_CONSUMER_DISCONNECTS` (default `0`)
+- `RELAY_SOAK_MAX_TOTAL_WS_AUTH_FAILURES` (default `0`)
 - `RELAY_SOAK_MIN_TOTAL_SAMPLES` (default `1`)
