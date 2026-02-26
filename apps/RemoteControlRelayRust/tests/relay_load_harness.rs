@@ -17,13 +17,15 @@ use tokio_tungstenite::tungstenite::Message;
 type TestSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct LoadHarnessConfig {
     sessions: usize,
     messages_per_session: u64,
     setup_concurrency: usize,
     roundtrip_timeout_ms: u64,
     p95_latency_budget_ms: u64,
+    base_url: Option<String>,
+    origin: String,
 }
 
 impl LoadHarnessConfig {
@@ -34,6 +36,15 @@ impl LoadHarnessConfig {
             setup_concurrency: parse_env_usize("RELAY_LOAD_SETUP_CONCURRENCY", 16),
             roundtrip_timeout_ms: parse_env_u64("RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS", 2_000),
             p95_latency_budget_ms: parse_env_u64("RELAY_LOAD_P95_BUDGET_MS", 750),
+            base_url: std::env::var("RELAY_LOAD_BASE_URL")
+                .ok()
+                .map(|value| value.trim().trim_end_matches('/').to_string())
+                .filter(|value| !value.is_empty()),
+            origin: std::env::var("RELAY_LOAD_ORIGIN")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "http://localhost:4173".to_string()),
         }
     }
 }
@@ -96,7 +107,11 @@ struct SessionHandles {
     mobile_socket: TestSocket,
 }
 
-async fn pair_connected_mobile(base: &str, client: &reqwest::Client) -> Result<SessionHandles, String> {
+async fn pair_connected_mobile(
+    base: &str,
+    origin: &str,
+    client: &reqwest::Client,
+) -> Result<SessionHandles, String> {
     let session_id = random_token(16);
     let join_token = random_token(32);
     let desktop_session_token = random_token(32);
@@ -155,13 +170,14 @@ async fn pair_connected_mobile(base: &str, client: &reqwest::Client) -> Result<S
 
     let join_response_future = {
         let base = base.to_string();
+        let origin = origin.to_string();
         let session_id = session_id.clone();
         let join_token = join_token.clone();
         let client = client.clone();
         tokio::spawn(async move {
             client
                 .post(format!("{base}/pair/join"))
-                .header("Origin", "http://localhost:4173")
+                .header("Origin", origin)
                 .json(&json!({
                     "sessionID": session_id,
                     "joinToken": join_token,
@@ -226,9 +242,12 @@ async fn pair_connected_mobile(base: &str, client: &reqwest::Client) -> Result<S
     let mut mobile_request = ws_url
         .into_client_request()
         .map_err(|error| format!("mobile ws request build failed: {error}"))?;
-    mobile_request
-        .headers_mut()
-        .insert("Origin", "http://localhost:4173".parse().expect("origin header"));
+    mobile_request.headers_mut().insert(
+        "Origin",
+        origin
+            .parse()
+            .map_err(|error| format!("invalid origin header value: {error}"))?,
+    );
 
     let (mut mobile_socket, _) = tokio_tungstenite::connect_async(mobile_request)
         .await
@@ -311,7 +330,12 @@ fn percentile(sorted: &[u128], pct: f64) -> u128 {
 #[ignore = "manual load harness"]
 async fn relay_parallel_sessions_load_harness() {
     let cfg = LoadHarnessConfig::from_env();
-    let (base, server_task) = spawn_test_server().await;
+    let (base, server_task) = if let Some(base_url) = cfg.base_url.clone() {
+        (base_url, None)
+    } else {
+        let (local_base, task) = spawn_test_server().await;
+        (local_base, Some(task))
+    };
     let client = reqwest::Client::new();
 
     let semaphore = Arc::new(Semaphore::new(cfg.setup_concurrency.max(1)));
@@ -323,6 +347,7 @@ async fn relay_parallel_sessions_load_harness() {
     for session_index in 0..cfg.sessions {
         let permit_pool = Arc::clone(&semaphore);
         let base = base.clone();
+        let origin = cfg.origin.clone();
         let client = client.clone();
         let roundtrip_samples_ms = Arc::clone(&roundtrip_samples_ms);
         let roundtrip_timeout = Duration::from_millis(cfg.roundtrip_timeout_ms);
@@ -334,7 +359,7 @@ async fn relay_parallel_sessions_load_harness() {
                 .await
                 .map_err(|error| format!("permit acquisition failed: {error}"))?;
 
-            let mut handles = pair_connected_mobile(&base, &client).await?;
+            let mut handles = pair_connected_mobile(&base, &origin, &client).await?;
 
             for seq in 1..=messages_per_session {
                 let payload = json!({
@@ -456,5 +481,7 @@ async fn relay_parallel_sessions_load_harness() {
         "expected no slow consumer disconnects during harness"
     );
 
-    server_task.abort();
+    if let Some(task) = server_task {
+        task.abort();
+    }
 }

@@ -75,3 +75,5 @@ Environment variables:
 - `RELAY_LOAD_SETUP_CONCURRENCY` (default `16`)
 - `RELAY_LOAD_ROUNDTRIP_TIMEOUT_MS` (default `2000`)
 - `RELAY_LOAD_P95_BUDGET_MS` (default `750`)
+- `RELAY_LOAD_BASE_URL` (optional; when set, harness targets that relay instead of spawning local in-process relay)
+- `RELAY_LOAD_ORIGIN` (default `http://localhost:4173`)
