@@ -220,6 +220,16 @@ Scope:
 - Load testing to 10k concurrent users equivalent (20k sockets).
 - Backpressure behavior under overload with clear client signals.
 
+Implemented so far (2026-02-26):
+- Relay enforces bounded outbound websocket queues with explicit slow-consumer disconnects.
+- `/metricsz` now includes backpressure counters:
+  - `outboundSendFailures`
+  - `slowConsumerDisconnects`
+- Manual load harness exists in `apps/RemoteControlRelayRust/tests/relay_load_harness.rs`.
+- Local wrappers are available:
+  - `make remote-control-load`
+  - `make remote-control-soak`
+
 Acceptance criteria:
 - 24h soak test meets defined SLO thresholds.
 - Error budget burn alerts and runbooks validated.
