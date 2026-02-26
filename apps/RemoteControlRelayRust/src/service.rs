@@ -44,6 +44,7 @@ pub struct RelayState {
     device_token_index: HashMap<String, DeviceTokenContext>,
     rate_buckets: HashMap<String, RateBucket>,
     pending_join_waiters: usize,
+    last_persistence_refresh_at_ms: i64,
     bus_subscribed_sessions: HashSet<String>,
     bus_subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
 }
@@ -126,6 +127,7 @@ struct CrossInstanceEnvelope {
     session_id: String,
     source_instance_id: String,
     target: String,
+    target_device_id: Option<String>,
     payload: String,
 }
 
@@ -333,6 +335,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     sessions,
                     rate_buckets: HashMap::new(),
                     pending_join_waiters: 0,
+                    last_persistence_refresh_at_ms: now_ms(),
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
                 }
@@ -344,6 +347,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     device_token_index: HashMap::new(),
                     rate_buckets: HashMap::new(),
                     pending_join_waiters: 0,
+                    last_persistence_refresh_at_ms: 0,
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
                 }
@@ -355,6 +359,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
             device_token_index: HashMap::new(),
             rate_buckets: HashMap::new(),
             pending_join_waiters: 0,
+            last_persistence_refresh_at_ms: 0,
             bus_subscribed_sessions: HashSet::new(),
             bus_subscription_tasks: HashMap::new(),
         }
@@ -368,6 +373,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
     };
 
     start_session_sweeper(state.clone());
+    start_control_subscription(state.clone());
     state
 }
 
@@ -409,6 +415,269 @@ async fn build_cross_instance_bus(config: &RelayConfig) -> Option<RelayCrossInst
         instance_id,
         subject_prefix: config.nats_subject_prefix.clone(),
     })
+}
+
+fn nats_session_subject(bus: &RelayCrossInstanceBus, session_id: &str) -> String {
+    format!("{}.session.{session_id}", bus.subject_prefix)
+}
+
+fn nats_control_subject(bus: &RelayCrossInstanceBus) -> String {
+    format!("{}.control", bus.subject_prefix)
+}
+
+fn start_control_subscription(state: SharedRelayState) {
+    let Some(bus) = state.cross_instance_bus.clone() else {
+        return;
+    };
+
+    tokio::spawn(async move {
+        let subject = nats_control_subject(&bus);
+        let mut subscription = match bus.client.subscribe(subject.clone()).await {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                warn!("[relay-rs] failed to subscribe control subject {subject}: {error}");
+                return;
+            }
+        };
+
+        while let Some(message) = subscription.next().await {
+            let Ok(envelope) = serde_json::from_slice::<CrossInstanceEnvelope>(&message.payload)
+            else {
+                continue;
+            };
+            if envelope.schema_version != 1 {
+                continue;
+            }
+            if envelope.source_instance_id == bus.instance_id {
+                continue;
+            }
+            if envelope.target != "pair_decision" {
+                continue;
+            }
+
+            apply_pair_decision_from_envelope(&state, &envelope).await;
+        }
+    });
+}
+
+fn publish_cross_instance_session(
+    state: &SharedRelayState,
+    session_id: &str,
+    target: &str,
+    target_device_id: Option<String>,
+    payload: String,
+) {
+    publish_cross_instance_envelope(
+        state,
+        nats_session_subject,
+        session_id,
+        target,
+        target_device_id,
+        payload,
+    );
+}
+
+fn publish_cross_instance_control_pair_decision(
+    state: &SharedRelayState,
+    session_id: &str,
+    payload: String,
+) {
+    publish_cross_instance_envelope(
+        state,
+        |bus, _| nats_control_subject(bus),
+        session_id,
+        "pair_decision",
+        None,
+        payload,
+    );
+}
+
+fn publish_cross_instance_envelope(
+    state: &SharedRelayState,
+    subject_builder: fn(&RelayCrossInstanceBus, &str) -> String,
+    session_id: &str,
+    target: &str,
+    target_device_id: Option<String>,
+    payload: String,
+) {
+    let Some(bus) = state.cross_instance_bus.clone() else {
+        return;
+    };
+
+    let envelope = CrossInstanceEnvelope {
+        schema_version: 1,
+        session_id: session_id.to_string(),
+        source_instance_id: bus.instance_id.clone(),
+        target: target.to_string(),
+        target_device_id,
+        payload,
+    };
+    let subject = subject_builder(&bus, session_id);
+
+    tokio::spawn(async move {
+        let encoded = match serde_json::to_vec(&envelope) {
+            Ok(encoded) => encoded,
+            Err(error) => {
+                warn!("[relay-rs] failed to encode cross-instance payload: {error}");
+                return;
+            }
+        };
+        if let Err(error) = bus.client.publish(subject, encoded.into()).await {
+            warn!("[relay-rs] failed to publish cross-instance payload: {error}");
+        }
+    });
+}
+
+async fn sync_session_bus_subscription(state: &SharedRelayState, session_id: &str) {
+    let Some(bus) = state.cross_instance_bus.clone() else {
+        return;
+    };
+
+    let mut relay = state.inner.lock().await;
+    let should_subscribe = relay
+        .sessions
+        .get(session_id)
+        .map(|session| session.desktop_socket.is_some() || !session.mobile_sockets.is_empty())
+        .unwrap_or(false);
+    let is_subscribed = relay.bus_subscribed_sessions.contains(session_id);
+
+    if should_subscribe && !is_subscribed {
+        let session_id_owned = session_id.to_string();
+        let subject = nats_session_subject(&bus, &session_id_owned);
+        let state_clone = state.clone();
+        let bus_clone = bus.clone();
+        let handle = tokio::spawn(async move {
+            let mut subscription = match bus_clone.client.subscribe(subject.clone()).await {
+                Ok(subscription) => subscription,
+                Err(error) => {
+                    warn!("[relay-rs] failed to subscribe session subject {subject}: {error}");
+                    return;
+                }
+            };
+
+            while let Some(message) = subscription.next().await {
+                handle_session_envelope(&state_clone, &bus_clone, &message.payload).await;
+            }
+        });
+        relay
+            .bus_subscribed_sessions
+            .insert(session_id_owned.clone());
+        relay
+            .bus_subscription_tasks
+            .insert(session_id_owned.clone(), handle);
+        info!(
+            "[relay-rs] subscribed session={} for cross-instance routing",
+            session_log_id(&session_id_owned)
+        );
+    } else if !should_subscribe && is_subscribed {
+        relay.bus_subscribed_sessions.remove(session_id);
+        if let Some(task) = relay.bus_subscription_tasks.remove(session_id) {
+            task.abort();
+        }
+        info!(
+            "[relay-rs] unsubscribed session={} from cross-instance routing",
+            session_log_id(session_id)
+        );
+    }
+}
+
+async fn handle_session_envelope(
+    state: &SharedRelayState,
+    bus: &RelayCrossInstanceBus,
+    payload: &[u8],
+) {
+    let Ok(envelope) = serde_json::from_slice::<CrossInstanceEnvelope>(payload) else {
+        return;
+    };
+    if envelope.schema_version != 1 {
+        return;
+    }
+    if envelope.source_instance_id == bus.instance_id {
+        return;
+    }
+
+    let mut relay = state.inner.lock().await;
+    let mut revoked_device_id: Option<String> = None;
+    let mut close_reason: Option<String> = None;
+
+    {
+        let Some(session) = relay.sessions.get_mut(&envelope.session_id) else {
+            return;
+        };
+        session.last_activity_at_ms = now_ms();
+
+        let disconnect_reason = serde_json::from_str::<Value>(&envelope.payload)
+            .ok()
+            .and_then(|value| {
+                (value.get("type").and_then(Value::as_str) == Some("disconnect"))
+                    .then(|| {
+                        value
+                            .get("reason")
+                            .and_then(Value::as_str)
+                            .map(ToOwned::to_owned)
+                    })
+                    .flatten()
+            });
+
+        match envelope.target.as_str() {
+            "desktop" => {
+                if let Some(desktop) = &session.desktop_socket {
+                    let _ = desktop.tx.send(envelope.payload.clone());
+                }
+                if let Some(reason) = disconnect_reason {
+                    close_reason = Some(reason);
+                }
+            }
+            "mobile" => {
+                if let Some(target_device_id) = envelope.target_device_id.as_deref() {
+                    close_existing_mobile_socket_for_device(
+                        session,
+                        target_device_id,
+                        "device_revoked",
+                    );
+                    session.command_rate_buckets.remove(target_device_id);
+                    session.devices.remove(target_device_id);
+                    send_device_count(session);
+                    revoked_device_id = Some(target_device_id.to_string());
+                } else {
+                    for mobile in session.mobile_sockets.values() {
+                        let _ = mobile.tx.send(envelope.payload.clone());
+                    }
+                    if let Some(reason) = disconnect_reason {
+                        close_reason = Some(reason);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(device_id) = revoked_device_id {
+        relay.device_token_index.retain(|_, token| {
+            !(token.session_id == envelope.session_id && token.device_id == device_id)
+        });
+    }
+    if let Some(reason) = close_reason {
+        close_session(&mut relay, &envelope.session_id, &reason);
+    }
+}
+
+async fn apply_pair_decision_from_envelope(
+    state: &SharedRelayState,
+    envelope: &CrossInstanceEnvelope,
+) {
+    let Ok(decision) = serde_json::from_str::<RelayPairDecision>(&envelope.payload) else {
+        return;
+    };
+    if decision.message_type != "relay.pair_decision" {
+        return;
+    }
+
+    let mut relay = state.inner.lock().await;
+    let Some(session) = relay.sessions.get_mut(&envelope.session_id) else {
+        return;
+    };
+    apply_pair_decision(session, &decision, None);
 }
 
 fn build_device_token_index(
@@ -453,6 +722,85 @@ async fn persist_session_if_needed(state: &SharedRelayState, session_id: &str) {
         }
     } else if let Err(error) = persistence.delete_session(session_id).await {
         warn!("[relay-rs] failed to remove relay session {session_id} from persistence: {error}");
+    }
+}
+
+async fn refresh_sessions_from_persistence(state: &SharedRelayState, force: bool) {
+    let Some(persistence) = state.persistence.as_ref().cloned() else {
+        return;
+    };
+
+    let now = now_ms();
+    if !force {
+        let relay = state.inner.lock().await;
+        if now - relay.last_persistence_refresh_at_ms < 1_000 {
+            return;
+        }
+    }
+
+    let loaded_sessions = match persistence.load_sessions().await {
+        Ok(sessions) => sessions,
+        Err(error) => {
+            warn!("[relay-rs] failed to refresh sessions from persistence: {error}");
+            return;
+        }
+    };
+
+    let persisted_session_ids = loaded_sessions.keys().cloned().collect::<HashSet<_>>();
+
+    let mut relay = state.inner.lock().await;
+    relay.last_persistence_refresh_at_ms = now;
+
+    for (session_id, loaded_session) in loaded_sessions {
+        match relay.sessions.get_mut(&session_id) {
+            Some(existing) => {
+                if existing.desktop_socket.is_none() && existing.mobile_sockets.is_empty() {
+                    *existing = loaded_session;
+                }
+            }
+            None => {
+                relay.sessions.insert(session_id.clone(), loaded_session);
+            }
+        }
+
+        let device_tokens = relay
+            .sessions
+            .get(&session_id)
+            .map(|session| {
+                session
+                    .devices
+                    .iter()
+                    .map(|(device_id, device)| {
+                        (device_id.clone(), device.current_session_token.clone())
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        for (device_id, token) in device_tokens {
+            relay
+                .device_token_index
+                .entry(token)
+                .or_insert(DeviceTokenContext {
+                    session_id: session_id.clone(),
+                    device_id,
+                    expires_at_ms: None,
+                });
+        }
+    }
+
+    let stale_session_ids = relay
+        .sessions
+        .iter()
+        .filter(|(session_id, session)| {
+            !persisted_session_ids.contains(*session_id)
+                && session.desktop_socket.is_none()
+                && session.mobile_sockets.is_empty()
+        })
+        .map(|(session_id, _)| session_id.clone())
+        .collect::<Vec<_>>();
+    for session_id in stale_session_ids {
+        close_session(&mut relay, &session_id, "removed_from_persistence");
     }
 }
 
@@ -525,7 +873,11 @@ async fn sweep_sessions(state: &SharedRelayState) {
 
     if did_mutate {
         for session_id in closed_session_ids {
+            let payload = json!({ "type": "disconnect", "reason": "session_expired" }).to_string();
+            publish_cross_instance_session(state, &session_id, "desktop", None, payload.clone());
+            publish_cross_instance_session(state, &session_id, "mobile", None, payload);
             persist_session_if_needed(state, &session_id).await;
+            sync_session_bus_subscription(state, &session_id).await;
         }
     }
 }
@@ -613,7 +965,8 @@ async fn pair_start(
         .clamp(60, 86_400);
 
     let mut relay = state.inner.lock().await;
-    if relay.sessions.contains_key(&request.session_id) {
+    let replaced_existing_session = relay.sessions.contains_key(&request.session_id);
+    if replaced_existing_session {
         close_session(
             &mut relay,
             &request.session_id,
@@ -647,6 +1000,24 @@ async fn pair_start(
         session_log_id(&request.session_id)
     );
     drop(relay);
+    if replaced_existing_session {
+        let disconnect_payload =
+            json!({ "type": "disconnect", "reason": "replaced_by_new_pair_start" }).to_string();
+        publish_cross_instance_session(
+            &state,
+            &request.session_id,
+            "desktop",
+            None,
+            disconnect_payload.clone(),
+        );
+        publish_cross_instance_session(
+            &state,
+            &request.session_id,
+            "mobile",
+            None,
+            disconnect_payload,
+        );
+    }
     persist_session_if_needed(&state, &request.session_id).await;
 
     (
@@ -691,7 +1062,9 @@ async fn pair_join(
         );
     }
 
-    let (decision_rx, request_id) = {
+    refresh_sessions_from_persistence(&state, false).await;
+
+    let (decision_rx, request_id, pair_request_payload) = {
         let mut relay = state.inner.lock().await;
         if relay.pending_join_waiters >= state.config.max_pending_join_waiters {
             return error_response(
@@ -705,7 +1078,7 @@ async fn pair_join(
         let request_id = random_token(10);
         let (tx, rx) = oneshot::channel::<JoinDecision>();
 
-        {
+        let pair_request_payload = {
             let Some(session) = relay.sessions.get_mut(&request.session_id) else {
                 return error_response(
                     StatusCode::NOT_FOUND,
@@ -749,7 +1122,7 @@ async fn pair_join(
                 );
             }
 
-            if session.desktop_socket.is_none() {
+            if session.desktop_socket.is_none() && state.cross_instance_bus.is_none() {
                 return error_response(
                     StatusCode::CONFLICT,
                     "desktop_not_connected",
@@ -785,26 +1158,43 @@ async fn pair_join(
                 decision_tx: tx,
             };
 
+            let payload = RelayPairRequest {
+                message_type: "relay.pair_request".to_string(),
+                session_id: session.session_id.clone(),
+                request_id: pending.request_id.clone(),
+                requester_ip: pending.requester_ip.clone(),
+                requested_at: iso_from_millis(pending.requested_at_ms),
+                expires_at: iso_from_millis(pending.expires_at_ms),
+            };
+            let encoded_payload =
+                serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+
+            let mut publish_remote_payload = None;
             if let Some(desktop) = &session.desktop_socket {
-                let payload = RelayPairRequest {
-                    message_type: "relay.pair_request".to_string(),
-                    session_id: session.session_id.clone(),
-                    request_id: pending.request_id.clone(),
-                    requester_ip: pending.requester_ip.clone(),
-                    requested_at: iso_from_millis(pending.requested_at_ms),
-                    expires_at: iso_from_millis(pending.expires_at_ms),
-                };
-                let _ = desktop
-                    .tx
-                    .send(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
+                let _ = desktop.tx.send(encoded_payload.clone());
+            } else if state.cross_instance_bus.is_some() {
+                publish_remote_payload = Some(encoded_payload);
+            }
+
+            if publish_remote_payload.is_none() && session.desktop_socket.is_none() {
+                return error_response(
+                    StatusCode::CONFLICT,
+                    "desktop_not_connected",
+                    "Desktop is not connected to relay. Re-open Remote Control on desktop and retry.",
+                );
             }
 
             session.pending_join_request = Some(pending);
-        }
+            publish_remote_payload
+        };
 
         relay.pending_join_waiters += 1;
-        (rx, request_id)
+        (rx, request_id, pair_request_payload)
     };
+
+    if let Some(payload) = pair_request_payload {
+        publish_cross_instance_session(&state, &request.session_id, "desktop", None, payload);
+    }
 
     let timeout_ms = state.config.pair_approval_timeout_ms;
     let decision = match timeout(Duration::from_millis(timeout_ms), decision_rx).await {
@@ -960,6 +1350,8 @@ async fn pair_refresh(
         );
     }
 
+    refresh_sessions_from_persistence(&state, false).await;
+
     let Ok(expires_at) = DateTime::parse_from_rfc3339(&request.join_token_expires_at) else {
         return error_response(
             StatusCode::BAD_REQUEST,
@@ -1051,6 +1443,8 @@ async fn pair_stop(
         );
     }
 
+    refresh_sessions_from_persistence(&state, false).await;
+
     let mut relay = state.inner.lock().await;
     if let Some(session) = relay.sessions.get(&request.session_id) {
         if !safe_token_equals(
@@ -1071,6 +1465,22 @@ async fn pair_stop(
         session_log_id(&request.session_id)
     );
     drop(relay);
+    let disconnect_payload =
+        json!({ "type": "disconnect", "reason": "stopped_by_desktop" }).to_string();
+    publish_cross_instance_session(
+        &state,
+        &request.session_id,
+        "desktop",
+        None,
+        disconnect_payload.clone(),
+    );
+    publish_cross_instance_session(
+        &state,
+        &request.session_id,
+        "mobile",
+        None,
+        disconnect_payload,
+    );
     persist_session_if_needed(&state, &request.session_id).await;
 
     (
@@ -1115,6 +1525,8 @@ async fn devices_list(
             "sessionID and desktopSessionToken are required.",
         );
     }
+
+    refresh_sessions_from_persistence(&state, false).await;
 
     let mut relay = state.inner.lock().await;
     let Some(session) = relay.sessions.get_mut(&request.session_id) else {
@@ -1198,9 +1610,11 @@ async fn device_revoke(
         );
     }
 
+    refresh_sessions_from_persistence(&state, false).await;
+
     let mut relay = state.inner.lock().await;
     let session_id = request.session_id.clone();
-    {
+    let device_count_event = {
         let Some(session) = relay.sessions.get_mut(&session_id) else {
             return error_response(
                 StatusCode::NOT_FOUND,
@@ -1232,13 +1646,29 @@ async fn device_revoke(
         session.last_activity_at_ms = now_ms();
         close_existing_mobile_socket_for_device(session, &request.device_id, "device_revoked");
         send_device_count(session);
-    }
+        device_count_payload(session)
+    };
 
     relay.device_token_index.retain(|_, token| {
         !(token.session_id == session_id && token.device_id == request.device_id)
     });
     drop(relay);
+    publish_cross_instance_session(
+        &state,
+        &request.session_id,
+        "mobile",
+        Some(request.device_id.clone()),
+        json!({ "type": "disconnect", "reason": "device_revoked" }).to_string(),
+    );
+    publish_cross_instance_session(
+        &state,
+        &request.session_id,
+        "desktop",
+        None,
+        device_count_event,
+    );
     persist_session_if_needed(&state, &request.session_id).await;
+    sync_session_bus_subscription(&state, &request.session_id).await;
 
     (
         StatusCode::OK,
@@ -1367,7 +1797,12 @@ async fn handle_socket(
                 SocketAuth::Desktop => {
                     if let Ok(pair_decision) = serde_json::from_str::<RelayPairDecision>(&raw) {
                         if pair_decision.message_type == "relay.pair_decision" {
-                            apply_pair_decision(session, &pair_decision, &tx);
+                            apply_pair_decision(session, &pair_decision, Some(&tx));
+                            publish_cross_instance_control_pair_decision(
+                                &state,
+                                auth.session_id(),
+                                raw.to_string(),
+                            );
                             continue;
                         }
                     }
@@ -1375,6 +1810,13 @@ async fn handle_socket(
                     for mobile in session.mobile_sockets.values() {
                         let _ = mobile.tx.send(raw.to_string());
                     }
+                    publish_cross_instance_session(
+                        &state,
+                        auth.session_id(),
+                        "mobile",
+                        None,
+                        raw.to_string(),
+                    );
                 }
                 SocketAuth::Mobile {
                     device_id,
@@ -1395,10 +1837,17 @@ async fn handle_socket(
                         }
                     }
 
+                    let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
                     if let Some(desktop) = &session.desktop_socket {
-                        let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
-                        let _ = desktop.tx.send(forwarded);
+                        let _ = desktop.tx.send(forwarded.clone());
                     }
+                    publish_cross_instance_session(
+                        &state,
+                        auth.session_id(),
+                        "desktop",
+                        None,
+                        forwarded,
+                    );
                 }
             }
         }
@@ -1413,10 +1862,10 @@ async fn handle_socket(
 fn apply_pair_decision(
     session: &mut SessionRecord,
     decision: &RelayPairDecision,
-    desktop_tx: &mpsc::UnboundedSender<String>,
-) {
+    desktop_tx: Option<&mpsc::UnboundedSender<String>>,
+) -> bool {
     let Some(request_id) = decision.request_id.as_deref() else {
-        return;
+        return false;
     };
 
     let approved = decision.approved.unwrap_or(false);
@@ -1427,28 +1876,31 @@ fn apply_pair_decision(
         .map(|pending| safe_token_equals(&pending.request_id, request_id))
         .unwrap_or(false);
 
-    if !matches_request {
-        return;
+    if matches_request {
+        if let Some(pending) = session.pending_join_request.take() {
+            let _ = pending.decision_tx.send(JoinDecision {
+                approved,
+                reason: if approved {
+                    "approved".to_string()
+                } else {
+                    "denied".to_string()
+                },
+            });
+        }
     }
 
-    if let Some(pending) = session.pending_join_request.take() {
-        let _ = pending.decision_tx.send(JoinDecision {
+    if let Some(desktop_tx) = desktop_tx {
+        let payload = RelayPairResult {
+            message_type: "relay.pair_result".to_string(),
+            session_id: session.session_id.clone(),
+            request_id: request_id.to_string(),
             approved,
-            reason: if approved {
-                "approved".to_string()
-            } else {
-                "denied".to_string()
-            },
-        });
+        };
+        let _ =
+            desktop_tx.send(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
     }
 
-    let payload = RelayPairResult {
-        message_type: "relay.pair_result".to_string(),
-        session_id: session.session_id.clone(),
-        request_id: request_id.to_string(),
-        approved,
-    };
-    let _ = desktop_tx.send(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
+    matches_request
 }
 
 fn inject_mobile_metadata(raw: &str, connection_id: &str, device_id: &str) -> String {
@@ -1795,7 +2247,15 @@ async fn authenticate_socket(
     let auth_context = {
         let relay = state.inner.lock().await;
         resolve_auth_context(&relay, token)
-    }?;
+    };
+
+    let auth_context = if let Some(auth_context) = auth_context {
+        auth_context
+    } else {
+        refresh_sessions_from_persistence(state, true).await;
+        let relay = state.inner.lock().await;
+        resolve_auth_context(&relay, token)?
+    };
 
     let mut relay = state.inner.lock().await;
 
@@ -1829,6 +2289,8 @@ async fn authenticate_socket(
                 "[relay-rs] desktop_connected session={}",
                 session_log_id(&session_id)
             );
+            drop(relay);
+            sync_session_bus_subscription(state, &session_id).await;
             Some(AuthenticatedSocket {
                 session_id,
                 auth: SocketAuth::Desktop,
@@ -1846,7 +2308,7 @@ async fn authenticate_socket(
             let now = now_ms();
             let next_token = random_token(32);
 
-            let (old_token, connected_device_count) = {
+            let (old_token, connected_device_count, device_count_event) = {
                 let session = relay.sessions.get_mut(&session_id)?;
                 session.last_activity_at_ms = now;
 
@@ -1875,7 +2337,11 @@ async fn authenticate_socket(
 
                 let connected_device_count = session.mobile_sockets.len();
                 send_device_count(session);
-                (old_token, connected_device_count)
+                (
+                    old_token,
+                    connected_device_count,
+                    device_count_payload(session),
+                )
             };
 
             if state.config.token_rotation_grace_ms == 0 {
@@ -1916,7 +2382,9 @@ async fn authenticate_socket(
                 connected_device_count
             );
             drop(relay);
+            publish_cross_instance_session(state, &session_id, "desktop", None, device_count_event);
             persist_session_if_needed(state, &session_id).await;
+            sync_session_bus_subscription(state, &session_id).await;
 
             Some(AuthenticatedSocket {
                 session_id,
@@ -1963,6 +2431,7 @@ async fn disconnect_socket(state: &SharedRelayState, auth: &AuthenticatedSocket)
     };
 
     session.last_activity_at_ms = now_ms();
+    let mut device_count_event: Option<String> = None;
 
     match &auth.auth {
         SocketAuth::Desktop => {
@@ -1987,6 +2456,7 @@ async fn disconnect_socket(state: &SharedRelayState, auth: &AuthenticatedSocket)
                 .command_sequence_by_connection_id
                 .remove(connection_id);
             send_device_count(session);
+            device_count_event = Some(device_count_payload(session));
             info!(
                 "[relay-rs] mobile_disconnected session={} devices={}",
                 session_log_id(auth.session_id()),
@@ -1994,6 +2464,13 @@ async fn disconnect_socket(state: &SharedRelayState, auth: &AuthenticatedSocket)
             );
         }
     }
+
+    drop(relay);
+
+    if let Some(event) = device_count_event {
+        publish_cross_instance_session(state, auth.session_id(), "desktop", None, event);
+    }
+    sync_session_bus_subscription(state, auth.session_id()).await;
 }
 
 fn close_existing_mobile_socket_for_device(
@@ -2018,18 +2495,21 @@ fn close_existing_mobile_socket_for_device(
 }
 
 fn send_device_count(session: &SessionRecord) {
+    let payload = device_count_payload(session);
     let Some(desktop) = &session.desktop_socket else {
         return;
     };
 
+    let _ = desktop.tx.send(payload);
+}
+
+fn device_count_payload(session: &SessionRecord) -> String {
     let payload = RelayDeviceCount {
         message_type: "relay.device_count".to_string(),
         session_id: session.session_id.clone(),
         connected_device_count: session.mobile_sockets.len(),
     };
-    let _ = desktop
-        .tx
-        .send(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
+    serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
 }
 
 fn origin_allowed(config: &RelayConfig, headers: &HeaderMap) -> bool {
@@ -2065,6 +2545,10 @@ fn close_session(relay: &mut RelayState, session_id: &str, reason: &str) {
     let Some(session) = relay.sessions.remove(session_id) else {
         return;
     };
+    relay.bus_subscribed_sessions.remove(session_id);
+    if let Some(task) = relay.bus_subscription_tasks.remove(session_id) {
+        task.abort();
+    }
 
     if let Some(pending) = session.pending_join_request {
         let _ = pending.decision_tx.send(JoinDecision {
