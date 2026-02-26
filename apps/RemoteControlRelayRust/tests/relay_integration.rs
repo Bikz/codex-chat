@@ -252,6 +252,14 @@ async fn metricsz_reports_runtime_counters_for_connected_devices() {
         body.get("snapshotRateLimitBuckets").and_then(Value::as_u64),
         Some(0)
     );
+    assert_eq!(
+        body.get("outboundSendFailures").and_then(Value::as_u64),
+        Some(0)
+    );
+    assert_eq!(
+        body.get("slowConsumerDisconnects").and_then(Value::as_u64),
+        Some(0)
+    );
 
     task.abort();
 }

@@ -47,6 +47,7 @@ This MVP delivers:
   - `GET /healthz`, `GET /metricsz`, `GET /ws` (then `relay.auth` websocket message)
   - Pass-through websocket routing between desktop/mobile with payload validation and per-device/per-session command throttling
   - Per-device snapshot request throttling for reconnect abuse control
+  - Runtime pressure counters on `/metricsz` (`outboundSendFailures`, `slowConsumerDisconnects`)
   - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
   - Optional NATS cross-instance routing (`NATS_URL`, `NATS_SUBJECT_PREFIX`) for stateless relay fanout
 - `apps/RemoteControlPWA`

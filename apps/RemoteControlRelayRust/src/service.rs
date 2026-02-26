@@ -45,6 +45,8 @@ pub struct RelayState {
     device_token_index: HashMap<String, DeviceTokenContext>,
     rate_buckets: HashMap<String, RateBucket>,
     pending_join_waiters: usize,
+    outbound_send_failures: u64,
+    slow_consumer_disconnects: u64,
     last_persistence_refresh_at_ms: i64,
     bus_subscribed_sessions: HashSet<String>,
     bus_subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
@@ -342,6 +344,8 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     sessions,
                     rate_buckets: HashMap::new(),
                     pending_join_waiters: 0,
+                    outbound_send_failures: 0,
+                    slow_consumer_disconnects: 0,
                     last_persistence_refresh_at_ms: now_ms(),
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
@@ -354,6 +358,8 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     device_token_index: HashMap::new(),
                     rate_buckets: HashMap::new(),
                     pending_join_waiters: 0,
+                    outbound_send_failures: 0,
+                    slow_consumer_disconnects: 0,
                     last_persistence_refresh_at_ms: 0,
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
@@ -366,6 +372,8 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
             device_token_index: HashMap::new(),
             rate_buckets: HashMap::new(),
             pending_join_waiters: 0,
+            outbound_send_failures: 0,
+            slow_consumer_disconnects: 0,
             last_persistence_refresh_at_ms: 0,
             bus_subscribed_sessions: HashSet::new(),
             bus_subscription_tasks: HashMap::new(),
@@ -607,6 +615,8 @@ async fn handle_session_envelope(
     let mut relay = state.inner.lock().await;
     let mut revoked_device_id: Option<String> = None;
     let mut close_reason: Option<String> = None;
+    let mut outbound_send_failures = 0_u64;
+    let mut slow_consumer_disconnects = 0_u64;
 
     {
         let Some(session) = relay.sessions.get_mut(&envelope.session_id) else {
@@ -631,6 +641,8 @@ async fn handle_session_envelope(
             "desktop" => {
                 if let Some(desktop) = &session.desktop_socket {
                     if !try_send_payload(&desktop.tx, envelope.payload.clone()) {
+                        outbound_send_failures = outbound_send_failures.saturating_add(1);
+                        slow_consumer_disconnects = slow_consumer_disconnects.saturating_add(1);
                         request_socket_disconnect(desktop, "slow_consumer");
                     }
                 }
@@ -653,6 +665,9 @@ async fn handle_session_envelope(
                 } else {
                     for mobile in session.mobile_sockets.values() {
                         if !try_send_payload(&mobile.tx, envelope.payload.clone()) {
+                            outbound_send_failures = outbound_send_failures.saturating_add(1);
+                            slow_consumer_disconnects =
+                                slow_consumer_disconnects.saturating_add(1);
                             request_socket_disconnect(mobile, "slow_consumer");
                         }
                     }
@@ -670,6 +685,12 @@ async fn handle_session_envelope(
             !(token.session_id == envelope.session_id && token.device_id == device_id)
         });
     }
+    relay.outbound_send_failures = relay
+        .outbound_send_failures
+        .saturating_add(outbound_send_failures);
+    relay.slow_consumer_disconnects = relay
+        .slow_consumer_disconnects
+        .saturating_add(slow_consumer_disconnects);
     if let Some(reason) = close_reason {
         close_session(&mut relay, &envelope.session_id, &reason);
     }
@@ -940,6 +961,8 @@ async fn metricsz(State(state): State<SharedRelayState>) -> impl IntoResponse {
         command_rate_limit_buckets: stats.command_rate_limit_buckets,
         snapshot_rate_limit_buckets: stats.snapshot_rate_limit_buckets,
         bus_subscriptions: stats.bus_subscriptions,
+        outbound_send_failures: stats.outbound_send_failures,
+        slow_consumer_disconnects: stats.slow_consumer_disconnects,
         cross_instance_bus_enabled: state.cross_instance_bus.is_some(),
         redis_persistence_enabled: state.persistence.is_some(),
         now: Utc::now().to_rfc3339(),
@@ -957,6 +980,8 @@ struct RelayRuntimeStats {
     command_rate_limit_buckets: usize,
     snapshot_rate_limit_buckets: usize,
     bus_subscriptions: usize,
+    outbound_send_failures: u64,
+    slow_consumer_disconnects: u64,
 }
 
 fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
@@ -995,6 +1020,8 @@ fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
         command_rate_limit_buckets,
         snapshot_rate_limit_buckets,
         bus_subscriptions: relay.bus_subscribed_sessions.len(),
+        outbound_send_failures: relay.outbound_send_failures,
+        slow_consumer_disconnects: relay.slow_consumer_disconnects,
     }
 }
 
@@ -1161,7 +1188,13 @@ async fn pair_join(
 
     refresh_sessions_from_persistence(&state, false).await;
 
-    let (decision_rx, request_id, pair_request_payload) = {
+    let (
+        decision_rx,
+        request_id,
+        pair_request_payload,
+        outbound_send_failures,
+        slow_consumer_disconnects,
+    ) = {
         let mut relay = state.inner.lock().await;
         if relay.pending_join_waiters >= state.config.max_pending_join_waiters {
             return error_response(
@@ -1175,7 +1208,11 @@ async fn pair_join(
         let request_id = random_token(10);
         let (tx, rx) = oneshot::channel::<JoinDecision>();
 
-        let pair_request_payload = {
+        let (
+            pair_request_payload,
+            pair_request_outbound_send_failures,
+            pair_request_slow_consumer_disconnects,
+        ) = {
             let Some(session) = relay.sessions.get_mut(&request.session_id) else {
                 return error_response(
                     StatusCode::NOT_FOUND,
@@ -1268,10 +1305,14 @@ async fn pair_join(
 
             let mut publish_remote_payload = None;
             let mut delivered_to_local_desktop = false;
+            let mut outbound_send_failures = 0_u64;
+            let mut slow_consumer_disconnects = 0_u64;
             if let Some(desktop) = &session.desktop_socket {
                 if try_send_payload(&desktop.tx, encoded_payload.clone()) {
                     delivered_to_local_desktop = true;
                 } else {
+                    outbound_send_failures = outbound_send_failures.saturating_add(1);
+                    slow_consumer_disconnects = slow_consumer_disconnects.saturating_add(1);
                     request_socket_disconnect(desktop, "slow_consumer");
                 }
             }
@@ -1289,12 +1330,32 @@ async fn pair_join(
             }
 
             session.pending_join_request = Some(pending);
-            publish_remote_payload
+            (
+                publish_remote_payload,
+                outbound_send_failures,
+                slow_consumer_disconnects,
+            )
         };
 
         relay.pending_join_waiters += 1;
-        (rx, request_id, pair_request_payload)
+        (
+            rx,
+            request_id,
+            pair_request_payload,
+            pair_request_outbound_send_failures,
+            pair_request_slow_consumer_disconnects,
+        )
     };
+
+    if outbound_send_failures > 0 || slow_consumer_disconnects > 0 {
+        let mut relay = state.inner.lock().await;
+        relay.outbound_send_failures = relay
+            .outbound_send_failures
+            .saturating_add(outbound_send_failures);
+        relay.slow_consumer_disconnects = relay
+            .slow_consumer_disconnects
+            .saturating_add(slow_consumer_disconnects);
+    }
 
     if let Some(payload) = pair_request_payload {
         publish_cross_instance_session(&state, &request.session_id, "desktop", None, payload);
@@ -1904,6 +1965,8 @@ async fn handle_socket(
                     continue;
                 }
 
+                let mut outbound_send_failures = 0_u64;
+                let mut slow_consumer_disconnects = 0_u64;
                 if let Some(session) = relay.sessions.get_mut(auth.session_id()) {
                     session.last_activity_at_ms = now_ms();
 
@@ -1933,6 +1996,10 @@ async fn handle_socket(
 
                             for mobile in session.mobile_sockets.values() {
                                 if !try_send_payload(&mobile.tx, raw.to_string()) {
+                                    outbound_send_failures =
+                                        outbound_send_failures.saturating_add(1);
+                                    slow_consumer_disconnects =
+                                        slow_consumer_disconnects.saturating_add(1);
                                     request_socket_disconnect(mobile, "slow_consumer");
                                 }
                             }
@@ -1966,6 +2033,10 @@ async fn handle_socket(
                             let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
                             if let Some(desktop) = &session.desktop_socket {
                                 if !try_send_payload(&desktop.tx, forwarded.clone()) {
+                                    outbound_send_failures =
+                                        outbound_send_failures.saturating_add(1);
+                                    slow_consumer_disconnects =
+                                        slow_consumer_disconnects.saturating_add(1);
                                     request_socket_disconnect(desktop, "slow_consumer");
                                 }
                             }
@@ -1979,6 +2050,12 @@ async fn handle_socket(
                         }
                     }
                 }
+                relay.outbound_send_failures = relay
+                    .outbound_send_failures
+                    .saturating_add(outbound_send_failures);
+                relay.slow_consumer_disconnects = relay
+                    .slow_consumer_disconnects
+                    .saturating_add(slow_consumer_disconnects);
             }
         }
     }
@@ -2529,6 +2606,7 @@ async fn authenticate_socket(
             tx,
             json!({ "type": "disconnect", "reason": "relay_over_capacity" }).to_string(),
         );
+        relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
         return None;
     }
 
@@ -2559,6 +2637,7 @@ async fn authenticate_socket(
                 tx,
                 serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
             ) {
+                relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
                 return None;
             }
 
@@ -2656,6 +2735,7 @@ async fn authenticate_socket(
                 tx,
                 serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
             ) {
+                relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
                 return None;
             }
 
@@ -2982,6 +3062,8 @@ mod tests {
                 sessions,
                 rate_buckets: HashMap::new(),
                 pending_join_waiters: 0,
+                outbound_send_failures: 0,
+                slow_consumer_disconnects: 0,
                 last_persistence_refresh_at_ms: 0,
                 bus_subscribed_sessions: HashSet::new(),
                 bus_subscription_tasks: HashMap::new(),
