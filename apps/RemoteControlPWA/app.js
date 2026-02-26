@@ -619,6 +619,8 @@ function disconnectMessageForReason(reason) {
       return "Another tab or device reconnected. Attempting to resume...";
     case "idle_timeout":
       return "Remote session timed out due to inactivity. Start a new session on desktop.";
+    case "relay_over_capacity":
+      return "Relay is currently at connection capacity. Retrying shortly.";
     default:
       return "Disconnected from relay.";
   }

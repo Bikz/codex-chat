@@ -34,6 +34,7 @@ Then open `http://localhost:4173`.
 - Foreground resume triggers an explicit snapshot resync when already connected.
 - If desktop revokes the device, PWA stops auto-reconnect and requires re-pair.
 - Relay validation/rate-limit/replay errors surface as explicit status messages with recovery hints.
+- Relay load-shedding disconnects (for example `relay_over_capacity`) surface as explicit status messaging.
 
 ## Limitations
 
