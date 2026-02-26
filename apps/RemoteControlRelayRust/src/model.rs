@@ -164,6 +164,8 @@ pub struct RelayMetricsResponse {
     pub pending_join_waiters: usize,
     pub device_tokens: usize,
     pub rate_limit_buckets: usize,
+    pub command_rate_limit_buckets: usize,
+    pub snapshot_rate_limit_buckets: usize,
     pub bus_subscriptions: usize,
     pub cross_instance_bus_enabled: bool,
     pub redis_persistence_enabled: bool,

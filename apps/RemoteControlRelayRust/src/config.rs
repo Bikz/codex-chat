@@ -19,6 +19,8 @@ pub struct RelayConfig {
     pub max_ws_message_bytes: usize,
     pub max_active_websocket_connections: usize,
     pub max_remote_commands_per_minute: usize,
+    pub max_remote_session_commands_per_minute: usize,
+    pub max_snapshot_requests_per_minute: usize,
     pub max_remote_command_text_bytes: usize,
     pub redis_url: Option<String>,
     pub redis_key_prefix: String,
@@ -47,6 +49,10 @@ impl RelayConfig {
         let max_active_websocket_connections =
             parse_usize("MAX_ACTIVE_WEBSOCKET_CONNECTIONS", 10_000);
         let max_remote_commands_per_minute = parse_usize("MAX_REMOTE_COMMANDS_PER_MINUTE", 240);
+        let max_remote_session_commands_per_minute =
+            parse_usize("MAX_REMOTE_SESSION_COMMANDS_PER_MINUTE", 480);
+        let max_snapshot_requests_per_minute =
+            parse_usize("MAX_SNAPSHOT_REQUESTS_PER_MINUTE", 60);
         let max_remote_command_text_bytes = parse_usize("MAX_REMOTE_COMMAND_TEXT_BYTES", 16_384);
         let redis_url = env::var("REDIS_URL")
             .ok()
@@ -97,6 +103,8 @@ impl RelayConfig {
             max_ws_message_bytes,
             max_active_websocket_connections,
             max_remote_commands_per_minute,
+            max_remote_session_commands_per_minute,
+            max_snapshot_requests_per_minute,
             max_remote_command_text_bytes,
             redis_url,
             redis_key_prefix,

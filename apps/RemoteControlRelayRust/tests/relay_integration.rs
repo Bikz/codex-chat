@@ -244,6 +244,14 @@ async fn metricsz_reports_runtime_counters_for_connected_devices() {
         Some(2)
     );
     assert_eq!(body.get("deviceTokens").and_then(Value::as_u64), Some(1));
+    assert_eq!(
+        body.get("commandRateLimitBuckets").and_then(Value::as_u64),
+        Some(0)
+    );
+    assert_eq!(
+        body.get("snapshotRateLimitBuckets").and_then(Value::as_u64),
+        Some(0)
+    );
 
     task.abort();
 }
@@ -1085,6 +1093,147 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
     assert!(
         desktop_next.is_err(),
         "desktop unexpectedly received extra forwarded payload"
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn per_session_command_rate_limit_blocks_excess_mobile_commands() {
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|config| {
+            config.max_remote_commands_per_minute = 10;
+            config.max_remote_session_commands_per_minute = 2;
+        })
+        .await;
+
+    for seq in 1..=3_u64 {
+        mobile_socket
+            .send(Message::Text(
+                json!({
+                    "schemaVersion": 1,
+                    "sessionID": session_id,
+                    "seq": seq,
+                    "payload": {
+                        "type": "command",
+                        "payload": {
+                            "name": "thread.select",
+                            "threadID": "11111111-1111-1111-1111-111111111111"
+                        }
+                    }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send thread.select command");
+    }
+
+    for _ in 0..2 {
+        let forwarded = tokio::time::timeout(Duration::from_millis(1_000), desktop_socket.next())
+            .await
+            .expect("expected forwarded command")
+            .expect("forwarded frame")
+            .expect("forwarded message");
+        let forwarded_json: Value =
+            serde_json::from_str(forwarded.to_text().expect("forwarded text"))
+                .expect("forwarded json");
+        assert_eq!(
+            forwarded_json
+                .pointer("/payload/payload/name")
+                .and_then(Value::as_str),
+            Some("thread.select")
+        );
+    }
+
+    let relay_error = tokio::time::timeout(Duration::from_millis(1_000), mobile_socket.next())
+        .await
+        .expect("expected session rate-limit error")
+        .expect("rate-limit frame")
+        .expect("rate-limit message");
+    let relay_error_json: Value =
+        serde_json::from_str(relay_error.to_text().expect("rate-limit text"))
+            .expect("rate-limit json");
+    assert_eq!(
+        relay_error_json.get("type").and_then(Value::as_str),
+        Some("relay.error")
+    );
+    assert_eq!(
+        relay_error_json.get("error").and_then(Value::as_str),
+        Some("command_rate_limited")
+    );
+
+    let desktop_next =
+        tokio::time::timeout(Duration::from_millis(250), desktop_socket.next()).await;
+    assert!(
+        desktop_next.is_err(),
+        "desktop unexpectedly received extra forwarded payload"
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn per_device_snapshot_request_rate_limit_blocks_excess_requests() {
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|config| {
+            config.max_snapshot_requests_per_minute = 2;
+        })
+        .await;
+
+    for request_number in 1..=3_u64 {
+        mobile_socket
+            .send(Message::Text(
+                json!({
+                    "type": "relay.snapshot_request",
+                    "sessionID": session_id,
+                    "lastSeq": request_number,
+                    "reason": "integration-test"
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send snapshot request");
+    }
+
+    for _ in 0..2 {
+        let forwarded = tokio::time::timeout(Duration::from_millis(1_000), desktop_socket.next())
+            .await
+            .expect("expected forwarded snapshot request")
+            .expect("forwarded frame")
+            .expect("forwarded message");
+        let forwarded_json: Value =
+            serde_json::from_str(forwarded.to_text().expect("forwarded text"))
+                .expect("forwarded json");
+        assert_eq!(
+            forwarded_json.get("type").and_then(Value::as_str),
+            Some("relay.snapshot_request")
+        );
+    }
+
+    let relay_error = tokio::time::timeout(Duration::from_millis(1_000), mobile_socket.next())
+        .await
+        .expect("expected snapshot rate-limit error")
+        .expect("rate-limit frame")
+        .expect("rate-limit message");
+    let relay_error_json: Value =
+        serde_json::from_str(relay_error.to_text().expect("rate-limit text"))
+            .expect("rate-limit json");
+    assert_eq!(
+        relay_error_json.get("type").and_then(Value::as_str),
+        Some("relay.error")
+    );
+    assert_eq!(
+        relay_error_json.get("error").and_then(Value::as_str),
+        Some("snapshot_rate_limited")
+    );
+
+    let desktop_next =
+        tokio::time::timeout(Duration::from_millis(250), desktop_socket.next()).await;
+    assert!(
+        desktop_next.is_err(),
+        "desktop unexpectedly received extra snapshot payload"
     );
 
     task.abort();

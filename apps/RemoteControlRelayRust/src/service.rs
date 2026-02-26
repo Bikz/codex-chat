@@ -63,6 +63,8 @@ struct SessionRecord {
     mobile_sockets: HashMap<String, SocketHandle>,
     devices: HashMap<String, DeviceRecord>,
     command_rate_buckets: HashMap<String, RateBucket>,
+    session_command_rate_bucket: Option<RateBucket>,
+    snapshot_request_rate_buckets: HashMap<String, RateBucket>,
     command_sequence_by_connection_id: HashMap<String, u64>,
     pending_join_request: Option<PendingJoinRequest>,
 }
@@ -191,6 +193,8 @@ impl PersistedSessionRecord {
             mobile_sockets: HashMap::new(),
             devices: self.devices,
             command_rate_buckets: HashMap::new(),
+            session_command_rate_bucket: None,
+            snapshot_request_rate_buckets: HashMap::new(),
             command_sequence_by_connection_id: HashMap::new(),
             pending_join_request: None,
         })
@@ -638,6 +642,7 @@ async fn handle_session_envelope(
                         "device_revoked",
                     );
                     session.command_rate_buckets.remove(target_device_id);
+                    session.snapshot_request_rate_buckets.remove(target_device_id);
                     session.devices.remove(target_device_id);
                     send_device_count(session);
                     revoked_device_id = Some(target_device_id.to_string());
@@ -926,6 +931,8 @@ async fn metricsz(State(state): State<SharedRelayState>) -> impl IntoResponse {
         pending_join_waiters: stats.pending_join_waiters,
         device_tokens: stats.device_tokens,
         rate_limit_buckets: stats.rate_limit_buckets,
+        command_rate_limit_buckets: stats.command_rate_limit_buckets,
+        snapshot_rate_limit_buckets: stats.snapshot_rate_limit_buckets,
         bus_subscriptions: stats.bus_subscriptions,
         cross_instance_bus_enabled: state.cross_instance_bus.is_some(),
         redis_persistence_enabled: state.persistence.is_some(),
@@ -941,6 +948,8 @@ struct RelayRuntimeStats {
     pending_join_waiters: usize,
     device_tokens: usize,
     rate_limit_buckets: usize,
+    command_rate_limit_buckets: usize,
+    snapshot_rate_limit_buckets: usize,
     bus_subscriptions: usize,
 }
 
@@ -960,6 +969,16 @@ fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
         .values()
         .map(|session| session.mobile_sockets.len())
         .sum::<usize>();
+    let command_rate_limit_buckets = relay
+        .sessions
+        .values()
+        .map(|session| session.command_rate_buckets.len())
+        .sum::<usize>();
+    let snapshot_rate_limit_buckets = relay
+        .sessions
+        .values()
+        .map(|session| session.snapshot_request_rate_buckets.len())
+        .sum::<usize>();
     RelayRuntimeStats {
         sessions_with_desktop,
         sessions_with_mobile,
@@ -967,6 +986,8 @@ fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
         pending_join_waiters: relay.pending_join_waiters,
         device_tokens: relay.device_token_index.len(),
         rate_limit_buckets: relay.rate_buckets.len(),
+        command_rate_limit_buckets,
+        snapshot_rate_limit_buckets,
         bus_subscriptions: relay.bus_subscribed_sessions.len(),
     }
 }
@@ -1058,6 +1079,8 @@ async fn pair_start(
             mobile_sockets: HashMap::new(),
             devices: HashMap::new(),
             command_rate_buckets: HashMap::new(),
+            session_command_rate_bucket: None,
+            snapshot_request_rate_buckets: HashMap::new(),
             command_sequence_by_connection_id: HashMap::new(),
             pending_join_request: None,
         },
@@ -1710,6 +1733,7 @@ async fn device_revoke(
             );
         };
         session.command_rate_buckets.remove(&request.device_id);
+        session.snapshot_request_rate_buckets.remove(&request.device_id);
 
         session.last_activity_at_ms = now_ms();
         close_existing_mobile_socket_for_device(session, &request.device_id, "device_revoked");
@@ -2051,6 +2075,18 @@ fn validate_mobile_payload(
                 }
             }
 
+            if !consume_snapshot_request_budget(
+                session,
+                device_id,
+                config.max_snapshot_requests_per_minute,
+            ) {
+                return Err(RelayValidationError {
+                    code: "snapshot_rate_limited",
+                    message: "Too many snapshot requests from this device. Retry shortly."
+                        .to_string(),
+                });
+            }
+
             return Ok(());
         }
     }
@@ -2117,6 +2153,14 @@ fn validate_mobile_payload(
         return Err(RelayValidationError {
             code: "command_rate_limited",
             message: "Too many remote commands from this device. Retry shortly.".to_string(),
+        });
+    }
+
+    if !consume_session_command_budget(session, config.max_remote_session_commands_per_minute) {
+        return Err(RelayValidationError {
+            code: "command_rate_limited",
+            message: "Remote command throughput for this session is temporarily saturated."
+                .to_string(),
         });
     }
 
@@ -2259,6 +2303,60 @@ fn consume_device_command_budget(
 
     bucket.count += 1;
     bucket.count <= max_commands_per_minute
+}
+
+fn consume_session_command_budget(
+    session: &mut SessionRecord,
+    max_commands_per_minute: usize,
+) -> bool {
+    if max_commands_per_minute == 0 {
+        return false;
+    }
+
+    let now = now_ms();
+    let bucket = session
+        .session_command_rate_bucket
+        .get_or_insert(RateBucket {
+            count: 0,
+            window_ends_at_ms: now + 60_000,
+        });
+
+    if now >= bucket.window_ends_at_ms {
+        bucket.count = 1;
+        bucket.window_ends_at_ms = now + 60_000;
+        return true;
+    }
+
+    bucket.count += 1;
+    bucket.count <= max_commands_per_minute
+}
+
+fn consume_snapshot_request_budget(
+    session: &mut SessionRecord,
+    device_id: &str,
+    max_requests_per_minute: usize,
+) -> bool {
+    if max_requests_per_minute == 0 {
+        return false;
+    }
+
+    let now = now_ms();
+    let bucket = session
+        .snapshot_request_rate_buckets
+        .entry(device_id.to_string())
+        .or_insert(RateBucket {
+            count: 0,
+            window_ends_at_ms: now + 60_000,
+        });
+
+    if now >= bucket.window_ends_at_ms {
+        bucket.count = 1;
+        bucket.window_ends_at_ms = now + 60_000;
+        return true;
+    }
+
+    bucket.count += 1;
+    bucket.count <= max_requests_per_minute
 }
 
 fn consume_connection_command_sequence(
@@ -2831,6 +2929,8 @@ mod tests {
                 },
             )]),
             command_rate_buckets: HashMap::new(),
+            session_command_rate_bucket: None,
+            snapshot_request_rate_buckets: HashMap::new(),
             command_sequence_by_connection_id: HashMap::new(),
             pending_join_request: None,
         }
@@ -2863,6 +2963,8 @@ mod tests {
                     },
                 )]),
                 command_rate_buckets: HashMap::new(),
+                session_command_rate_bucket: None,
+                snapshot_request_rate_buckets: HashMap::new(),
                 command_sequence_by_connection_id: HashMap::new(),
                 pending_join_request: None,
             },
