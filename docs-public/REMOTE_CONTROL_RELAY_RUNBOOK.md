@@ -27,6 +27,12 @@ Capacity and pressure:
 - `commandRateLimitBuckets`
 - `snapshotRateLimitBuckets`
 
+Edge protection:
+
+- Cloud Armor policy: `remote-control-relay-cloud-armor`
+- Pair and websocket path throttle rules are managed by:
+  - `infra/remote-control-relay/gke/scripts/harden-cloud-armor.sh`
+
 ## SLO Guardrails (initial)
 
 - Pair join success rate: >= 99.5%
@@ -42,6 +48,7 @@ Capacity and pressure:
 2. Check dependency health
 - Redis connection and latency.
 - NATS connectivity and lag.
+- Managed certificate status on the public hostname.
 
 3. Inspect relay counters
 - Spike in `wsAuthFailures`: investigate origin config/token rotation/client compatibility.
@@ -82,3 +89,9 @@ kubectl -n codexchat-remote-control rollout status deploy/remote-control-relay
 - relay integration test if protocol/logic issue
 - load/soak gate update if performance/reliability issue
 4. Update this runbook and GA plan status.
+
+## Common Operator Pitfalls
+
+- If `kubectl apply -f` is used on individual files without a namespace, resources may land in `default`.
+- If ingress hostname and secret `PUBLIC_BASE_URL` do not match, QR pairing links can fail.
+- If managed cert is `Provisioning`, public HTTPS checks may fail even when pod/ingress backends are healthy.

@@ -96,6 +96,14 @@ kubectl apply -f /tmp/relay-secrets.yaml
 kubectl apply -k infra/remote-control-relay/gke
 ```
 
+6. Apply baseline Cloud Armor throttles
+
+```bash
+infra/remote-control-relay/gke/scripts/harden-cloud-armor.sh PROJECT_ID
+```
+
+This configures default rate limits for `/pair*` and `/ws*` paths.
+
 Optional preflight validation:
 
 ```bash
@@ -110,11 +118,28 @@ Validate an overlay:
 RELAY_GKE_KUSTOMIZE_DIR=infra/remote-control-relay/gke/overlays/staging make remote-control-gke-validate
 ```
 
-6. Verify rollout
+7. Verify rollout
 
 ```bash
 kubectl -n codexchat-remote-control rollout status deploy/remote-control-relay
+kubectl -n codexchat-remote-control rollout status deploy/remote-control-pwa
 kubectl -n codexchat-remote-control get pods,svc,hpa,pdb
+```
+
+8. GA DNS + certificate gate
+
+- Point DNS `A` record for `remote.codexchat.app` to the ingress IP.
+- Wait for managed certificate status to become `Active`:
+
+```bash
+kubectl -n codexchat-remote-control get managedcertificate remote-control-relay-cert
+```
+
+- Validate externally:
+
+```bash
+curl -i https://remote.codexchat.app/healthz
+curl -i https://remote.codexchat.app/rc
 ```
 
 Canary-first rollout example:
@@ -148,5 +173,6 @@ Before GA, validate:
 - Load + soak gates pass against production-like environment.
 - Redis + NATS failover drills preserve deterministic reconnect behavior.
 - Canary and rollback runbooks are tested in staging.
+- Managed cert is `Active` on the GA hostname and public `/healthz` + `/rc` checks pass.
 
 Operator runbook: `docs-public/REMOTE_CONTROL_RELAY_RUNBOOK.md`.
