@@ -341,3 +341,166 @@ async fn pairing_endpoints_include_cors_headers_for_allowed_origin() {
 
     task.abort();
 }
+
+#[tokio::test]
+async fn devices_list_and_revoke_remove_trusted_device() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let start_response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+    desktop_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": desktop_session_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("desktop auth send");
+    let _desktop_auth = desktop_socket
+        .next()
+        .await
+        .expect("desktop auth message")
+        .expect("desktop auth frame");
+
+    let join_future = tokio::spawn({
+        let client = client.clone();
+        let base = base.clone();
+        let session_id = session_id.clone();
+        let join_token = join_token.clone();
+        async move {
+            client
+                .post(format!("{base}/pair/join"))
+                .header("Origin", "http://localhost:4173")
+                .json(&json!({
+                    "sessionID": session_id,
+                    "joinToken": join_token,
+                    "deviceName": "Bikram iPhone"
+                }))
+                .send()
+                .await
+                .expect("pair join request")
+        }
+    });
+
+    let pair_request = desktop_socket
+        .next()
+        .await
+        .expect("pair request frame")
+        .expect("pair request message");
+    let pair_request_json: Value =
+        serde_json::from_str(pair_request.to_text().expect("pair request text"))
+            .expect("pair request json");
+    let request_id = pair_request_json
+        .get("requestID")
+        .and_then(Value::as_str)
+        .expect("requestID")
+        .to_string();
+
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.pair_decision",
+                "sessionID": session_id,
+                "requestID": request_id,
+                "approved": true,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("desktop pair decision send");
+
+    let join_response = join_future.await.expect("join task");
+    assert_eq!(join_response.status(), StatusCode::OK);
+    let join_payload: Value = join_response.json().await.expect("join payload");
+    let device_id = join_payload
+        .get("deviceID")
+        .and_then(Value::as_str)
+        .expect("deviceID")
+        .to_string();
+
+    let list_response = client
+        .post(format!("{base}/devices/list"))
+        .json(&json!({
+            "sessionID": session_id,
+            "desktopSessionToken": desktop_session_token,
+        }))
+        .send()
+        .await
+        .expect("devices list");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_payload: Value = list_response.json().await.expect("list payload");
+    let devices = list_payload
+        .get("devices")
+        .and_then(Value::as_array)
+        .expect("devices array");
+    assert_eq!(devices.len(), 1);
+    assert_eq!(
+        devices[0].get("deviceID").and_then(Value::as_str),
+        Some(device_id.as_str())
+    );
+    assert_eq!(
+        devices[0].get("deviceName").and_then(Value::as_str),
+        Some("Bikram iPhone")
+    );
+
+    let revoke_response = client
+        .post(format!("{base}/devices/revoke"))
+        .json(&json!({
+            "sessionID": session_id,
+            "desktopSessionToken": desktop_session_token,
+            "deviceID": device_id,
+        }))
+        .send()
+        .await
+        .expect("device revoke");
+    assert_eq!(revoke_response.status(), StatusCode::OK);
+
+    let list_after_revoke = client
+        .post(format!("{base}/devices/list"))
+        .json(&json!({
+            "sessionID": session_id,
+            "desktopSessionToken": desktop_session_token,
+        }))
+        .send()
+        .await
+        .expect("devices list after revoke");
+    assert_eq!(list_after_revoke.status(), StatusCode::OK);
+    let list_after_payload: Value = list_after_revoke
+        .json()
+        .await
+        .expect("list payload after revoke");
+    let devices_after = list_after_payload
+        .get("devices")
+        .and_then(Value::as_array)
+        .expect("devices array after revoke");
+    assert_eq!(devices_after.len(), 0);
+
+    task.abort();
+}

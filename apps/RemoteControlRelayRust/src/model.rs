@@ -31,6 +31,8 @@ pub struct PairJoinRequest {
     pub session_id: String,
     #[serde(rename = "joinToken")]
     pub join_token: String,
+    #[serde(rename = "deviceName")]
+    pub device_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -59,6 +61,54 @@ pub struct PairStopResponse {
     pub accepted: bool,
     #[serde(rename = "sessionID")]
     pub session_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DevicesListRequest {
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "desktopSessionToken")]
+    pub desktop_session_token: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceSummary {
+    #[serde(rename = "deviceID")]
+    pub device_id: String,
+    #[serde(rename = "deviceName")]
+    pub device_name: String,
+    pub connected: bool,
+    #[serde(rename = "joinedAt")]
+    pub joined_at: String,
+    #[serde(rename = "lastSeenAt")]
+    pub last_seen_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DevicesListResponse {
+    pub accepted: bool,
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    pub devices: Vec<DeviceSummary>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceRevokeRequest {
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "desktopSessionToken")]
+    pub desktop_session_token: String,
+    #[serde(rename = "deviceID")]
+    pub device_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceRevokeResponse {
+    pub accepted: bool,
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "deviceID")]
+    pub device_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

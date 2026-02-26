@@ -22,9 +22,10 @@ use url::Url;
 
 use crate::config::{is_allowed_origin, RelayConfig};
 use crate::model::{
-    ErrorResponse, HealthResponse, PairJoinRequest, PairJoinResponse, PairStartRequest,
-    PairStartResponse, PairStopRequest, PairStopResponse, RelayAuthMessage, RelayAuthOk,
-    RelayDeviceCount, RelayPairDecision, RelayPairRequest, RelayPairResult,
+    DeviceRevokeRequest, DeviceRevokeResponse, DeviceSummary, DevicesListRequest,
+    DevicesListResponse, ErrorResponse, HealthResponse, PairJoinRequest, PairJoinResponse,
+    PairStartRequest, PairStartResponse, PairStopRequest, PairStopResponse, RelayAuthMessage,
+    RelayAuthOk, RelayDeviceCount, RelayPairDecision, RelayPairRequest, RelayPairResult,
 };
 
 #[derive(Clone)]
@@ -64,6 +65,9 @@ struct SocketHandle {
 
 struct DeviceRecord {
     current_session_token: String,
+    name: String,
+    joined_at_ms: i64,
+    last_seen_at_ms: i64,
 }
 
 struct DeviceTokenContext {
@@ -117,6 +121,14 @@ pub fn build_router(state: SharedRelayState) -> Router {
         .route(
             "/pair/stop",
             axum::routing::post(pair_stop).options(pair_options),
+        )
+        .route(
+            "/devices/list",
+            axum::routing::post(devices_list).options(pair_options),
+        )
+        .route(
+            "/devices/revoke",
+            axum::routing::post(device_revoke).options(pair_options),
         )
         .route("/ws", axum::routing::get(ws_upgrade))
         .with_state(state)
@@ -486,6 +498,7 @@ async fn pair_join(
     let mut relay = state.inner.lock().await;
     relay.pending_join_waiters = relay.pending_join_waiters.saturating_sub(1);
 
+    let device_name = sanitize_device_name(request.device_name.as_deref());
     let (device_id, device_session_token, ws_url, session_id_for_token) = {
         let Some(session) = relay.sessions.get_mut(&request.session_id) else {
             return error_response(
@@ -539,12 +552,16 @@ async fn pair_join(
 
         let device_id = random_token(12);
         let device_session_token = random_token(32);
-        session.join_token_used_at_ms = Some(now_ms());
-        session.last_activity_at_ms = now_ms();
+        let now = now_ms();
+        session.join_token_used_at_ms = Some(now);
+        session.last_activity_at_ms = now;
         session.devices.insert(
             device_id.clone(),
             DeviceRecord {
                 current_session_token: device_session_token.clone(),
+                name: device_name.clone(),
+                joined_at_ms: now,
+                last_seen_at_ms: now,
             },
         );
 
@@ -641,6 +658,171 @@ async fn pair_stop(
         Json(PairStopResponse {
             accepted: true,
             session_id: request.session_id,
+        }),
+    )
+        .into_response()
+}
+
+async fn devices_list(
+    State(state): State<SharedRelayState>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<DevicesListRequest>,
+) -> axum::response::Response {
+    if !origin_allowed(&state.config, &headers) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "origin_not_allowed",
+            "Origin is not allowed.",
+        );
+    }
+
+    let client_ip = client_ip(&state.config, &headers, addr);
+    if is_rate_limited(&state, &client_ip).await {
+        return error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "Too many relay management requests. Try again in a minute.",
+        );
+    }
+
+    if !is_opaque_token(&request.session_id, 16)
+        || !is_opaque_token(&request.desktop_session_token, 22)
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_devices_list",
+            "sessionID and desktopSessionToken are required.",
+        );
+    }
+
+    let mut relay = state.inner.lock().await;
+    let Some(session) = relay.sessions.get_mut(&request.session_id) else {
+        return error_response(
+            StatusCode::NOT_FOUND,
+            "session_not_found",
+            "Remote session not found.",
+        );
+    };
+
+    if !safe_token_equals(
+        &session.desktop_session_token,
+        &request.desktop_session_token,
+    ) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "invalid_desktop_session_token",
+            "Desktop session token is invalid.",
+        );
+    }
+
+    session.last_activity_at_ms = now_ms();
+    let mut devices = session
+        .devices
+        .iter()
+        .map(|(device_id, record)| DeviceSummary {
+            device_id: device_id.clone(),
+            device_name: record.name.clone(),
+            connected: session
+                .mobile_sockets
+                .values()
+                .any(|socket| socket.device_id.as_deref() == Some(device_id.as_str())),
+            joined_at: iso_from_millis(record.joined_at_ms),
+            last_seen_at: iso_from_millis(record.last_seen_at_ms),
+        })
+        .collect::<Vec<_>>();
+    devices.sort_by(|lhs, rhs| lhs.joined_at.cmp(&rhs.joined_at));
+
+    (
+        StatusCode::OK,
+        Json(DevicesListResponse {
+            accepted: true,
+            session_id: request.session_id,
+            devices,
+        }),
+    )
+        .into_response()
+}
+
+async fn device_revoke(
+    State(state): State<SharedRelayState>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<DeviceRevokeRequest>,
+) -> axum::response::Response {
+    if !origin_allowed(&state.config, &headers) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "origin_not_allowed",
+            "Origin is not allowed.",
+        );
+    }
+
+    let client_ip = client_ip(&state.config, &headers, addr);
+    if is_rate_limited(&state, &client_ip).await {
+        return error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "Too many relay management requests. Try again in a minute.",
+        );
+    }
+
+    if !is_opaque_token(&request.session_id, 16)
+        || !is_opaque_token(&request.desktop_session_token, 22)
+        || !is_opaque_token(&request.device_id, 8)
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_device_revoke",
+            "sessionID, desktopSessionToken, and deviceID are required.",
+        );
+    }
+
+    let mut relay = state.inner.lock().await;
+    let session_id = request.session_id.clone();
+    {
+        let Some(session) = relay.sessions.get_mut(&session_id) else {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "Remote session not found.",
+            );
+        };
+
+        if !safe_token_equals(
+            &session.desktop_session_token,
+            &request.desktop_session_token,
+        ) {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "invalid_desktop_session_token",
+                "Desktop session token is invalid.",
+            );
+        }
+
+        let Some(_removed_device) = session.devices.remove(&request.device_id) else {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                "device_not_found",
+                "Device is not linked to this session.",
+            );
+        };
+
+        session.last_activity_at_ms = now_ms();
+        close_existing_mobile_socket_for_device(session, &request.device_id, "device_revoked");
+        send_device_count(session);
+    }
+
+    relay.device_token_index.retain(|_, token| {
+        !(token.session_id == session_id && token.device_id == request.device_id)
+    });
+
+    (
+        StatusCode::OK,
+        Json(DeviceRevokeResponse {
+            accepted: true,
+            session_id: request.session_id,
+            device_id: request.device_id,
         }),
     )
         .into_response()
@@ -923,7 +1105,7 @@ async fn authenticate_socket(
                     return None;
                 }
 
-                close_existing_mobile_socket_for_device(session, &device_id);
+                close_existing_mobile_socket_for_device(session, &device_id, "device_reconnected");
 
                 if session.mobile_sockets.len() >= state.config.max_devices_per_session {
                     return None;
@@ -932,6 +1114,7 @@ async fn authenticate_socket(
                 let device = session.devices.get_mut(&device_id)?;
                 let old_token = device.current_session_token.clone();
                 device.current_session_token = next_token.clone();
+                device.last_seen_at_ms = now;
 
                 session.mobile_sockets.insert(
                     connection_id.clone(),
@@ -1059,7 +1242,11 @@ async fn disconnect_socket(state: &SharedRelayState, auth: &AuthenticatedSocket)
     }
 }
 
-fn close_existing_mobile_socket_for_device(session: &mut SessionRecord, device_id: &str) {
+fn close_existing_mobile_socket_for_device(
+    session: &mut SessionRecord,
+    device_id: &str,
+    reason: &str,
+) {
     let key = session
         .mobile_sockets
         .iter()
@@ -1070,7 +1257,7 @@ fn close_existing_mobile_socket_for_device(session: &mut SessionRecord, device_i
         if let Some(handle) = session.mobile_sockets.remove(&key) {
             let _ = handle
                 .tx
-                .send("{\"type\":\"disconnect\",\"reason\":\"device_reconnected\"}".to_string());
+                .send(json!({ "type": "disconnect", "reason": reason }).to_string());
         }
     }
 }
@@ -1171,6 +1358,15 @@ fn normalize_relay_web_socket_url(raw: &str) -> Option<String> {
     parsed.set_fragment(None);
 
     Some(parsed.to_string())
+}
+
+fn sanitize_device_name(raw: Option<&str>) -> String {
+    let normalized = raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(64).collect::<String>());
+
+    normalized.unwrap_or_else(|| "Mobile Device".to_string())
 }
 
 fn random_token(byte_count: usize) -> String {
