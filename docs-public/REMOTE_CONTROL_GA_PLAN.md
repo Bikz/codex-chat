@@ -51,6 +51,7 @@ Implemented so far (2026-02-26):
 - Added cross-relay compatibility harness at `apps/RemoteControlRelay/test/relay.compat.test.mjs`.
 - Local gate command available via `make remote-control-compat` (`pnpm -s run remote:relay:compat`).
 - Harness runs the same normalized scenario (pair start/join + desktop approval, token rotation, anti-spoof forwarding checks, stale-token rejection) against both Node and Rust relays and fails on behavioral drift.
+- Contributor smoke checks now run the compatibility harness by default via `scripts/oss-smoke.sh` (override with `OSS_SMOKE_SKIP_REMOTE_CONTROL_COMPAT=1` when intentionally bypassing).
 
 Acceptance criteria:
 - Desktop + PWA work unchanged against Rust relay in local/staging.

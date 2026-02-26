@@ -34,7 +34,18 @@ run_host_build() {
   return $status
 }
 
+run_remote_control_compat() {
+  if [[ "${OSS_SMOKE_SKIP_REMOTE_CONTROL_COMPAT:-0}" == "1" ]]; then
+    echo "Skipping remote-control relay compatibility smoke (OSS_SMOKE_SKIP_REMOTE_CONTROL_COMPAT=1)"
+    return
+  fi
+
+  echo "Running remote-control relay compatibility smoke..."
+  "$ROOT/scripts/remote-control-relay-compat.sh"
+}
+
 run_cli_smoke
+run_remote_control_compat
 run_host_build
 
 echo "OSS smoke checks passed"
