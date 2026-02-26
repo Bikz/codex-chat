@@ -26,6 +26,7 @@ This MVP delivers:
 - Snapshot requests are rate-limited per device.
 - Device connections per session are capped.
 - Global websocket admission is capped.
+- Per-socket outbound queues are bounded to enforce relay backpressure.
 - Relay logs avoid raw token output and truncate session identifiers.
 - Sessions auto-expire through idle timeout and retention cleanup.
 

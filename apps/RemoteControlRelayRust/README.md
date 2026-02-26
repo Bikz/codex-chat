@@ -30,6 +30,7 @@ Default URL: `http://localhost:8787`
 - Browser pairing routes are origin-gated and CORS-enabled for configured allowlisted origins.
 - Request bodies are bounded by `MAX_JSON_BYTES` (default `65536`).
 - WebSocket frames are bounded by `MAX_WS_MESSAGE_BYTES` (default `65536`).
+- Per-socket outbound queues are bounded by `MAX_SOCKET_OUTBOUND_QUEUE` (default `256`) to avoid unbounded memory growth under slow clients.
 - WebSocket admission can be bounded by `MAX_ACTIVE_WEBSOCKET_CONNECTIONS` (default `10000`).
 - Remote mobile commands are throttled per device via `MAX_REMOTE_COMMANDS_PER_MINUTE` (default `240`).
 - Remote mobile commands are also throttled per session via `MAX_REMOTE_SESSION_COMMANDS_PER_MINUTE` (default `480`).

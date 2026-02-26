@@ -17,6 +17,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::{sleep, timeout};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tracing::{info, warn};
@@ -71,7 +72,7 @@ struct SessionRecord {
 
 #[derive(Clone)]
 struct SocketHandle {
-    tx: mpsc::UnboundedSender<String>,
+    tx: mpsc::Sender<String>,
     device_id: Option<String>,
 }
 
@@ -628,7 +629,7 @@ async fn handle_session_envelope(
         match envelope.target.as_str() {
             "desktop" => {
                 if let Some(desktop) = &session.desktop_socket {
-                    let _ = desktop.tx.send(envelope.payload.clone());
+                    let _ = try_send_payload(&desktop.tx, envelope.payload.clone());
                 }
                 if let Some(reason) = disconnect_reason {
                     close_reason = Some(reason);
@@ -648,7 +649,7 @@ async fn handle_session_envelope(
                     revoked_device_id = Some(target_device_id.to_string());
                 } else {
                     for mobile in session.mobile_sockets.values() {
-                        let _ = mobile.tx.send(envelope.payload.clone());
+                        let _ = try_send_payload(&mobile.tx, envelope.payload.clone());
                     }
                     if let Some(reason) = disconnect_reason {
                         close_reason = Some(reason);
@@ -1262,7 +1263,7 @@ async fn pair_join(
 
             let mut publish_remote_payload = None;
             if let Some(desktop) = &session.desktop_socket {
-                let _ = desktop.tx.send(encoded_payload.clone());
+                let _ = try_send_payload(&desktop.tx, encoded_payload.clone());
             } else if state.cross_instance_bus.is_some() {
                 publish_remote_payload = Some(encoded_payload);
             }
@@ -1806,7 +1807,7 @@ async fn handle_socket(
     legacy_query_token: Option<String>,
 ) {
     let (mut writer, mut reader) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    let (tx, mut rx) = mpsc::channel::<String>(state.config.max_socket_outbound_queue.max(8));
 
     let writer_task = tokio::spawn(async move {
         while let Some(payload) = rx.recv().await {
@@ -1834,7 +1835,7 @@ async fn handle_socket(
     };
 
     let Some(auth_message) = auth_message else {
-        let _ = tx.send("{}".to_string());
+        let _ = try_send_payload(&tx, "{}".to_string());
         close_writer_task(writer_task, tx).await;
         return;
     };
@@ -1855,7 +1856,8 @@ async fn handle_socket(
             continue;
         };
         if raw.len() > state.config.max_ws_message_bytes {
-            let _ = tx.send(
+            let _ = try_send_payload(
+                &tx,
                 json!({
                     "type": "disconnect",
                     "reason": "message_too_large"
@@ -1900,7 +1902,7 @@ async fn handle_socket(
                     }
 
                     for mobile in session.mobile_sockets.values() {
-                        let _ = mobile.tx.send(raw.to_string());
+                        let _ = try_send_payload(&mobile.tx, raw.to_string());
                     }
                     publish_cross_instance_session(
                         &state,
@@ -1931,7 +1933,7 @@ async fn handle_socket(
 
                     let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
                     if let Some(desktop) = &session.desktop_socket {
-                        let _ = desktop.tx.send(forwarded.clone());
+                        let _ = try_send_payload(&desktop.tx, forwarded.clone());
                     }
                     publish_cross_instance_session(
                         &state,
@@ -1953,7 +1955,7 @@ async fn handle_socket(
 
 async fn close_writer_task(
     mut writer_task: tokio::task::JoinHandle<()>,
-    tx: mpsc::UnboundedSender<String>,
+    tx: mpsc::Sender<String>,
 ) {
     drop(tx);
     if timeout(Duration::from_millis(100), &mut writer_task)
@@ -1967,7 +1969,7 @@ async fn close_writer_task(
 fn apply_pair_decision(
     session: &mut SessionRecord,
     decision: &RelayPairDecision,
-    desktop_tx: Option<&mpsc::UnboundedSender<String>>,
+    desktop_tx: Option<&mpsc::Sender<String>>,
 ) -> bool {
     let Some(request_id) = decision.request_id.as_deref() else {
         return false;
@@ -2001,8 +2003,10 @@ fn apply_pair_decision(
             request_id: request_id.to_string(),
             approved,
         };
-        let _ =
-            desktop_tx.send(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
+        let _ = try_send_payload(
+            desktop_tx,
+            serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
+        );
     }
 
     matches_request
@@ -2032,13 +2036,20 @@ struct RelayValidationError {
     message: String,
 }
 
-fn send_relay_error(tx: &mpsc::UnboundedSender<String>, code: &str, message: &str) {
+fn send_relay_error(tx: &mpsc::Sender<String>, code: &str, message: &str) {
     let payload = json!({
         "type": "relay.error",
         "error": code,
         "message": message,
     });
-    let _ = tx.send(payload.to_string());
+    let _ = try_send_payload(tx, payload.to_string());
+}
+
+fn try_send_payload(tx: &mpsc::Sender<String>, payload: String) -> bool {
+    match tx.try_send(payload) {
+        Ok(()) => true,
+        Err(TrySendError::Full(_)) | Err(TrySendError::Closed(_)) => false,
+    }
 }
 
 fn validate_mobile_payload(
@@ -2425,7 +2436,7 @@ async fn authenticate_socket(
     state: &SharedRelayState,
     token: &str,
     origin: Option<&str>,
-    tx: &mpsc::UnboundedSender<String>,
+    tx: &mpsc::Sender<String>,
 ) -> Option<AuthenticatedSocket> {
     let auth_context = {
         let relay = state.inner.lock().await;
@@ -2465,8 +2476,10 @@ async fn authenticate_socket(
             "[relay-rs] rejected websocket auth at capacity active={} limit={}",
             current_active_connections, state.config.max_active_websocket_connections
         );
-        let _ =
-            tx.send(json!({ "type": "disconnect", "reason": "relay_over_capacity" }).to_string());
+        let _ = try_send_payload(
+            tx,
+            json!({ "type": "disconnect", "reason": "relay_over_capacity" }).to_string(),
+        );
         return None;
     }
 
@@ -2476,7 +2489,8 @@ async fn authenticate_socket(
             session.last_activity_at_ms = now_ms();
 
             if let Some(existing) = session.desktop_socket.take() {
-                let _ = existing.tx.send(
+                let _ = try_send_payload(
+                    &existing.tx,
                     "{\"type\":\"disconnect\",\"reason\":\"desktop_reconnected\"}".to_string(),
                 );
             }
@@ -2494,7 +2508,10 @@ async fn authenticate_socket(
                 next_device_session_token: None,
                 connected_device_count: session.mobile_sockets.len(),
             };
-            let _ = tx.send(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
+            let _ = try_send_payload(
+                tx,
+                serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
+            );
 
             info!(
                 "[relay-rs] desktop_connected session={}",
@@ -2585,7 +2602,10 @@ async fn authenticate_socket(
                 next_device_session_token: Some(next_token),
                 connected_device_count,
             };
-            let _ = tx.send(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
+            let _ = try_send_payload(
+                tx,
+                serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
+            );
 
             info!(
                 "[relay-rs] mobile_connected session={} devices={}",
@@ -2698,9 +2718,10 @@ fn close_existing_mobile_socket_for_device(
     if let Some(key) = key {
         if let Some(handle) = session.mobile_sockets.remove(&key) {
             session.command_sequence_by_connection_id.remove(&key);
-            let _ = handle
-                .tx
-                .send(json!({ "type": "disconnect", "reason": reason }).to_string());
+            let _ = try_send_payload(
+                &handle.tx,
+                json!({ "type": "disconnect", "reason": reason }).to_string(),
+            );
         }
     }
 }
@@ -2711,7 +2732,7 @@ fn send_device_count(session: &SessionRecord) {
         return;
     };
 
-    let _ = desktop.tx.send(payload);
+    let _ = try_send_payload(&desktop.tx, payload);
 }
 
 fn device_count_payload(session: &SessionRecord) -> String {
@@ -2777,15 +2798,17 @@ fn close_session(relay: &mut RelayState, session_id: &str, reason: &str) {
     }
 
     if let Some(desktop) = session.desktop_socket {
-        let _ = desktop
-            .tx
-            .send(json!({ "type": "disconnect", "reason": reason }).to_string());
+        let _ = try_send_payload(
+            &desktop.tx,
+            json!({ "type": "disconnect", "reason": reason }).to_string(),
+        );
     }
 
     for mobile in session.mobile_sockets.into_values() {
-        let _ = mobile
-            .tx
-            .send(json!({ "type": "disconnect", "reason": reason }).to_string());
+        let _ = try_send_payload(
+            &mobile.tx,
+            json!({ "type": "disconnect", "reason": reason }).to_string(),
+        );
     }
 
     info!(

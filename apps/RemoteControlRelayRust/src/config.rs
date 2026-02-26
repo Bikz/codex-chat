@@ -17,6 +17,7 @@ pub struct RelayConfig {
     pub token_rotation_grace_ms: u64,
     pub max_pending_join_waiters: usize,
     pub max_ws_message_bytes: usize,
+    pub max_socket_outbound_queue: usize,
     pub max_active_websocket_connections: usize,
     pub max_remote_commands_per_minute: usize,
     pub max_remote_session_commands_per_minute: usize,
@@ -46,6 +47,7 @@ impl RelayConfig {
         let token_rotation_grace_ms = parse_u64("TOKEN_ROTATION_GRACE_MS", 15_000);
         let max_pending_join_waiters = parse_usize("MAX_PENDING_JOIN_WAITERS", 64);
         let max_ws_message_bytes = parse_usize("MAX_WS_MESSAGE_BYTES", 65_536);
+        let max_socket_outbound_queue = parse_usize("MAX_SOCKET_OUTBOUND_QUEUE", 256);
         let max_active_websocket_connections =
             parse_usize("MAX_ACTIVE_WEBSOCKET_CONNECTIONS", 10_000);
         let max_remote_commands_per_minute = parse_usize("MAX_REMOTE_COMMANDS_PER_MINUTE", 240);
@@ -101,6 +103,7 @@ impl RelayConfig {
             token_rotation_grace_ms,
             max_pending_join_waiters,
             max_ws_message_bytes,
+            max_socket_outbound_queue,
             max_active_websocket_connections,
             max_remote_commands_per_minute,
             max_remote_session_commands_per_minute,
