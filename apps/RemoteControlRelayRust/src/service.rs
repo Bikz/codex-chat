@@ -2326,6 +2326,34 @@ async fn authenticate_socket(
     };
 
     let mut relay = state.inner.lock().await;
+    let current_active_connections = relay_runtime_stats(&relay).active_web_sockets;
+    let reconnection_without_growth = match &auth_context {
+        AuthContext::Desktop { session_id } => relay
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.desktop_socket.as_ref())
+            .is_some(),
+        AuthContext::Mobile {
+            session_id,
+            device_id,
+        } => relay.sessions.get(session_id).is_some_and(|session| {
+            session
+                .mobile_sockets
+                .values()
+                .any(|socket| socket.device_id.as_deref() == Some(device_id.as_str()))
+        }),
+    };
+    if current_active_connections >= state.config.max_active_websocket_connections
+        && !reconnection_without_growth
+    {
+        warn!(
+            "[relay-rs] rejected websocket auth at capacity active={} limit={}",
+            current_active_connections, state.config.max_active_websocket_connections
+        );
+        let _ =
+            tx.send(json!({ "type": "disconnect", "reason": "relay_over_capacity" }).to_string());
+        return None;
+    }
 
     match auth_context {
         AuthContext::Desktop { session_id } => {

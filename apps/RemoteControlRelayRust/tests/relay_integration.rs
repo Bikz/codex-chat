@@ -294,6 +294,150 @@ async fn pair_join_requires_desktop_connection() {
 }
 
 #[tokio::test]
+async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
+    let (base, task) = spawn_test_server_with_config(|config| {
+        config.max_active_websocket_connections = 1;
+    })
+    .await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let start_response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+    desktop_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": desktop_session_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("desktop auth send");
+    let _desktop_auth = desktop_socket
+        .next()
+        .await
+        .expect("desktop auth frame")
+        .expect("desktop auth message");
+
+    let join_future = tokio::spawn({
+        let client = client.clone();
+        let base = base.clone();
+        let session_id = session_id.clone();
+        let join_token = join_token.clone();
+        async move {
+            client
+                .post(format!("{base}/pair/join"))
+                .header("Origin", "http://localhost:4173")
+                .json(&json!({
+                    "sessionID": session_id,
+                    "joinToken": join_token,
+                }))
+                .send()
+                .await
+                .expect("pair join request")
+        }
+    });
+
+    let pair_request = desktop_socket
+        .next()
+        .await
+        .expect("pair request frame")
+        .expect("pair request message");
+    let pair_request_json: Value =
+        serde_json::from_str(pair_request.to_text().expect("pair request text"))
+            .expect("pair request json");
+    let request_id = pair_request_json
+        .get("requestID")
+        .and_then(Value::as_str)
+        .expect("requestID")
+        .to_string();
+
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.pair_decision",
+                "sessionID": session_id,
+                "requestID": request_id,
+                "approved": true,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("desktop pair decision send");
+
+    let join_response = join_future.await.expect("join task");
+    assert_eq!(join_response.status(), StatusCode::OK);
+    let join_payload: Value = join_response.json().await.expect("join payload");
+    let device_token = join_payload
+        .get("deviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("device token")
+        .to_string();
+
+    let mut mobile_request = ws_url.into_client_request().expect("mobile request");
+    mobile_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut mobile_socket, _) = tokio_tungstenite::connect_async(mobile_request)
+        .await
+        .expect("mobile websocket");
+    mobile_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": device_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("mobile auth send");
+
+    let next = tokio::time::timeout(Duration::from_millis(1_000), mobile_socket.next())
+        .await
+        .expect("expected auth response or close");
+    match next {
+        Some(Ok(Message::Text(text))) => {
+            let payload: Value = serde_json::from_str(&text).expect("disconnect payload json");
+            assert_eq!(
+                payload.get("type").and_then(Value::as_str),
+                Some("disconnect")
+            );
+            assert_eq!(
+                payload.get("reason").and_then(Value::as_str),
+                Some("relay_over_capacity")
+            );
+        }
+        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {}
+        other => panic!("unexpected websocket frame: {other:?}"),
+    }
+
+    task.abort();
+}
+
+#[tokio::test]
 async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
     let (base, task) = spawn_test_server().await;
     let client = reqwest::Client::new();
