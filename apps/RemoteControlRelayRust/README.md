@@ -56,6 +56,11 @@ Run repeated soak loops (uses `RELAY_SOAK_LOOPS`, default `5`):
 RELAY_SOAK_LOOPS=10 make remote-control-soak
 ```
 
+The soak wrapper writes per-loop artifacts and an aggregate summary:
+
+- per-loop results: `output/remote-control/soak-runs/loop-<n>.json`
+- summary: `output/remote-control/relay-soak-summary.json`
+
 Evaluate the latest load artifact against gate thresholds:
 
 ```bash
@@ -97,3 +102,12 @@ Environment variables:
 - `RELAY_GATE_MAX_OUTBOUND_SEND_FAILURES` (default `0`)
 - `RELAY_GATE_MAX_SLOW_CONSUMER_DISCONNECTS` (default `0`)
 - `RELAY_GATE_MIN_SAMPLE_COUNT` (default `1`)
+- `RELAY_SOAK_LOOPS` (default `5`)
+- `RELAY_SOAK_RESULTS_DIR` (default `output/remote-control/soak-runs`)
+- `RELAY_SOAK_SUMMARY_PATH` (default `output/remote-control/relay-soak-summary.json`)
+- `RELAY_SOAK_MAX_FAILING_LOOPS` (default `0`)
+- `RELAY_SOAK_MAX_P95_MS` (optional)
+- `RELAY_SOAK_MAX_TOTAL_ERRORS` (default `0`)
+- `RELAY_SOAK_MAX_TOTAL_OUTBOUND_SEND_FAILURES` (default `0`)
+- `RELAY_SOAK_MAX_TOTAL_SLOW_CONSUMER_DISCONNECTS` (default `0`)
+- `RELAY_SOAK_MIN_TOTAL_SAMPLES` (default `1`)

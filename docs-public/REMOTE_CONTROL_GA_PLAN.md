@@ -231,6 +231,7 @@ Implemented so far (2026-02-26):
   - `make remote-control-soak`
   - `make remote-control-gate`
   - `make remote-control-load-gated`
+- Soak wrapper now writes per-loop load artifacts plus an aggregate summary gate output at `output/remote-control/relay-soak-summary.json`.
 
 Acceptance criteria:
 - 24h soak test meets defined SLO thresholds.
