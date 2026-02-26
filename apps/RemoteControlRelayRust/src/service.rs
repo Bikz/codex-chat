@@ -16,9 +16,9 @@ use rand::RngCore;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot, watch, Mutex};
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::time::{sleep, timeout};
+use tokio::sync::{mpsc, oneshot, watch, Mutex};
+use tokio::time::{interval, sleep, timeout, MissedTickBehavior};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tracing::{info, warn};
 use url::Url;
@@ -83,7 +83,7 @@ struct SessionRecord {
 
 #[derive(Clone)]
 struct SocketHandle {
-    tx: mpsc::Sender<String>,
+    tx: mpsc::Sender<Message>,
     shutdown: watch::Sender<bool>,
     device_id: Option<String>,
 }
@@ -694,7 +694,9 @@ async fn handle_session_envelope(
                         "device_revoked",
                     );
                     session.command_rate_buckets.remove(target_device_id);
-                    session.snapshot_request_rate_buckets.remove(target_device_id);
+                    session
+                        .snapshot_request_rate_buckets
+                        .remove(target_device_id);
                     session.devices.remove(target_device_id);
                     send_device_count(session);
                     revoked_device_id = Some(target_device_id.to_string());
@@ -702,8 +704,7 @@ async fn handle_session_envelope(
                     for mobile in session.mobile_sockets.values() {
                         if !try_send_payload(&mobile.tx, envelope.payload.clone()) {
                             outbound_send_failures = outbound_send_failures.saturating_add(1);
-                            slow_consumer_disconnects =
-                                slow_consumer_disconnects.saturating_add(1);
+                            slow_consumer_disconnects = slow_consumer_disconnects.saturating_add(1);
                             request_socket_disconnect(mobile, "slow_consumer");
                         }
                     }
@@ -1103,7 +1104,9 @@ fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
     let pair_refresh_failures = relay
         .pair_refresh_requests
         .saturating_sub(relay.pair_refresh_successes);
-    let ws_auth_failures = relay.ws_auth_attempts.saturating_sub(relay.ws_auth_successes);
+    let ws_auth_failures = relay
+        .ws_auth_attempts
+        .saturating_sub(relay.ws_auth_successes);
     RelayRuntimeStats {
         sessions_with_desktop,
         sessions_with_mobile,
@@ -1230,10 +1233,9 @@ async fn pair_start(
             pending_join_request: None,
         },
     );
-    relay.desktop_token_index.insert(
-        desktop_session_token,
-        request.session_id.clone(),
-    );
+    relay
+        .desktop_token_index
+        .insert(desktop_session_token, request.session_id.clone());
 
     info!(
         "[relay-rs] pair_start session={}",
@@ -1945,7 +1947,9 @@ async fn device_revoke(
             );
         };
         session.command_rate_buckets.remove(&request.device_id);
-        session.snapshot_request_rate_buckets.remove(&request.device_id);
+        session
+            .snapshot_request_rate_buckets
+            .remove(&request.device_id);
 
         session.last_activity_at_ms = now_ms();
         close_existing_mobile_socket_for_device(session, &request.device_id, "device_revoked");
@@ -2018,7 +2022,7 @@ async fn handle_socket(
     legacy_query_token: Option<String>,
 ) {
     let (mut writer, mut reader) = socket.split();
-    let (tx, mut rx) = mpsc::channel::<String>(state.config.max_socket_outbound_queue.max(8));
+    let (tx, mut rx) = mpsc::channel::<Message>(state.config.max_socket_outbound_queue.max(8));
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
     {
@@ -2028,7 +2032,7 @@ async fn handle_socket(
 
     let writer_task = tokio::spawn(async move {
         while let Some(payload) = rx.recv().await {
-            if writer.send(Message::Text(payload.into())).await.is_err() {
+            if writer.send(payload).await.is_err() {
                 break;
             }
         }
@@ -2079,6 +2083,15 @@ async fn handle_socket(
         count: 0,
         window_ends_at_ms: now_ms() + 60_000,
     };
+    let mut last_heartbeat_at_ms = now_ms();
+    let heartbeat_interval_ms = state.config.ws_heartbeat_interval_ms.max(1_000);
+    let heartbeat_timeout_ms = state
+        .config
+        .ws_heartbeat_timeout_ms
+        .max(heartbeat_interval_ms.saturating_mul(2));
+    let mut heartbeat = interval(Duration::from_millis(heartbeat_interval_ms));
+    heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    heartbeat.tick().await;
 
     loop {
         tokio::select! {
@@ -2087,12 +2100,43 @@ async fn handle_socket(
                     break;
                 }
             }
+            _ = heartbeat.tick() => {
+                let now = now_ms();
+                if now - last_heartbeat_at_ms > heartbeat_timeout_ms as i64 {
+                    let _ = try_send_payload(
+                        &tx,
+                        json!({
+                            "type": "disconnect",
+                            "reason": "heartbeat_timeout"
+                        })
+                        .to_string(),
+                    );
+                    break;
+                }
+                if !try_send_message(&tx, Message::Ping(Vec::new().into())) {
+                    break;
+                }
+            }
             message = reader.next() => {
                 let Some(message) = message else {
                     break;
                 };
-                let Ok(Message::Text(raw)) = message else {
-                    continue;
+                let raw = match message {
+                    Ok(Message::Text(raw)) => {
+                        last_heartbeat_at_ms = now_ms();
+                        raw
+                    }
+                    Ok(Message::Pong(_)) => {
+                        last_heartbeat_at_ms = now_ms();
+                        continue;
+                    }
+                    Ok(Message::Ping(payload)) => {
+                        last_heartbeat_at_ms = now_ms();
+                        let _ = try_send_message(&tx, Message::Pong(payload));
+                        continue;
+                    }
+                    Ok(Message::Close(_)) | Err(_) => break,
+                    _ => continue,
                 };
                 if raw.len() > state.config.max_ws_message_bytes {
                     let _ = try_send_payload(
@@ -2231,7 +2275,7 @@ async fn handle_socket(
 
 async fn close_writer_task(
     mut writer_task: tokio::task::JoinHandle<()>,
-    tx: mpsc::Sender<String>,
+    tx: mpsc::Sender<Message>,
 ) {
     drop(tx);
     if timeout(Duration::from_millis(100), &mut writer_task)
@@ -2245,7 +2289,7 @@ async fn close_writer_task(
 fn apply_pair_decision(
     session: &mut SessionRecord,
     decision: &RelayPairDecision,
-    desktop_tx: Option<&mpsc::Sender<String>>,
+    desktop_tx: Option<&mpsc::Sender<Message>>,
 ) -> bool {
     let Some(request_id) = decision.request_id.as_deref() else {
         return false;
@@ -2312,7 +2356,7 @@ struct RelayValidationError {
     message: String,
 }
 
-fn send_relay_error(tx: &mpsc::Sender<String>, code: &str, message: &str) {
+fn send_relay_error(tx: &mpsc::Sender<Message>, code: &str, message: &str) {
     let payload = json!({
         "type": "relay.error",
         "error": code,
@@ -2333,7 +2377,11 @@ fn request_socket_disconnect(handle: &SocketHandle, reason: &str) {
     let _ = handle.shutdown.send(true);
 }
 
-fn try_send_payload(tx: &mpsc::Sender<String>, payload: String) -> bool {
+fn try_send_payload(tx: &mpsc::Sender<Message>, payload: String) -> bool {
+    try_send_message(tx, Message::Text(payload.into()))
+}
+
+fn try_send_message(tx: &mpsc::Sender<Message>, payload: Message) -> bool {
     match tx.try_send(payload) {
         Ok(()) => true,
         Err(TrySendError::Full(_)) | Err(TrySendError::Closed(_)) => false,
@@ -2379,11 +2427,7 @@ fn validate_mobile_payload(
             }
 
             if let Some(last_seq) = parsed.get("lastSeq") {
-                if !(last_seq.is_u64()
-                    || last_seq
-                        .as_i64()
-                        .is_some_and(|value| value >= 0))
-                {
+                if !(last_seq.is_u64() || last_seq.as_i64().is_some_and(|value| value >= 0)) {
                     return Err(RelayValidationError {
                         code: "invalid_snapshot_request",
                         message: "lastSeq must be numeric when provided.".to_string(),
@@ -2716,7 +2760,7 @@ async fn authenticate_socket(
     state: &SharedRelayState,
     token: &str,
     origin: Option<&str>,
-    tx: &mpsc::Sender<String>,
+    tx: &mpsc::Sender<Message>,
     shutdown_tx: &watch::Sender<bool>,
 ) -> Option<AuthenticatedSocket> {
     let auth_context = {
@@ -3085,7 +3129,9 @@ fn close_session(relay: &mut RelayState, session_id: &str, reason: &str) {
     {
         relay.device_token_index.remove(&token);
     }
-    relay.desktop_token_index.remove(&session.desktop_session_token);
+    relay
+        .desktop_token_index
+        .remove(&session.desktop_session_token);
 
     if let Some(desktop) = session.desktop_socket {
         request_socket_disconnect(&desktop, reason);
@@ -3409,7 +3455,7 @@ mod tests {
 
     #[test]
     fn try_send_payload_returns_false_when_queue_is_full() {
-        let (tx, mut rx) = mpsc::channel::<String>(1);
+        let (tx, mut rx) = mpsc::channel::<Message>(1);
 
         assert!(try_send_payload(&tx, "first".to_string()));
         assert_eq!(
@@ -3419,12 +3465,12 @@ mod tests {
         );
 
         let first = rx.try_recv().expect("first payload should remain in queue");
-        assert_eq!(first, "first");
+        assert_eq!(first, Message::Text("first".to_string().into()));
     }
 
     #[tokio::test]
     async fn request_socket_disconnect_sends_disconnect_and_shutdown_signal() {
-        let (tx, mut rx) = mpsc::channel::<String>(4);
+        let (tx, mut rx) = mpsc::channel::<Message>(4);
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
         let handle = SocketHandle {
             tx,
@@ -3435,7 +3481,10 @@ mod tests {
         request_socket_disconnect(&handle, "slow_consumer");
 
         let payload = rx.recv().await.expect("disconnect payload");
-        let parsed: Value = serde_json::from_str(&payload).expect("disconnect json");
+        let Message::Text(payload_text) = payload else {
+            panic!("expected text disconnect payload");
+        };
+        let parsed: Value = serde_json::from_str(&payload_text).expect("disconnect json");
         assert_eq!(
             parsed.get("reason").and_then(Value::as_str),
             Some("slow_consumer")

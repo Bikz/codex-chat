@@ -272,9 +272,18 @@ async fn metricsz_reports_runtime_counters_for_connected_devices() {
         body.get("pairStartFailures").and_then(Value::as_u64),
         Some(0)
     );
-    assert_eq!(body.get("pairJoinRequests").and_then(Value::as_u64), Some(1));
-    assert_eq!(body.get("pairJoinSuccesses").and_then(Value::as_u64), Some(1));
-    assert_eq!(body.get("pairJoinFailures").and_then(Value::as_u64), Some(0));
+    assert_eq!(
+        body.get("pairJoinRequests").and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        body.get("pairJoinSuccesses").and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        body.get("pairJoinFailures").and_then(Value::as_u64),
+        Some(0)
+    );
     assert_eq!(
         body.get("pairRefreshRequests").and_then(Value::as_u64),
         Some(0)
@@ -1402,6 +1411,78 @@ async fn replayed_mobile_command_sequence_is_rejected() {
         desktop_next.is_err(),
         "desktop unexpectedly received replayed payload"
     );
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn per_socket_websocket_message_rate_limit_disconnects_abusive_client() {
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|config| {
+            config.max_ws_messages_per_minute = 2;
+            config.max_remote_commands_per_minute = 10_000;
+            config.max_remote_session_commands_per_minute = 10_000;
+        })
+        .await;
+
+    for seq in 1..=3_u64 {
+        mobile_socket
+            .send(Message::Text(
+                json!({
+                    "schemaVersion": 1,
+                    "sessionID": session_id,
+                    "seq": seq,
+                    "payload": {
+                        "type": "command",
+                        "payload": {
+                            "name": "thread.select",
+                            "threadID": "11111111-1111-1111-1111-111111111111"
+                        }
+                    }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send command");
+    }
+
+    for _ in 0..2 {
+        let forwarded = tokio::time::timeout(Duration::from_millis(1_000), desktop_socket.next())
+            .await
+            .expect("expected forwarded command")
+            .expect("forwarded frame")
+            .expect("forwarded message");
+        let forwarded_json: Value =
+            serde_json::from_str(forwarded.to_text().expect("forwarded text"))
+                .expect("forwarded json");
+        assert_eq!(
+            forwarded_json
+                .pointer("/payload/payload/name")
+                .and_then(Value::as_str),
+            Some("thread.select")
+        );
+    }
+
+    let disconnect_or_close =
+        tokio::time::timeout(Duration::from_millis(1_500), mobile_socket.next())
+            .await
+            .expect("expected rate-limit disconnect frame");
+    match disconnect_or_close {
+        Some(Ok(Message::Text(text))) => {
+            let payload: Value = serde_json::from_str(text.as_ref()).expect("disconnect json");
+            assert_eq!(
+                payload.get("type").and_then(Value::as_str),
+                Some("disconnect")
+            );
+            assert_eq!(
+                payload.get("reason").and_then(Value::as_str),
+                Some("socket_rate_limited")
+            );
+        }
+        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {}
+        other => panic!("unexpected websocket frame: {other:?}"),
+    }
 
     task.abort();
 }

@@ -246,12 +246,14 @@ async fn pair_connected_mobile(
         .next()
         .await
         .ok_or_else(|| "desktop pair request frame missing".to_string())
-        .and_then(|value| value.map_err(|error| format!("desktop pair request ws error: {error}")))?;
+        .and_then(|value| {
+            value.map_err(|error| format!("desktop pair request ws error: {error}"))
+        })?;
     let pair_request_text = pair_request
         .to_text()
         .map_err(|error| format!("pair request is not text: {error}"))?;
-    let pair_request_json: Value =
-        serde_json::from_str(pair_request_text).map_err(|error| format!("pair request decode failed: {error}"))?;
+    let pair_request_json: Value = serde_json::from_str(pair_request_text)
+        .map_err(|error| format!("pair request decode failed: {error}"))?;
     let request_id = pair_request_json
         .get("requestID")
         .and_then(Value::as_str)
@@ -347,7 +349,9 @@ async fn await_forwarded_command(
             .await
             .map_err(|_| "timed out waiting for forwarded command".to_string())?
             .ok_or_else(|| "desktop socket closed while waiting for forwarded command".to_string())
-            .and_then(|value| value.map_err(|error| format!("desktop ws receive error: {error}")))?;
+            .and_then(|value| {
+                value.map_err(|error| format!("desktop ws receive error: {error}"))
+            })?;
 
         let Message::Text(text) = frame else {
             continue;
@@ -444,7 +448,8 @@ async fn relay_parallel_sessions_load_harness() {
                     .await
                     .map_err(|error| format!("mobile send failed: {error}"))?;
 
-                await_forwarded_command(&mut handles.desktop_socket, seq, roundtrip_timeout).await?;
+                await_forwarded_command(&mut handles.desktop_socket, seq, roundtrip_timeout)
+                    .await?;
 
                 roundtrip_samples_us
                     .lock()
@@ -508,7 +513,10 @@ async fn relay_parallel_sessions_load_harness() {
             panic!("failed persisting load harness failure summary: {error}");
         }
 
-        let first = failures.first().cloned().unwrap_or_else(|| "unknown error".to_string());
+        let first = failures
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "unknown error".to_string());
         panic!(
             "load harness encountered {} errors; first: {}",
             failures.len(),
@@ -602,8 +610,7 @@ async fn relay_parallel_sessions_load_harness() {
     assert!(
         passes_latency_budget,
         "p95 latency {}ms exceeded budget {}ms",
-        p95_ms,
-        cfg.p95_latency_budget_ms
+        p95_ms, cfg.p95_latency_budget_ms
     );
 
     assert_eq!(

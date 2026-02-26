@@ -23,6 +23,7 @@ This MVP delivers:
 - Relay uses constant-time token comparison and strict token format validation.
 - Pairing endpoints are rate-limited per client IP.
 - Authenticated websocket connections are rate-limited by inbound message throughput.
+- Relay uses websocket ping/pong heartbeat timeouts to reap stalled connections.
 - Mobile command envelopes are validated and rate-limited per device and per session.
 - Snapshot requests are rate-limited per device.
 - Device connections per session are capped.

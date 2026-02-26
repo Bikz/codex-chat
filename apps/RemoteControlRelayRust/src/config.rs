@@ -14,6 +14,8 @@ pub struct RelayConfig {
     pub session_retention_ms: u64,
     pub pair_approval_timeout_ms: u64,
     pub ws_auth_timeout_ms: u64,
+    pub ws_heartbeat_interval_ms: u64,
+    pub ws_heartbeat_timeout_ms: u64,
     pub token_rotation_grace_ms: u64,
     pub max_pending_join_waiters: usize,
     pub max_ws_message_bytes: usize,
@@ -45,6 +47,8 @@ impl RelayConfig {
         let session_retention_ms = parse_u64("SESSION_RETENTION_MS", 600_000);
         let pair_approval_timeout_ms = parse_u64("PAIR_APPROVAL_TIMEOUT_MS", 45_000);
         let ws_auth_timeout_ms = parse_u64("WS_AUTH_TIMEOUT_MS", 10_000);
+        let ws_heartbeat_interval_ms = parse_u64("WS_HEARTBEAT_INTERVAL_MS", 20_000);
+        let ws_heartbeat_timeout_ms = parse_u64("WS_HEARTBEAT_TIMEOUT_MS", 60_000);
         let token_rotation_grace_ms = parse_u64("TOKEN_ROTATION_GRACE_MS", 15_000);
         let max_pending_join_waiters = parse_usize("MAX_PENDING_JOIN_WAITERS", 64);
         let max_ws_message_bytes = parse_usize("MAX_WS_MESSAGE_BYTES", 65_536);
@@ -54,8 +58,7 @@ impl RelayConfig {
         let max_remote_commands_per_minute = parse_usize("MAX_REMOTE_COMMANDS_PER_MINUTE", 240);
         let max_remote_session_commands_per_minute =
             parse_usize("MAX_REMOTE_SESSION_COMMANDS_PER_MINUTE", 480);
-        let max_snapshot_requests_per_minute =
-            parse_usize("MAX_SNAPSHOT_REQUESTS_PER_MINUTE", 60);
+        let max_snapshot_requests_per_minute = parse_usize("MAX_SNAPSHOT_REQUESTS_PER_MINUTE", 60);
         let max_ws_messages_per_minute = parse_usize("MAX_WS_MESSAGES_PER_MINUTE", 1_200);
         let max_remote_command_text_bytes = parse_usize("MAX_REMOTE_COMMAND_TEXT_BYTES", 16_384);
         let redis_url = env::var("REDIS_URL")
@@ -102,6 +105,8 @@ impl RelayConfig {
             session_retention_ms,
             pair_approval_timeout_ms,
             ws_auth_timeout_ms,
+            ws_heartbeat_interval_ms,
+            ws_heartbeat_timeout_ms,
             token_rotation_grace_ms,
             max_pending_join_waiters,
             max_ws_message_bytes,
