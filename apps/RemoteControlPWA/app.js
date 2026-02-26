@@ -663,9 +663,17 @@ function closeSocket() {
   }
 }
 
-function connectSocket() {
+function connectSocket(force = false) {
   if (!state.wsURL || !state.deviceSessionToken) {
     setStatus("Missing WebSocket URL or device token.", "error");
+    return;
+  }
+
+  if (
+    !force &&
+    state.socket &&
+    (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)
+  ) {
     return;
   }
 
@@ -910,7 +918,7 @@ function wireComposer() {
 function wireButtons() {
   dom.pairButton.addEventListener("click", pairDevice);
   dom.reconnectButton.addEventListener("click", () => {
-    connectSocket();
+    connectSocket(true);
   });
   dom.snapshotButton.addEventListener("click", () => {
     requestSnapshot("manual_request");

@@ -42,3 +42,7 @@ Then open `http://localhost:4173`.
 ## Limitations
 
 - iOS/browser backgrounding can drop socket connections; PWA resumes with reconnect + snapshot.
+
+## QA
+
+- Manual release checklist: [`QA.md`](./QA.md)
