@@ -97,6 +97,7 @@ Environment variables:
 - `RELAY_LOAD_RESULTS_PATH` (default `output/remote-control/relay-load-result.json`; writes machine-readable JSON summary for each run)
 - `RELAY_GATE_RESULTS_PATH` (default `output/remote-control/relay-load-result.json`; path the gate script reads)
 - `RELAY_GATE_REQUIRE_STATUS` (default `ok`)
+- `RELAY_GATE_MAX_P95_US` (optional; enforces microsecond p95 gate when provided)
 - `RELAY_GATE_MAX_P95_MS` (optional; overrides JSON budget when provided)
 - `RELAY_GATE_MAX_ERRORS` (default `0`)
 - `RELAY_GATE_MAX_OUTBOUND_SEND_FAILURES` (default `0`)

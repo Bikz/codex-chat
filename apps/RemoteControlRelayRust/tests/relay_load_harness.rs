@@ -63,6 +63,10 @@ struct LoadHarnessSummary {
     sessions: usize,
     messages_per_session: u64,
     sample_count: usize,
+    p50_latency_us: u128,
+    p95_latency_us: u128,
+    p99_latency_us: u128,
+    max_latency_us: u128,
     p50_latency_ms: u128,
     p95_latency_ms: u128,
     p99_latency_ms: u128,
@@ -374,6 +378,13 @@ fn percentile(sorted: &[u128], pct: f64) -> u128 {
     sorted[index]
 }
 
+fn micros_to_millis_ceil(value: u128) -> u128 {
+    if value == 0 {
+        return 0;
+    }
+    (value + 999) / 1_000
+}
+
 #[tokio::test]
 #[ignore = "manual load harness"]
 async fn relay_parallel_sessions_load_harness() {
@@ -387,7 +398,7 @@ async fn relay_parallel_sessions_load_harness() {
     let client = reqwest::Client::new();
 
     let semaphore = Arc::new(Semaphore::new(cfg.setup_concurrency.max(1)));
-    let roundtrip_samples_ms = Arc::new(Mutex::new(Vec::<u128>::new()));
+    let roundtrip_samples_us = Arc::new(Mutex::new(Vec::<u128>::new()));
     let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
     let mut tasks = Vec::with_capacity(cfg.sessions);
@@ -397,7 +408,7 @@ async fn relay_parallel_sessions_load_harness() {
         let base = base.clone();
         let origin = cfg.origin.clone();
         let client = client.clone();
-        let roundtrip_samples_ms = Arc::clone(&roundtrip_samples_ms);
+        let roundtrip_samples_us = Arc::clone(&roundtrip_samples_us);
         let roundtrip_timeout = Duration::from_millis(cfg.roundtrip_timeout_ms);
         let messages_per_session = cfg.messages_per_session;
 
@@ -433,10 +444,10 @@ async fn relay_parallel_sessions_load_harness() {
 
                 await_forwarded_command(&mut handles.desktop_socket, seq, roundtrip_timeout).await?;
 
-                roundtrip_samples_ms
+                roundtrip_samples_us
                     .lock()
                     .await
-                    .push(start.elapsed().as_millis());
+                    .push(start.elapsed().as_micros().max(1));
             }
 
             // Best-effort session close to keep harness deterministic.
@@ -473,6 +484,10 @@ async fn relay_parallel_sessions_load_harness() {
             sessions: cfg.sessions,
             messages_per_session: cfg.messages_per_session,
             sample_count: 0,
+            p50_latency_us: 0,
+            p95_latency_us: 0,
+            p99_latency_us: 0,
+            max_latency_us: 0,
             p50_latency_ms: 0,
             p95_latency_ms: 0,
             p99_latency_ms: 0,
@@ -497,15 +512,19 @@ async fn relay_parallel_sessions_load_harness() {
         );
     }
 
-    let mut samples = roundtrip_samples_ms.lock().await.clone();
+    let mut samples = roundtrip_samples_us.lock().await.clone();
     samples.sort_unstable();
     let expected_samples = cfg.sessions as u64 * cfg.messages_per_session;
     assert_eq!(samples.len() as u64, expected_samples);
 
-    let p50 = percentile(&samples, 0.50);
-    let p95 = percentile(&samples, 0.95);
-    let p99 = percentile(&samples, 0.99);
-    let max = *samples.last().unwrap_or(&0);
+    let p50_us = percentile(&samples, 0.50);
+    let p95_us = percentile(&samples, 0.95);
+    let p99_us = percentile(&samples, 0.99);
+    let max_us = *samples.last().unwrap_or(&0);
+    let p50_ms = micros_to_millis_ceil(p50_us);
+    let p95_ms = micros_to_millis_ceil(p95_us);
+    let p99_ms = micros_to_millis_ceil(p99_us);
+    let max_ms = micros_to_millis_ceil(max_us);
 
     let metrics = reqwest::get(format!("{base}/metricsz"))
         .await
@@ -522,7 +541,7 @@ async fn relay_parallel_sessions_load_harness() {
         .get("slowConsumerDisconnects")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let passes_latency_budget = p95 <= cfg.p95_latency_budget_ms as u128;
+    let passes_latency_budget = p95_ms <= cfg.p95_latency_budget_ms as u128;
     let passes_backpressure_budget = outbound_send_failures == 0 && slow_consumer_disconnects == 0;
     let success_summary = LoadHarnessSummary {
         status: "ok".to_string(),
@@ -531,10 +550,14 @@ async fn relay_parallel_sessions_load_harness() {
         sessions: cfg.sessions,
         messages_per_session: cfg.messages_per_session,
         sample_count: samples.len(),
-        p50_latency_ms: p50,
-        p95_latency_ms: p95,
-        p99_latency_ms: p99,
-        max_latency_ms: max,
+        p50_latency_us: p50_us,
+        p95_latency_us: p95_us,
+        p99_latency_us: p99_us,
+        max_latency_us: max_us,
+        p50_latency_ms: p50_ms,
+        p95_latency_ms: p95_ms,
+        p99_latency_ms: p99_ms,
+        max_latency_ms: max_ms,
         p95_latency_budget_ms: cfg.p95_latency_budget_ms,
         passes_latency_budget,
         outbound_send_failures,
@@ -548,14 +571,18 @@ async fn relay_parallel_sessions_load_harness() {
     }
 
     println!(
-        "relay load harness summary: sessions={} messages_per_session={} samples={} p50={}ms p95={}ms p99={}ms max={}ms outboundSendFailures={} slowConsumerDisconnects={}",
+        "relay load harness summary: sessions={} messages_per_session={} samples={} p50={}us/{}ms p95={}us/{}ms p99={}us/{}ms max={}us/{}ms outboundSendFailures={} slowConsumerDisconnects={}",
         cfg.sessions,
         cfg.messages_per_session,
         samples.len(),
-        p50,
-        p95,
-        p99,
-        max,
+        p50_us,
+        p50_ms,
+        p95_us,
+        p95_ms,
+        p99_us,
+        p99_ms,
+        max_us,
+        max_ms,
         outbound_send_failures,
         slow_consumer_disconnects,
     );
@@ -563,7 +590,7 @@ async fn relay_parallel_sessions_load_harness() {
     assert!(
         passes_latency_budget,
         "p95 latency {}ms exceeded budget {}ms",
-        p95,
+        p95_ms,
         cfg.p95_latency_budget_ms
     );
 

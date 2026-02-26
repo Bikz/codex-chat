@@ -23,6 +23,7 @@ with open(path, "r", encoding="utf-8") as handle:
 
 status = str(payload.get("status", ""))
 sample_count = int(payload.get("sample_count", 0) or 0)
+p95_latency_us = int(payload.get("p95_latency_us", 0) or 0)
 p95_latency_ms = int(payload.get("p95_latency_ms", 0) or 0)
 p95_budget_ms = int(payload.get("p95_latency_budget_ms", 0) or 0)
 error_count = int(payload.get("error_count", 0) or 0)
@@ -31,11 +32,17 @@ slow_consumer_disconnects = int(payload.get("slow_consumer_disconnects", 0) or 0
 first_error = payload.get("first_error")
 
 required_status = os.getenv("RELAY_GATE_REQUIRE_STATUS", "ok").strip()
+max_p95_us_raw = os.getenv("RELAY_GATE_MAX_P95_US", "").strip()
 max_p95_raw = os.getenv("RELAY_GATE_MAX_P95_MS", "").strip()
 max_errors = int(os.getenv("RELAY_GATE_MAX_ERRORS", "0"))
 max_outbound_send_failures = int(os.getenv("RELAY_GATE_MAX_OUTBOUND_SEND_FAILURES", "0"))
 max_slow_consumer_disconnects = int(os.getenv("RELAY_GATE_MAX_SLOW_CONSUMER_DISCONNECTS", "0"))
 min_sample_count = int(os.getenv("RELAY_GATE_MIN_SAMPLE_COUNT", "1"))
+
+if max_p95_us_raw:
+    max_p95_us = int(max_p95_us_raw)
+else:
+    max_p95_us = None
 
 if max_p95_raw:
     max_p95_ms = int(max_p95_raw)
@@ -48,8 +55,12 @@ print("[remote-control-gate] evaluating relay load artifact:")
 print(f"  path={path}")
 print(f"  status={status}")
 print(f"  samples={sample_count}")
+print(f"  p95_latency_us={p95_latency_us}")
 print(f"  p95_latency_ms={p95_latency_ms}")
-print(f"  p95_gate_ms={max_p95_ms}")
+if max_p95_us is not None:
+    print(f"  p95_gate_us={max_p95_us}")
+else:
+    print(f"  p95_gate_ms={max_p95_ms}")
 print(f"  error_count={error_count}")
 print(f"  outbound_send_failures={outbound_send_failures}")
 print(f"  slow_consumer_disconnects={slow_consumer_disconnects}")
@@ -60,7 +71,10 @@ if required_status and status != required_status:
     failures.append(f"status '{status}' did not match required status '{required_status}'")
 if sample_count < min_sample_count:
     failures.append(f"sample_count {sample_count} below minimum {min_sample_count}")
-if p95_latency_ms > max_p95_ms:
+if max_p95_us is not None:
+    if p95_latency_us > max_p95_us:
+        failures.append(f"p95_latency_us {p95_latency_us} exceeded gate {max_p95_us}")
+elif p95_latency_ms > max_p95_ms:
     failures.append(f"p95_latency_ms {p95_latency_ms} exceeded gate {max_p95_ms}")
 if error_count > max_errors:
     failures.append(f"error_count {error_count} exceeded gate {max_errors}")
