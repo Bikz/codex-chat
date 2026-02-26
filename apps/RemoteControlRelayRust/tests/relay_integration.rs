@@ -1025,6 +1025,52 @@ async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
 }
 
 #[tokio::test]
+async fn invalid_snapshot_request_with_negative_last_seq_is_rejected() {
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|_| {}).await;
+
+    mobile_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.snapshot_request",
+                "sessionID": session_id,
+                "lastSeq": -1,
+                "reason": "integration-test"
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send invalid snapshot request");
+
+    let relay_error = tokio::time::timeout(Duration::from_millis(1_000), mobile_socket.next())
+        .await
+        .expect("expected relay error")
+        .expect("relay error frame")
+        .expect("relay error message");
+    let relay_error_json: Value =
+        serde_json::from_str(relay_error.to_text().expect("relay error text"))
+            .expect("relay error json");
+    assert_eq!(
+        relay_error_json.get("type").and_then(Value::as_str),
+        Some("relay.error")
+    );
+    assert_eq!(
+        relay_error_json.get("error").and_then(Value::as_str),
+        Some("invalid_snapshot_request")
+    );
+
+    let desktop_next =
+        tokio::time::timeout(Duration::from_millis(250), desktop_socket.next()).await;
+    assert!(
+        desktop_next.is_err(),
+        "desktop unexpectedly received forwarded snapshot payload"
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
 async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
     let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
         pair_connected_mobile(|config| {

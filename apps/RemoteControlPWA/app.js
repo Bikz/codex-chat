@@ -471,6 +471,9 @@ function processSequence(seq) {
   if (typeof seq !== "number") {
     return "accepted";
   }
+  if (!Number.isSafeInteger(seq) || seq < 0) {
+    return "ignored";
+  }
 
   if (state.lastIncomingSeq === null) {
     state.lastIncomingSeq = seq;
@@ -560,6 +563,9 @@ function onSocketMessage(event) {
 
   const sequenceDecision = processSequence(message.seq);
   if (sequenceDecision === "stale") {
+    return;
+  }
+  if (sequenceDecision === "ignored") {
     return;
   }
   if (sequenceDecision === "gap") {

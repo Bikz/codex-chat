@@ -1835,18 +1835,18 @@ async fn handle_socket(
 
     let Some(auth_message) = auth_message else {
         let _ = tx.send("{}".to_string());
-        writer_task.abort();
+        close_writer_task(writer_task, tx).await;
         return;
     };
 
     if auth_message.message_type != "relay.auth" || !is_opaque_token(&auth_message.token, 22) {
-        writer_task.abort();
+        close_writer_task(writer_task, tx).await;
         return;
     }
 
     let auth = authenticate_socket(&state, &auth_message.token, origin.as_deref(), &tx).await;
     let Some(auth) = auth else {
-        writer_task.abort();
+        close_writer_task(writer_task, tx).await;
         return;
     };
 
@@ -1946,9 +1946,22 @@ async fn handle_socket(
     }
 
     disconnect_socket(&state, &auth).await;
-    writer_task.abort();
+    close_writer_task(writer_task, tx).await;
 
     let _ = client_ip(&state.config, &headers, addr);
+}
+
+async fn close_writer_task(
+    mut writer_task: tokio::task::JoinHandle<()>,
+    tx: mpsc::UnboundedSender<String>,
+) {
+    drop(tx);
+    if timeout(Duration::from_millis(100), &mut writer_task)
+        .await
+        .is_err()
+    {
+        writer_task.abort();
+    }
 }
 
 fn apply_pair_decision(
@@ -2067,7 +2080,11 @@ fn validate_mobile_payload(
             }
 
             if let Some(last_seq) = parsed.get("lastSeq") {
-                if !last_seq.is_u64() && !last_seq.is_i64() {
+                if !(last_seq.is_u64()
+                    || last_seq
+                        .as_i64()
+                        .is_some_and(|value| value >= 0))
+                {
                     return Err(RelayValidationError {
                         code: "invalid_snapshot_request",
                         message: "lastSeq must be numeric when provided.".to_string(),
