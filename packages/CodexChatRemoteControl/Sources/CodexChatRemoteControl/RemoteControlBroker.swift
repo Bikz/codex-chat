@@ -38,8 +38,36 @@ public struct RemoteControlPairStartResponse: Codable, Sendable, Equatable {
     }
 }
 
+public struct RemoteControlPairStopRequest: Codable, Sendable, Equatable {
+    public var schemaVersion: Int
+    public var sessionID: String
+    public var relayWebSocketURL: String
+    public var desktopSessionToken: String
+
+    public init(
+        schemaVersion: Int = RemoteControlProtocol.schemaVersion,
+        sessionID: String,
+        relayWebSocketURL: String,
+        desktopSessionToken: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.sessionID = sessionID
+        self.relayWebSocketURL = relayWebSocketURL
+        self.desktopSessionToken = desktopSessionToken
+    }
+}
+
+public struct RemoteControlPairStopResponse: Codable, Sendable, Equatable {
+    public var accepted: Bool
+
+    public init(accepted: Bool) {
+        self.accepted = accepted
+    }
+}
+
 public protocol RemoteControlRelayRegistering: Sendable {
     func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse
+    func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse
 }
 
 public struct NoopRemoteControlRelayRegistrar: RemoteControlRelayRegistering {
@@ -48,6 +76,11 @@ public struct NoopRemoteControlRelayRegistrar: RemoteControlRelayRegistering {
     public func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse {
         _ = request
         return RemoteControlPairStartResponse(accepted: true)
+    }
+
+    public func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse {
+        _ = request
+        return RemoteControlPairStopResponse(accepted: true)
     }
 }
 
@@ -171,9 +204,19 @@ public actor RemoteControlBroker {
         return true
     }
 
-    public func stopSession(reason: String = "Stopped by user") {
+    public func stopSession(reason: String = "Stopped by user") async {
         idleTimeoutTask?.cancel()
         idleTimeoutTask = nil
+
+        if let session = status.session {
+            let request = RemoteControlPairStopRequest(
+                sessionID: session.sessionID,
+                relayWebSocketURL: session.relayWebSocketURL.absoluteString,
+                desktopSessionToken: session.desktopSessionToken
+            )
+            _ = try? await relayRegistrar.stopPairing(request)
+        }
+
         status = RemoteControlBrokerStatus(
             phase: .disconnected,
             session: nil,

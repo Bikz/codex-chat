@@ -4,6 +4,7 @@ import XCTest
 
 private actor RecordingRelayRegistrar: RemoteControlRelayRegistering {
     private(set) var requests: [RemoteControlPairStartRequest] = []
+    private(set) var stopRequests: [RemoteControlPairStopRequest] = []
 
     func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse {
         requests.append(request)
@@ -12,6 +13,15 @@ private actor RecordingRelayRegistrar: RemoteControlRelayRegistering {
 
     func latestRequest() -> RemoteControlPairStartRequest? {
         requests.last
+    }
+
+    func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse {
+        stopRequests.append(request)
+        return RemoteControlPairStopResponse(accepted: true)
+    }
+
+    func latestStopRequest() -> RemoteControlPairStopRequest? {
+        stopRequests.last
     }
 }
 
@@ -51,13 +61,19 @@ final class RemoteControlBrokerTests: XCTestCase {
     }
 
     func testStopSessionTransitionsToDisconnected() async throws {
-        let broker = RemoteControlBroker()
-        try await broker.startSession(
+        let registrar = RecordingRelayRegistrar()
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        let descriptor = try await broker.startSession(
             joinBaseURL: XCTUnwrap(URL(string: "https://remote.codexchat.example/rc")),
             relayWebSocketURL: XCTUnwrap(URL(string: "wss://relay.codexchat.example/ws"))
         )
 
         await broker.stopSession(reason: "Stopped by test")
+
+        let stopRequest = await registrar.latestStopRequest()
+        XCTAssertEqual(stopRequest?.sessionID, descriptor.sessionID)
+        XCTAssertEqual(stopRequest?.relayWebSocketURL, descriptor.relayWebSocketURL.absoluteString)
+        XCTAssertEqual(stopRequest?.desktopSessionToken, descriptor.desktopSessionToken)
 
         let status = await broker.currentStatus()
         XCTAssertEqual(status.phase, .disconnected)
