@@ -59,6 +59,7 @@ expected_loops = int(os.environ["RELAY_SOAK_LOOPS_EXPECTED"])
 load_script_failures = int(os.environ["RELAY_SOAK_LOAD_SCRIPT_FAILURES"])
 
 max_failing_loops = int(os.getenv("RELAY_SOAK_MAX_FAILING_LOOPS", "0"))
+max_p95_us_raw = os.getenv("RELAY_SOAK_MAX_P95_US", "").strip()
 max_p95_raw = os.getenv("RELAY_SOAK_MAX_P95_MS", "").strip()
 max_total_errors = int(os.getenv("RELAY_SOAK_MAX_TOTAL_ERRORS", "0"))
 max_total_outbound = int(os.getenv("RELAY_SOAK_MAX_TOTAL_OUTBOUND_SEND_FAILURES", "0"))
@@ -91,6 +92,7 @@ for index in range(1, expected_loops + 1):
 ok_loops = 0
 status_failures = 0
 max_p95_seen = 0
+max_p95_us_seen = 0
 total_samples = 0
 total_errors = 0
 total_outbound_send_failures = 0
@@ -105,7 +107,9 @@ for payload in loop_payloads:
         status_failures += 1
 
     p95 = int(payload.get("p95_latency_ms", 0) or 0)
+    p95_us = int(payload.get("p95_latency_us", 0) or 0)
     max_p95_seen = max(max_p95_seen, p95)
+    max_p95_us_seen = max(max_p95_us_seen, p95_us)
     total_samples += int(payload.get("sample_count", 0) or 0)
     total_errors += int(payload.get("error_count", 0) or 0)
     total_outbound_send_failures += int(payload.get("outbound_send_failures", 0) or 0)
@@ -114,12 +118,15 @@ for payload in loop_payloads:
         first_error = str(payload["first_error"])
 
 failing_loops = status_failures + len(missing_artifacts) + load_script_failures
+max_p95_us_gate = int(max_p95_us_raw) if max_p95_us_raw else None
 max_p95_gate = int(max_p95_raw) if max_p95_raw else None
 
 gate_failures = []
 if failing_loops > max_failing_loops:
     gate_failures.append(f"failing_loops {failing_loops} exceeded gate {max_failing_loops}")
-if max_p95_gate is not None and max_p95_seen > max_p95_gate:
+if max_p95_us_gate is not None and max_p95_us_seen > max_p95_us_gate:
+    gate_failures.append(f"max_p95_us {max_p95_us_seen} exceeded gate {max_p95_us_gate}")
+elif max_p95_gate is not None and max_p95_seen > max_p95_gate:
     gate_failures.append(f"max_p95_ms {max_p95_seen} exceeded gate {max_p95_gate}")
 if total_errors > max_total_errors:
     gate_failures.append(f"total_errors {total_errors} exceeded gate {max_total_errors}")
@@ -144,6 +151,7 @@ summary = {
     "load_script_failures": load_script_failures,
     "failing_loops": failing_loops,
     "total_samples": total_samples,
+    "max_p95_latency_us": max_p95_us_seen,
     "max_p95_latency_ms": max_p95_seen,
     "total_errors": total_errors,
     "total_outbound_send_failures": total_outbound_send_failures,
@@ -151,6 +159,7 @@ summary = {
     "first_error": first_error,
     "gate": {
         "max_failing_loops": max_failing_loops,
+        "max_p95_us": max_p95_us_gate,
         "max_p95_ms": max_p95_gate,
         "max_total_errors": max_total_errors,
         "max_total_outbound_send_failures": max_total_outbound,
@@ -169,6 +178,7 @@ print(f"  status={summary['status']}")
 print(f"  expected_loops={expected_loops} artifact_loops={len(loop_payloads)} ok_loops={ok_loops}")
 print(f"  failing_loops={failing_loops}")
 print(f"  total_samples={total_samples}")
+print(f"  max_p95_latency_us={max_p95_us_seen}")
 print(f"  max_p95_latency_ms={max_p95_seen}")
 print(f"  total_errors={total_errors}")
 print(f"  total_outbound_send_failures={total_outbound_send_failures}")

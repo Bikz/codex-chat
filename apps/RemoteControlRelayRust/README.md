@@ -107,6 +107,7 @@ Environment variables:
 - `RELAY_SOAK_RESULTS_DIR` (default `output/remote-control/soak-runs`)
 - `RELAY_SOAK_SUMMARY_PATH` (default `output/remote-control/relay-soak-summary.json`)
 - `RELAY_SOAK_MAX_FAILING_LOOPS` (default `0`)
+- `RELAY_SOAK_MAX_P95_US` (optional)
 - `RELAY_SOAK_MAX_P95_MS` (optional)
 - `RELAY_SOAK_MAX_TOTAL_ERRORS` (default `0`)
 - `RELAY_SOAK_MAX_TOTAL_OUTBOUND_SEND_FAILURES` (default `0`)
