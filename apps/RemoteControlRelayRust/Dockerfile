@@ -16,7 +16,7 @@ RUN apt-get update \
 
 COPY --from=builder /app/target/release/remote_control_relay_rust /usr/local/bin/remote-control-relay
 
-USER relayuser
+USER 10001
 WORKDIR /home/relayuser
 
 EXPOSE 8787
