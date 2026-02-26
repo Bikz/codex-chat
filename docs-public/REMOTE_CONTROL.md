@@ -8,8 +8,9 @@ This MVP delivers:
 
 - Desktop remote-session surface (toolbar + sheet + QR link + stop session)
 - Secure pairing/session primitives in `CodexChatRemoteControl`
-- Outbound-friendly relay service (`apps/RemoteControlRelay`)
+- Outbound-friendly relay service (`apps/RemoteControlRelayRust`)
 - PWA companion with pairing, websocket reconnect, and sequence-gap snapshot requests (`apps/RemoteControlPWA`)
+- Trusted-device list + revoke controls in desktop remote sheet
 
 ## Security model
 
@@ -20,6 +21,7 @@ This MVP delivers:
 - Mobile session tokens rotate on every successful websocket authentication.
 - Relay uses constant-time token comparison and strict token format validation.
 - Pairing endpoints are rate-limited per client IP.
+- Mobile command envelopes are validated and rate-limited per device.
 - Device connections per session are capped.
 - Relay logs avoid raw token output and truncate session identifiers.
 - Sessions auto-expire through idle timeout and retention cleanup.
@@ -35,9 +37,11 @@ This MVP delivers:
   - Remote control toolbar entry and command-menu shortcut
   - `RemoteControlSheet` with QR code, copy link, and stop controls
   - `AppModel+RemoteControl` outbound websocket client, multi-thread snapshot + delta event streaming, and remote command ingestion
-- `apps/RemoteControlRelay`
+- `apps/RemoteControlRelayRust`
   - `POST /pair/start`, `POST /pair/join`, `GET /healthz`, `GET /ws` (then `relay.auth` websocket message)
-  - Pass-through websocket routing between desktop/mobile
+  - `POST /pair/stop`, `POST /devices/list`, `POST /devices/revoke`
+  - Pass-through websocket routing between desktop/mobile with payload validation and per-device command throttling
+  - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
 - `apps/RemoteControlPWA`
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)
   - Two-pane project/thread shell
@@ -50,9 +54,8 @@ This MVP delivers:
 ### 1) Start relay
 
 ```bash
-cd apps/RemoteControlRelay
-pnpm install
-pnpm start
+cd apps/RemoteControlRelayRust
+cargo run
 ```
 
 Default URL: `http://localhost:8787`
@@ -83,11 +86,11 @@ Set environment variables before launching Codex Chat:
 
 - Remote approvals are off by default and must be explicitly enabled in the desktop Remote Control sheet.
 - iOS/PWA backgrounding can drop sockets; reconnect + snapshot is required.
-- Relay state is in-memory (no persistent store yet).
+- Cross-instance websocket fanout is not implemented yet; horizontal relay routing still depends on sticky placement.
 - Desktop snapshot payloads are size-bounded for relay safety, so very large transcripts stream incrementally instead of all-at-once.
 
 ## Next hardening steps
 
-- Device revocation list and explicit trusted-device management.
+- Cross-instance routing layer (NATS JetStream) for true stateless relay pods.
 - Optional end-to-end payload encryption between desktop and phone.
 - Passkey-based account option for multi-device identity over time.
