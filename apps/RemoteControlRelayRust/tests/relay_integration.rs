@@ -784,3 +784,85 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
 
     task.abort();
 }
+
+#[tokio::test]
+async fn redis_persistence_restores_session_after_restart_when_configured() {
+    let Some(redis_url) = std::env::var("REMOTE_CONTROL_REDIS_TEST_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return;
+    };
+
+    let redis_key_prefix = format!("relay-test-{}", random_token(8));
+    let client = reqwest::Client::new();
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let (base_a, task_a) = spawn_test_server_with_config(|config| {
+        config.redis_url = Some(redis_url.clone());
+        config.redis_key_prefix = redis_key_prefix.clone();
+    })
+    .await;
+
+    let start_response = client
+        .post(format!("{base_a}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+
+    task_a.abort();
+
+    let (base_b, task_b) = spawn_test_server_with_config(|config| {
+        config.redis_url = Some(redis_url.clone());
+        config.redis_key_prefix = redis_key_prefix.clone();
+    })
+    .await;
+
+    let ws_url = base_b.replace("http://", "ws://") + "/ws";
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket after restart");
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.auth",
+                "token": desktop_session_token
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("desktop auth send");
+
+    let auth_message = tokio::time::timeout(Duration::from_millis(1_000), desktop_socket.next())
+        .await
+        .expect("auth frame timeout")
+        .expect("auth frame")
+        .expect("auth message");
+    let auth_json: Value =
+        serde_json::from_str(auth_message.to_text().expect("auth text")).expect("auth json");
+    assert_eq!(
+        auth_json.get("type").and_then(Value::as_str),
+        Some("auth_ok")
+    );
+    assert_eq!(
+        auth_json.get("role").and_then(Value::as_str),
+        Some("desktop")
+    );
+    assert_eq!(
+        auth_json.get("sessionID").and_then(Value::as_str),
+        Some(session_id.as_str())
+    );
+
+    task_b.abort();
+}
