@@ -2008,6 +2008,7 @@ async fn ws_upgrade(
     let max_message_size = state.config.max_ws_message_bytes;
 
     ws.max_message_size(max_message_size)
+        .max_frame_size(max_message_size)
         .on_upgrade(move |socket| async move {
             handle_socket(state, socket, headers, addr, origin, legacy_query_token).await;
         })
