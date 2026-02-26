@@ -6,6 +6,7 @@ use futures_util::{SinkExt, StreamExt};
 use remote_control_relay_rust::config::RelayConfig;
 use remote_control_relay_rust::service::{build_router, new_state};
 use reqwest::StatusCode;
+use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Semaphore};
@@ -26,6 +27,7 @@ struct LoadHarnessConfig {
     p95_latency_budget_ms: u64,
     base_url: Option<String>,
     origin: String,
+    results_path: Option<String>,
 }
 
 impl LoadHarnessConfig {
@@ -45,8 +47,54 @@ impl LoadHarnessConfig {
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| "http://localhost:4173".to_string()),
+            results_path: std::env::var("RELAY_LOAD_RESULTS_PATH")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
         }
     }
+}
+
+#[derive(Serialize)]
+struct LoadHarnessSummary {
+    status: String,
+    base_url: String,
+    origin: String,
+    sessions: usize,
+    messages_per_session: u64,
+    sample_count: usize,
+    p50_latency_ms: u128,
+    p95_latency_ms: u128,
+    p99_latency_ms: u128,
+    max_latency_ms: u128,
+    p95_latency_budget_ms: u64,
+    passes_latency_budget: bool,
+    outbound_send_failures: u64,
+    slow_consumer_disconnects: u64,
+    passes_backpressure_budget: bool,
+    error_count: usize,
+    first_error: Option<String>,
+}
+
+fn persist_summary_if_requested(
+    config: &LoadHarnessConfig,
+    summary: &LoadHarnessSummary,
+) -> Result<(), String> {
+    let Some(path) = config.results_path.as_ref() else {
+        return Ok(());
+    };
+
+    let output_path = std::path::Path::new(path);
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("failed creating results directory: {error}"))?;
+    }
+
+    let encoded = serde_json::to_string_pretty(summary)
+        .map_err(|error| format!("failed encoding results summary: {error}"))?;
+    std::fs::write(output_path, encoded)
+        .map_err(|error| format!("failed writing results summary: {error}"))?;
+    Ok(())
 }
 
 fn parse_env_usize(key: &str, fallback: usize) -> usize {
@@ -418,6 +466,29 @@ async fn relay_parallel_sessions_load_harness() {
 
     let failures = errors.lock().await.clone();
     if !failures.is_empty() {
+        let failure_summary = LoadHarnessSummary {
+            status: "task_failures".to_string(),
+            base_url: base.clone(),
+            origin: cfg.origin.clone(),
+            sessions: cfg.sessions,
+            messages_per_session: cfg.messages_per_session,
+            sample_count: 0,
+            p50_latency_ms: 0,
+            p95_latency_ms: 0,
+            p99_latency_ms: 0,
+            max_latency_ms: 0,
+            p95_latency_budget_ms: cfg.p95_latency_budget_ms,
+            passes_latency_budget: false,
+            outbound_send_failures: 0,
+            slow_consumer_disconnects: 0,
+            passes_backpressure_budget: false,
+            error_count: failures.len(),
+            first_error: failures.first().cloned(),
+        };
+        if let Err(error) = persist_summary_if_requested(&cfg, &failure_summary) {
+            panic!("failed persisting load harness failure summary: {error}");
+        }
+
         let first = failures.first().cloned().unwrap_or_else(|| "unknown error".to_string());
         panic!(
             "load harness encountered {} errors; first: {}",
@@ -451,6 +522,30 @@ async fn relay_parallel_sessions_load_harness() {
         .get("slowConsumerDisconnects")
         .and_then(Value::as_u64)
         .unwrap_or(0);
+    let passes_latency_budget = p95 <= cfg.p95_latency_budget_ms as u128;
+    let passes_backpressure_budget = outbound_send_failures == 0 && slow_consumer_disconnects == 0;
+    let success_summary = LoadHarnessSummary {
+        status: "ok".to_string(),
+        base_url: base.clone(),
+        origin: cfg.origin.clone(),
+        sessions: cfg.sessions,
+        messages_per_session: cfg.messages_per_session,
+        sample_count: samples.len(),
+        p50_latency_ms: p50,
+        p95_latency_ms: p95,
+        p99_latency_ms: p99,
+        max_latency_ms: max,
+        p95_latency_budget_ms: cfg.p95_latency_budget_ms,
+        passes_latency_budget,
+        outbound_send_failures,
+        slow_consumer_disconnects,
+        passes_backpressure_budget,
+        error_count: 0,
+        first_error: None,
+    };
+    if let Err(error) = persist_summary_if_requested(&cfg, &success_summary) {
+        panic!("failed persisting load harness summary: {error}");
+    }
 
     println!(
         "relay load harness summary: sessions={} messages_per_session={} samples={} p50={}ms p95={}ms p99={}ms max={}ms outboundSendFailures={} slowConsumerDisconnects={}",
@@ -466,7 +561,7 @@ async fn relay_parallel_sessions_load_harness() {
     );
 
     assert!(
-        p95 <= cfg.p95_latency_budget_ms as u128,
+        passes_latency_budget,
         "p95 latency {}ms exceeded budget {}ms",
         p95,
         cfg.p95_latency_budget_ms

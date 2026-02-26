@@ -77,3 +77,4 @@ Environment variables:
 - `RELAY_LOAD_P95_BUDGET_MS` (default `750`)
 - `RELAY_LOAD_BASE_URL` (optional; when set, harness targets that relay instead of spawning local in-process relay)
 - `RELAY_LOAD_ORIGIN` (default `http://localhost:4173`)
+- `RELAY_LOAD_RESULTS_PATH` (default `output/remote-control/relay-load-result.json`; writes machine-readable JSON summary for each run)
