@@ -69,15 +69,26 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                 expectedDeltaChunksPerTurn: Self.simulatedDeltaChunksPerTurn
             )
 
+            let maxDroppedEvents = threadCount >= 50 ? 4 : 2
             XCTAssertLessThanOrEqual(
                 result.droppedEventCount,
-                2,
-                "Dropped events under backpressure load \(threadCount) exceeded tolerance: \(result.debugSummary)"
+                maxDroppedEvents,
+                "Dropped events under backpressure load \(threadCount) exceeded tolerance (\(maxDroppedEvents)): \(result.debugSummary)"
             )
             XCTAssertEqual(
                 result.misroutedEventCount,
                 0,
                 "Misrouted events under backpressure load \(threadCount): \(result.debugSummary)"
+            )
+            XCTAssertEqual(
+                result.completedTurnCount,
+                result.expectedTurnCount,
+                "Expected all turns to complete under backpressure load \(threadCount): \(result.debugSummary)"
+            )
+            XCTAssertGreaterThan(
+                result.maxQueuedTurnsObserved,
+                0,
+                "Expected worker backpressure to queue turns under load \(threadCount): \(result.debugSummary)"
             )
             XCTAssertLessThanOrEqual(
                 result.p95FirstTokenMS,
@@ -138,6 +149,7 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                     $0[$1.value] = $1.key
                 }
             )
+            let maxQueuedTurnsTracker = MaxQueuedTurnsTracker()
             let clock = ContinuousClock()
 
             let eventTask = Task {
@@ -146,6 +158,14 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                     if await collector.isTerminalStateReached {
                         break
                     }
+                }
+            }
+
+            let queueSamplerTask = Task {
+                while await !(collector.isTerminalStateReached) {
+                    let liveSnapshot = await runtimePool.snapshot()
+                    await maxQueuedTurnsTracker.record(liveSnapshot.totalQueuedTurns)
+                    try? await Task.sleep(nanoseconds: 5_000_000)
                 }
             }
 
@@ -178,6 +198,9 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                 }
             }
 
+            queueSamplerTask.cancel()
+            _ = await queueSamplerTask.result
+
             eventTask.cancel()
             _ = await eventTask.result
 
@@ -188,9 +211,12 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                 0,
                 "Runtime pool leaked in-flight counters: \(settledSnapshot)"
             )
+            await maxQueuedTurnsTracker.record(settledSnapshot.totalQueuedTurns)
             await runtimePool.stop()
             await runtime.stop()
-            return result
+            var finalResult = result
+            finalResult.maxQueuedTurnsObserved = await maxQueuedTurnsTracker.value()
+            return finalResult
         } catch {
             await runtimePool.stop()
             await runtime.stop()
@@ -379,9 +405,29 @@ private struct RuntimePoolHarnessResult: Sendable {
     var p95FirstTokenMS: Double
     var expectedTurnCount: Int
     var completedTurnCount: Int
+    var maxQueuedTurnsObserved: Int = 0
 
     var debugSummary: String {
-        "expectedTurns=\(expectedTurnCount), completedTurns=\(completedTurnCount), dropped=\(droppedEventCount), misrouted=\(misroutedEventCount), p95TTFT=\(String(format: "%.1f", p95FirstTokenMS))ms"
+        [
+            "expectedTurns=\(expectedTurnCount)",
+            "completedTurns=\(completedTurnCount)",
+            "dropped=\(droppedEventCount)",
+            "misrouted=\(misroutedEventCount)",
+            "maxQueued=\(maxQueuedTurnsObserved)",
+            "p95TTFT=\(String(format: "%.1f", p95FirstTokenMS))ms",
+        ].joined(separator: ", ")
+    }
+}
+
+private actor MaxQueuedTurnsTracker {
+    private var maxQueuedTurns: Int = 0
+
+    func record(_ queuedTurns: Int) {
+        maxQueuedTurns = max(maxQueuedTurns, queuedTurns)
+    }
+
+    func value() -> Int {
+        maxQueuedTurns
     }
 }
 

@@ -87,6 +87,86 @@ final class TurnStartIOCoordinatorTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: snapshot.projectSnapshotURL?.appendingPathComponent("project-mod.txt").path ?? ""))
     }
 
+    func testBeginCheckpointRecordsPerformanceSample() async throws {
+        await PerformanceTracer.shared.reset()
+
+        let projectRoot = try makeTempDirectory(prefix: "turn-start-io-perf-checkpoint")
+        defer { try? FileManager.default.removeItem(at: projectRoot) }
+
+        let coordinator = TurnStartIOCoordinator()
+        try await coordinator.beginCheckpoint(
+            projectPath: projectRoot.path,
+            threadID: UUID(),
+            turn: ArchivedTurnSummary(
+                turnID: UUID(),
+                timestamp: Date(timeIntervalSince1970: 1_700_400_000),
+                status: .pending,
+                userText: "Perf checkpoint",
+                assistantText: "",
+                actions: []
+            )
+        )
+
+        let snapshot = await PerformanceTracer.shared.snapshot(maxRecent: 40)
+        XCTAssertTrue(
+            snapshot.operations.contains(where: { $0.name == "runtime.turnStartIO.checkpoint" })
+        )
+        await PerformanceTracer.shared.reset()
+    }
+
+    func testCaptureModSnapshotRecordsPerformanceSample() async throws {
+        await PerformanceTracer.shared.reset()
+
+        let projectRoot = try makeTempDirectory(prefix: "turn-start-io-perf-project")
+        let storageRoot = try makeTempDirectory(prefix: "turn-start-io-perf-storage")
+        defer {
+            try? FileManager.default.removeItem(at: projectRoot)
+            try? FileManager.default.removeItem(at: storageRoot)
+        }
+
+        let previousRoot = UserDefaults.standard.string(forKey: CodexChatStoragePaths.rootPreferenceKey)
+        UserDefaults.standard.set(storageRoot.path, forKey: CodexChatStoragePaths.rootPreferenceKey)
+        defer {
+            if let previousRoot {
+                UserDefaults.standard.set(previousRoot, forKey: CodexChatStoragePaths.rootPreferenceKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: CodexChatStoragePaths.rootPreferenceKey)
+            }
+        }
+
+        let fileManager = FileManager.default
+        let globalModsRoot = storageRoot
+            .appendingPathComponent("global", isDirectory: true)
+            .appendingPathComponent("mods", isDirectory: true)
+        try fileManager.createDirectory(at: globalModsRoot, withIntermediateDirectories: true)
+        try "global".write(
+            to: globalModsRoot.appendingPathComponent("global-mod.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let projectModsRoot = projectRoot.appendingPathComponent("mods", isDirectory: true)
+        try fileManager.createDirectory(at: projectModsRoot, withIntermediateDirectories: true)
+        try "project".write(
+            to: projectModsRoot.appendingPathComponent("project-mod.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let coordinator = TurnStartIOCoordinator()
+        _ = try await coordinator.captureModSnapshot(
+            projectPath: projectRoot.path,
+            threadID: UUID(),
+            startedAt: Date(timeIntervalSince1970: 1_700_400_100)
+        )
+
+        let snapshot = await PerformanceTracer.shared.snapshot(maxRecent: 40)
+        XCTAssertTrue(
+            snapshot.operations.contains(where: { $0.name == "runtime.turnStartIO.snapshot" })
+        )
+        await PerformanceTracer.shared.reset()
+    }
+
     private func makeTempDirectory(prefix: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
