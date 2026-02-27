@@ -52,12 +52,13 @@ struct ChatsCanvasView: View {
     }
 
     static let modsBarOverlayStyle = ModsBarOverlayStyle(
-        railWidth: 64,
+        railWidth: 56,
         peekWidth: 304,
         expandedWidth: 388,
         cornerRadius: 16,
         layerOffset: 8
     )
+    static let modsBarRailVerticalInset: CGFloat = 18
 
     static func modsBarOverlayWidth(for mode: AppModel.ModsBarPresentationMode) -> CGFloat {
         switch mode {
@@ -877,7 +878,7 @@ struct ChatsCanvasView: View {
                         .layoutPriority(1)
 
                     if model.isModsBarVisibleForSelectedThread {
-                        modsBarDockedSurface(containerWidth: proxy.size.width)
+                        modsBarDockedSurface(containerSize: proxy.size)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
@@ -892,17 +893,19 @@ struct ChatsCanvasView: View {
     }
 
     @ViewBuilder
-    private func modsBarDockedSurface(containerWidth: CGFloat) -> some View {
+    private func modsBarDockedSurface(containerSize: CGSize) -> some View {
         switch model.selectedModsBarPresentationMode {
         case .rail:
-            modsBarRail
+            modsBarRail(containerHeight: containerSize.height)
         case .peek, .expanded:
-            layeredModsBarPanel(containerWidth: containerWidth)
+            layeredModsBarPanel(containerWidth: containerSize.width)
         }
     }
 
-    private var modsBarRail: some View {
+    private func modsBarRail(containerHeight: CGFloat) -> some View {
         let style = Self.modsBarOverlayStyle
+        let maxVisibleHeight = max(200, containerHeight - (Self.modsBarRailVerticalInset * 2))
+        let railHeight = min(containerHeight, maxVisibleHeight)
         let userOptions = model.modsBarQuickSwitchOptions.filter {
             model.modsBarQuickSwitchCategory(for: $0) == .user
         }
@@ -980,7 +983,8 @@ struct ChatsCanvasView: View {
         .foregroundStyle(.secondary)
         .padding(6)
         .frame(width: style.railWidth)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(height: railHeight)
+        .frame(maxHeight: .infinity, alignment: .center)
         .background(overlayPanelLayer(offset: 0))
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
