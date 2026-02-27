@@ -754,7 +754,7 @@ struct ChatsCanvasView: View {
                 }
             case let .loaded(entries) where entries.isEmpty:
                 conversationWithModsBar {
-                    ThreadEmptyStateView(onStartChat: model.startChatFromEmptyState)
+                    ThreadEmptyStateView()
                 }
             case let .loaded(entries):
                 conversationWithModsBar {
@@ -1036,7 +1036,6 @@ struct ChatsCanvasView: View {
 
 private struct ThreadEmptyStateView: View {
     @Environment(\.designTokens) private var tokens
-    let onStartChat: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -1050,9 +1049,6 @@ private struct ThreadEmptyStateView: View {
 
             Text("Start a conversation")
                 .font(.headline)
-
-            Button("Start chat", action: onStartChat)
-                .buttonStyle(.borderedProminent)
 
             Text("Shortcut: Shift-Command-N")
                 .font(.caption)

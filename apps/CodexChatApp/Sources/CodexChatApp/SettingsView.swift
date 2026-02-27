@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
+    @AppStorage("codexchat.sidebar.projectsPreviewCount") private var sidebarProjectsPreviewCountSetting = 3
 
     @State private var selectedSection: SettingsSection = .defaultSelection
 
@@ -42,6 +43,10 @@ struct SettingsView: View {
     @State private var isThemeCustomEditorExpanded = false
     @State private var customThemeEditorAppearance: AppModel.UserThemeCustomization.Appearance = .dark
     @State private var customThemeNameDraft = "My Theme"
+
+    private var sidebarProjectsPreviewCount: Int {
+        min(max(sidebarProjectsPreviewCountSetting, 1), 12)
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -596,6 +601,25 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.userThemeCustomization == .default)
+                }
+
+                Divider()
+
+                SettingsFieldRow(label: "Sidebar") {
+                    Picker(
+                        "Projects shown",
+                        selection: Binding(
+                            get: { sidebarProjectsPreviewCount },
+                            set: { sidebarProjectsPreviewCountSetting = $0 }
+                        )
+                    ) {
+                        ForEach([3, 5, 8, 12], id: \.self) { count in
+                            Text("\(count)").tag(count)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 260)
+                    .accessibilityLabel("Sidebar projects shown")
                 }
 
                 ThemeStudioPreview(customization: model.userThemeCustomization, tokens: tokens)

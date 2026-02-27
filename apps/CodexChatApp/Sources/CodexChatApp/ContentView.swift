@@ -6,7 +6,6 @@ struct ContentView: View {
     enum ToolbarIcon: String, CaseIterable {
         case pendingApprovals = "exclamationmark.bubble"
         case remoteControl = "iphone.gen3"
-        case sidebarFocus = "sidebar.left"
         case reviewChanges = "doc.text.magnifyingglass"
         case revealChatFile = "doc.text"
         case shellWorkspace = "terminal"
@@ -21,7 +20,6 @@ struct ContentView: View {
         var images = [
             ToolbarIcon.pendingApprovals.rawValue,
             ToolbarIcon.remoteControl.rawValue,
-            ToolbarIcon.sidebarFocus.rawValue,
             ToolbarIcon.reviewChanges.rawValue,
             ToolbarIcon.revealChatFile.rawValue,
             ToolbarIcon.shellWorkspace.rawValue,
@@ -58,16 +56,7 @@ struct ContentView: View {
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
             if !model.isOnboardingActive {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button {
-                        toggleSidebarVisibility()
-                    } label: {
-                        Label("Toggle Sidebar", systemImage: ToolbarIcon.sidebarFocus.rawValue)
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Toggle sidebar visibility")
-                    .help("Toggle sidebar")
-
+                ToolbarItemGroup(placement: .secondaryAction) {
                     if model.totalPendingApprovalCount > 0 {
                         Button {
                             model.openApprovalInbox()

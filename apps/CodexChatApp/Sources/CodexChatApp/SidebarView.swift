@@ -26,7 +26,6 @@ struct SidebarView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openSettings) private var openSettings
     @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
-    @FocusState private var isSearchFocused: Bool
 
     @State private var hoveredProjectID: UUID?
     @State private var flashedProjectID: UUID?
@@ -134,8 +133,6 @@ struct SidebarView: View {
                     searchSurface
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-
-                sidebarControlsRow
 
                 SidebarActionRow(
                     icon: "square.and.pencil",
@@ -269,14 +266,12 @@ struct SidebarView: View {
             )
             .textFieldStyle(.plain)
             .font(sidebarBodyFont)
-            .focused($isSearchFocused)
             .accessibilityLabel("Search")
             .accessibilityHint("Searches thread titles and message history")
 
             if !model.searchQuery.isEmpty {
                 Button {
                     model.updateSearchQuery("")
-                    isSearchFocused = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(sidebarMetaIconFont)
@@ -287,6 +282,30 @@ struct SidebarView: View {
                 .accessibilityHint("Clears the current sidebar search query")
                 .transition(.opacity)
             }
+
+            Menu {
+                ForEach(ThreadListFilter.allCases, id: \.rawValue) { filter in
+                    Button {
+                        threadFilterRawValue = filter.rawValue
+                    } label: {
+                        if activeThreadFilter == filter {
+                            Label(filter.label, systemImage: "checkmark")
+                        } else {
+                            Text(filter.label)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .font(sidebarMetaIconFont)
+                    .foregroundStyle(sidebarControlIconColor)
+                    .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Filter threads")
+            .accessibilityValue(activeThreadFilter.label)
+            .help("Filter visible chats")
         }
         .padding(.horizontal, SidebarLayoutSpec.rowHorizontalPadding)
         .padding(.vertical, SidebarLayoutSpec.rowVerticalPadding)
@@ -303,7 +322,6 @@ struct SidebarView: View {
                 )
         )
         .padding(.horizontal, SidebarLayoutSpec.selectedRowInset)
-        .animation(.easeInOut(duration: tokens.motion.transitionDuration), value: isSearchFocused)
     }
 
     @ViewBuilder
@@ -552,54 +570,6 @@ struct SidebarView: View {
                 threadRow(thread, isGeneralThread: false)
             }
         }
-    }
-
-    private var sidebarControlsRow: some View {
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(ThreadListFilter.allCases, id: \.rawValue) { filter in
-                    Button {
-                        threadFilterRawValue = filter.rawValue
-                    } label: {
-                        if activeThreadFilter == filter {
-                            Label(filter.label, systemImage: "checkmark")
-                        } else {
-                            Text(filter.label)
-                        }
-                    }
-                }
-            } label: {
-                Label("Filter: \(activeThreadFilter.label)", systemImage: "line.3.horizontal.decrease.circle")
-                    .font(sidebarMetaFont)
-                    .labelStyle(.titleAndIcon)
-            }
-            .menuStyle(.borderlessButton)
-            .help("Filter visible chats")
-
-            Spacer(minLength: 0)
-
-            Menu {
-                ForEach([3, 5, 8, 12], id: \.self) { count in
-                    Button {
-                        projectsPreviewCountSetting = count
-                    } label: {
-                        if projectsPreviewCount == count {
-                            Label("\(count)", systemImage: "checkmark")
-                        } else {
-                            Text("\(count)")
-                        }
-                    }
-                }
-            } label: {
-                Label("Projects: \(projectsPreviewCount)", systemImage: "rectangle.stack")
-                    .font(sidebarMetaFont)
-                    .labelStyle(.titleAndIcon)
-            }
-            .menuStyle(.borderlessButton)
-            .help("Set project preview count")
-        }
-        .padding(.horizontal, SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding)
-        .padding(.vertical, 2)
     }
 
     private func sidebarStatusRow(systemImage: String, title: String) -> some View {
@@ -984,9 +954,6 @@ struct SidebarView: View {
     }
 
     private var searchFieldBorderColor: Color {
-        if isSearchFocused {
-            return Color(hex: tokens.palette.accentHex).opacity(colorScheme == .dark ? 0.56 : 0.44)
-        }
         if colorScheme == .dark {
             return Color.white.opacity(0.09)
         }
