@@ -97,7 +97,7 @@ function markSynced() {
   state.lastSyncedAt = Date.now();
   state.isSyncStale = false;
   updateLastSyncedLabel();
-  setConnectionBadge(state.socket?.readyState === WebSocket.OPEN);
+  setConnectionBadge(state.isAuthenticated);
 }
 
 function refreshSyncFreshness() {
@@ -704,7 +704,7 @@ function connectSocket(force = false) {
   socket.onopen = () => {
     state.reconnectAttempts = 0;
     state.isSyncStale = false;
-    setConnectionBadge(true);
+    setConnectionBadge(false);
     setStatus("Connected. Authenticating...");
     socket.send(
       JSON.stringify({
@@ -828,12 +828,15 @@ function sendCommand(name, options = {}) {
 }
 
 function requestSnapshot(reason) {
-  sendRaw({
+  const payload = {
     type: "relay.snapshot_request",
     sessionID: state.sessionID,
-    reason,
-    lastSeq: state.lastIncomingSeq
-  });
+    reason
+  };
+  if (Number.isSafeInteger(state.lastIncomingSeq) && state.lastIncomingSeq >= 0) {
+    payload.lastSeq = state.lastIncomingSeq;
+  }
+  sendRaw(payload);
 }
 
 async function pairDevice() {
