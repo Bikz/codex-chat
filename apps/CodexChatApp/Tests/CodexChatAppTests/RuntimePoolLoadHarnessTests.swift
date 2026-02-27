@@ -42,6 +42,51 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
         }
     }
 
+    func testSimulatedRuntimePoolLoadHarnessRespectsPerWorkerBackpressureCap() async throws {
+        let key = "CODEXCHAT_MAX_PARALLEL_TURNS_PER_WORKER"
+        let previousValue = ProcessInfo.processInfo.environment[key]
+        setenv(key, "2", 1)
+        defer {
+            if let previousValue {
+                setenv(key, previousValue, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+
+        let fixture = try Self.makeBurstFixtureExecutable(
+            deltaChunksPerTurn: Self.simulatedDeltaChunksPerTurn
+        )
+        defer {
+            try? FileManager.default.removeItem(at: fixture.rootURL)
+        }
+
+        for threadCount in [25, 50] {
+            let result = try await runSimulatedHarness(
+                threadCount: threadCount,
+                workerCount: Self.simulatedWorkerCount,
+                executablePath: fixture.executablePath,
+                expectedDeltaChunksPerTurn: Self.simulatedDeltaChunksPerTurn
+            )
+
+            XCTAssertEqual(
+                result.droppedEventCount,
+                0,
+                "Dropped events under backpressure load \(threadCount): \(result.debugSummary)"
+            )
+            XCTAssertEqual(
+                result.misroutedEventCount,
+                0,
+                "Misrouted events under backpressure load \(threadCount): \(result.debugSummary)"
+            )
+            XCTAssertLessThanOrEqual(
+                result.p95FirstTokenMS,
+                Self.simulatedP95FirstTokenBudgetMS,
+                "p95 TTFT regression with per-worker cap under load \(threadCount): \(result.debugSummary)"
+            )
+        }
+    }
+
     func testRealRuntimeLoadSmokeWhenEnabled() async throws {
         guard ProcessInfo.processInfo.environment["CODEXCHAT_RUNTIME_LOAD_HARNESS_REAL"] == "1" else {
             throw XCTSkip("Set CODEXCHAT_RUNTIME_LOAD_HARNESS_REAL=1 to run real-runtime load smoke.")

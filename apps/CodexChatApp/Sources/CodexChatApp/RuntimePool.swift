@@ -32,6 +32,7 @@ actor RuntimePool {
     private var restartTasksByWorkerID: [RuntimePoolWorkerID: Task<Void, Never>] = [:]
     private var healthByWorkerID: [RuntimePoolWorkerID: WorkerHealth] = [:]
     private var inFlightTurnsByWorkerID: [RuntimePoolWorkerID: Int] = [:]
+    private let workerTurnScheduler = WorkerTurnScheduler()
     private var routeBySyntheticApprovalID: [Int: ApprovalRoute] = [:]
     private var nextSyntheticApprovalID: Int = 1
     private var pinnedWorkerIDByLocalThreadID: [UUID: RuntimePoolWorkerID] = [:]
@@ -138,8 +139,9 @@ actor RuntimePool {
         pinnedWorkerIDByLocalThreadID.removeAll(keepingCapacity: false)
         for workerID in healthByWorkerID.keys {
             healthByWorkerID[workerID]?.state = .stopped
-            inFlightTurnsByWorkerID[workerID] = 0
+            await resetInFlightTurnsAndWorkerPermits(for: workerID)
         }
+        await workerTurnScheduler.cancelAll()
     }
 
     func capabilities() async -> RuntimeCapabilities {
@@ -197,6 +199,7 @@ actor RuntimePool {
     ) async throws -> String {
         let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
         let worker = try await worker(for: route.workerID)
+        try await workerTurnScheduler.reserve(workerID: route.workerID)
         incrementInFlightTurns(for: route.workerID)
         let rawTurnID: String
         do {
@@ -210,6 +213,7 @@ actor RuntimePool {
             )
         } catch {
             decrementInFlightTurns(for: route.workerID)
+            await workerTurnScheduler.release(workerID: route.workerID)
             throw error
         }
         return Self.scope(id: rawTurnID, workerID: route.workerID)
@@ -245,14 +249,15 @@ actor RuntimePool {
         try await worker.respondToApproval(requestID: route.rawRequestID, decision: decision)
     }
 
-    func snapshot() -> RuntimePoolSnapshot {
+    func snapshot() async -> RuntimePoolSnapshot {
+        let workerQueueMetricsByID = await workerTurnScheduler.snapshot()
         let workerIDs = workersByID.keys.sorted()
         let metrics = workerIDs.map {
             let health = healthByWorkerID[$0] ?? WorkerHealth()
             return RuntimePoolWorkerMetrics(
                 workerID: $0,
                 health: health.state,
-                queueDepth: 0,
+                queueDepth: workerQueueMetricsByID[$0]?.queueDepth ?? 0,
                 inFlightTurns: inFlightTurnsByWorkerID[$0, default: 0],
                 failureCount: health.failureCount,
                 restartCount: health.restartCount,
@@ -265,7 +270,7 @@ actor RuntimePool {
             configuredWorkerCount: configuredWorkerCount,
             activeWorkerCount: workersByID.count,
             pinnedThreadCount: pinnedWorkerIDByLocalThreadID.count,
-            totalQueuedTurns: 0,
+            totalQueuedTurns: metrics.reduce(0) { $0 + $1.queueDepth },
             totalInFlightTurns: metrics.reduce(0) { $0 + $1.inFlightTurns },
             workers: metrics
         )
@@ -363,21 +368,21 @@ actor RuntimePool {
         }
     }
 
-    private func emit(_ envelope: RuntimePoolWorkerEvent) {
+    private func emit(_ envelope: RuntimePoolWorkerEvent) async {
         let workerID = envelope.workerID
 
-        if shouldSuppressEventAndScheduleRecoveryIfNeeded(envelope.event, workerID: workerID) {
+        if await shouldSuppressEventAndScheduleRecoveryIfNeeded(envelope.event, workerID: workerID) {
             return
         }
 
-        let transformed = transformEvent(envelope.event, workerID: workerID)
+        let transformed = await transformEvent(envelope.event, workerID: workerID)
         unifiedEventContinuation.yield(transformed)
     }
 
     private func shouldSuppressEventAndScheduleRecoveryIfNeeded(
         _ event: CodexRuntimeEvent,
         workerID: RuntimePoolWorkerID
-    ) -> Bool {
+    ) async -> Bool {
         guard workerID != Constants.primaryWorkerID
         else {
             return false
@@ -390,7 +395,7 @@ actor RuntimePool {
         }
 
         markWorkerFailed(workerID)
-        inFlightTurnsByWorkerID[workerID] = 0
+        await resetInFlightTurnsAndWorkerPermits(for: workerID)
         reassignPinsAwayFromWorker(workerID)
         scheduleWorkerRestart(
             workerID: workerID,
@@ -505,7 +510,7 @@ actor RuntimePool {
     private func transformEvent(
         _ event: CodexRuntimeEvent,
         workerID: RuntimePoolWorkerID
-    ) -> CodexRuntimeEvent {
+    ) async -> CodexRuntimeEvent {
         switch event {
         case let .threadStarted(threadID):
             return .threadStarted(threadID: Self.scope(id: threadID, workerID: workerID))
@@ -598,6 +603,7 @@ actor RuntimePool {
 
         case let .turnCompleted(completion):
             decrementInFlightTurns(for: workerID)
+            await workerTurnScheduler.release(workerID: workerID)
             return .turnCompleted(
                 RuntimeTurnCompletion(
                     threadID: completion.threadID.map { Self.scope(id: $0, workerID: workerID) },
@@ -743,5 +749,14 @@ actor RuntimePool {
     private func decrementInFlightTurns(for workerID: RuntimePoolWorkerID) {
         let current = inFlightTurnsByWorkerID[workerID, default: 0]
         inFlightTurnsByWorkerID[workerID] = max(0, current - 1)
+    }
+
+    private func resetInFlightTurnsAndWorkerPermits(for workerID: RuntimePoolWorkerID) async {
+        let inFlightTurns = inFlightTurnsByWorkerID[workerID, default: 0]
+        inFlightTurnsByWorkerID[workerID] = 0
+        guard inFlightTurns > 0 else {
+            return
+        }
+        await workerTurnScheduler.release(workerID: workerID, permits: inFlightTurns)
     }
 }

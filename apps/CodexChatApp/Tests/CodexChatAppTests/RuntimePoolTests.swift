@@ -1,5 +1,6 @@
 @testable import CodexChatShared
 import CodexKit
+import Foundation
 import XCTest
 
 final class RuntimePoolTests: XCTestCase {
@@ -138,4 +139,241 @@ final class RuntimePoolTests: XCTestCase {
 
         XCTAssertTrue(RuntimePool.shouldAttemptWorkerRestart(forFailureCount: max(1, recovered)))
     }
+
+    func testSnapshotReportsQueuedTurnsWhenWorkerPermitsAreExhausted() async throws {
+        let maxPerWorkerEnvKey = "CODEXCHAT_MAX_PARALLEL_TURNS_PER_WORKER"
+        let previousMaxPerWorker = ProcessInfo.processInfo.environment[maxPerWorkerEnvKey]
+        setenv(maxPerWorkerEnvKey, "1", 1)
+        defer {
+            if let previousMaxPerWorker {
+                setenv(maxPerWorkerEnvKey, previousMaxPerWorker, 1)
+            } else {
+                unsetenv(maxPerWorkerEnvKey)
+            }
+        }
+
+        let fixture = try Self.makeDelayedCompletionFixtureExecutable(completionDelayMS: 350)
+        defer {
+            try? FileManager.default.removeItem(at: fixture.rootURL)
+        }
+
+        let runtime = CodexRuntime(executableResolver: { fixture.executablePath })
+        let pool = RuntimePool(primaryRuntime: runtime, configuredWorkerCount: 2)
+
+        do {
+            try await pool.start()
+
+            let localThreadID = UUID()
+            await pool.pin(localThreadID: localThreadID, runtimeThreadID: "w1|thr_seed")
+            let scopedThreadID = try await pool.startThread(
+                localThreadID: localThreadID,
+                cwd: nil,
+                safetyConfiguration: nil
+            )
+
+            let firstTurnTask = Task {
+                try await pool.startTurn(
+                    scopedThreadID: scopedThreadID,
+                    text: "first",
+                    safetyConfiguration: nil,
+                    skillInputs: [],
+                    inputItems: [],
+                    turnOptions: nil
+                )
+            }
+            _ = try await firstTurnTask.value
+
+            let secondTurnTask = Task {
+                try await pool.startTurn(
+                    scopedThreadID: scopedThreadID,
+                    text: "second",
+                    safetyConfiguration: nil,
+                    skillInputs: [],
+                    inputItems: [],
+                    turnOptions: nil
+                )
+            }
+
+            try await eventually(timeoutSeconds: 2.0) {
+                let snapshot = await pool.snapshot()
+                guard let workerMetrics = snapshot.workers.first(where: { $0.workerID == RuntimePoolWorkerID(1) }) else {
+                    return false
+                }
+                return workerMetrics.queueDepth >= 1
+                    && snapshot.totalQueuedTurns >= 1
+                    && workerMetrics.inFlightTurns >= 1
+            }
+
+            _ = try await secondTurnTask.value
+
+            try await eventually(timeoutSeconds: 3.0) {
+                let settled = await pool.snapshot()
+                return settled.totalQueuedTurns == 0 && settled.totalInFlightTurns == 0
+            }
+
+            await pool.stop()
+            await runtime.stop()
+        } catch {
+            await pool.stop()
+            await runtime.stop()
+            throw error
+        }
+    }
+
+    private func eventually(timeoutSeconds: TimeInterval, condition: @escaping () async -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if await condition() {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        throw XCTestError(.failureWhileWaiting)
+    }
+
+    private static func makeDelayedCompletionFixtureExecutable(completionDelayMS: Int) throws -> FixtureExecutable {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-runtimepool-queued-metrics-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let scriptURL = rootURL.appendingPathComponent("fake-codex-runtimepool-queued")
+
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+        import time
+
+        def send(message):
+            sys.stdout.write(json.dumps(message) + "\\n")
+            sys.stdout.flush()
+
+        initialized = False
+        next_thread = 1
+        next_turn = 1
+        known_threads = set()
+        completion_delay_seconds = \(completionDelayMS) / 1000.0
+
+        args = sys.argv[1:]
+        if len(args) != 1 or args[0] != "app-server":
+            sys.stderr.write("usage: fake-codex-runtimepool-queued app-server\\n")
+            raise SystemExit(2)
+
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line:
+                continue
+
+            try:
+                msg = json.loads(line)
+            except Exception:
+                continue
+
+            msg_id = msg.get("id")
+            method = msg.get("method")
+            params = msg.get("params") or {}
+            result = msg.get("result")
+            error = msg.get("error")
+
+            is_request = msg_id is not None and method is not None and result is None and error is None
+            is_notification = msg_id is None and method is not None and result is None and error is None
+
+            if is_notification:
+                if method == "initialized":
+                    initialized = True
+                continue
+
+            if not is_request:
+                continue
+
+            if method == "initialize":
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {"capabilities": {"followUpSuggestions": {"version": 1}}}
+                })
+                continue
+
+            if not initialized:
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {"code": -32002, "message": "not initialized", "data": None}
+                })
+                continue
+
+            if method == "account/read":
+                send({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {"requiresOpenaiAuth": True, "account": {"type": "apikey"}}
+                })
+                continue
+
+            if method == "thread/start":
+                thread_id = f"thr_{next_thread}"
+                next_thread += 1
+                known_threads.add(thread_id)
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"thread": {"id": thread_id}}})
+                send({"jsonrpc": "2.0", "method": "thread/started", "params": {"thread": {"id": thread_id}}})
+                continue
+
+            if method == "turn/start":
+                thread_id = params.get("threadId")
+                if thread_id not in known_threads:
+                    send({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {"code": -32010, "message": f"unknown threadId: {thread_id}", "data": None}
+                    })
+                    continue
+
+                turn_id = f"turn_{next_turn}"
+                next_turn += 1
+                send({"jsonrpc": "2.0", "id": msg_id, "result": {"turn": {"id": turn_id}}})
+                send({
+                    "jsonrpc": "2.0",
+                    "method": "turn/started",
+                    "params": {"threadId": thread_id, "turn": {"id": turn_id}}
+                })
+                send({
+                    "jsonrpc": "2.0",
+                    "method": "item/agentMessage/delta",
+                    "params": {
+                        "threadId": thread_id,
+                        "turnId": turn_id,
+                        "itemId": f"msg_{turn_id}",
+                        "delta": "token"
+                    }
+                })
+                time.sleep(completion_delay_seconds)
+                send({
+                    "jsonrpc": "2.0",
+                    "method": "turn/completed",
+                    "params": {"threadId": thread_id, "turn": {"id": turn_id, "status": "completed"}}
+                })
+                continue
+
+            send({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32601, "message": f"method not found: {method}", "data": None}
+            })
+        """
+
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: scriptURL.path
+        )
+
+        return FixtureExecutable(
+            rootURL: rootURL,
+            executablePath: scriptURL.path
+        )
+    }
+}
+
+private struct FixtureExecutable {
+    let rootURL: URL
+    let executablePath: String
 }
