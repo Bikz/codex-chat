@@ -5,7 +5,7 @@
     "name": "Personal Notes",
     "version": "1.0.0",
     "iconSymbol": "note.text",
-    "description": "Per-thread personal notes in the Mods bar.",
+    "description": "Project-scoped personal notes in the Mods bar, including draft chats.",
     "author": "CodexChat",
     "license": "MIT",
     "repository": "https://github.com/bikz/codexchat"

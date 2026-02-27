@@ -1,13 +1,17 @@
 # Personal Notes Mod
 
-Per-thread notes inside the CodexChat Mods bar.
+Project-scoped notes inside the CodexChat Mods bar.
 
 ## Behavior
 
-- Shows thread-specific notes in the Mods bar.
-- In current CodexChat builds, notes are editable inline and autosave per thread.
+- Shows project notes in the Mods bar across all threads and draft/new chats.
+- In current CodexChat builds, notes are editable inline and autosave per project.
 - `Add / Edit Note` remains available for compatibility with older app builds.
-- `Clear Note` clears the current thread note.
+- `Clear Note` clears the current project note.
+
+## Authoring Note
+
+- This mod intentionally sets `uiSlots.modsBar.requiresThread: false` so it works without a selected thread.
 
 ## Install
 

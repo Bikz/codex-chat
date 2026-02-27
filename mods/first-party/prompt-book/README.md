@@ -5,8 +5,13 @@ Global reusable prompts in the CodexChat Mods bar.
 ## Behavior
 
 - Stores a global prompt list (shared across chats/projects).
+- Works in draft/new chats and thread chats (`requiresThread: false`).
 - One-click `Send` actions use `composer.insertAndSend`.
 - Supports add/edit/delete management actions.
+
+## Authoring Note
+
+- This mod intentionally sets `uiSlots.modsBar.requiresThread: false` so it is always available without selecting a thread.
 
 ## Prompt Input Format
 
