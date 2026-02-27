@@ -792,6 +792,44 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(model.modsBarQuickSwitchCategory(for: option), .user)
     }
 
+    func testModsBarQuickSwitchCategoryTreatsPromptBookTokenInModIDAsSystem() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let systemLikeMod = makeModsBarMod(
+            id: "acme.prompt-book",
+            name: "Prompts",
+            scope: .project,
+            directorySuffix: "acme-prompt-book"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .project, mod: systemLikeMod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchCategory(for: option), .system)
+    }
+
+    func testModsBarQuickSwitchCategoryTreatsNotesActionHookAsSystem() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let mod = DiscoveredUIMod(
+            scope: .global,
+            directoryPath: "/tmp/mod-\(UUID().uuidString)",
+            definitionPath: "/tmp/mod-ui.mod.json",
+            definition: UIModDefinition(
+                manifest: .init(id: "acme.custom-notes", name: "Notes", version: "1.0.0"),
+                theme: .init(),
+                hooks: [
+                    .init(
+                        id: "notes-action",
+                        event: .modsBarAction,
+                        handler: .init(command: ["echo", "ok"], cwd: ".")
+                    ),
+                ],
+                uiSlots: .init(modsBar: .init(enabled: true, title: "Notes"))
+            ),
+            computedChecksum: nil
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: mod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchCategory(for: option), .system)
+    }
+
     func testModsBarQuickSwitchSymbolFallsBackToPuzzlePieceForUnknownMods() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let unknownMod = makeModsBarMod(
@@ -919,6 +957,31 @@ final class ModsBarActionTests: XCTestCase {
         model.activeModsBarSlot = .init(enabled: true, title: "Thread Summary", requiresThread: true)
         XCTAssertFalse(model.isModsBarAvailableForSelectedThread)
         XCTAssertTrue(model.isActiveModsBarThreadRequired)
+    }
+
+    func testKnownFirstClassModsRemainDraftAvailableWhenRequiresThreadMissing() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        model.projectsState = .loaded([
+            ProjectRecord(id: projectID, name: "Draft Project", path: "/tmp/draft-project", trustState: .trusted),
+        ])
+        model.selectedProjectID = projectID
+        model.selectedThreadID = nil
+
+        model.activeModsBarModID = "codexchat.prompt-book"
+        model.activeModsBarSlot = .init(enabled: true, title: "Prompt Book")
+        XCTAssertFalse(model.isActiveModsBarThreadRequired)
+        XCTAssertTrue(model.isModsBarAvailableForSelectedThread)
+
+        model.activeModsBarModID = "acme.personal_notes"
+        model.activeModsBarSlot = .init(enabled: true, title: "Personal Notes")
+        XCTAssertFalse(model.isActiveModsBarThreadRequired)
+        XCTAssertTrue(model.isModsBarAvailableForSelectedThread)
+
+        model.activeModsBarModID = "acme.thread-summary"
+        model.activeModsBarSlot = .init(enabled: true, title: "Thread Summary")
+        XCTAssertTrue(model.isActiveModsBarThreadRequired)
+        XCTAssertFalse(model.isModsBarAvailableForSelectedThread)
     }
 
     func testToggleModsBarFromRailFullyHidesPanel() {

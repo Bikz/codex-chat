@@ -1745,7 +1745,10 @@ final class AppModel: ObservableObject {
     }
 
     var isActiveModsBarThreadRequired: Bool {
-        activeModsBarSlot?.requiresThread ?? true
+        if let requiresThread = activeModsBarSlot?.requiresThread {
+            return requiresThread
+        }
+        return !isKnownDraftCompatibleModsBar
     }
 
     var isModsBarAvailableForSelectedThread: Bool {
@@ -1756,6 +1759,35 @@ final class AppModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    private var isKnownDraftCompatibleModsBar: Bool {
+        let normalizedModID = normalizedModsBarCompatibilityToken(activeModsBarModID)
+        let normalizedTitle = normalizedModsBarCompatibilityToken(activeModsBarSlot?.title)
+
+        let personalNotesToken = "personal-notes"
+        let promptBookToken = "prompt-book"
+
+        let matchesPersonalNotes = (
+            normalizedModID == "codexchat.personal-notes"
+                || normalizedModID.contains(personalNotesToken)
+                || normalizedTitle.contains(personalNotesToken)
+        )
+        let matchesPromptBook = (
+            normalizedModID == "codexchat.prompt-book"
+                || normalizedModID.contains(promptBookToken)
+                || normalizedTitle.contains(promptBookToken)
+        )
+
+        return matchesPersonalNotes || matchesPromptBook
+    }
+
+    private func normalizedModsBarCompatibilityToken(_ value: String?) -> String {
+        (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+            .replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
     }
 
     var canReviewChanges: Bool {
