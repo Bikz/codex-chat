@@ -134,10 +134,7 @@ struct SidebarView: View {
         if activeThreadFilter != .all {
             return Color(hex: tokens.palette.accentHex)
         }
-        if Self.isDarkColorHex(resolvedSidebarHex) {
-            return Color.white.opacity(0.90)
-        }
-        return Color.black.opacity(0.76)
+        return sidebarControlIconColor
     }
 
     private var sidebarAccountDisplayName: String {
