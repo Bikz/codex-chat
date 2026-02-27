@@ -121,6 +121,25 @@ struct SidebarView: View {
         return Color.primary.opacity(0.76)
     }
 
+    private var resolvedSidebarHex: String {
+        let appearance: AppModel.UserThemeCustomization.Appearance = colorScheme == .dark ? .dark : .light
+        let resolved = model.userThemeCustomization.resolvedColors(for: appearance)
+        let isCustomThemeEnabled = model.userThemeCustomization.isEnabled
+        return isCustomThemeEnabled
+            ? (resolved.sidebarHex ?? tokens.palette.sidebarHex)
+            : tokens.palette.sidebarHex
+    }
+
+    private var searchFilterIconColor: Color {
+        if activeThreadFilter != .all {
+            return Color(hex: tokens.palette.accentHex)
+        }
+        if Self.isDarkColorHex(resolvedSidebarHex) {
+            return Color.white.opacity(0.90)
+        }
+        return Color.black.opacity(0.76)
+    }
+
     private var sidebarAccountDisplayName: String {
         AccountDisplayNamePreference.resolvedDisplayName(
             preferredName: preferredAccountDisplayName,
@@ -302,7 +321,7 @@ struct SidebarView: View {
             } label: {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .font(sidebarMetaIconFont)
-                    .foregroundStyle(sidebarControlIconColor)
+                    .foregroundStyle(searchFilterIconColor)
                     .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
                     .contentShape(Rectangle())
             }
@@ -1015,6 +1034,37 @@ struct SidebarView: View {
     ) -> Bool {
         guard !isSelectionSuppressed else { return false }
         return isHovered || isSelected
+    }
+
+    static func isDarkColorHex(_ hex: String) -> Bool {
+        let normalized = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var value: UInt64 = 0
+        Scanner(string: normalized).scanHexInt64(&value)
+
+        let red, green, blue: Double
+        switch normalized.count {
+        case 3:
+            red = Double((value >> 8) & 0xF) / 15
+            green = Double((value >> 4) & 0xF) / 15
+            blue = Double(value & 0xF) / 15
+        case 6:
+            red = Double((value >> 16) & 0xFF) / 255
+            green = Double((value >> 8) & 0xFF) / 255
+            blue = Double(value & 0xFF) / 255
+        case 8:
+            red = Double((value >> 16) & 0xFF) / 255
+            green = Double((value >> 8) & 0xFF) / 255
+            blue = Double(value & 0xFF) / 255
+        default:
+            return false
+        }
+
+        func linearize(_ channel: Double) -> Double {
+            channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+
+        let luminance = (0.2126 * linearize(red)) + (0.7152 * linearize(green)) + (0.0722 * linearize(blue))
+        return luminance < 0.5
     }
 
     private func retryGeneralThreads() {

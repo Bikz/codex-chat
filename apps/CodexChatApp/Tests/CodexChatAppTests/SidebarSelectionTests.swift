@@ -134,6 +134,16 @@ final class SidebarSelectionTests: XCTestCase {
         XCTAssertEqual(allThreads.map(\.id), all.map(\.id))
     }
 
+    func testIsDarkColorHexDetectsDarkAndLightColors() {
+        XCTAssertTrue(SidebarView.isDarkColorHex("#0A0A0A"))
+        XCTAssertFalse(SidebarView.isDarkColorHex("#F5F5F5"))
+    }
+
+    func testIsDarkColorHexSupportsShorthandHex() {
+        XCTAssertTrue(SidebarView.isDarkColorHex("#111"))
+        XCTAssertFalse(SidebarView.isDarkColorHex("#EEE"))
+    }
+
     func testRemoveSelectedProjectDisconnectsItAndKeepsFilesOnDisk() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-remove-project-\(UUID().uuidString)", isDirectory: true)
