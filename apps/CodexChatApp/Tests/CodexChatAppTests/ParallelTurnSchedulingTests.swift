@@ -88,6 +88,21 @@ final class ParallelTurnSchedulingTests: XCTestCase {
         XCTAssertEqual(AdaptiveConcurrencyController.defaultTTFTBudgetMS, 3200)
     }
 
+    func testTurnStartIOMaxConcurrencyHonorsEnvironmentOverride() {
+        let key = "CODEXCHAT_TURN_START_IO_MAX_CONCURRENCY"
+        let previousValue = ProcessInfo.processInfo.environment[key]
+        setenv(key, "6", 1)
+        defer {
+            if let previousValue {
+                setenv(key, previousValue, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+
+        XCTAssertEqual(TurnStartIOCoordinator.defaultMaxConcurrentJobs, 6)
+    }
+
     @MainActor
     func testActiveRuntimePoolSizeDefaultsToConfiguredSizeWithoutFlags() {
         let sizeKey = "CODEXCHAT_RUNTIME_POOL_SIZE"

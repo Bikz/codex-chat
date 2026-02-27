@@ -15,7 +15,7 @@ actor AdaptiveConcurrencyController {
 
     private enum Defaults {
         static let maxBasePerWorker = 16
-        static let maxTTFTBudgetMS = 15000
+        static let maxTTFTBudgetMS = 15000.0
     }
 
     private let minimumLimit: Int

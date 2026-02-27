@@ -37,5 +37,8 @@ extension AppModel {
 
         let snapshot = await runtimePool.snapshot()
         runtimePoolSnapshot = snapshot
+        if runtimeStatus == .connected {
+            scheduleAdaptiveConcurrencyRefresh(reason: "runtime pool metrics tick")
+        }
     }
 }
