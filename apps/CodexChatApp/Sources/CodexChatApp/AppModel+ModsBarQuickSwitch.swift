@@ -2,6 +2,11 @@ import CodexMods
 import Foundation
 
 extension AppModel {
+    enum ModsBarQuickSwitchCategory: String, Hashable, Sendable {
+        case user
+        case system
+    }
+
     private enum ModsBarIconOverridesStorage {
         static func normalized(_ raw: [String: String]) -> [String: String] {
             var normalized: [String: String] = [:]
@@ -82,6 +87,25 @@ extension AppModel {
 
     var selectedModsBarQuickSwitchOption: ModsBarQuickSwitchOption? {
         modsBarQuickSwitchOptions.first(where: \.isSelected)
+    }
+
+    func modsBarQuickSwitchCategory(for option: ModsBarQuickSwitchOption) -> ModsBarQuickSwitchCategory {
+        let normalizedModID = option.mod.definition.manifest.id
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let normalizedTitle = modsBarQuickSwitchTitle(for: option)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if normalizedModID.hasPrefix("codexchat.")
+            || normalizedModID == "codexchat.prompt-book"
+            || normalizedModID == "codexchat.personal-notes"
+            || normalizedTitle.contains("prompt book")
+            || normalizedTitle.contains("personal notes")
+        {
+            return .system
+        }
+        return .user
     }
 
     func modsBarIconPresetSymbols() -> [String] {

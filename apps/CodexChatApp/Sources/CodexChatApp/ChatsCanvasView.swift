@@ -903,26 +903,27 @@ struct ChatsCanvasView: View {
 
     private var modsBarRail: some View {
         let style = Self.modsBarOverlayStyle
+        let userOptions = model.modsBarQuickSwitchOptions.filter {
+            model.modsBarQuickSwitchCategory(for: $0) == .user
+        }
+        let systemOptions = model.modsBarQuickSwitchOptions.filter {
+            model.modsBarQuickSwitchCategory(for: $0) == .system
+        }
 
         return VStack(spacing: 8) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 6) {
-                    ForEach(model.modsBarQuickSwitchOptions) { option in
-                        Button {
-                            model.activateModsBarQuickSwitchOption(option)
-                            model.setModsBarPresentationMode(.peek)
-                        } label: {
-                            Image(systemName: model.modsBarQuickSwitchSymbolName(for: option))
-                                .font(.system(size: 13, weight: .semibold))
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(Color.primary.opacity(option.isSelected ? 0.16 : 0.06))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help(model.modsBarQuickSwitchTooltip(for: option))
-                        .accessibilityLabel("Open \(model.modsBarQuickSwitchTitle(for: option)) extension")
+                    ForEach(userOptions) { option in
+                        railQuickSwitchButton(option)
+                    }
+
+                    if !userOptions.isEmpty, !systemOptions.isEmpty {
+                        Divider()
+                            .padding(.vertical, 4)
+                    }
+
+                    ForEach(systemOptions) { option in
+                        railQuickSwitchButton(option)
                     }
 
                     if model.modsBarQuickSwitchOptions.isEmpty {
@@ -968,6 +969,24 @@ struct ChatsCanvasView: View {
         .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Extension panel rail")
+    }
+
+    private func railQuickSwitchButton(_ option: AppModel.ModsBarQuickSwitchOption) -> some View {
+        Button {
+            model.activateModsBarQuickSwitchOption(option)
+            model.setModsBarPresentationMode(.peek)
+        } label: {
+            Image(systemName: model.modsBarQuickSwitchSymbolName(for: option))
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(option.isSelected ? 0.16 : 0.06))
+                )
+        }
+        .buttonStyle(.plain)
+        .help(model.modsBarQuickSwitchTitle(for: option))
+        .accessibilityLabel("Open \(model.modsBarQuickSwitchTitle(for: option)) extension")
     }
 
     private func layeredModsBarPanel(containerWidth: CGFloat) -> some View {

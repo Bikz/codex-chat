@@ -766,6 +766,32 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(model.modsBarQuickSwitchSymbolName(for: option), "bolt.fill")
     }
 
+    func testModsBarQuickSwitchCategoryTreatsCodexChatModsAsSystem() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let systemMod = makeModsBarMod(
+            id: "codexchat.prompt-book",
+            name: "Prompt Book",
+            scope: .global,
+            directorySuffix: "prompt-book"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .global, mod: systemMod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchCategory(for: option), .system)
+    }
+
+    func testModsBarQuickSwitchCategoryTreatsThirdPartyModsAsUser() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let customMod = makeModsBarMod(
+            id: "acme.custom-tool",
+            name: "Custom Tool",
+            scope: .project,
+            directorySuffix: "custom-tool"
+        )
+        let option = AppModel.ModsBarQuickSwitchOption(scope: .project, mod: customMod, isSelected: false)
+
+        XCTAssertEqual(model.modsBarQuickSwitchCategory(for: option), .user)
+    }
+
     func testModsBarQuickSwitchSymbolFallsBackToPuzzlePieceForUnknownMods() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let unknownMod = makeModsBarMod(
