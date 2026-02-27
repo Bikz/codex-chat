@@ -170,6 +170,32 @@ final class RuntimeEventDispatchBridgeTests: XCTestCase {
         XCTAssertTrue(snapshot.isUnderPressure)
     }
 
+    func testBacklogSnapshotRemainsHealthyForSmallFastBatch() async {
+        let bridge = RuntimeEventDispatchBridge { _ in
+            // Intentionally empty fast path.
+        }
+
+        await bridge.enqueue(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stderr",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: "thr",
+                    turnID: "turn",
+                    title: "stderr",
+                    detail: "fast"
+                )
+            )
+        )
+        await bridge.flushNow()
+
+        let snapshot = await bridge.backlogSnapshot()
+        XCTAssertEqual(snapshot.saturatedFlushRate, 0)
+        XCTAssertEqual(snapshot.slowDeliveryRate, 0)
+        XCTAssertFalse(snapshot.isUnderPressure)
+    }
+
     private func assistantDeltaEvent(
         delta: String,
         channel: RuntimeAssistantMessageChannel = .finalResponse

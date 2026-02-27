@@ -43,4 +43,26 @@ final class RuntimePerformanceSignalsTests: XCTestCase {
         let snapshot = await signals.snapshot()
         XCTAssertEqual(snapshot.sampleCount, 0)
     }
+
+    func testSampleCountRespectsConfiguredRollingWindow() async {
+        let signals = RuntimePerformanceSignals(maxSampleCount: 5)
+
+        for index in 0 ..< 20 {
+            let threadID = UUID()
+            let startedAt = Date().addingTimeInterval(-Double(index + 1))
+            await signals.recordDispatchStart(
+                threadID: threadID,
+                localTurnID: UUID(),
+                startedAt: startedAt
+            )
+            await signals.recordFirstTokenIfNeeded(
+                threadID: threadID,
+                receivedAt: startedAt.addingTimeInterval(0.25)
+            )
+        }
+
+        let snapshot = await signals.snapshot()
+        XCTAssertEqual(snapshot.sampleCount, 5)
+        XCTAssertNotNil(snapshot.rollingP95TTFTMS)
+    }
 }

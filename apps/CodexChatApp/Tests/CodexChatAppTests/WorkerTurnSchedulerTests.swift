@@ -111,6 +111,49 @@ final class WorkerTurnSchedulerTests: XCTestCase {
         _ = try await (firstWaiter.value, secondWaiter.value)
     }
 
+    func testCancelAllResumesQueuedWaitersAndClearsMetrics() async throws {
+        let scheduler = WorkerTurnScheduler(maxConcurrentTurnsPerWorker: 1)
+        let workerID = RuntimePoolWorkerID(5)
+
+        try await scheduler.reserve(workerID: workerID)
+
+        let waiterOne = Task {
+            try await scheduler.reserve(workerID: workerID)
+        }
+        let waiterTwo = Task {
+            try await scheduler.reserve(workerID: workerID)
+        }
+
+        try await eventually(timeoutSeconds: 1.0) {
+            let snapshot = await scheduler.snapshot()
+            return snapshot[workerID]?.activePermits == 1
+                && snapshot[workerID]?.queueDepth == 2
+        }
+
+        await scheduler.cancelAll()
+
+        do {
+            try await waiterOne.value
+            XCTFail("Expected waiterOne to throw CancellationError after cancelAll.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+
+        do {
+            try await waiterTwo.value
+            XCTFail("Expected waiterTwo to throw CancellationError after cancelAll.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+
+        let snapshot = await scheduler.snapshot()
+        XCTAssertTrue(snapshot.isEmpty)
+    }
+
     private func eventually(timeoutSeconds: TimeInterval, condition: @escaping () async -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
