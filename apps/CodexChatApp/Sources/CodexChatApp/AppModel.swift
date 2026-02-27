@@ -1763,31 +1763,14 @@ final class AppModel: ObservableObject {
 
     private var isKnownDraftCompatibleModsBar: Bool {
         let normalizedModID = normalizedModsBarCompatibilityToken(activeModsBarModID)
-        let normalizedTitle = normalizedModsBarCompatibilityToken(activeModsBarSlot?.title)
-
-        let personalNotesToken = "personal-notes"
-        let promptBookToken = "prompt-book"
-
-        let matchesPersonalNotes = (
-            normalizedModID == "codexchat.personal-notes"
-                || normalizedModID.contains(personalNotesToken)
-                || normalizedTitle.contains(personalNotesToken)
-        )
-        let matchesPromptBook = (
-            normalizedModID == "codexchat.prompt-book"
-                || normalizedModID.contains(promptBookToken)
-                || normalizedTitle.contains(promptBookToken)
-        )
-
-        return matchesPersonalNotes || matchesPromptBook
+        return normalizedModID == "codexchat.personal-notes"
+            || normalizedModID == "codexchat.prompt-book"
     }
 
     private func normalizedModsBarCompatibilityToken(_ value: String?) -> String {
         (value ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-            .replacingOccurrences(of: "_", with: "-")
-            .replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
     }
 
     var canReviewChanges: Bool {

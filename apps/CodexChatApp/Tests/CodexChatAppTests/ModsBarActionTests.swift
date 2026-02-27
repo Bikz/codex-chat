@@ -959,7 +959,7 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertTrue(model.isActiveModsBarThreadRequired)
     }
 
-    func testKnownFirstClassModsRemainDraftAvailableWhenRequiresThreadMissing() {
+    func testKnownFirstClassModIDsRemainDraftAvailableWhenRequiresThreadMissing() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectID = UUID()
         model.projectsState = .loaded([
@@ -973,10 +973,15 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertFalse(model.isActiveModsBarThreadRequired)
         XCTAssertTrue(model.isModsBarAvailableForSelectedThread)
 
-        model.activeModsBarModID = "acme.personal_notes"
+        model.activeModsBarModID = "codexchat.personal-notes"
         model.activeModsBarSlot = .init(enabled: true, title: "Personal Notes")
         XCTAssertFalse(model.isActiveModsBarThreadRequired)
         XCTAssertTrue(model.isModsBarAvailableForSelectedThread)
+
+        model.activeModsBarModID = "acme.personal-notes"
+        model.activeModsBarSlot = .init(enabled: true, title: "Personal Notes")
+        XCTAssertTrue(model.isActiveModsBarThreadRequired)
+        XCTAssertFalse(model.isModsBarAvailableForSelectedThread)
 
         model.activeModsBarModID = "acme.thread-summary"
         model.activeModsBarSlot = .init(enabled: true, title: "Thread Summary")
