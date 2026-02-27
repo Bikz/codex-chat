@@ -912,7 +912,7 @@ struct ChatsCanvasView: View {
         let systemOptions = model.modsBarQuickSwitchOptions.filter {
             model.modsBarQuickSwitchCategory(for: $0) == .system
         }
-        let showRailUtilities = model.canReviewChanges || model.selectedThreadID != nil
+        let showRailUtilities = true
 
         return VStack(spacing: 8) {
             if !userOptions.isEmpty {
@@ -951,22 +951,20 @@ struct ChatsCanvasView: View {
                     ForEach(systemOptions) { option in
                         railQuickSwitchButton(option)
                     }
-                    if showRailUtilities {
-                        railUtilityButton(
-                            systemImage: "doc.text.magnifyingglass",
-                            title: "Review changes",
-                            accessibilityLabel: "Review pending changes",
-                            isDisabled: !model.canReviewChanges,
-                            action: model.openReviewChanges
-                        )
-                        railUtilityButton(
-                            systemImage: "doc.text",
-                            title: "Reveal chat file",
-                            accessibilityLabel: "Reveal thread transcript file in Finder",
-                            isDisabled: model.selectedThreadID == nil,
-                            action: model.revealSelectedThreadArchiveInFinder
-                        )
-                    }
+                    railUtilityButton(
+                        systemImage: "doc.text.magnifyingglass",
+                        title: "Review changes",
+                        accessibilityLabel: "Review pending changes",
+                        isDisabled: !model.canReviewChanges,
+                        action: model.openReviewChanges
+                    )
+                    railUtilityButton(
+                        systemImage: "doc.text",
+                        title: "Reveal chat file",
+                        accessibilityLabel: "Reveal thread transcript file in Finder",
+                        isDisabled: model.selectedThreadID == nil,
+                        action: model.revealSelectedThreadArchiveInFinder
+                    )
                 }
             }
 
