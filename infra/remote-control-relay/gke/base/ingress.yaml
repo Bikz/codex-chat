@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: remote-control-relay
   annotations:
     kubernetes.io/ingress.class: gce
-    networking.gke.io/managed-certificates: remote-control-relay-cert
+    networking.gke.io/managed-certificates: remote-control-relay-cert-bikz
     networking.gke.io/v1beta1.FrontendConfig: remote-control-relay-frontendconfig
 spec:
   rules:

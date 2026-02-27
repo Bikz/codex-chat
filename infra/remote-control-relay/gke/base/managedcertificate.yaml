@@ -1,7 +1,7 @@
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
-  name: remote-control-relay-cert
+  name: remote-control-relay-cert-bikz
   labels:
     app.kubernetes.io/name: remote-control-relay
 spec:

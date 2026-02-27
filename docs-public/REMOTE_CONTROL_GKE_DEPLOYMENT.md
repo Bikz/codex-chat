@@ -145,7 +145,7 @@ kubectl -n codexchat-remote-control get pods,svc,hpa,pdb
 - Wait for managed certificate status to become `Active`:
 
 ```bash
-kubectl -n codexchat-remote-control get managedcertificate remote-control-relay-cert
+kubectl -n codexchat-remote-control get managedcertificate remote-control-relay-cert-bikz
 ```
 
 - Validate externally:
