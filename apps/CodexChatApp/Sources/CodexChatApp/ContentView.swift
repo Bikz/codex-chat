@@ -6,8 +6,6 @@ struct ContentView: View {
     enum ToolbarIcon: String, CaseIterable {
         case pendingApprovals = "exclamationmark.bubble"
         case remoteControl = "iphone.gen3"
-        case reviewChanges = "doc.text.magnifyingglass"
-        case revealChatFile = "doc.text"
         case shellWorkspace = "terminal"
         case planRunner = "list.number"
         case modsBar = "sidebar.right"
@@ -20,8 +18,6 @@ struct ContentView: View {
         var images = [
             ToolbarIcon.pendingApprovals.rawValue,
             ToolbarIcon.remoteControl.rawValue,
-            ToolbarIcon.reviewChanges.rawValue,
-            ToolbarIcon.revealChatFile.rawValue,
             ToolbarIcon.shellWorkspace.rawValue,
             ToolbarIcon.planRunner.rawValue,
         ]
@@ -88,26 +84,6 @@ struct ContentView: View {
                     }
                     .accessibilityLabel("Open remote control")
                     .help("Open remote control")
-
-                    Button {
-                        model.openReviewChanges()
-                    } label: {
-                        Label("Review Changes", systemImage: ToolbarIcon.reviewChanges.rawValue)
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Review pending changes")
-                    .help("Review changes")
-                    .disabled(!model.canReviewChanges)
-
-                    Button {
-                        model.revealSelectedThreadArchiveInFinder()
-                    } label: {
-                        Label("Reveal Chat File", systemImage: ToolbarIcon.revealChatFile.rawValue)
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Reveal thread transcript file in Finder")
-                    .help("Reveal thread transcript file")
-                    .disabled(model.selectedThreadID == nil)
 
                     Button {
                         model.toggleShellWorkspace()

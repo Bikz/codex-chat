@@ -10,8 +10,6 @@ final class ContentViewTests: XCTestCase {
             [
                 ContentView.ToolbarIcon.pendingApprovals.rawValue,
                 ContentView.ToolbarIcon.remoteControl.rawValue,
-                ContentView.ToolbarIcon.reviewChanges.rawValue,
-                ContentView.ToolbarIcon.revealChatFile.rawValue,
                 ContentView.ToolbarIcon.shellWorkspace.rawValue,
                 ContentView.ToolbarIcon.planRunner.rawValue,
             ]
@@ -24,8 +22,6 @@ final class ContentViewTests: XCTestCase {
             [
                 ContentView.ToolbarIcon.pendingApprovals.rawValue,
                 ContentView.ToolbarIcon.remoteControl.rawValue,
-                ContentView.ToolbarIcon.reviewChanges.rawValue,
-                ContentView.ToolbarIcon.revealChatFile.rawValue,
                 ContentView.ToolbarIcon.shellWorkspace.rawValue,
                 ContentView.ToolbarIcon.planRunner.rawValue,
                 ContentView.ToolbarIcon.modsBar.rawValue,
@@ -36,6 +32,18 @@ final class ContentViewTests: XCTestCase {
     func testPrimaryToolbarSystemImagesDoNotContainSidebarLeftToggle() {
         XCTAssertFalse(
             ContentView.primaryToolbarSystemImages(canToggleModsBar: true).contains("sidebar.left")
+        )
+    }
+
+    func testPrimaryToolbarSystemImagesDoNotContainReviewChanges() {
+        XCTAssertFalse(
+            ContentView.primaryToolbarSystemImages(canToggleModsBar: true).contains("doc.text.magnifyingglass")
+        )
+    }
+
+    func testPrimaryToolbarSystemImagesDoNotContainRevealChatFile() {
+        XCTAssertFalse(
+            ContentView.primaryToolbarSystemImages(canToggleModsBar: true).contains("doc.text")
         )
     }
 

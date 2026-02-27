@@ -909,6 +909,7 @@ struct ChatsCanvasView: View {
         let systemOptions = model.modsBarQuickSwitchOptions.filter {
             model.modsBarQuickSwitchCategory(for: $0) == .system
         }
+        let showRailUtilities = model.canReviewChanges || model.selectedThreadID != nil
 
         return VStack(spacing: 8) {
             if !userOptions.isEmpty {
@@ -938,7 +939,7 @@ struct ChatsCanvasView: View {
 
             Spacer(minLength: 0)
 
-            if !systemOptions.isEmpty {
+            if !systemOptions.isEmpty || showRailUtilities {
                 VStack(spacing: 6) {
                     if !userOptions.isEmpty {
                         Divider()
@@ -946,6 +947,22 @@ struct ChatsCanvasView: View {
                     }
                     ForEach(systemOptions) { option in
                         railQuickSwitchButton(option)
+                    }
+                    if showRailUtilities {
+                        railUtilityButton(
+                            systemImage: "doc.text.magnifyingglass",
+                            title: "Review changes",
+                            accessibilityLabel: "Review pending changes",
+                            isDisabled: !model.canReviewChanges,
+                            action: model.openReviewChanges
+                        )
+                        railUtilityButton(
+                            systemImage: "doc.text",
+                            title: "Reveal chat file",
+                            accessibilityLabel: "Reveal thread transcript file in Finder",
+                            isDisabled: model.selectedThreadID == nil,
+                            action: model.revealSelectedThreadArchiveInFinder
+                        )
                     }
                 }
             }
@@ -990,6 +1007,28 @@ struct ChatsCanvasView: View {
         .buttonStyle(.plain)
         .help(model.modsBarQuickSwitchTitle(for: option))
         .accessibilityLabel("Open \(model.modsBarQuickSwitchTitle(for: option)) extension")
+    }
+
+    private func railUtilityButton(
+        systemImage: String,
+        title: String,
+        accessibilityLabel: String,
+        isDisabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(isDisabled ? 0.03 : 0.06))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .help(title)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private func layeredModsBarPanel(containerWidth: CGFloat) -> some View {
