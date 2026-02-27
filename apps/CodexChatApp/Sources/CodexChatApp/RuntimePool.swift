@@ -379,18 +379,27 @@ actor RuntimePool {
 
     private func workerID(for localThreadID: UUID) -> RuntimePoolWorkerID {
         let unavailableWorkerIDs = unavailableWorkerIDSet()
+        let workerLoadByID = workerLoadByIDForSelection()
         let selectedWorkerID = Self.selectWorkerID(
             for: localThreadID,
             workerCount: configuredWorkerCount,
             pinnedWorkerID: pinnedWorkerIDByLocalThreadID[localThreadID],
             unavailableWorkerIDs: unavailableWorkerIDs,
-            workerLoadByID: inFlightTurnsByWorkerID
+            workerLoadByID: workerLoadByID
         )
         let resolvedWorkerID = workersByID[selectedWorkerID] == nil
             ? Constants.primaryWorkerID
             : selectedWorkerID
         pinnedWorkerIDByLocalThreadID[localThreadID] = resolvedWorkerID
         return resolvedWorkerID
+    }
+
+    private func workerLoadByIDForSelection() -> [RuntimePoolWorkerID: Int] {
+        var loadByWorkerID = inFlightTurnsByWorkerID
+        for pinnedWorkerID in pinnedWorkerIDByLocalThreadID.values {
+            loadByWorkerID[pinnedWorkerID, default: 0] += 1
+        }
+        return loadByWorkerID
     }
 
     private func unavailableWorkerIDSet() -> Set<RuntimePoolWorkerID> {

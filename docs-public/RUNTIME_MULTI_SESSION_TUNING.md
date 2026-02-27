@@ -45,7 +45,7 @@ This document describes runtime knobs and diagnostics for high-concurrency Codex
 
 - `CODEXCHAT_TURN_START_IO_MAX_CONCURRENCY`
   - Maximum concurrent checkpoint/snapshot jobs at turn start.
-  - Default: `4`.
+  - Default: hardware-aware autoscaling (`3...8`) based on core profile.
   - Higher values improve burst throughput; lower values reduce disk pressure.
 
 ## Runtime Signals Used By Adaptive Control

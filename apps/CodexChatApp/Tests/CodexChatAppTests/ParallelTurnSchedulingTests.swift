@@ -111,6 +111,20 @@ final class ParallelTurnSchedulingTests: XCTestCase {
             ),
             5
         )
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedTurnStartIOMaxConcurrency(
+                performanceCoreCount: 4,
+                logicalCoreCount: 8
+            ),
+            4
+        )
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedTurnStartIOMaxConcurrency(
+                performanceCoreCount: 12,
+                logicalCoreCount: 24
+            ),
+            8
+        )
     }
 
     func testHighCoreHardwareProfileCanSupportFortyParallelTurns() {
@@ -123,6 +137,13 @@ final class ParallelTurnSchedulingTests: XCTestCase {
             logicalCoreCount: 24
         )
         XCTAssertGreaterThanOrEqual(workerCount * perWorkerLimit, 40)
+        XCTAssertGreaterThanOrEqual(
+            RuntimeConcurrencyHeuristics.recommendedTurnStartIOMaxConcurrency(
+                performanceCoreCount: 12,
+                logicalCoreCount: 24
+            ),
+            8
+        )
     }
 
     func testAdaptiveConcurrencyBasePerWorkerHonorsEnvironmentOverride() {

@@ -8,6 +8,8 @@ enum RuntimeConcurrencyHeuristics {
         static let maximumFallbackWorkerCount = 8
         static let minimumPerWorkerTurnLimit = 2
         static let maximumPerWorkerTurnLimit = 8
+        static let minimumTurnStartIOMaxConcurrency = 2
+        static let maximumTurnStartIOMaxConcurrency = 16
     }
 
     static func detectedPerformanceCoreCount() -> Int {
@@ -83,6 +85,30 @@ enum RuntimeConcurrencyHeuristics {
             return 4
         }
         return 3
+    }
+
+    static func recommendedTurnStartIOMaxConcurrency(
+        performanceCoreCount: Int = detectedPerformanceCoreCount(),
+        logicalCoreCount: Int = ProcessInfo.processInfo.activeProcessorCount
+    ) -> Int {
+        let normalizedPerformanceCores = max(0, performanceCoreCount)
+        let normalizedLogicalCores = max(1, logicalCoreCount)
+
+        let recommended = if normalizedPerformanceCores >= 10 || normalizedLogicalCores >= 16 {
+            8
+        } else if normalizedPerformanceCores >= 8 || normalizedLogicalCores >= 10 {
+            6
+        } else if normalizedPerformanceCores >= 4 || normalizedLogicalCores >= 6 {
+            4
+        } else {
+            3
+        }
+
+        return clamp(
+            recommended,
+            min: Constants.minimumTurnStartIOMaxConcurrency,
+            max: Constants.maximumTurnStartIOMaxConcurrency
+        )
     }
 
     private static func clamp(_ value: Int, min minimum: Int, max maximum: Int) -> Int {

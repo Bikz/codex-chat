@@ -24,7 +24,7 @@ actor TurnStartIOCoordinator {
             return min(parsed, 16)
         }
 
-        return 4
+        return RuntimeConcurrencyHeuristics.recommendedTurnStartIOMaxConcurrency()
     }
 
     func beginCheckpoint(
