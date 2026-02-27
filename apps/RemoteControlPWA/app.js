@@ -11,13 +11,16 @@ const state = {
   reconnectAttempts: 0,
   reconnectTimer: null,
   reconnectDisabledReason: null,
+  isPairingInFlight: false,
   lastIncomingSeq: null,
   lastSyncedAt: null,
   isSyncStale: false,
+  pendingSnapshotReason: null,
   nextOutgoingSeq: 1,
   awaitingGapSnapshot: false,
   canApproveRemotely: false,
   queuedCommands: [],
+  queuedCommandsBytes: 0,
   projects: [],
   threads: [],
   pendingApprovals: [],
@@ -27,6 +30,9 @@ const state = {
   turnStateByThreadID: new Map(),
   unreadByThreadID: new Map()
 };
+
+const MAX_QUEUED_COMMANDS = 64;
+const MAX_QUEUED_COMMAND_BYTES = 256 * 1024;
 
 const dom = {
   connectionBadge: document.getElementById("connectionBadge"),
@@ -52,6 +58,10 @@ const dom = {
 function setStatus(text, level = "info") {
   dom.statusText.textContent = text;
   dom.statusText.style.color = level === "error" ? "var(--danger)" : level === "warn" ? "var(--warning)" : "var(--muted)";
+}
+
+function refreshPairButtonState() {
+  dom.pairButton.disabled = state.isPairingInFlight || !state.joinToken;
 }
 
 function setConnectionBadge(isConnected) {
@@ -130,6 +140,7 @@ function parseJoinFromHash() {
     dom.pairingHint.textContent = `Session and one-time join token detected from QR link.${relayHint}`;
     window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
   }
+  refreshPairButtonState();
 }
 
 function baseRelayURL() {
@@ -529,7 +540,7 @@ function onSocketMessage(event) {
     markSynced();
     setStatus("WebSocket authenticated.");
     flushQueuedCommands();
-    requestSnapshot("initial_sync");
+    requestSnapshot(state.pendingSnapshotReason || "initial_sync");
     return;
   }
 
@@ -541,6 +552,9 @@ function onSocketMessage(event) {
       state.deviceSessionToken = null;
       state.joinToken = null;
       state.queuedCommands = [];
+      state.queuedCommandsBytes = 0;
+      state.pendingSnapshotReason = null;
+      refreshPairButtonState();
     }
     updateWorkspaceVisibility();
     setStatus(disconnectMessageForReason(reason), "warn");
@@ -767,17 +781,40 @@ function flushQueuedCommands() {
 
   let sentCount = 0;
   while (state.queuedCommands.length > 0) {
-    const command = state.queuedCommands[0];
-    if (!sendRaw(command)) {
+    const next = state.queuedCommands[0];
+    if (!sendRaw(next.envelope)) {
       break;
     }
     state.queuedCommands.shift();
+    state.queuedCommandsBytes = Math.max(0, state.queuedCommandsBytes - next.bytes);
     sentCount += 1;
   }
 
   if (sentCount > 0) {
     setStatus(`Sent ${sentCount} queued command${sentCount === 1 ? "" : "s"} after reconnect.`);
   }
+}
+
+function queueCommandEnvelope(envelope) {
+  const encoded = JSON.stringify(envelope);
+  const bytes = new TextEncoder().encode(encoded).length;
+  if (bytes > MAX_QUEUED_COMMAND_BYTES) {
+    return { ok: false, dropped: 0, reason: "too_large" };
+  }
+
+  let dropped = 0;
+  while (
+    state.queuedCommands.length > 0 &&
+    (state.queuedCommands.length >= MAX_QUEUED_COMMANDS || state.queuedCommandsBytes + bytes > MAX_QUEUED_COMMAND_BYTES)
+  ) {
+    const evicted = state.queuedCommands.shift();
+    state.queuedCommandsBytes = Math.max(0, state.queuedCommandsBytes - evicted.bytes);
+    dropped += 1;
+  }
+
+  state.queuedCommands.push({ envelope, bytes });
+  state.queuedCommandsBytes += bytes;
+  return { ok: true, dropped, reason: null };
 }
 
 function sendCommand(name, options = {}) {
@@ -813,9 +850,15 @@ function sendCommand(name, options = {}) {
       setStatus("Not connected. Reconnect to sync this action.", "warn");
       return false;
     }
-    state.queuedCommands.push(envelope);
+    const queueResult = queueCommandEnvelope(envelope);
+    if (!queueResult.ok) {
+      setStatus("Command is too large to queue offline. Reconnect and retry.", "error");
+      return false;
+    }
+    const droppedSuffix =
+      queueResult.dropped > 0 ? ` Dropped ${queueResult.dropped} oldest queued command${queueResult.dropped === 1 ? "" : "s"}.` : "";
     setStatus(
-      `Offline. Queued ${state.queuedCommands.length} command${state.queuedCommands.length === 1 ? "" : "s"} for reconnect.`,
+      `Offline. Queued ${state.queuedCommands.length} command${state.queuedCommands.length === 1 ? "" : "s"} for reconnect.${droppedSuffix}`,
       "warn"
     );
     if (!state.reconnectDisabledReason) {
@@ -828,6 +871,22 @@ function sendCommand(name, options = {}) {
 }
 
 function requestSnapshot(reason) {
+  if (!state.sessionID) {
+    return;
+  }
+
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN || !state.isAuthenticated) {
+    state.pendingSnapshotReason = reason;
+    if (state.reconnectDisabledReason) {
+      setStatus(`${disconnectMessageForReason(state.reconnectDisabledReason)} Re-pair to sync again.`, "warn");
+      return;
+    }
+    setStatus("Snapshot requested. Reconnecting to sync...", "warn");
+    connectSocket();
+    return;
+  }
+
+  state.pendingSnapshotReason = null;
   const payload = {
     type: "relay.snapshot_request",
     sessionID: state.sessionID,
@@ -844,8 +903,13 @@ async function pairDevice() {
     setStatus("Missing session data. Re-open from QR link.", "error");
     return;
   }
+  if (state.isPairingInFlight) {
+    return;
+  }
 
   try {
+    state.isPairingInFlight = true;
+    refreshPairButtonState();
     setStatus("Waiting for desktop pairing approval...");
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), 60_000);
@@ -893,8 +957,11 @@ async function pairDevice() {
     state.joinToken = null;
     state.reconnectDisabledReason = null;
     state.queuedCommands = [];
+    state.queuedCommandsBytes = 0;
+    state.pendingSnapshotReason = null;
     state.awaitingGapSnapshot = false;
     dom.sessionValue.textContent = state.sessionID;
+    refreshPairButtonState();
     setStatus("Pairing successful. Connecting...");
     connectSocket();
   } catch (error) {
@@ -903,6 +970,9 @@ async function pairDevice() {
       return;
     }
     setStatus(`Pairing request failed: ${error instanceof Error ? error.message : "unknown error"}`, "error");
+  } finally {
+    state.isPairingInFlight = false;
+    refreshPairButtonState();
   }
 }
 
@@ -978,6 +1048,7 @@ function init() {
   renderMessages();
   renderApprovals();
   updateWorkspaceVisibility();
+  refreshPairButtonState();
   refreshSyncFreshness();
   setInterval(refreshSyncFreshness, 5_000);
   registerServiceWorker();
