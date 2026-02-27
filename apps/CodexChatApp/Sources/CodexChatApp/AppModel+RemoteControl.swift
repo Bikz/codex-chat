@@ -26,8 +26,8 @@ private enum RemoteControlSnapshotReason: String {
 }
 
 extension AppModel {
-    private static let defaultRemoteControlJoinURL = "https://remote.codexchat.app/rc"
-    private static let defaultRemoteControlRelayWSURL = "wss://remote.codexchat.app/ws"
+    private static let defaultRemoteControlJoinURL = "https://remote.bikz.cc/rc"
+    private static let defaultRemoteControlRelayWSURL = "wss://remote.bikz.cc/ws"
     private static let remoteControlSnapshotPumpNanoseconds: UInt64 = 700_000_000
     private static let remoteControlSnapshotMessageLimit = 160
     private static let remoteControlSnapshotOtherMessageLimit = 24
