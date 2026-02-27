@@ -1114,6 +1114,7 @@ final class AppModel: ObservableObject {
     var workerTracePersistenceTask: Task<Void, Never>?
     var secondarySurfaceRefreshTask: Task<Void, Never>?
     var adaptiveConcurrencyRefreshTask: Task<Void, Never>?
+    var adaptiveConcurrencyRefreshState = AdaptiveConcurrencyRefreshState()
     var runtimePoolMetricsTask: Task<Void, Never>?
     var autoDrainPreferredThreadID: UUID?
     var pendingFollowUpAutoDrainReason: String?
@@ -1262,6 +1263,7 @@ final class AppModel: ObservableObject {
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
         adaptiveConcurrencyRefreshTask?.cancel()
+        adaptiveConcurrencyRefreshState = AdaptiveConcurrencyRefreshState()
         stopRuntimePoolMetricsLoop()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
@@ -1338,6 +1340,7 @@ final class AppModel: ObservableObject {
         workerTracePersistenceTask?.cancel()
         secondarySurfaceRefreshTask?.cancel()
         adaptiveConcurrencyRefreshTask?.cancel()
+        adaptiveConcurrencyRefreshState = AdaptiveConcurrencyRefreshState()
         runtimePoolMetricsTask?.cancel()
         voiceAutoStopTask?.cancel()
         voiceElapsedTickerTask?.cancel()
