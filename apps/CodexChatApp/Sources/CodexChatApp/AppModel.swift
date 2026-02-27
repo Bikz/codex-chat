@@ -8,7 +8,6 @@ import CodexKit
 import CodexMemory
 import CodexMods
 import CodexSkills
-import Darwin
 import Foundation
 
 @MainActor
@@ -52,14 +51,7 @@ final class AppModel: ObservableObject {
             return max(2, min(parsed, 16))
         }
 
-        let performanceCoreCount = appleSiliconPerformanceCoreCount()
-        if performanceCoreCount > 0 {
-            // Keep a conservative ceiling so the app remains responsive under mixed UI/runtime load.
-            return max(2, min(performanceCoreCount, 6))
-        }
-
-        // Fallback when performance core topology is unavailable.
-        return max(2, min(ProcessInfo.processInfo.activeProcessorCount / 2, 4))
+        return RuntimeConcurrencyHeuristics.recommendedRuntimePoolSize()
     }
 
     static var activeRuntimePoolSize: Int {
@@ -76,16 +68,6 @@ final class AppModel: ObservableObject {
         }
 
         return 16
-    }
-
-    private static func appleSiliconPerformanceCoreCount() -> Int {
-        var value: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        let result = sysctlbyname("hw.perflevel0.physicalcpu", &value, &size, nil, 0)
-        guard result == 0 else {
-            return 0
-        }
-        return max(0, Int(value))
     }
 
     struct SkillListItem: Identifiable, Hashable {

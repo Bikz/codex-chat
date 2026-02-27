@@ -39,6 +39,7 @@ extension AppModel {
             let limit = await controller.nextLimit(
                 signals: .init(
                     queuedTurns: queuedTurns,
+                    workerQueuedTurns: snapshot.totalQueuedTurns,
                     activeTurns: activeTurns,
                     workerCount: max(1, snapshot.configuredWorkerCount),
                     degradedWorkerCount: degradedWorkers,
@@ -62,6 +63,7 @@ extension AppModel {
                     "reason": reason,
                     "ttftP95MS": performanceSnapshot.rollingP95TTFTMS.map { String(format: "%.1f", $0) } ?? "na",
                     "eventBacklogPressure": eventBacklogSnapshot.isUnderPressure ? "1" : "0",
+                    "workerQueuedTurns": "\(snapshot.totalQueuedTurns)",
                 ]
             )
         }

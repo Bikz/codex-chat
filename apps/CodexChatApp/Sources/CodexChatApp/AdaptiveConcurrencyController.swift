@@ -3,6 +3,7 @@ import Foundation
 actor AdaptiveConcurrencyController {
     struct Signals: Sendable {
         var queuedTurns: Int
+        var workerQueuedTurns: Int
         var activeTurns: Int
         var workerCount: Int
         var degradedWorkerCount: Int
@@ -49,7 +50,7 @@ actor AdaptiveConcurrencyController {
         {
             return parsed
         }
-        return 3
+        return RuntimeConcurrencyHeuristics.recommendedAdaptiveBasePerWorker()
     }
 
     static var defaultTTFTBudgetMS: Double {
@@ -93,17 +94,23 @@ actor AdaptiveConcurrencyController {
         previousFailureCount = signals.totalWorkerFailures
 
         let ttftUnderPressure = (signals.rollingP95TTFTMS ?? 0) > ttftBudgetMS
+        let workerQueuePressureThreshold = max(2, workerCount)
+        let workerQueueUnderPressure = signals.workerQueuedTurns >= workerQueuePressureThreshold
         let isUnderPressure = signals.degradedWorkerCount > 0
             || failureDelta > 0
             || signals.memoryPressure
             || signals.eventBacklogPressure
             || ttftUnderPressure
+            || workerQueueUnderPressure
 
         if isUnderPressure {
             let pressureFloor = max(minimumLimit, workerCount)
             let divisor = max(1.0, 1.0 + backoffMultiplier)
             let reducedTarget = Int((Double(target) / divisor).rounded(.down))
             target = max(pressureFloor, reducedTarget)
+            if workerQueueUnderPressure {
+                target = max(pressureFloor, min(target, currentLimit - 2))
+            }
         }
 
         if signals.selectedThreadIsActive, !isUnderPressure {

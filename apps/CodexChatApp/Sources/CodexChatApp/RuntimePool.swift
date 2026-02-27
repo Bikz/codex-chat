@@ -383,7 +383,8 @@ actor RuntimePool {
             for: localThreadID,
             workerCount: configuredWorkerCount,
             pinnedWorkerID: pinnedWorkerIDByLocalThreadID[localThreadID],
-            unavailableWorkerIDs: unavailableWorkerIDs
+            unavailableWorkerIDs: unavailableWorkerIDs,
+            workerLoadByID: inFlightTurnsByWorkerID
         )
         let resolvedWorkerID = workersByID[selectedWorkerID] == nil
             ? Constants.primaryWorkerID
@@ -739,28 +740,73 @@ actor RuntimePool {
         for localThreadID: UUID,
         workerCount: Int,
         pinnedWorkerID: RuntimePoolWorkerID?,
-        unavailableWorkerIDs: Set<RuntimePoolWorkerID>
+        unavailableWorkerIDs: Set<RuntimePoolWorkerID>,
+        workerLoadByID: [RuntimePoolWorkerID: Int] = [:]
     ) -> RuntimePoolWorkerID {
+        let normalizedWorkerCount = max(1, workerCount)
         if let pinnedWorkerID,
            !unavailableWorkerIDs.contains(pinnedWorkerID),
            pinnedWorkerID.rawValue >= 0,
-           pinnedWorkerID.rawValue < max(1, workerCount)
+           pinnedWorkerID.rawValue < normalizedWorkerCount
         {
             return pinnedWorkerID
         }
 
-        let hashedWorkerID = consistentWorkerID(for: localThreadID, workerCount: workerCount)
+        let hashedWorkerID = consistentWorkerID(for: localThreadID, workerCount: normalizedWorkerCount)
+        let availableWorkerIDs = (0 ..< normalizedWorkerCount)
+            .map(RuntimePoolWorkerID.init)
+            .filter { !unavailableWorkerIDs.contains($0) }
+
+        guard let firstAvailableWorkerID = availableWorkerIDs.first else {
+            return Constants.primaryWorkerID
+        }
+
+        guard !workerLoadByID.isEmpty else {
+            if !unavailableWorkerIDs.contains(hashedWorkerID) {
+                return hashedWorkerID
+            }
+            return firstAvailableWorkerID
+        }
+
+        let leastLoadedWorkerID = availableWorkerIDs.min { lhs, rhs in
+            let lhsLoad = workerLoadByID[lhs, default: 0]
+            let rhsLoad = workerLoadByID[rhs, default: 0]
+            if lhsLoad != rhsLoad {
+                return lhsLoad < rhsLoad
+            }
+            return workerSelectionDistance(
+                from: hashedWorkerID,
+                to: lhs,
+                workerCount: normalizedWorkerCount
+            ) < workerSelectionDistance(
+                from: hashedWorkerID,
+                to: rhs,
+                workerCount: normalizedWorkerCount
+            )
+        } ?? firstAvailableWorkerID
+
         if !unavailableWorkerIDs.contains(hashedWorkerID) {
-            return hashedWorkerID
+            let hashedLoad = workerLoadByID[hashedWorkerID, default: 0]
+            let leastLoad = workerLoadByID[leastLoadedWorkerID, default: 0]
+            if hashedLoad <= leastLoad + 1 {
+                return hashedWorkerID
+            }
         }
 
-        for candidate in (0 ..< max(1, workerCount)).map(RuntimePoolWorkerID.init)
-            where !unavailableWorkerIDs.contains(candidate)
-        {
-            return candidate
-        }
+        return leastLoadedWorkerID
+    }
 
-        return Constants.primaryWorkerID
+    private static func workerSelectionDistance(
+        from origin: RuntimePoolWorkerID,
+        to target: RuntimePoolWorkerID,
+        workerCount: Int
+    ) -> Int {
+        guard workerCount > 1 else {
+            return 0
+        }
+        let normalizedOrigin = ((origin.rawValue % workerCount) + workerCount) % workerCount
+        let normalizedTarget = ((target.rawValue % workerCount) + workerCount) % workerCount
+        return (normalizedTarget - normalizedOrigin + workerCount) % workerCount
     }
 
     static func workerRestartBackoffSeconds(forFailureCount failureCount: Int) -> UInt64 {

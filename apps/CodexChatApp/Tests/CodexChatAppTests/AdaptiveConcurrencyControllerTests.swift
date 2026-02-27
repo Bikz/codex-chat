@@ -12,6 +12,7 @@ final class AdaptiveConcurrencyControllerTests: XCTestCase {
         let first = await controller.nextLimit(
             signals: .init(
                 queuedTurns: 0,
+                workerQueuedTurns: 0,
                 activeTurns: 0,
                 workerCount: 2,
                 degradedWorkerCount: 0,
@@ -25,6 +26,7 @@ final class AdaptiveConcurrencyControllerTests: XCTestCase {
         let second = await controller.nextLimit(
             signals: .init(
                 queuedTurns: 24,
+                workerQueuedTurns: 0,
                 activeTurns: 4,
                 workerCount: 2,
                 degradedWorkerCount: 0,
@@ -49,6 +51,7 @@ final class AdaptiveConcurrencyControllerTests: XCTestCase {
         _ = await controller.nextLimit(
             signals: .init(
                 queuedTurns: 32,
+                workerQueuedTurns: 0,
                 activeTurns: 8,
                 workerCount: 4,
                 degradedWorkerCount: 0,
@@ -62,6 +65,7 @@ final class AdaptiveConcurrencyControllerTests: XCTestCase {
         let pressured = await controller.nextLimit(
             signals: .init(
                 queuedTurns: 32,
+                workerQueuedTurns: 8,
                 activeTurns: 8,
                 workerCount: 4,
                 degradedWorkerCount: 2,
@@ -88,6 +92,7 @@ final class AdaptiveConcurrencyControllerTests: XCTestCase {
         let warm = await controller.nextLimit(
             signals: .init(
                 queuedTurns: 24,
+                workerQueuedTurns: 0,
                 activeTurns: 6,
                 workerCount: 4,
                 degradedWorkerCount: 0,
@@ -101,6 +106,7 @@ final class AdaptiveConcurrencyControllerTests: XCTestCase {
         let throttled = await controller.nextLimit(
             signals: .init(
                 queuedTurns: 24,
+                workerQueuedTurns: 0,
                 activeTurns: 6,
                 workerCount: 4,
                 degradedWorkerCount: 0,
@@ -113,5 +119,45 @@ final class AdaptiveConcurrencyControllerTests: XCTestCase {
         )
 
         XCTAssertLessThan(throttled, warm)
+    }
+
+    func testControllerRespondsToWorkerQueuePressure() async {
+        let controller = AdaptiveConcurrencyController(
+            minimumLimit: 2,
+            hardMaximumLimit: 64,
+            basePerWorker: 5
+        )
+
+        let warm = await controller.nextLimit(
+            signals: .init(
+                queuedTurns: 8,
+                workerQueuedTurns: 0,
+                activeTurns: 8,
+                workerCount: 4,
+                degradedWorkerCount: 0,
+                totalWorkerFailures: 0,
+                selectedThreadIsActive: false,
+                memoryPressure: false,
+                rollingP95TTFTMS: 1200,
+                eventBacklogPressure: false
+            )
+        )
+        let queued = await controller.nextLimit(
+            signals: .init(
+                queuedTurns: 8,
+                workerQueuedTurns: 16,
+                activeTurns: 8,
+                workerCount: 4,
+                degradedWorkerCount: 0,
+                totalWorkerFailures: 0,
+                selectedThreadIsActive: false,
+                memoryPressure: false,
+                rollingP95TTFTMS: 1200,
+                eventBacklogPressure: false
+            )
+        )
+
+        XCTAssertLessThan(queued, warm)
+        XCTAssertGreaterThanOrEqual(queued, 2)
     }
 }

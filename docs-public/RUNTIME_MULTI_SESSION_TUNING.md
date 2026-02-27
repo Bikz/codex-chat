@@ -15,19 +15,23 @@ This document describes runtime knobs and diagnostics for high-concurrency Codex
 - `CODEXCHAT_RUNTIME_POOL_SIZE`
   - Runtime worker process count.
   - Sharding remains enabled with a minimum of `2`.
+  - Default is hardware-aware (Apple Silicon performance-core profile), typically:
+    - up to `8` workers on 8 P-core machines
+    - up to `11` workers on 12 P-core machines
+    - bounded to `12` workers by default (override up to `16` via env var)
 
 ### Per-worker backpressure
 
 - `CODEXCHAT_MAX_PARALLEL_TURNS_PER_WORKER`
   - Maximum in-flight turns per runtime worker process.
-  - Default: `3`.
+  - Default: hardware-aware autoscaling (`2...5`) based on core profile.
   - Enforced by `WorkerTurnScheduler` in `RuntimePool`.
 
 ### Adaptive concurrency
 
 - `CODEXCHAT_ADAPTIVE_CONCURRENCY_BASE_PER_WORKER`
   - Baseline adaptive limit multiplier.
-  - Default: `3` (baseline = `workerCount * basePerWorker`).
+  - Default: hardware-aware autoscaling (`3...5`) (baseline = `workerCount * basePerWorker`).
 
 - `CODEXCHAT_ADAPTIVE_CONCURRENCY_TTFT_P95_BUDGET_MS`
   - TTFT p95 pressure budget used by adaptive control.
@@ -49,6 +53,7 @@ This document describes runtime knobs and diagnostics for high-concurrency Codex
 Adaptive concurrency now incorporates:
 
 - queued turn pressure
+- runtime worker queue pressure
 - active turns
 - degraded workers and worker failures
 - thermal pressure

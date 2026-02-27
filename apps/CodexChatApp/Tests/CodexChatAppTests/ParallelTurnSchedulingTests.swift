@@ -58,6 +58,73 @@ final class ParallelTurnSchedulingTests: XCTestCase {
         XCTAssertEqual(AppModel.defaultRuntimePoolSize, 5)
     }
 
+    func testRuntimeConcurrencyHeuristicsScaleRuntimePoolByHardwareProfile() {
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedRuntimePoolSize(
+                performanceCoreCount: 4,
+                logicalCoreCount: 8
+            ),
+            4
+        )
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedRuntimePoolSize(
+                performanceCoreCount: 12,
+                logicalCoreCount: 24
+            ),
+            11
+        )
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedRuntimePoolSize(
+                performanceCoreCount: 0,
+                logicalCoreCount: 20
+            ),
+            8
+        )
+    }
+
+    func testRuntimeConcurrencyHeuristicsScalePerWorkerAndAdaptiveBaselines() {
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedPerWorkerTurnLimit(
+                performanceCoreCount: 4,
+                logicalCoreCount: 8
+            ),
+            3
+        )
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedPerWorkerTurnLimit(
+                performanceCoreCount: 12,
+                logicalCoreCount: 24
+            ),
+            5
+        )
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedAdaptiveBasePerWorker(
+                performanceCoreCount: 4,
+                logicalCoreCount: 8
+            ),
+            3
+        )
+        XCTAssertEqual(
+            RuntimeConcurrencyHeuristics.recommendedAdaptiveBasePerWorker(
+                performanceCoreCount: 12,
+                logicalCoreCount: 24
+            ),
+            5
+        )
+    }
+
+    func testHighCoreHardwareProfileCanSupportFortyParallelTurns() {
+        let workerCount = RuntimeConcurrencyHeuristics.recommendedRuntimePoolSize(
+            performanceCoreCount: 12,
+            logicalCoreCount: 24
+        )
+        let perWorkerLimit = RuntimeConcurrencyHeuristics.recommendedPerWorkerTurnLimit(
+            performanceCoreCount: 12,
+            logicalCoreCount: 24
+        )
+        XCTAssertGreaterThanOrEqual(workerCount * perWorkerLimit, 40)
+    }
+
     func testAdaptiveConcurrencyBasePerWorkerHonorsEnvironmentOverride() {
         let key = "CODEXCHAT_ADAPTIVE_CONCURRENCY_BASE_PER_WORKER"
         let previousValue = ProcessInfo.processInfo.environment[key]

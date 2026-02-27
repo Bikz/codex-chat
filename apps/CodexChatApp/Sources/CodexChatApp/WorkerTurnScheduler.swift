@@ -28,7 +28,7 @@ actor WorkerTurnScheduler {
             return min(parsed, 64)
         }
 
-        return 3
+        return RuntimeConcurrencyHeuristics.recommendedPerWorkerTurnLimit()
     }
 
     func reserve(workerID: RuntimePoolWorkerID) async throws {

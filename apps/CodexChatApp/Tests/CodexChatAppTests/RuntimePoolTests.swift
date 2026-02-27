@@ -89,6 +89,51 @@ final class RuntimePoolTests: XCTestCase {
         XCTAssertLessThan(selected.rawValue, 4)
     }
 
+    func testSelectWorkerIDPrefersLowerLoadWorkerWhenHashedWorkerIsHot() throws {
+        let threadID = try XCTUnwrap(UUID(uuidString: "D4E2DE84-8428-4933-8D2E-E73E8205A3F7"))
+        let hashed = RuntimePool.consistentWorkerID(for: threadID, workerCount: 4)
+        var loadByWorkerID: [RuntimePoolWorkerID: Int] = [
+            RuntimePoolWorkerID(0): 1,
+            RuntimePoolWorkerID(1): 1,
+            RuntimePoolWorkerID(2): 1,
+            RuntimePoolWorkerID(3): 1,
+        ]
+        loadByWorkerID[hashed] = 6
+
+        let selected = RuntimePool.selectWorkerID(
+            for: threadID,
+            workerCount: 4,
+            pinnedWorkerID: nil,
+            unavailableWorkerIDs: [],
+            workerLoadByID: loadByWorkerID
+        )
+
+        XCTAssertNotEqual(selected, hashed)
+        XCTAssertEqual(loadByWorkerID[selected], 1)
+    }
+
+    func testSelectWorkerIDKeepsHashedWorkerWhenLoadSkewIsSmall() throws {
+        let threadID = try XCTUnwrap(UUID(uuidString: "D4E2DE84-8428-4933-8D2E-E73E8205A3F7"))
+        let hashed = RuntimePool.consistentWorkerID(for: threadID, workerCount: 4)
+        var loadByWorkerID: [RuntimePoolWorkerID: Int] = [
+            RuntimePoolWorkerID(0): 1,
+            RuntimePoolWorkerID(1): 1,
+            RuntimePoolWorkerID(2): 1,
+            RuntimePoolWorkerID(3): 1,
+        ]
+        loadByWorkerID[hashed] = 2
+
+        let selected = RuntimePool.selectWorkerID(
+            for: threadID,
+            workerCount: 4,
+            pinnedWorkerID: nil,
+            unavailableWorkerIDs: [],
+            workerLoadByID: loadByWorkerID
+        )
+
+        XCTAssertEqual(selected, hashed)
+    }
+
     func testStartTurnRejectsOutOfRangeScopedWorkerID() async throws {
         let runtime = CodexRuntime(executableResolver: { nil })
         let pool = RuntimePool(primaryRuntime: runtime, configuredWorkerCount: 4)
