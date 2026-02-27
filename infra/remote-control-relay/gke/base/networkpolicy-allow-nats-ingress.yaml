@@ -12,8 +12,14 @@ spec:
     - Ingress
   ingress:
     - from:
-        # Allow in-namespace traffic so relay pods can reach NATS and NATS pods can form a cluster.
-        - podSelector: {}
+        # Relay pods publish/subscribe cross-instance session envelopes.
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remote-control-relay
+        # NATS pods must talk to each other for route and cluster traffic.
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nats
       ports:
         - protocol: TCP
           port: 4222

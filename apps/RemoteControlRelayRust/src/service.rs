@@ -456,9 +456,10 @@ async fn build_cross_instance_bus(config: &RelayConfig) -> Option<RelayCrossInst
     };
 
     let instance_id = random_token(10);
+    let redacted_nats_url = redact_url_for_logs(nats_url);
     info!(
         "[relay-rs] connected to NATS for cross-instance routing: url={} subject_prefix={} instance={}",
-        nats_url, config.nats_subject_prefix, instance_id
+        redacted_nats_url, config.nats_subject_prefix, instance_id
     );
 
     Some(RelayCrossInstanceBus {
@@ -796,10 +797,16 @@ async fn persist_session_if_needed(state: &SharedRelayState, session_id: &str) {
             None => return,
         };
         if let Err(error) = persistence.save_session(&runtime_session).await {
-            warn!("[relay-rs] failed to persist relay session {session_id}: {error}");
+            warn!(
+                "[relay-rs] failed to persist relay session {}: {error}",
+                session_log_id(session_id)
+            );
         }
     } else if let Err(error) = persistence.delete_session(session_id).await {
-        warn!("[relay-rs] failed to remove relay session {session_id} from persistence: {error}");
+        warn!(
+            "[relay-rs] failed to remove relay session {} from persistence: {error}",
+            session_log_id(session_id)
+        );
     }
 }
 
@@ -962,6 +969,13 @@ async fn sweep_sessions(state: &SharedRelayState) {
             .unwrap_or(true)
     });
     if relay.device_token_index.len() != token_count_before {
+        did_mutate = true;
+    }
+    let rate_bucket_count_before = relay.rate_buckets.len();
+    relay
+        .rate_buckets
+        .retain(|_, bucket| now < bucket.window_ends_at_ms);
+    if relay.rate_buckets.len() != rate_bucket_count_before {
         did_mutate = true;
     }
     drop(relay);
@@ -2466,7 +2480,15 @@ fn validate_mobile_payload(
             }
 
             if let Some(last_seq) = parsed.get("lastSeq") {
-                if !(last_seq.is_u64() || last_seq.as_i64().is_some_and(|value| value >= 0)) {
+                let valid_string_last_seq = last_seq.as_str().is_some_and(|value| {
+                    !value.is_empty()
+                        && value.len() <= 20
+                        && value.bytes().all(|byte| byte.is_ascii_digit())
+                });
+                if !(last_seq.is_u64()
+                    || last_seq.as_i64().is_some_and(|value| value >= 0)
+                    || valid_string_last_seq)
+                {
                     return Err(RelayValidationError {
                         code: "invalid_snapshot_request",
                         message: "lastSeq must be numeric when provided.".to_string(),
@@ -3290,6 +3312,21 @@ fn normalize_relay_web_socket_url(raw: &str) -> Option<String> {
     parsed.set_fragment(None);
 
     Some(parsed.to_string())
+}
+
+fn redact_url_for_logs(raw: &str) -> String {
+    let Ok(mut parsed) = Url::parse(raw) else {
+        return "<invalid-url>".to_string();
+    };
+
+    if !parsed.username().is_empty() {
+        let _ = parsed.set_username("REDACTED");
+    }
+    if parsed.password().is_some() {
+        let _ = parsed.set_password(Some("REDACTED"));
+    }
+
+    parsed.to_string()
 }
 
 fn sanitize_device_name(raw: Option<&str>) -> String {
