@@ -4,6 +4,10 @@ import CodexChatUI
 import SwiftUI
 
 struct SidebarView: View {
+    static let projectsPreviewCountStorageKey = "codexchat.sidebar.projectsPreviewCount"
+    static let threadFilterStorageKey = "codexchat.sidebar.threadFilter"
+    static let projectsPreviewCountOptions = [3, 5, 8, 12]
+
     enum ThreadListFilter: String, CaseIterable {
         case all
         case pending
@@ -36,8 +40,8 @@ struct SidebarView: View {
     @State private var expandedProjectThreadsByProjectID: [UUID: [ThreadRecord]] = [:]
     @State private var projectThreadLoadInFlightIDs: Set<UUID> = []
     @State private var projectThreadLoadErrorsByProjectID: [UUID: String] = [:]
-    @AppStorage("codexchat.sidebar.projectsPreviewCount") private var projectsPreviewCountSetting = 3
-    @AppStorage("codexchat.sidebar.threadFilter") private var threadFilterRawValue = ThreadListFilter.all.rawValue
+    @AppStorage(Self.projectsPreviewCountStorageKey) private var projectsPreviewCountSetting = 3
+    @AppStorage(Self.threadFilterStorageKey) private var threadFilterRawValue = ThreadListFilter.all.rawValue
 
     private var sidebarBodyFont: Font {
         .system(size: 14, weight: .regular)

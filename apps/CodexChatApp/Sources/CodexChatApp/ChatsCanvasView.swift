@@ -4,6 +4,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ChatsCanvasView: View {
+    static let emptyStateTitle = "Start a conversation"
+    static let emptyStateShortcutHint = "Shortcut: Shift-Command-N"
+    static let emptyStatePrimaryActionLabel: String? = nil
+
     struct ComposerSurfaceStyle: Equatable {
         let fillOpacity: Double
         let strokeMultiplier: Double
@@ -1047,10 +1051,10 @@ private struct ThreadEmptyStateView: View {
                     .frame(width: 31, height: 31)
             }
 
-            Text("Start a conversation")
+            Text(ChatsCanvasView.emptyStateTitle)
                 .font(.headline)
 
-            Text("Shortcut: Shift-Command-N")
+            Text(ChatsCanvasView.emptyStateShortcutHint)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

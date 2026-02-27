@@ -7,12 +7,14 @@ struct SettingsView: View {
     static let minimumWindowSize = CGSize(width: 940, height: 620)
     static let detailMaxContentWidth: CGFloat = 980
     static let themePresetGridColumnCount = 5
+    static let sidebarProjectsPreviewStorageKey = SidebarView.projectsPreviewCountStorageKey
+    static let sidebarProjectsPreviewOptions = SidebarView.projectsPreviewCountOptions
 
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
-    @AppStorage("codexchat.sidebar.projectsPreviewCount") private var sidebarProjectsPreviewCountSetting = 3
+    @AppStorage(Self.sidebarProjectsPreviewStorageKey) private var sidebarProjectsPreviewCountSetting = 3
 
     @State private var selectedSection: SettingsSection = .defaultSelection
 
@@ -613,7 +615,7 @@ struct SettingsView: View {
                             set: { sidebarProjectsPreviewCountSetting = $0 }
                         )
                     ) {
-                        ForEach([3, 5, 8, 12], id: \.self) { count in
+                        ForEach(Self.sidebarProjectsPreviewOptions, id: \.self) { count in
                             Text("\(count)").tag(count)
                         }
                     }
