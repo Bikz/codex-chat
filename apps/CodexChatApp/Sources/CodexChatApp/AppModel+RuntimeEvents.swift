@@ -97,6 +97,16 @@ extension AppModel {
                 return
             }
 
+            if pendingFirstTokenThreadIDs.remove(localThreadID) != nil {
+                let performanceSignals = runtimePerformanceSignals
+                Task {
+                    await performanceSignals.recordFirstTokenIfNeeded(
+                        threadID: localThreadID,
+                        receivedAt: Date()
+                    )
+                }
+            }
+
             if assistantDelta.channel == .progress || assistantDelta.channel == .system {
                 hasExplicitProgressDeltasByThreadID.insert(localThreadID)
             }
@@ -151,6 +161,13 @@ extension AppModel {
                 itemID: nil,
                 runtimeTurnID: completion.turnID
             )
+            if let localThreadID {
+                pendingFirstTokenThreadIDs.remove(localThreadID)
+                let performanceSignals = runtimePerformanceSignals
+                Task {
+                    await performanceSignals.markTurnCompleted(threadID: localThreadID)
+                }
+            }
 
             if let localThreadID,
                let context = removeActiveTurnContext(for: localThreadID)

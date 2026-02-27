@@ -199,9 +199,45 @@ actor RuntimePool {
     ) async throws -> String {
         let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
         let worker = try await worker(for: route.workerID)
-        try await workerTurnScheduler.reserve(workerID: route.workerID)
+
+        let permitWaitSignpostID = RuntimeConcurrencySignpost.makeID()
+        let permitWaitStartedAt = Date()
+        RuntimeConcurrencySignpost.begin(
+            "WorkerPermitWait",
+            id: permitWaitSignpostID,
+            detail: "worker=\(route.workerID.rawValue)"
+        )
+        do {
+            try await workerTurnScheduler.reserve(workerID: route.workerID)
+        } catch {
+            RuntimeConcurrencySignpost.end(
+                "WorkerPermitWait",
+                id: permitWaitSignpostID,
+                detail: "status=error worker=\(route.workerID.rawValue)"
+            )
+            throw error
+        }
+        let permitWaitMS = max(0, Date().timeIntervalSince(permitWaitStartedAt) * 1000)
+        RuntimeConcurrencySignpost.end(
+            "WorkerPermitWait",
+            id: permitWaitSignpostID,
+            detail: "status=ok worker=\(route.workerID.rawValue) ms=\(String(format: "%.1f", permitWaitMS))"
+        )
+        await PerformanceTracer.shared.record(
+            name: "runtime.workerPermit.wait",
+            durationMS: permitWaitMS,
+            metadata: ["workerID": "\(route.workerID.rawValue)"]
+        )
+
         incrementInFlightTurns(for: route.workerID)
         let rawTurnID: String
+        let startTurnSignpostID = RuntimeConcurrencySignpost.makeID()
+        let startTurnStartedAt = Date()
+        RuntimeConcurrencySignpost.begin(
+            "RuntimeTurnStartRPC",
+            id: startTurnSignpostID,
+            detail: "worker=\(route.workerID.rawValue)"
+        )
         do {
             rawTurnID = try await worker.startTurn(
                 threadID: route.threadID,
@@ -211,7 +247,30 @@ actor RuntimePool {
                 inputItems: inputItems,
                 turnOptions: turnOptions
             )
+            let rpcMS = max(0, Date().timeIntervalSince(startTurnStartedAt) * 1000)
+            RuntimeConcurrencySignpost.end(
+                "RuntimeTurnStartRPC",
+                id: startTurnSignpostID,
+                detail: "status=ok worker=\(route.workerID.rawValue) ms=\(String(format: "%.1f", rpcMS))"
+            )
+            await PerformanceTracer.shared.record(
+                name: "runtime.turnStart.rpc",
+                durationMS: rpcMS,
+                metadata: ["workerID": "\(route.workerID.rawValue)"]
+            )
         } catch {
+            let rpcMS = max(0, Date().timeIntervalSince(startTurnStartedAt) * 1000)
+            RuntimeConcurrencySignpost.end(
+                "RuntimeTurnStartRPC",
+                id: startTurnSignpostID,
+                detail: "status=error worker=\(route.workerID.rawValue) ms=\(String(format: "%.1f", rpcMS))"
+            )
+            await PerformanceTracer.shared.record(
+                name: "runtime.turnStart.rpc",
+                durationMS: rpcMS,
+                status: "error",
+                metadata: ["workerID": "\(route.workerID.rawValue)"]
+            )
             decrementInFlightTurns(for: route.workerID)
             await workerTurnScheduler.release(workerID: route.workerID)
             throw error

@@ -991,6 +991,7 @@ final class AppModel: ObservableObject {
     @Published var runtimeCapabilities: RuntimeCapabilities = .none
     @Published var runtimePoolSnapshot: RuntimePoolSnapshot = .empty
     @Published var adaptiveTurnConcurrencyLimit: Int = AppModel.defaultMaxConcurrentTurns
+    @Published var rollingTTFTP95MS: Double?
     @Published var runtimeModelCatalog: [RuntimeModelInfo] = []
     @Published var isNodeSkillInstallerAvailable = false
     @Published var shellWorkspacesByProjectID: [UUID: ProjectShellWorkspaceState] = [:]
@@ -1064,9 +1065,11 @@ final class AppModel: ObservableObject {
     let extensionWorkerRunner = ExtensionWorkerRunner()
     let extensionStateStore = ExtensionStateStore()
     let extensionEventBus = ExtensionEventBus()
+    let turnStartIOCoordinator = TurnStartIOCoordinator()
     let runtimeThreadResolutionCoordinator = RuntimeThreadResolutionCoordinator()
     let turnConcurrencyScheduler = TurnConcurrencyScheduler(maxConcurrentTurns: AppModel.defaultMaxConcurrentTurns)
     let adaptiveConcurrencyController = AdaptiveConcurrencyController(hardMaximumLimit: AppModel.defaultMaxConcurrentTurns)
+    let runtimePerformanceSignals = RuntimePerformanceSignals()
     lazy var turnPersistenceScheduler = TurnPersistenceScheduler(maxConcurrentJobs: 4) { [weak self] job in
         guard let self else { return }
         await persistCompletedTurn(context: job.context, completion: job.completion)
@@ -1105,6 +1108,7 @@ final class AppModel: ObservableObject {
     var approvalDecisionInFlightRequestIDs: Set<Int> = []
     var activeTurnContextsByThreadID: [UUID: ActiveTurnContext] = [:]
     var pendingTurnStartThreadIDs: Set<UUID> = []
+    var pendingFirstTokenThreadIDs: Set<UUID> = []
     var activeModSnapshotByThreadID: [UUID: ModEditSafety.Snapshot] = [:]
     var runtimeEventTask: Task<Void, Never>?
     var runtimeAutoRecoveryTask: Task<Void, Never>?

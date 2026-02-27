@@ -6,6 +6,7 @@ struct DiagnosticsView: View {
     let runtimeStatus: RuntimeStatus
     let runtimePoolSnapshot: RuntimePoolSnapshot
     let adaptiveTurnConcurrencyLimit: Int
+    let rollingTTFTP95MS: Double?
     let logs: [LogEntry]
     let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
     let selectedProjectID: UUID?
@@ -54,6 +55,17 @@ struct DiagnosticsView: View {
                         Text("\(adaptiveTurnConcurrencyLimit)")
                             .foregroundStyle(.secondary)
                     }
+                    HStack {
+                        Text("Rolling TTFT p95")
+                        Spacer()
+                        if let rollingTTFTP95MS {
+                            Text("\(rollingTTFTP95MS, specifier: "%.0f")ms")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("N/A")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 
@@ -82,6 +94,12 @@ struct DiagnosticsView: View {
                             Text("\(runtimePoolSnapshot.totalInFlightTurns)")
                                 .foregroundStyle(.secondary)
                         }
+                        HStack {
+                            Text("Queued turns")
+                            Spacer()
+                            Text("\(runtimePoolSnapshot.totalQueuedTurns)")
+                                .foregroundStyle(.secondary)
+                        }
                         ForEach(runtimePoolSnapshot.workers, id: \.workerID) { worker in
                             HStack {
                                 Text("\(worker.workerID.description)")
@@ -91,6 +109,9 @@ struct DiagnosticsView: View {
                                     .font(.caption)
                                 Spacer()
                                 Text("inFlight \(worker.inFlightTurns)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text("queued \(worker.queueDepth)")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                 Text("failures \(worker.failureCount)")

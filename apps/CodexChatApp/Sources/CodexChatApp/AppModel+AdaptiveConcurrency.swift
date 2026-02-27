@@ -13,6 +13,8 @@ extension AppModel {
         let selectedThreadIsActive = isSelectedThreadWorking
         let memoryPressure = ProcessInfo.processInfo.thermalState == .serious
             || ProcessInfo.processInfo.thermalState == .critical
+        let performanceSignals = runtimePerformanceSignals
+        let eventDispatchBridge = runtimeEventDispatchBridge
 
         adaptiveConcurrencyRefreshTask = Task { [weak self] in
             guard let self else {
@@ -31,6 +33,8 @@ extension AppModel {
                 partialResult + worker.failureCount
             }
             let activeTurns = max(activeTurnThreadIDs.count, snapshot.totalInFlightTurns)
+            let performanceSnapshot = await performanceSignals.snapshot()
+            let eventBacklogSnapshot = await eventDispatchBridge.backlogSnapshot()
 
             let limit = await controller.nextLimit(
                 signals: .init(
@@ -40,18 +44,25 @@ extension AppModel {
                     degradedWorkerCount: degradedWorkers,
                     totalWorkerFailures: failureCount,
                     selectedThreadIsActive: selectedThreadIsActive,
-                    memoryPressure: memoryPressure
+                    memoryPressure: memoryPressure,
+                    rollingP95TTFTMS: performanceSnapshot.rollingP95TTFTMS,
+                    eventBacklogPressure: eventBacklogSnapshot.isUnderPressure
                 )
             )
             await scheduler.updateMaxConcurrentTurns(limit)
             adaptiveTurnConcurrencyLimit = limit
+            rollingTTFTP95MS = performanceSnapshot.rollingP95TTFTMS
 
             appendLog(.debug, "Adaptive turn limit updated (\(reason)): \(limit)")
 
             await PerformanceTracer.shared.record(
                 name: "runtime.adaptiveConcurrency.limit",
                 durationMS: Double(limit),
-                metadata: ["reason": reason]
+                metadata: [
+                    "reason": reason,
+                    "ttftP95MS": performanceSnapshot.rollingP95TTFTMS.map { String(format: "%.1f", $0) } ?? "na",
+                    "eventBacklogPressure": eventBacklogSnapshot.isUnderPressure ? "1" : "0",
+                ]
             )
         }
     }

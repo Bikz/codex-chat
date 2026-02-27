@@ -58,6 +58,36 @@ final class ParallelTurnSchedulingTests: XCTestCase {
         XCTAssertEqual(AppModel.defaultRuntimePoolSize, 5)
     }
 
+    func testAdaptiveConcurrencyBasePerWorkerHonorsEnvironmentOverride() {
+        let key = "CODEXCHAT_ADAPTIVE_CONCURRENCY_BASE_PER_WORKER"
+        let previousValue = ProcessInfo.processInfo.environment[key]
+        setenv(key, "5", 1)
+        defer {
+            if let previousValue {
+                setenv(key, previousValue, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+
+        XCTAssertEqual(AdaptiveConcurrencyController.defaultBasePerWorker, 5)
+    }
+
+    func testAdaptiveConcurrencyTTFTBudgetHonorsEnvironmentOverride() {
+        let key = "CODEXCHAT_ADAPTIVE_CONCURRENCY_TTFT_P95_BUDGET_MS"
+        let previousValue = ProcessInfo.processInfo.environment[key]
+        setenv(key, "3200", 1)
+        defer {
+            if let previousValue {
+                setenv(key, previousValue, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+
+        XCTAssertEqual(AdaptiveConcurrencyController.defaultTTFTBudgetMS, 3200)
+    }
+
     @MainActor
     func testActiveRuntimePoolSizeDefaultsToConfiguredSizeWithoutFlags() {
         let sizeKey = "CODEXCHAT_RUNTIME_POOL_SIZE"

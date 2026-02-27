@@ -127,6 +127,7 @@ struct ContentView: View {
                 runtimeStatus: model.runtimeStatus,
                 runtimePoolSnapshot: model.runtimePoolSnapshot,
                 adaptiveTurnConcurrencyLimit: model.adaptiveTurnConcurrencyLimit,
+                rollingTTFTP95MS: model.rollingTTFTP95MS,
                 logs: model.logs,
                 extensibilityDiagnostics: model.extensibilityDiagnostics,
                 selectedProjectID: model.selectedProjectID,

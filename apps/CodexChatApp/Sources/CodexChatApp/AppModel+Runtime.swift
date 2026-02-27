@@ -112,9 +112,15 @@ extension AppModel {
                 startedAt: startedAt
             )
             upsertActiveTurnContext(context)
+            pendingFirstTokenThreadIDs.insert(threadID)
+            await runtimePerformanceSignals.recordDispatchStart(
+                threadID: threadID,
+                localTurnID: localTurnID,
+                startedAt: startedAt
+            )
 
             do {
-                _ = try ChatArchiveStore.beginCheckpoint(
+                try await turnStartIOCoordinator.beginCheckpoint(
                     projectPath: projectPath,
                     threadID: threadID,
                     turn: ArchivedTurnSummary(
@@ -130,18 +136,20 @@ extension AppModel {
                 appendLog(.warning, "Failed to checkpoint turn start: \(error.localizedDescription)")
             }
 
-            let modSnapshot: ModEditSafety.Snapshot? = {
-                do {
-                    return try captureModSnapshot(
-                        projectPath: projectPath,
-                        threadID: threadID,
-                        startedAt: startedAt
-                    )
-                } catch {
-                    appendLog(.warning, "Failed to capture mod snapshot: \(error.localizedDescription)")
-                    return nil
+            let modSnapshot: ModEditSafety.Snapshot?
+            do {
+                modSnapshot = try await turnStartIOCoordinator.captureModSnapshot(
+                    projectPath: projectPath,
+                    threadID: threadID,
+                    startedAt: startedAt
+                )
+                if let modSnapshot {
+                    appendLog(.debug, "Captured mod snapshot at \(modSnapshot.rootURL.lastPathComponent)")
                 }
-            }()
+            } catch {
+                appendLog(.warning, "Failed to capture mod snapshot: \(error.localizedDescription)")
+                modSnapshot = nil
+            }
             if let snapshot = modSnapshot {
                 activeModSnapshotByThreadID[threadID] = snapshot
             }
@@ -230,6 +238,8 @@ extension AppModel {
 
             if didReserveTurnPermit {
                 _ = removeActiveTurnContext(for: threadID)
+                pendingFirstTokenThreadIDs.remove(threadID)
+                await runtimePerformanceSignals.markTurnCompleted(threadID: threadID)
                 await turnConcurrencyScheduler.release(threadID: threadID)
             }
 
@@ -432,6 +442,21 @@ extension AppModel {
         safetyConfiguration: RuntimeSafetyConfiguration,
         source: RuntimeThreadEnsureSource
     ) async throws -> String {
+        let ensureSignpostID = RuntimeConcurrencySignpost.makeID()
+        var ensureResult = "error"
+        RuntimeConcurrencySignpost.begin(
+            "RuntimeThreadEnsure",
+            id: ensureSignpostID,
+            detail: "source=\(source.rawValue)"
+        )
+        defer {
+            RuntimeConcurrencySignpost.end(
+                "RuntimeThreadEnsure",
+                id: ensureSignpostID,
+                detail: "source=\(source.rawValue) result=\(ensureResult)"
+            )
+        }
+
         let span = await PerformanceTracer.shared.begin(
             name: "runtime.threadMapping.ensure",
             metadata: [
@@ -450,6 +475,7 @@ extension AppModel {
                         span,
                         extraMetadata: ["result": "cache"]
                     )
+                    ensureResult = "cache"
                     return cached
                 }
 
@@ -462,6 +488,7 @@ extension AppModel {
                         span,
                         extraMetadata: ["result": "migrated-cache"]
                     )
+                    ensureResult = "migrated-cache"
                     return migratedCached
                 }
 
@@ -479,6 +506,7 @@ extension AppModel {
                         span,
                         extraMetadata: ["result": "persisted"]
                     )
+                    ensureResult = "persisted"
                     return persisted
                 }
 
@@ -491,6 +519,7 @@ extension AppModel {
                         span,
                         extraMetadata: ["result": "migrated-persisted"]
                     )
+                    ensureResult = "migrated-persisted"
                     return migratedPersisted
                 }
             }
@@ -521,6 +550,7 @@ extension AppModel {
                 span,
                 extraMetadata: ["result": "created"]
             )
+            ensureResult = "created"
             return runtimeThreadID
         } catch {
             await PerformanceTracer.shared.end(
@@ -531,6 +561,7 @@ extension AppModel {
                     "error": error.localizedDescription,
                 ]
             )
+            ensureResult = "error"
             throw error
         }
     }
@@ -711,42 +742,17 @@ extension AppModel {
         RuntimeTurnOptionsCompatibilityPolicy.shouldRetryWithoutTurnOptions(for: error)
     }
 
-    private func captureModSnapshot(
-        projectPath: String,
-        threadID: UUID,
-        startedAt: Date,
-        fileManager: FileManager = .default
-    ) throws -> ModEditSafety.Snapshot {
-        let snapshotsRootURL = try Self.modSnapshotsRootURL(fileManager: fileManager)
-        let globalRootPath = try Self.globalModsRootPath(fileManager: fileManager)
-        let projectRootPath = Self.projectModsRootPath(projectPath: projectPath)
-
-        let snapshot = try ModEditSafety.captureSnapshot(
-            snapshotsRootURL: snapshotsRootURL,
-            globalRootPath: globalRootPath,
-            projectRootPath: projectRootPath,
-            threadID: threadID,
-            startedAt: startedAt,
-            fileManager: fileManager
-        )
-        appendLog(.debug, "Captured mod snapshot at \(snapshot.rootURL.lastPathComponent)")
-        return snapshot
-    }
-
-    private static func modSnapshotsRootURL(fileManager: FileManager = .default) throws -> URL {
-        let storagePaths = CodexChatStoragePaths.current(fileManager: fileManager)
-        let root = storagePaths.modSnapshotsURL
-        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
-    }
-
     private func clearActiveTurnState() {
         conversationUpdateScheduler.flushImmediately()
         clearActiveTurnContexts()
+        pendingFirstTokenThreadIDs.removeAll(keepingCapacity: false)
+        rollingTTFTP95MS = nil
 
         let scheduler = turnConcurrencyScheduler
+        let performanceSignals = runtimePerformanceSignals
         Task {
             await scheduler.cancelAll()
+            await performanceSignals.reset()
         }
 
         // If a mod review is pending, keep the snapshot so the user can still revert.

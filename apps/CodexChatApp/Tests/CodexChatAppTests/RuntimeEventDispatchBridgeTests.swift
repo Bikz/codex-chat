@@ -117,6 +117,59 @@ final class RuntimeEventDispatchBridgeTests: XCTestCase {
         XCTAssertEqual(events.count, 2)
     }
 
+    func testBacklogSnapshotReportsPressureWhenFlushesSaturateBatchLimit() async {
+        let recorder = RuntimeEventBatchRecorder()
+        let bridge = RuntimeEventDispatchBridge { events in
+            await recorder.record(events)
+        }
+
+        for index in 0 ..< 192 {
+            await bridge.enqueue(
+                .action(
+                    RuntimeAction(
+                        method: "runtime/stderr",
+                        itemID: nil,
+                        itemType: nil,
+                        threadID: "thr",
+                        turnID: "turn",
+                        title: "stderr",
+                        detail: "line-\(index)"
+                    )
+                )
+            )
+        }
+
+        await bridge.flushNow()
+        let snapshot = await bridge.backlogSnapshot()
+        XCTAssertGreaterThan(snapshot.saturatedFlushRate, 0)
+        XCTAssertTrue(snapshot.isUnderPressure)
+    }
+
+    func testBacklogSnapshotReportsPressureWhenDeliveriesAreSlow() async {
+        let bridge = RuntimeEventDispatchBridge { _ in
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+
+        await bridge.enqueue(
+            .action(
+                RuntimeAction(
+                    method: "runtime/stderr",
+                    itemID: nil,
+                    itemType: nil,
+                    threadID: "thr",
+                    turnID: "turn",
+                    title: "stderr",
+                    detail: "slow"
+                )
+            )
+        )
+        await bridge.flushNow()
+
+        let snapshot = await bridge.backlogSnapshot()
+        XCTAssertGreaterThan(snapshot.slowDeliveryRate, 0)
+        XCTAssertTrue(snapshot.isUnderPressure)
+    }
+
     private func assistantDeltaEvent(
         delta: String,
         channel: RuntimeAssistantMessageChannel = .finalResponse
