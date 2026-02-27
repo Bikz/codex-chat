@@ -36,6 +36,7 @@ Edge protection:
   - `networkpolicy-default-deny-ingress.yaml`
   - `networkpolicy-allow-relay-ingress.yaml`
   - `networkpolicy-allow-pwa-ingress.yaml`
+  - `networkpolicy-allow-nats-ingress.yaml`
 
 Production alert provisioning:
 

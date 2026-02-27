@@ -17,5 +17,6 @@ resources:
   - networkpolicy-default-deny-ingress.yaml
   - networkpolicy-allow-relay-ingress.yaml
   - networkpolicy-allow-pwa-ingress.yaml
+  - networkpolicy-allow-nats-ingress.yaml
   - hpa.yaml
   - pdb.yaml

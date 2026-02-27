@@ -89,6 +89,7 @@ docker push gcr.io/PROJECT_ID/remote-control-pwa:TAG
 Network policy note:
 
 - Baseline policies allow ingress via GCLB ranges (`35.191.0.0/16`, `130.211.0.0/22`) and same-namespace traffic.
+- NATS ingress is explicitly allowed from in-namespace pods on ports `4222`, `6222`, and `8222` via `networkpolicy-allow-nats-ingress.yaml`.
 - If your ingress path uses different proxy source ranges, patch:
   - `infra/remote-control-relay/gke/base/networkpolicy-allow-relay-ingress.yaml`
   - `infra/remote-control-relay/gke/base/networkpolicy-allow-pwa-ingress.yaml`
