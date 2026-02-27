@@ -56,7 +56,7 @@ struct ContentView: View {
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
             if !model.isOnboardingActive {
-                ToolbarItemGroup(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .confirmationAction) {
                     if model.totalPendingApprovalCount > 0 {
                         Button {
                             model.openApprovalInbox()
