@@ -55,7 +55,8 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
         }
 
         let fixture = try Self.makeBurstFixtureExecutable(
-            deltaChunksPerTurn: Self.simulatedDeltaChunksPerTurn
+            deltaChunksPerTurn: Self.simulatedDeltaChunksPerTurn,
+            completionDelayMS: 20
         )
         defer {
             try? FileManager.default.removeItem(at: fixture.rootURL)
@@ -124,6 +125,8 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
     ) async throws -> RuntimePoolHarnessResult {
         let runtime = CodexRuntime(executableResolver: { executablePath })
         let runtimePool = RuntimePool(primaryRuntime: runtime, configuredWorkerCount: workerCount)
+        var eventTask: Task<Void, Never>?
+        var queueSamplerTask: Task<Void, Never>?
 
         do {
             try await runtimePool.start()
@@ -152,7 +155,7 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
             let maxQueuedTurnsTracker = MaxQueuedTurnsTracker()
             let clock = ContinuousClock()
 
-            let eventTask = Task {
+            eventTask = Task {
                 for await event in stream {
                     await collector.record(event: event, receivedAt: clock.now)
                     if await collector.isTerminalStateReached {
@@ -161,11 +164,19 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                 }
             }
 
-            let queueSamplerTask = Task {
-                while await !(collector.isTerminalStateReached) {
+            queueSamplerTask = Task {
+                while !Task.isCancelled {
+                    if await collector.isTerminalStateReached {
+                        break
+                    }
+
                     let liveSnapshot = await runtimePool.snapshot()
                     await maxQueuedTurnsTracker.record(liveSnapshot.totalQueuedTurns)
-                    try? await Task.sleep(nanoseconds: 5_000_000)
+                    do {
+                        try await Task.sleep(nanoseconds: 5_000_000)
+                    } catch {
+                        break
+                    }
                 }
             }
 
@@ -198,11 +209,15 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                 }
             }
 
-            queueSamplerTask.cancel()
-            _ = await queueSamplerTask.result
+            if let queueSamplerTask {
+                queueSamplerTask.cancel()
+                _ = await queueSamplerTask.result
+            }
 
-            eventTask.cancel()
-            _ = await eventTask.result
+            if let eventTask {
+                eventTask.cancel()
+                _ = await eventTask.result
+            }
 
             let result = await collector.result()
             let settledSnapshot = await runtimePool.snapshot()
@@ -218,13 +233,24 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
             finalResult.maxQueuedTurnsObserved = await maxQueuedTurnsTracker.value()
             return finalResult
         } catch {
+            if let queueSamplerTask {
+                queueSamplerTask.cancel()
+                _ = await queueSamplerTask.result
+            }
+            if let eventTask {
+                eventTask.cancel()
+                _ = await eventTask.result
+            }
             await runtimePool.stop()
             await runtime.stop()
             throw error
         }
     }
 
-    private static func makeBurstFixtureExecutable(deltaChunksPerTurn: Int) throws -> FixtureExecutable {
+    private static func makeBurstFixtureExecutable(
+        deltaChunksPerTurn: Int,
+        completionDelayMS: Int = 0
+    ) throws -> FixtureExecutable {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("codex-load-harness-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -234,6 +260,7 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
         #!/usr/bin/env python3
         import json
         import sys
+        import time
 
         def send(message):
             sys.stdout.write(json.dumps(message) + "\\n")
@@ -244,6 +271,7 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
         next_turn = 1
         known_threads = set()
         delta_chunks_per_turn = \(deltaChunksPerTurn)
+        completion_delay_ms = \(completionDelayMS)
 
         args = sys.argv[1:]
         if len(args) != 1 or args[0] != "app-server":
@@ -344,6 +372,9 @@ final class RuntimePoolLoadHarnessTests: XCTestCase {
                             "delta": f"{index:02d}|"
                         }
                     })
+
+                if completion_delay_ms > 0:
+                    time.sleep(completion_delay_ms / 1000.0)
 
                 send({
                     "jsonrpc": "2.0",
