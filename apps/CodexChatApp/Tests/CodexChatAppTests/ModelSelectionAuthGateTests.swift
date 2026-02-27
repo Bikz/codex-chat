@@ -20,7 +20,20 @@ final class ModelSelectionAuthGateTests: XCTestCase {
     func testModelMenuLabelMarksGPT4oAsAPIKeyOnly() {
         let model = makeModel()
 
-        XCTAssertEqual(model.modelMenuLabel(for: "gpt-4o"), "gpt-4o (api key only)")
+        XCTAssertEqual(model.modelMenuLabel(for: "gpt-4o"), "GPT-4o (api key only)")
+    }
+
+    func testModelDisplayNameNormalizesGPTAndCodexCasingFromRuntimeDisplayName() {
+        let model = makeModel()
+        model.runtimeModelCatalog = [
+            RuntimeModelInfo(
+                id: "gpt-5.3-codex-spark",
+                model: "gpt-5.3-codex-spark",
+                displayName: "gpt-5.3-codex-spark"
+            ),
+        ]
+
+        XCTAssertEqual(model.modelDisplayName(for: "gpt-5.3-codex-spark"), "GPT-5.3-Codex-Spark")
     }
 
     func testSetDefaultModelGPT4oWithChatGPTAuthShowsAPIKeyPromptAndKeepsExistingModel() {

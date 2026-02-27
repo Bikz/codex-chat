@@ -132,10 +132,11 @@ extension AppModel {
 
         if let model = runtimeModelInfo(for: trimmedID) {
             let displayName = model.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            return displayName.isEmpty ? trimmedID : displayName
+            let resolvedName = displayName.isEmpty ? trimmedID : displayName
+            return canonicalModelLabel(resolvedName)
         }
 
-        return trimmedID
+        return canonicalModelLabel(trimmedID)
     }
 
     func modelMenuLabel(for modelID: String) -> String {
@@ -418,6 +419,49 @@ extension AppModel {
         }
     }
 
+    private func canonicalModelLabel(_ label: String) -> String {
+        var canonical = capitalizeModelTokenStarts(in: label)
+
+        let replacements: [(String, String)] = [
+            (#"(?i)\bgpt\b"#, "GPT"),
+            (#"(?i)\bcodex\b"#, "Codex"),
+        ]
+
+        for (pattern, replacement) in replacements {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else {
+                continue
+            }
+            let range = NSRange(canonical.startIndex ..< canonical.endIndex, in: canonical)
+            canonical = regex.stringByReplacingMatches(
+                in: canonical,
+                options: [],
+                range: range,
+                withTemplate: replacement
+            )
+        }
+
+        return canonical
+    }
+
+    private func capitalizeModelTokenStarts(in text: String) -> String {
+        var result = ""
+        result.reserveCapacity(text.count)
+
+        var shouldCapitalize = true
+        for scalar in text.unicodeScalars {
+            let character = Character(scalar)
+            if shouldCapitalize, character.isLowercaseASCII {
+                result.append(String(character).uppercased())
+            } else {
+                result.append(character)
+            }
+
+            shouldCapitalize = scalar == "-" || scalar == " "
+        }
+
+        return result
+    }
+
     private func supportedWebSearchModes(forModelID modelID: String?) -> [ProjectWebSearchMode] {
         if let model = runtimeModelInfo(for: modelID) {
             if let supportedWebSearchModes = model.supportedWebSearchModes {
@@ -660,5 +704,15 @@ extension AppModel {
         case .live:
             2
         }
+    }
+}
+
+private extension Character {
+    var isLowercaseASCII: Bool {
+        guard let scalar = unicodeScalars.first, unicodeScalars.count == 1 else {
+            return false
+        }
+
+        return scalar.value >= 97 && scalar.value <= 122
     }
 }
