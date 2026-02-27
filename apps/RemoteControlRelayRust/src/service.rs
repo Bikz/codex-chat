@@ -1289,7 +1289,7 @@ async fn pair_join(
     }
 
     if !origin_allowed(&state.config, &headers) {
-        return error_response(
+        return pair_join_failure_response(
             StatusCode::FORBIDDEN,
             "origin_not_allowed",
             "Origin is not allowed.",
@@ -1298,7 +1298,7 @@ async fn pair_join(
 
     let client_ip = client_ip(&state.config, &headers, addr);
     if is_rate_limited(&state, &client_ip).await {
-        return error_response(
+        return pair_join_failure_response(
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",
             "Too many pairing attempts. Try again in a minute.",
@@ -1306,7 +1306,7 @@ async fn pair_join(
     }
 
     if !is_opaque_token(&request.session_id, 16) || !is_opaque_token(&request.join_token, 22) {
-        return error_response(
+        return pair_join_failure_response(
             StatusCode::BAD_REQUEST,
             "invalid_pair_join",
             "sessionID and joinToken are required.",
@@ -1324,7 +1324,7 @@ async fn pair_join(
     ) = {
         let mut relay = state.inner.lock().await;
         if relay.pending_join_waiters >= state.config.max_pending_join_waiters {
-            return error_response(
+            return pair_join_failure_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "pairing_backpressure",
                 "Relay is handling too many pending pairing approvals. Retry shortly.",
@@ -1341,7 +1341,7 @@ async fn pair_join(
             pair_request_slow_consumer_disconnects,
         ) = {
             let Some(session) = relay.sessions.get_mut(&request.session_id) else {
-                return error_response(
+                return pair_join_failure_response(
                     StatusCode::NOT_FOUND,
                     "session_not_found",
                     "Remote session not found.",
@@ -1349,7 +1349,7 @@ async fn pair_join(
             };
 
             if now >= session.join_token_expires_at_ms {
-                return error_response(
+                return pair_join_failure_response(
                     StatusCode::GONE,
                     "join_token_expired",
                     "Join token has expired.",
@@ -1357,7 +1357,7 @@ async fn pair_join(
             }
 
             if session.join_token_used_at_ms.is_some() {
-                return error_response(
+                return pair_join_failure_response(
                     StatusCode::CONFLICT,
                     "join_token_already_used",
                     "Join token has already been redeemed. Start a new session from desktop.",
@@ -1365,7 +1365,7 @@ async fn pair_join(
             }
 
             if !safe_token_equals(&session.join_token, &request.join_token) {
-                return error_response(
+                return pair_join_failure_response(
                     StatusCode::FORBIDDEN,
                     "invalid_join_token",
                     "Join token is invalid.",
@@ -1373,7 +1373,7 @@ async fn pair_join(
             }
 
             if session.devices.len() >= state.config.max_devices_per_session {
-                return error_response(
+                return pair_join_failure_response(
                     StatusCode::CONFLICT,
                     "device_cap_reached",
                     &format!(
@@ -1384,7 +1384,7 @@ async fn pair_join(
             }
 
             if session.desktop_socket.is_none() && state.cross_instance_bus.is_none() {
-                return error_response(
+                return pair_join_failure_response(
                     StatusCode::CONFLICT,
                     "desktop_not_connected",
                     "Desktop is not connected to relay. Re-open Remote Control on desktop and retry.",
@@ -1392,6 +1392,10 @@ async fn pair_join(
             }
 
             if let Some(pending) = &session.pending_join_request {
+                warn!(
+                    "[relay-rs] pair_join_failure code=pair_request_in_progress status={}",
+                    StatusCode::CONFLICT.as_u16()
+                );
                 return (
                     StatusCode::CONFLICT,
                     Json(json!({
@@ -1449,7 +1453,7 @@ async fn pair_join(
             }
 
             if publish_remote_payload.is_none() && !delivered_to_local_desktop {
-                return error_response(
+                return pair_join_failure_response(
                     StatusCode::CONFLICT,
                     "desktop_not_connected",
                     "Desktop is not connected to relay. Re-open Remote Control on desktop and retry.",
@@ -1507,7 +1511,7 @@ async fn pair_join(
     let device_name = sanitize_device_name(request.device_name.as_deref());
     let (device_id, device_session_token, ws_url, session_id_for_token) = {
         let Some(session) = relay.sessions.get_mut(&request.session_id) else {
-            return error_response(
+            return pair_join_failure_response(
                 StatusCode::CONFLICT,
                 "desktop_not_connected",
                 "Desktop disconnected before pairing could be approved.",
@@ -1522,17 +1526,17 @@ async fn pair_join(
 
         if !decision.approved {
             return match decision.reason.as_str() {
-                "approval_timeout" => error_response(
+                "approval_timeout" => pair_join_failure_response(
                     StatusCode::REQUEST_TIMEOUT,
                     "pair_request_timed_out",
                     "Desktop pairing approval timed out.",
                 ),
-                "desktop_disconnected" | "session_closed" => error_response(
+                "desktop_disconnected" | "session_closed" => pair_join_failure_response(
                     StatusCode::CONFLICT,
                     "desktop_not_connected",
                     "Desktop disconnected before pairing could be approved.",
                 ),
-                _ => error_response(
+                _ => pair_join_failure_response(
                     StatusCode::FORBIDDEN,
                     "pair_request_denied",
                     "Desktop denied this pairing request.",
@@ -1541,7 +1545,7 @@ async fn pair_join(
         }
 
         if now_ms() >= session.join_token_expires_at_ms {
-            return error_response(
+            return pair_join_failure_response(
                 StatusCode::GONE,
                 "join_token_expired",
                 "Join token has expired.",
@@ -1549,7 +1553,7 @@ async fn pair_join(
         }
 
         if !safe_token_equals(&session.join_token, &request.join_token) {
-            return error_response(
+            return pair_join_failure_response(
                 StatusCode::FORBIDDEN,
                 "invalid_join_token",
                 "Join token is invalid.",
@@ -2057,12 +2061,14 @@ async fn handle_socket(
     };
 
     let Some(auth_message) = auth_message else {
+        warn!("[relay-rs] ws_auth_failure reason=auth_timeout_or_missing_payload");
         let _ = try_send_payload(&tx, "{}".to_string());
         close_writer_task(writer_task, tx).await;
         return;
     };
 
     if auth_message.message_type != "relay.auth" || !is_opaque_token(&auth_message.token, 22) {
+        warn!("[relay-rs] ws_auth_failure reason=invalid_auth_payload");
         close_writer_task(writer_task, tx).await;
         return;
     }
@@ -2076,6 +2082,7 @@ async fn handle_socket(
     )
     .await;
     let Some(auth) = auth else {
+        warn!("[relay-rs] ws_auth_failure reason=invalid_or_rejected_token");
         close_writer_task(writer_task, tx).await;
         return;
     };
@@ -2367,6 +2374,9 @@ fn send_relay_error(tx: &mpsc::Sender<Message>, code: &str, message: &str) {
 }
 
 fn request_socket_disconnect(handle: &SocketHandle, reason: &str) {
+    if reason == "slow_consumer" {
+        warn!("[relay-rs] slow_consumer_disconnect");
+    }
     let _ = try_send_payload(
         &handle.tx,
         json!({
@@ -2385,7 +2395,14 @@ fn try_send_payload(tx: &mpsc::Sender<Message>, payload: String) -> bool {
 fn try_send_message(tx: &mpsc::Sender<Message>, payload: Message) -> bool {
     match tx.try_send(payload) {
         Ok(()) => true,
-        Err(TrySendError::Full(_)) | Err(TrySendError::Closed(_)) => false,
+        Err(TrySendError::Full(_)) => {
+            warn!("[relay-rs] outbound_send_failure reason=queue_full");
+            false
+        }
+        Err(TrySendError::Closed(_)) => {
+            warn!("[relay-rs] outbound_send_failure reason=queue_closed");
+            false
+        }
     }
 }
 
@@ -2869,7 +2886,11 @@ async fn authenticate_socket(
     } else {
         refresh_sessions_from_persistence(state, true).await;
         let relay = state.inner.lock().await;
-        resolve_auth_context(&relay, token)?
+        let refreshed = resolve_auth_context(&relay, token);
+        if refreshed.is_none() {
+            warn!("[relay-rs] ws_auth_failure reason=token_not_found");
+        }
+        refreshed?
     };
 
     let mut relay = state.inner.lock().await;
@@ -2894,7 +2915,7 @@ async fn authenticate_socket(
         && !reconnection_without_growth
     {
         warn!(
-            "[relay-rs] rejected websocket auth at capacity active={} limit={}",
+            "[relay-rs] ws_auth_failure reason=relay_over_capacity active={} limit={}",
             current_active_connections, state.config.max_active_websocket_connections
         );
         if !try_send_payload(
@@ -2908,7 +2929,10 @@ async fn authenticate_socket(
 
     match auth_context {
         AuthContext::Desktop { session_id } => {
-            let session = relay.sessions.get_mut(&session_id)?;
+            let Some(session) = relay.sessions.get_mut(&session_id) else {
+                warn!("[relay-rs] ws_auth_failure reason=desktop_session_missing");
+                return None;
+            };
             session.last_activity_at_ms = now_ms();
 
             if let Some(existing) = session.desktop_socket.take() {
@@ -2954,6 +2978,7 @@ async fn authenticate_socket(
             device_id,
         } => {
             if !is_allowed_origin(&state.config.allowed_origins, origin) {
+                warn!("[relay-rs] ws_auth_failure reason=mobile_origin_not_allowed");
                 return None;
             }
 
@@ -2962,20 +2987,28 @@ async fn authenticate_socket(
             let next_token = random_token(32);
 
             let (old_token, connected_device_count, device_count_event) = {
-                let session = relay.sessions.get_mut(&session_id)?;
+                let Some(session) = relay.sessions.get_mut(&session_id) else {
+                    warn!("[relay-rs] ws_auth_failure reason=mobile_session_missing");
+                    return None;
+                };
                 session.last_activity_at_ms = now;
 
                 if !session.devices.contains_key(&device_id) {
+                    warn!("[relay-rs] ws_auth_failure reason=device_not_registered");
                     return None;
                 }
 
                 close_existing_mobile_socket_for_device(session, &device_id, "device_reconnected");
 
                 if session.mobile_sockets.len() >= state.config.max_devices_per_session {
+                    warn!("[relay-rs] ws_auth_failure reason=device_cap_reached");
                     return None;
                 }
 
-                let device = session.devices.get_mut(&device_id)?;
+                let Some(device) = session.devices.get_mut(&device_id) else {
+                    warn!("[relay-rs] ws_auth_failure reason=device_record_missing");
+                    return None;
+                };
                 let old_token = device.current_session_token.clone();
                 device.current_session_token = next_token.clone();
                 device.last_seen_at_ms = now;
@@ -3345,6 +3378,18 @@ fn error_response(status: StatusCode, code: &str, message: &str) -> axum::respon
         }),
     )
         .into_response()
+}
+
+fn pair_join_failure_response(
+    status: StatusCode,
+    code: &str,
+    message: &str,
+) -> axum::response::Response {
+    warn!(
+        "[relay-rs] pair_join_failure code={code} status={}",
+        status.as_u16()
+    );
+    error_response(status, code, message)
 }
 
 #[cfg(test)]

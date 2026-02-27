@@ -117,6 +117,28 @@ infra/remote-control-relay/gke/scripts/harden-cloud-armor.sh PROJECT_ID
 
 This configures default rate limits for `/pair*` and `/ws*` paths.
 
+7. Provision production alert policies
+
+```bash
+infra/remote-control-relay/gke/scripts/setup-monitoring-alerts.sh PROJECT_ID
+```
+
+Optional notification channels:
+
+```bash
+ALERT_NOTIFICATION_CHANNELS="projects/PROJECT_ID/notificationChannels/1234567890" \
+  infra/remote-control-relay/gke/scripts/setup-monitoring-alerts.sh PROJECT_ID
+```
+
+This provisions and verifies alerts for:
+
+- `wsAuthFailures`
+- `pairJoinFailures`
+- `outboundSendFailures`
+- `slowConsumerDisconnects`
+- Redis command latency (`redis.googleapis.com/commands/usec_per_call`)
+- NATS health (container uptime count in `codexchat-remote-control`)
+
 Optional preflight validation:
 
 ```bash
@@ -131,7 +153,7 @@ Validate an overlay:
 RELAY_GKE_KUSTOMIZE_DIR=infra/remote-control-relay/gke/overlays/staging make remote-control-gke-validate
 ```
 
-7. Verify rollout
+8. Verify rollout
 
 ```bash
 kubectl -n codexchat-remote-control rollout status deploy/remote-control-relay
@@ -139,7 +161,7 @@ kubectl -n codexchat-remote-control rollout status deploy/remote-control-pwa
 kubectl -n codexchat-remote-control get pods,svc,hpa,pdb
 ```
 
-8. GA DNS + certificate gate
+9. GA DNS + certificate gate
 
 - Point DNS `A` record for `remote.bikz.cc` to the ingress IP.
 - Wait for managed certificate status to become `Active`:

@@ -911,41 +911,44 @@ struct ChatsCanvasView: View {
         }
 
         return VStack(spacing: 8) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 6) {
-                    ForEach(userOptions) { option in
-                        railQuickSwitchButton(option)
-                    }
-
-                    if !userOptions.isEmpty, !systemOptions.isEmpty {
-                        Divider()
-                            .padding(.vertical, 4)
-                    }
-
-                    ForEach(systemOptions) { option in
-                        railQuickSwitchButton(option)
-                    }
-
-                    if model.modsBarQuickSwitchOptions.isEmpty {
-                        Button {
-                            model.setModsBarPresentationMode(.peek)
-                        } label: {
-                            Image(systemName: AppModel.ModsBarPresentationMode.peek.symbolName)
-                                .font(.system(size: 13, weight: .semibold))
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(Color.primary.opacity(0.06))
-                                )
+            if !userOptions.isEmpty {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 6) {
+                        ForEach(userOptions) { option in
+                            railQuickSwitchButton(option)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open extension panel")
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+            } else if model.modsBarQuickSwitchOptions.isEmpty {
+                Button {
+                    model.setModsBarPresentationMode(.peek)
+                } label: {
+                    Image(systemName: AppModel.ModsBarPresentationMode.peek.symbolName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 32, height: 32)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open extension panel")
             }
 
             Spacer(minLength: 0)
+
+            if !systemOptions.isEmpty {
+                VStack(spacing: 6) {
+                    if !userOptions.isEmpty {
+                        Divider()
+                            .padding(.bottom, 4)
+                    }
+                    ForEach(systemOptions) { option in
+                        railQuickSwitchButton(option)
+                    }
+                }
+            }
 
             Button {
                 model.toggleModsBar()

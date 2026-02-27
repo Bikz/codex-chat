@@ -37,6 +37,11 @@ Edge protection:
   - `networkpolicy-allow-relay-ingress.yaml`
   - `networkpolicy-allow-pwa-ingress.yaml`
 
+Production alert provisioning:
+
+- `infra/remote-control-relay/gke/scripts/setup-monitoring-alerts.sh`
+- Optional notification wiring via `ALERT_NOTIFICATION_CHANNELS`.
+
 ## SLO Guardrails (initial)
 
 - Pair join success rate: >= 99.5%
@@ -63,6 +68,26 @@ Edge protection:
 - Scale up relay replicas (temporary) and verify HPA behavior.
 - Reduce ingress pressure with stricter rate limits if abuse is detected.
 - Restart degraded pods only after confirming Redis/NATS are healthy.
+
+## Alert Verification
+
+```bash
+PROJECT_ID=<your-project>
+infra/remote-control-relay/gke/scripts/setup-monitoring-alerts.sh "${PROJECT_ID}"
+gcloud monitoring policies list \
+  --project "${PROJECT_ID}" \
+  --filter 'display_name~"^Remote Control -"' \
+  --format='table(displayName,enabled)'
+```
+
+Expected alert set:
+
+- `Remote Control - wsAuthFailures High`
+- `Remote Control - pairJoinFailures High`
+- `Remote Control - outboundSendFailures High`
+- `Remote Control - slowConsumerDisconnects High`
+- `Remote Control - Redis Latency High`
+- `Remote Control - NATS Health Degraded`
 
 ## Rollback Procedure
 

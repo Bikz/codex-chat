@@ -96,12 +96,25 @@ extension AppModel {
         let normalizedTitle = modsBarQuickSwitchTitle(for: option)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+        let normalizedHookIDs = option.mod.definition.hooks.map {
+            $0.id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
 
         if normalizedModID.hasPrefix("codexchat.")
             || normalizedModID == "codexchat.prompt-book"
             || normalizedModID == "codexchat.personal-notes"
+            || normalizedModID.contains("prompt-book")
+            || normalizedModID.contains("promptbook")
+            || normalizedModID.contains("personal-notes")
+            || normalizedModID.contains("notes")
             || normalizedTitle.contains("prompt book")
+            || normalizedTitle.contains("prompt-book")
+            || normalizedTitle.contains("promptbook")
             || normalizedTitle.contains("personal notes")
+            || normalizedTitle.contains("personal-notes")
+            || normalizedTitle.contains("notes")
+            || normalizedHookIDs.contains("prompt-book-action")
+            || normalizedHookIDs.contains("notes-action")
         {
             return .system
         }
