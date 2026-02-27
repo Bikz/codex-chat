@@ -10,7 +10,7 @@ metadata:
     networking.gke.io/v1beta1.FrontendConfig: remote-control-relay-frontendconfig
 spec:
   rules:
-    - host: remote.codexchat.app
+    - host: remote.bikz.cc
       http:
         paths:
           - path: /ws

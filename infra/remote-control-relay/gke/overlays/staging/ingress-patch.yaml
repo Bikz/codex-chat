@@ -4,7 +4,7 @@ metadata:
   name: remote-control-relay
 spec:
   rules:
-    - host: staging-remote.codexchat.app
+    - host: staging-remote.bikz.cc
       http:
         paths:
           - path: /

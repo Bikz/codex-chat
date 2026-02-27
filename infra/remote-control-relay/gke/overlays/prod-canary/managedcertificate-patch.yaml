@@ -4,4 +4,4 @@ metadata:
   name: remote-control-relay-cert
 spec:
   domains:
-    - canary-remote.codexchat.app
+    - canary-remote.bikz.cc

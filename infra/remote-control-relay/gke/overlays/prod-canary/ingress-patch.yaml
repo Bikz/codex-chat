@@ -4,7 +4,7 @@ metadata:
   name: remote-control-relay
 spec:
   rules:
-    - host: canary-remote.codexchat.app
+    - host: canary-remote.bikz.cc
       http:
         paths:
           - path: /

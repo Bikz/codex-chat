@@ -55,7 +55,7 @@ Set these secret values before deploy:
 
 Set these non-secret ingress/platform values before deploy:
 
-- ingress host + certificate domains (base uses `remote.codexchat.app`, staging/canary overlays patch this)
+- ingress host + certificate domains (base uses `remote.bikz.cc`, staging/canary overlays patch this)
 - Cloud Armor policy name in `infra/remote-control-relay/gke/base/backendconfig.yaml`
 
 Defaults and non-secret runtime tunables are in:
@@ -141,7 +141,7 @@ kubectl -n codexchat-remote-control get pods,svc,hpa,pdb
 
 8. GA DNS + certificate gate
 
-- Point DNS `A` record for `remote.codexchat.app` to the ingress IP.
+- Point DNS `A` record for `remote.bikz.cc` to the ingress IP.
 - Wait for managed certificate status to become `Active`:
 
 ```bash
@@ -151,8 +151,8 @@ kubectl -n codexchat-remote-control get managedcertificate remote-control-relay-
 - Validate externally:
 
 ```bash
-curl -i https://remote.codexchat.app/healthz
-curl -i https://remote.codexchat.app/rc
+curl -i https://remote.bikz.cc/healthz
+curl -i https://remote.bikz.cc/rc
 ```
 
 Canary-first rollout example:

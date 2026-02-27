@@ -6,4 +6,4 @@ metadata:
     app.kubernetes.io/name: remote-control-relay
 spec:
   domains:
-    - remote.codexchat.app
+    - remote.bikz.cc
