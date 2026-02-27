@@ -7,6 +7,7 @@ const state = {
   deviceSessionToken: null,
   wsURL: null,
   socket: null,
+  isAuthenticated: false,
   reconnectAttempts: 0,
   reconnectTimer: null,
   reconnectDisabledReason: null,
@@ -37,6 +38,8 @@ const dom = {
   pairButton: document.getElementById("pairButton"),
   reconnectButton: document.getElementById("reconnectButton"),
   snapshotButton: document.getElementById("snapshotButton"),
+  preConnectPanel: document.getElementById("preConnectPanel"),
+  workspacePanel: document.getElementById("workspacePanel"),
   projectList: document.getElementById("projectList"),
   threadList: document.getElementById("threadList"),
   approvalList: document.getElementById("approvalList"),
@@ -82,6 +85,12 @@ function updateLastSyncedLabel() {
   }
 
   dom.lastSyncedValue.textContent = new Date(state.lastSyncedAt).toLocaleTimeString();
+}
+
+function updateWorkspaceVisibility() {
+  const showWorkspace = state.isAuthenticated;
+  dom.workspacePanel.hidden = !showWorkspace;
+  dom.preConnectPanel.hidden = showWorkspace;
 }
 
 function markSynced() {
@@ -507,6 +516,7 @@ function onSocketMessage(event) {
   }
 
   if (message.type === "auth_ok") {
+    state.isAuthenticated = true;
     state.reconnectDisabledReason = null;
     if (typeof message.nextDeviceSessionToken === "string" && message.nextDeviceSessionToken.length > 0) {
       state.deviceSessionToken = message.nextDeviceSessionToken;
@@ -515,6 +525,7 @@ function onSocketMessage(event) {
       state.deviceID = message.deviceID;
     }
     state.awaitingGapSnapshot = false;
+    updateWorkspaceVisibility();
     markSynced();
     setStatus("WebSocket authenticated.");
     flushQueuedCommands();
@@ -523,6 +534,7 @@ function onSocketMessage(event) {
   }
 
   if (message.type === "disconnect") {
+    state.isAuthenticated = false;
     const reason = typeof message.reason === "string" ? message.reason : "unknown";
     if (reason === "device_revoked" || reason === "stopped_by_desktop") {
       state.reconnectDisabledReason = reason;
@@ -530,6 +542,7 @@ function onSocketMessage(event) {
       state.joinToken = null;
       state.queuedCommands = [];
     }
+    updateWorkspaceVisibility();
     setStatus(disconnectMessageForReason(reason), "warn");
     return;
   }
@@ -653,6 +666,8 @@ function disconnectMessageForReason(reason) {
 }
 
 function closeSocket() {
+  state.isAuthenticated = false;
+  updateWorkspaceVisibility();
   if (state.socket) {
     state.socket.onopen = null;
     state.socket.onclose = null;
@@ -702,7 +717,9 @@ function connectSocket(force = false) {
   socket.onmessage = onSocketMessage;
 
   socket.onclose = () => {
+    state.isAuthenticated = false;
     state.isSyncStale = false;
+    updateWorkspaceVisibility();
     setConnectionBadge(false);
     if (state.reconnectDisabledReason) {
       setStatus(disconnectMessageForReason(state.reconnectDisabledReason), "warn");
@@ -869,6 +886,7 @@ async function pairDevice() {
     state.deviceID = payload.deviceID || state.deviceID;
     state.wsURL = payload.wsURL;
     state.sessionID = payload.sessionID;
+    state.isAuthenticated = false;
     state.joinToken = null;
     state.reconnectDisabledReason = null;
     state.queuedCommands = [];
@@ -956,6 +974,7 @@ function init() {
   renderThreads();
   renderMessages();
   renderApprovals();
+  updateWorkspaceVisibility();
   refreshSyncFreshness();
   setInterval(refreshSyncFreshness, 5_000);
   registerServiceWorker();

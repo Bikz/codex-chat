@@ -192,6 +192,17 @@ button.primary:hover {
   font-size: 0.81rem;
 }
 
+.pre-connect {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.pre-connect p {
+  color: var(--muted);
+  line-height: 1.42;
+  margin: 0;
+}
+
 .two-pane {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
