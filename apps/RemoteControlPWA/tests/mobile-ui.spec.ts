@@ -61,7 +61,7 @@ test("mobile-account-sheet-focus-trap", async ({ page }) => {
   await expect(page.locator("#accountSheet")).toBeVisible();
 
   const activeInSheet = await page.evaluate(() => {
-    const sheet = document.querySelector("#accountSheet .sheet-card");
+    const sheet = document.querySelector("#accountSheet");
     return Boolean(sheet && sheet.contains(document.activeElement));
   });
   expect(activeInSheet).toBe(true);

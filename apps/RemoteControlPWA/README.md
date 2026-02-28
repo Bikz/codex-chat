@@ -1,17 +1,41 @@
-# Remote Control PWA (MVP)
+# Remote Control PWA (Next.js)
 
-Phone/web companion for Codex Chat remote control.
+Mobile/web companion for Codex Chat remote control.
+
+## Stack
+
+- Next.js App Router + TypeScript
+- Tailwind + shadcn/Radix primitives
+- Zustand state store
+- Playwright mobile E2E + Vitest unit tests
 
 ## Run locally
 
 ```bash
 cd apps/RemoteControlPWA
-pnpm start
+pnpm dev
 ```
 
 Then open `http://localhost:4173`.
 
-## Run mobile E2E tests
+## Production build
+
+```bash
+cd apps/RemoteControlPWA
+pnpm build
+pnpm start
+```
+
+## Run tests
+
+Unit tests:
+
+```bash
+cd apps/RemoteControlPWA
+pnpm test
+```
+
+Mobile E2E tests:
 
 ```bash
 cd apps/RemoteControlPWA
@@ -37,34 +61,42 @@ pnpm test:e2e:mobile:headed
 6. On websocket auth, relay rotates the device session token and the PWA stores the new token for reconnects.
 7. Paired-device credentials persist in browser storage so the PWA can reconnect automatically after app/browser relaunch until desktop revokes or ends the session.
 
-## MVP behavior
+## Navigation contract
+
+Hash-based route contract is preserved:
+
+- `#view=home&pid=<project-id|all>`
+- `#view=thread&tid=<thread-id>&pid=<project-id|all>`
+
+This keeps browser/hardware back behavior aligned with home/detail navigation.
+
+## UI contract
 
 - Single-page conversation-first layout (home list + focused chat detail + back navigation).
 - Project circles on home (`All` + top projects + `View all`) with per-project chat filtering.
-- Hash-based navigation contract:
-  - `#view=home&pid=<project-id|all>`
-  - `#view=thread&tid=<thread-id>&pid=<project-id|all>`
+- Account sheet contains pairing/session controls.
+- Inline approval indicators on chat rows and in-chat approval tray actions.
+- Message wrapping and long-message collapse/expand in transcript view.
+
+## Mobile hardening guarantees
+
+- safe-area-aware spacing (`env(safe-area-inset-*)`) for notch/home-indicator devices
+- dynamic viewport sizing with keyboard-aware composer offset via `visualViewport` when available
+- fallback sticky behavior when `visualViewport` is unavailable
+- touch-target minimum sizing on primary actions
+
+## Reliability guarantees (unchanged protocol behavior)
+
 - Thread send command (`thread.send_message`) through websocket.
-- Inline approval indicators on chat rows and in-chat approval tray actions when desktop enables remote approvals.
 - Sequence tracking and gap detection.
 - Manual + automatic snapshot requests on reconnect.
 - Live delta event handling for message appends and turn status updates.
-- Message wrapping and long-message collapse/expand in transcript view.
-- Mobile viewport hardening:
-  - safe-area-aware spacing (`env(safe-area-inset-*)`) for notch/home-indicator devices
-  - dynamic viewport sizing with keyboard-aware composer offset via `visualViewport` when available
-  - fallback sticky behavior when `visualViewport` is unavailable
 - Composer does not optimistically append outbound user messages; transcript updates render only after relay-confirmed events/snapshots.
 - Outbound `thread.send_message` and `approval.respond` commands queue while offline and flush only after websocket re-auth succeeds.
-- `Last synced` freshness tracking with stale-state indicator.
 - Reconnect backoff when backgrounding or network drops.
-- Foreground resume triggers an explicit snapshot resync when already connected.
 - Saved paired-device credentials auto-restore on launch and trigger reconnect without rescanning QR.
-- Dedicated "Forget This Device" control clears locally saved pairing credentials.
-- Sequence-gap handling requests snapshot resync without advancing local sequence state until a snapshot arrives.
-- If desktop revokes the device, PWA stops auto-reconnect and requires re-pair.
-- Relay validation/rate-limit/replay errors (including snapshot-request throttling) surface as explicit status messages with recovery hints.
-- Relay load-shedding disconnects (for example `relay_over_capacity`) surface as explicit status messaging.
+- `Forget This Device` clears locally saved pairing credentials.
+- Relay validation/rate-limit/replay errors surface as explicit status messages.
 
 ## Limitations
 

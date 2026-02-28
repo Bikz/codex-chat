@@ -65,9 +65,10 @@ Use this checklist before cutting a release for the mobile web client.
 - In dark mode, verify black-first surfaces with white text and neutral borders (no blue gradient/glass).
 - Switch system theme and confirm browser `theme-color` updates (`#ffffff` light, `#000000` dark).
 
-## Automated mobile E2E
+## Automated test suite
 
-- Run `pnpm --filter @codexchat/remote-control-pwa test:e2e:mobile`.
-- Confirm both projects pass:
+- Run unit tests: `pnpm --filter @codexchat/remote-control-pwa test`.
+- Run mobile E2E: `pnpm --filter @codexchat/remote-control-pwa test:e2e:mobile`.
+- Confirm both Playwright projects pass:
   - `iphone-webkit`
   - `android-chrome`

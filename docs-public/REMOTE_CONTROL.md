@@ -54,6 +54,7 @@ This MVP delivers:
   - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
   - Optional NATS cross-instance routing (`NATS_URL`, `NATS_SUBJECT_PREFIX`) for stateless relay fanout
 - `apps/RemoteControlPWA`
+  - Next.js App Router + TypeScript UI shell with shadcn/Radix primitives
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)
   - Single-page conversation-first shell (home list + focused chat detail)
   - Hash navigation (`#view=home` and `#view=thread&tid=...&pid=...`) for browser back continuity
@@ -61,7 +62,7 @@ This MVP delivers:
   - Reconnect with backoff and snapshot re-request
   - Live event ingestion (`thread.message.append`, `turn.status.update`, approval refresh triggers)
   - Snapshot merge logic that preserves cached thread history and keeps per-thread memory bounded
-  - Playwright mobile E2E coverage (`apps/RemoteControlPWA/tests/mobile-ui.spec.ts`)
+  - Playwright mobile E2E coverage (`apps/RemoteControlPWA/tests/mobile-ui.spec.ts`) + Vitest unit coverage for route/selector/queue logic
 
 ## Local run
 

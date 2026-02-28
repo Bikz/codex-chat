@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color-scheme: dark;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -65,7 +69,7 @@ body {
   min-height: var(--vvh);
   color: var(--fg);
   background: var(--canvas);
-  font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -109,10 +113,6 @@ button {
   color: var(--fg);
   padding: 0.45rem 0.82rem;
   cursor: pointer;
-}
-
-button:hover {
-  border-color: var(--line);
 }
 
 button.primary {
@@ -491,7 +491,6 @@ textarea:focus-visible,
 
 .messages {
   height: 100%;
-  max-height: none;
   min-height: min(40svh, 360px);
   overflow: auto;
   padding: 0.8rem;
@@ -572,22 +571,19 @@ textarea::placeholder {
   color: var(--muted);
 }
 
-.sheet {
+.sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 40;
-  display: grid;
-  align-items: end;
-}
-
-.sheet-backdrop {
-  position: absolute;
-  inset: 0;
   background: rgba(0, 0, 0, 0.4);
+  z-index: 45;
 }
 
 .sheet-card {
-  position: relative;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   border: 1px solid var(--line);
@@ -653,6 +649,14 @@ textarea::placeholder {
   gap: 0.42rem;
 }
 
+.status.error {
+  color: var(--danger);
+}
+
+.status.warn {
+  color: var(--warning);
+}
+
 @media (min-width: 860px) {
   .app-main {
     max-width: 900px;
@@ -674,13 +678,11 @@ textarea::placeholder {
     min-height: calc(var(--vvh) - 8.5rem - var(--safe-top));
   }
 
-  .sheet {
-    align-items: center;
-    justify-items: center;
-  }
-
   .sheet-card {
+    left: 50%;
+    right: auto;
     width: min(560px, calc(100vw - 2rem));
+    transform: translateX(-50%);
     border-radius: 20px;
     border-bottom: 1px solid var(--line);
   }
