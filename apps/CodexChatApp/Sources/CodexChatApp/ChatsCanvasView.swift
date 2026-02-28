@@ -1309,14 +1309,7 @@ private struct ComposerControlBar: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(model.hasComposerOverrideForCurrentContext ? Color(hex: tokens.palette.accentHex) : .secondary)
                 .frame(width: 30, height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color(hex: tokens.palette.panelHex).opacity(model.isTransparentThemeMode ? 0.66 : 0.94))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
-                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("More turn controls")
