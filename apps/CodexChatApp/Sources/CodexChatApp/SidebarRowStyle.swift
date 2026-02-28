@@ -65,7 +65,7 @@ struct SidebarRowButtonStyle: ButtonStyle {
 
     private func borderColor(isPressed: Bool, isHovered: Bool) -> Color {
         if isActive {
-            return Color(hex: tokens.palette.accentHex).opacity(0.58)
+            return Color.primary.opacity(tokens.surfaces.hairlineOpacity * 1.35)
         }
         if isPressed {
             return Color.primary.opacity(tokens.surfaces.hairlineOpacity * 1.65)
@@ -78,7 +78,7 @@ struct SidebarRowButtonStyle: ButtonStyle {
 
     private func borderWidth(isPressed: Bool, isHovered: Bool) -> CGFloat {
         if isActive {
-            return 1.15
+            return 1
         }
         if isPressed || isHovered {
             return 1
