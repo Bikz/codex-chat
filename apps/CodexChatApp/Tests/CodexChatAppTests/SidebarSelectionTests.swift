@@ -134,6 +134,61 @@ final class SidebarSelectionTests: XCTestCase {
         XCTAssertEqual(allThreads.map(\.id), all.map(\.id))
     }
 
+    func testRecentThreadsSortByUpdatedAtDescendingAndApplyLimit() throws {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let oldestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        let middleID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
+        let newestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000003"))
+        let oldest = ThreadRecord(
+            id: oldestID,
+            projectId: UUID(),
+            title: "Oldest",
+            updatedAt: base.addingTimeInterval(-120)
+        )
+        let middle = ThreadRecord(
+            id: middleID,
+            projectId: UUID(),
+            title: "Middle",
+            updatedAt: base.addingTimeInterval(-60)
+        )
+        let newest = ThreadRecord(
+            id: newestID,
+            projectId: UUID(),
+            title: "Newest",
+            updatedAt: base
+        )
+
+        let recents = SidebarView.recentThreads(
+            [middle, oldest, newest],
+            filter: .all,
+            pendingThreadIDs: [],
+            unreadThreadIDs: [],
+            limit: 2
+        )
+
+        XCTAssertEqual(recents.map(\.id), [newest.id, middle.id])
+    }
+
+    func testRecentThreadsApplyFilterBeforeSorting() {
+        let base = Date(timeIntervalSince1970: 1_700_000_100)
+        let pending = ThreadRecord(id: UUID(), projectId: UUID(), title: "Pending", updatedAt: base)
+        let unread = ThreadRecord(
+            id: UUID(),
+            projectId: UUID(),
+            title: "Unread",
+            updatedAt: base.addingTimeInterval(-10)
+        )
+
+        let recents = SidebarView.recentThreads(
+            [unread, pending],
+            filter: .pending,
+            pendingThreadIDs: [pending.id],
+            unreadThreadIDs: [unread.id]
+        )
+
+        XCTAssertEqual(recents.map(\.id), [pending.id])
+    }
+
     func testIsDarkColorHexDetectsDarkAndLightColors() {
         XCTAssertTrue(SidebarView.isDarkColorHex("#0A0A0A"))
         XCTAssertFalse(SidebarView.isDarkColorHex("#F5F5F5"))
