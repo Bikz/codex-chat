@@ -10,6 +10,8 @@ struct ChatsCanvasView: View {
     static let emptyStatePrimaryActionLabel: String? = nil
     static let composerPrimaryVisibleControlIDs = ["model", "reasoning"]
     static let composerPopoverControlIDs = ["web-search", "memory-mode", "execution-permissions"]
+    static let composerExecutionControlLeadingSymbol: String? = nil
+    static let composerExecutionControlDisclosureSymbol = "chevron.right"
 
     struct ComposerSurfaceStyle: Equatable {
         let fillOpacity: Double
@@ -1140,6 +1142,7 @@ private struct ComposerControlBar: View {
     @State private var executionNetworkAccess = false
     @State private var pendingExecutionSafetySettings: ProjectSafetySettings?
     @State private var isExecutionDangerConfirmationVisible = false
+    @State private var isExecutionPermissionsPanelVisible = false
     @State private var executionDangerConfirmationInput = ""
     @State private var executionDangerConfirmationError: String?
 
@@ -1315,88 +1318,99 @@ private struct ComposerControlBar: View {
         .accessibilityLabel("More turn controls")
         .accessibilityHint("Opens web, memory, and execution controls for this thread.")
         .help("More turn controls")
+        .onChange(of: isControlPopoverVisible) { _, isVisible in
+            if !isVisible {
+                isExecutionPermissionsPanelVisible = false
+            }
+        }
         .popover(isPresented: $isControlPopoverVisible, arrowEdge: .top) {
-            NavigationStack {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Thread Controls")
-                        .font(.headline)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Thread Controls")
+                    .font(.headline)
 
-                    if model.canChooseWebSearchForSelectedModel {
-                        Picker(
-                            "Web search",
-                            selection: Binding(
-                                get: { model.composerWebSearchModeForCurrentContext },
-                                set: { model.setComposerWebSearchOverrideForCurrentContext($0) }
-                            )
-                        ) {
-                            ForEach(model.webSearchPresets, id: \.self) { mode in
-                                Text(webSearchLabel(mode)).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                    } else {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Web search")
-                                .font(.subheadline.weight(.medium))
-                            Text("Not available for the selected model.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
+                if model.canChooseWebSearchForSelectedModel {
                     Picker(
-                        "Memory mode",
+                        "Web search",
                         selection: Binding(
-                            get: { model.composerMemoryMode },
-                            set: { model.setComposerMemoryMode($0) }
+                            get: { model.composerWebSearchModeForCurrentContext },
+                            set: { model.setComposerWebSearchOverrideForCurrentContext($0) }
                         )
                     ) {
-                        ForEach(AppModel.ComposerMemoryMode.allCases, id: \.self) { mode in
-                            Text(memoryModeLabel(mode)).tag(mode)
+                        ForEach(model.webSearchPresets, id: \.self) { mode in
+                            Text(webSearchLabel(mode)).tag(mode)
                         }
                     }
                     .pickerStyle(.menu)
-
-                    NavigationLink {
-                        executionPermissionsView
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "lock.shield")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Execution & Permissions")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                                Text(executionSummaryText)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Web search")
+                            .font(.subheadline.weight(.medium))
+                        Text("Not available for the selected model.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
-
-                    Divider()
-
-                    Button("Reset to inherited", role: .destructive) {
-                        model.clearComposerOverridesForCurrentContext()
-                        syncExecutionDraftFromCurrentContext()
-                    }
-                    .disabled(!model.hasComposerOverrideForCurrentContext)
                 }
-                .padding(14)
-                .frame(minWidth: 312)
+
+                Picker(
+                    "Memory mode",
+                    selection: Binding(
+                        get: { model.composerMemoryMode },
+                        set: { model.setComposerMemoryMode($0) }
+                    )
+                ) {
+                    ForEach(AppModel.ComposerMemoryMode.allCases, id: \.self) { mode in
+                        Text(memoryModeLabel(mode)).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Button {
+                    syncExecutionDraftFromCurrentContext()
+                    isExecutionPermissionsPanelVisible = true
+                } label: {
+                    HStack(alignment: .center, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Execution & Permissions")
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                            Text(executionSummaryText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Image(systemName: ChatsCanvasView.composerExecutionControlDisclosureSymbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+                .popover(isPresented: $isExecutionPermissionsPanelVisible, arrowEdge: .trailing) {
+                    executionPermissionsPanel
+                }
+
+                Divider()
+
+                Button("Reset to inherited", role: .destructive) {
+                    model.clearComposerOverridesForCurrentContext()
+                    syncExecutionDraftFromCurrentContext()
+                }
+                .disabled(!model.hasComposerOverrideForCurrentContext)
             }
+            .padding(14)
+            .frame(minWidth: 312)
         }
     }
 
-    private var executionPermissionsView: some View {
+    private var executionPermissionsPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("Execution & Permissions")
+                .font(.headline)
+
             Picker("Sandbox mode", selection: $executionSandboxMode) {
                 ForEach(ProjectSandboxMode.allCases, id: \.self) { mode in
                     Text(mode.title).tag(mode)
@@ -1463,7 +1477,6 @@ private struct ComposerControlBar: View {
         }
         .padding(14)
         .frame(minWidth: 336)
-        .navigationTitle("Execution")
         .onAppear {
             syncExecutionDraftFromCurrentContext()
         }

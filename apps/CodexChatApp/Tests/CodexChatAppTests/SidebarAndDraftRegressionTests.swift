@@ -28,5 +28,7 @@ final class SidebarAndDraftRegressionTests: XCTestCase {
             ChatsCanvasView.composerPopoverControlIDs,
             ["web-search", "memory-mode", "execution-permissions"]
         )
+        XCTAssertNil(ChatsCanvasView.composerExecutionControlLeadingSymbol)
+        XCTAssertEqual(ChatsCanvasView.composerExecutionControlDisclosureSymbol, "chevron.right")
     }
 }
