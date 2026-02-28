@@ -30,5 +30,7 @@ final class SidebarAndDraftRegressionTests: XCTestCase {
         )
         XCTAssertNil(ChatsCanvasView.composerExecutionControlLeadingSymbol)
         XCTAssertEqual(ChatsCanvasView.composerExecutionControlDisclosureSymbol, "chevron.right")
+        XCTAssertFalse(ChatsCanvasView.composerShowsResetToInheritedAction)
+        XCTAssertTrue(ChatsCanvasView.composerExecutionUsesImmediateApply)
     }
 }

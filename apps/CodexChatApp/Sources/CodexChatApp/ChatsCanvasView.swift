@@ -12,6 +12,8 @@ struct ChatsCanvasView: View {
     static let composerPopoverControlIDs = ["web-search", "memory-mode", "execution-permissions"]
     static let composerExecutionControlLeadingSymbol: String? = nil
     static let composerExecutionControlDisclosureSymbol = "chevron.right"
+    static let composerShowsResetToInheritedAction = false
+    static let composerExecutionUsesImmediateApply = true
 
     struct ComposerSurfaceStyle: Equatable {
         let fillOpacity: Double
@@ -1140,11 +1142,7 @@ private struct ComposerControlBar: View {
     @State private var executionSandboxMode: ProjectSandboxMode = .readOnly
     @State private var executionApprovalPolicy: ProjectApprovalPolicy = .untrusted
     @State private var executionNetworkAccess = false
-    @State private var pendingExecutionSafetySettings: ProjectSafetySettings?
-    @State private var isExecutionDangerConfirmationVisible = false
     @State private var isExecutionPermissionsPanelVisible = false
-    @State private var executionDangerConfirmationInput = ""
-    @State private var executionDangerConfirmationError: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1263,36 +1261,6 @@ private struct ComposerControlBar: View {
                 }
             )
         }
-        .sheet(isPresented: $isExecutionDangerConfirmationVisible) {
-            DangerConfirmationSheet(
-                phrase: model.dangerConfirmationPhrase,
-                subtitle: "Type the confirmation phrase to apply risky thread execution overrides.",
-                input: $executionDangerConfirmationInput,
-                errorText: executionDangerConfirmationError,
-                onCancel: {
-                    executionDangerConfirmationInput = ""
-                    executionDangerConfirmationError = nil
-                    pendingExecutionSafetySettings = nil
-                    isExecutionDangerConfirmationVisible = false
-                },
-                onConfirm: {
-                    guard DangerConfirmationSheet.isPhraseMatch(
-                        input: executionDangerConfirmationInput,
-                        phrase: model.dangerConfirmationPhrase
-                    ) else {
-                        executionDangerConfirmationError = "Phrase did not match."
-                        return
-                    }
-                    if let pendingExecutionSafetySettings {
-                        applyExecutionSafetyOverride(pendingExecutionSafetySettings)
-                    }
-                    executionDangerConfirmationInput = ""
-                    executionDangerConfirmationError = nil
-                    pendingExecutionSafetySettings = nil
-                    isExecutionDangerConfirmationVisible = false
-                }
-            )
-        }
         .onAppear {
             syncExecutionDraftFromCurrentContext()
         }
@@ -1392,14 +1360,6 @@ private struct ComposerControlBar: View {
                 .popover(isPresented: $isExecutionPermissionsPanelVisible, arrowEdge: .trailing) {
                     executionPermissionsPanel
                 }
-
-                Divider()
-
-                Button("Reset to inherited", role: .destructive) {
-                    model.clearComposerOverridesForCurrentContext()
-                    syncExecutionDraftFromCurrentContext()
-                }
-                .disabled(!model.hasComposerOverrideForCurrentContext)
             }
             .padding(14)
             .frame(minWidth: 312)
@@ -1417,6 +1377,13 @@ private struct ComposerControlBar: View {
                 }
             }
             .pickerStyle(.menu)
+            .onChange(of: executionSandboxMode) { _, newValue in
+                executionNetworkAccess = AppModel.clampedNetworkAccess(
+                    for: newValue,
+                    networkAccess: executionNetworkAccess
+                )
+                persistExecutionDraftToOverride()
+            }
 
             Picker("Approval policy", selection: $executionApprovalPolicy) {
                 ForEach(ProjectApprovalPolicy.allCases, id: \.self) { policy in
@@ -1424,56 +1391,15 @@ private struct ComposerControlBar: View {
                 }
             }
             .pickerStyle(.menu)
+            .onChange(of: executionApprovalPolicy) { _, _ in
+                persistExecutionDraftToOverride()
+            }
 
             Toggle("Allow network access in workspace-write", isOn: $executionNetworkAccess)
                 .disabled(executionSandboxMode != .workspaceWrite)
-                .onChange(of: executionSandboxMode) { _, newValue in
-                    executionNetworkAccess = AppModel.clampedNetworkAccess(
-                        for: newValue,
-                        networkAccess: executionNetworkAccess
-                    )
+                .onChange(of: executionNetworkAccess) { _, _ in
+                    persistExecutionDraftToOverride()
                 }
-
-            HStack(spacing: 8) {
-                Button("Apply override") {
-                    let settings = ProjectSafetySettings(
-                        sandboxMode: executionSandboxMode,
-                        approvalPolicy: executionApprovalPolicy,
-                        networkAccess: AppModel.clampedNetworkAccess(
-                            for: executionSandboxMode,
-                            networkAccess: executionNetworkAccess
-                        ),
-                        webSearch: model.composerWebSearchModeForCurrentContext
-                    )
-                    guard requiresExecutionDangerConfirmation(for: settings) else {
-                        applyExecutionSafetyOverride(settings)
-                        return
-                    }
-                    pendingExecutionSafetySettings = settings
-                    executionDangerConfirmationInput = ""
-                    executionDangerConfirmationError = nil
-                    isExecutionDangerConfirmationVisible = true
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("Use inherited safety") {
-                    let inherited = inheritedSafetySettings
-                    executionSandboxMode = inherited.sandboxMode
-                    executionApprovalPolicy = inherited.approvalPolicy
-                    executionNetworkAccess = inherited.networkAccess
-                    applyExecutionSafetyOverride(inherited)
-                }
-                .buttonStyle(.bordered)
-                .disabled(!model.hasComposerSafetyOverrideForCurrentContext)
-            }
-
-            Text(
-                model.hasComposerSafetyOverrideForCurrentContext
-                    ? "Thread safety override active."
-                    : "Using inherited project/global safety settings."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .padding(14)
         .frame(minWidth: 336)
@@ -1588,23 +1514,22 @@ private struct ComposerControlBar: View {
         return "\(settings.sandboxMode.title), \(settings.approvalPolicy.title), \(networkLabel)"
     }
 
-    private var inheritedSafetySettings: ProjectSafetySettings {
-        guard let project = model.selectedProject else {
-            return model.defaultSafetySettings
-        }
-        return ProjectSafetySettings(
-            sandboxMode: project.sandboxMode,
-            approvalPolicy: project.approvalPolicy,
-            networkAccess: project.networkAccess,
-            webSearch: project.webSearch
+    private func persistExecutionDraftToOverride() {
+        let clampedNetwork = AppModel.clampedNetworkAccess(
+            for: executionSandboxMode,
+            networkAccess: executionNetworkAccess
         )
-    }
-
-    private func requiresExecutionDangerConfirmation(for settings: ProjectSafetySettings) -> Bool {
-        model.requiresDangerConfirmation(
-            sandboxMode: settings.sandboxMode,
-            approvalPolicy: settings.approvalPolicy
-        ) && settings != inheritedSafetySettings
+        if executionNetworkAccess != clampedNetwork {
+            executionNetworkAccess = clampedNetwork
+        }
+        applyExecutionSafetyOverride(
+            ProjectSafetySettings(
+                sandboxMode: executionSandboxMode,
+                approvalPolicy: executionApprovalPolicy,
+                networkAccess: clampedNetwork,
+                webSearch: model.composerWebSearchModeForCurrentContext
+            )
+        )
     }
 
     private func applyExecutionSafetyOverride(_ settings: ProjectSafetySettings) {
