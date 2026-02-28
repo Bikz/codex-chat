@@ -1156,7 +1156,8 @@ private struct ComposerControlBar: View {
                         menuOptionLabel(
                             title: "Runtime default",
                             subtitle: model.runtimeDefaultModelID.map { model.modelDisplayName(for: $0) },
-                            isSelected: model.isUsingRuntimeDefaultModel
+                            isSelected: model.isUsingRuntimeDefaultModel,
+                            leadingSymbol: "gearshape.2"
                         )
                     }
 
@@ -1173,7 +1174,8 @@ private struct ComposerControlBar: View {
                             title: model.modelMenuLabel(for: preset),
                             isSelected: selectedModelID.caseInsensitiveCompare(
                                 preset.trimmingCharacters(in: .whitespacesAndNewlines)
-                            ) == .orderedSame
+                            ) == .orderedSame,
+                            leadingSymbol: "circle.grid.2x2"
                         )
                     }
                 }
@@ -1190,7 +1192,8 @@ private struct ComposerControlBar: View {
                                     title: model.modelMenuLabel(for: preset),
                                     isSelected: selectedModelID.caseInsensitiveCompare(
                                         preset.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    ) == .orderedSame
+                                    ) == .orderedSame,
+                                    leadingSymbol: "circle.grid.2x2"
                                 )
                             }
                         }
@@ -1222,7 +1225,11 @@ private struct ComposerControlBar: View {
                         Button {
                             model.setDefaultReasoning(level)
                         } label: {
-                            menuOptionLabel(title: level.title, isSelected: level == model.defaultReasoning)
+                            menuOptionLabel(
+                                title: level.title,
+                                isSelected: level == model.defaultReasoning,
+                                leadingSymbol: "brain"
+                            )
                         }
                     }
                 } label: {
@@ -1536,20 +1543,20 @@ private struct ComposerControlBar: View {
     private func menuOptionLabel(
         title: String,
         subtitle: String? = nil,
-        isSelected: Bool
+        isSelected: Bool,
+        leadingSymbol: String? = nil
     ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: isSelected ? "checkmark" : "circle")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(
-                    isSelected
-                        ? Color(hex: tokens.palette.accentHex)
-                        : Color.secondary.opacity(0.45)
-                )
-                .frame(width: 14, height: 14)
+        HStack(spacing: 10) {
+            if let leadingSymbol {
+                Image(systemName: leadingSymbol)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
+                    .font(.system(size: 13.5, weight: .regular))
                     .foregroundStyle(.primary)
                 if let subtitle {
                     Text(subtitle)
@@ -1557,7 +1564,16 @@ private struct ComposerControlBar: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Spacer(minLength: 8)
+
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
         }
+        .frame(minHeight: 22, alignment: .leading)
     }
 
     private var executionSummaryText: String {
