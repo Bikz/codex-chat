@@ -208,9 +208,12 @@ extension AppModel {
                 continue
             }
 
+            let preferredWebSearch = effectiveWebSearchMode(for: thread.id, project: project)
+            let safetySettingsOverride = threadComposerOverridesByThreadID[thread.id]?.safetyOverride
             let safetyConfiguration = runtimeSafetyConfiguration(
                 for: project,
-                preferredWebSearch: defaultWebSearch
+                preferredWebSearch: preferredWebSearch,
+                threadSafetyOverride: safetySettingsOverride
             )
             targets.append(
                 RuntimeThreadPrewarmTarget(

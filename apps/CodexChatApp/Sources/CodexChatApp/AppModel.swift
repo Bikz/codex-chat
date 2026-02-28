@@ -755,6 +755,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    struct SettingsNavigationTarget: Equatable, Sendable {
+        enum Section: String, Equatable, Sendable, Codable {
+            case projects
+        }
+
+        var section: Section
+        var projectID: UUID?
+    }
+
     enum RuntimeIssue: Equatable {
         case installCodex
         case recoverable(String)
@@ -823,6 +832,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    struct ThreadComposerOverride: Hashable, Codable, Sendable {
+        var webSearchOverride: ProjectWebSearchMode?
+        var memoryModeOverride: ComposerMemoryMode?
+        var safetyOverride: ProjectSafetySettings?
+
+        var isEmpty: Bool {
+            webSearchOverride == nil
+                && memoryModeOverride == nil
+                && safetyOverride == nil
+        }
+    }
+
     enum ComposerAttachmentKind: String, Codable, Hashable, Sendable {
         case localImage
         case mentionFile
@@ -876,6 +897,7 @@ final class AppModel: ObservableObject {
         didSet {
             clearUnreadMarker(for: selectedThreadID)
             syncApprovalPresentationState()
+            syncComposerOverridesForCurrentSelection()
         }
     }
 
@@ -1010,6 +1032,8 @@ final class AppModel: ObservableObject {
     @Published var isPlanRunnerExecuting = false
     @Published var activePlanRun: PlanRunRecord?
     @Published var planRunnerTaskStates: [PlanRunTaskRecord] = []
+    @Published var settingsNavigationTarget: SettingsNavigationTarget?
+    @Published var threadComposerOverridesByThreadID: [UUID: ThreadComposerOverride] = [:]
 
     @Published var effectiveThemeOverride: ModThemeOverride = .init()
     @Published var effectiveDarkThemeOverride: ModThemeOverride = .init()
@@ -1159,6 +1183,7 @@ final class AppModel: ObservableObject {
     var untrustedShellAcknowledgedProjectIDs: Set<UUID> = []
     var didLoadUntrustedShellAcknowledgements = false
     var didPrepareForTeardown = false
+    var draftComposerOverride: ThreadComposerOverride?
 
     init(
         repositories: MetadataRepositories?,
@@ -1883,6 +1908,10 @@ final class AppModel: ObservableObject {
 
         if selectedProjectID == nil {
             selectedProjectID = loadedProjects.first?.id
+        }
+
+        Task { [weak self] in
+            await self?.pruneThreadComposerOverridesAgainstRepositorySnapshotIfNeeded()
         }
     }
 

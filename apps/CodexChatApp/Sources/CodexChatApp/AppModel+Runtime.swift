@@ -64,10 +64,13 @@ extension AppModel {
             throw CodexChatCoreError.missingRecord(projectID.uuidString)
         }
 
-        let effectiveMemoryWriteMode = effectiveComposerMemoryWriteMode(for: project)
+        let effectiveMemoryWriteMode = effectiveComposerMemoryWriteMode(for: project, threadID: threadID)
+        let effectiveWebSearch = effectiveWebSearchMode(for: threadID, project: project)
+        let safetySettingsOverride = threadComposerOverridesByThreadID[threadID]?.safetyOverride
         let safetyConfiguration = runtimeSafetyConfiguration(
             for: project,
-            preferredWebSearch: defaultWebSearch
+            preferredWebSearch: effectiveWebSearch,
+            threadSafetyOverride: safetySettingsOverride
         )
         let turnOptions = runtimeTurnOptions()
         var runtimeSkillInputs: [RuntimeSkillInput] = []

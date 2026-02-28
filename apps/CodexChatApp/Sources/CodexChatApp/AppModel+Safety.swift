@@ -12,18 +12,26 @@ extension AppModel {
 
     func runtimeSafetyConfiguration(
         for project: ProjectRecord,
-        preferredWebSearch: ProjectWebSearchMode? = nil
+        preferredWebSearch: ProjectWebSearchMode? = nil,
+        threadSafetyOverride: ProjectSafetySettings? = nil
     ) -> RuntimeSafetyConfiguration {
+        let resolvedSafety = threadSafetyOverride
+            ?? ProjectSafetySettings(
+                sandboxMode: project.sandboxMode,
+                approvalPolicy: project.approvalPolicy,
+                networkAccess: project.networkAccess,
+                webSearch: project.webSearch
+            )
         let effectiveWebSearch: ProjectWebSearchMode = if let preferredWebSearch {
             preferredWebSearch
         } else {
-            project.webSearch
+            resolvedSafety.webSearch
         }
 
         return RuntimeSafetyConfiguration(
-            sandboxMode: mapSandboxMode(project.sandboxMode),
-            approvalPolicy: mapApprovalPolicy(project.approvalPolicy),
-            networkAccess: project.networkAccess,
+            sandboxMode: mapSandboxMode(resolvedSafety.sandboxMode),
+            approvalPolicy: mapApprovalPolicy(resolvedSafety.approvalPolicy),
+            networkAccess: resolvedSafety.networkAccess,
             webSearch: mapWebSearchMode(effectiveWebSearch),
             writableRoots: [project.path]
         )

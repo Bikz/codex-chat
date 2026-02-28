@@ -88,6 +88,9 @@ extension AppModel {
         try await ensureGeneralProject()
         try ensureCurrentStartupGeneration(generation)
 
+        try await restoreThreadComposerOverridesIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
         try await restoreLastOpenedContext()
         try ensureCurrentStartupGeneration(generation)
 

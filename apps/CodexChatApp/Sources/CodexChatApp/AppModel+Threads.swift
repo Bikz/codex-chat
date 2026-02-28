@@ -45,8 +45,10 @@ extension AppModel {
         selectedThreadID = nil
         if draftChatProjectID != projectID {
             draftChatProjectID = nil
+            draftComposerOverride = nil
         }
         detailDestination = .thread
+        syncComposerOverridesForCurrentSelection()
         refreshConversationState()
         appendLog(.debug, "Selected project: \(projectID?.uuidString ?? "none")")
 
@@ -214,6 +216,7 @@ extension AppModel {
         selectedThreadID = threadID
         if threadID != nil {
             draftChatProjectID = nil
+            draftComposerOverride = nil
             detailDestination = .thread
         }
         refreshConversationState()
@@ -356,8 +359,10 @@ extension AppModel {
         selectedProjectID = projectID
         selectedThreadID = nil
         draftChatProjectID = projectID
+        draftComposerOverride = nil
         detailDestination = .thread
         requestComposerFocus()
+        syncComposerOverridesForCurrentSelection()
         refreshConversationState()
         appendLog(.info, "Started draft chat for project \(projectID.uuidString)")
 
@@ -441,6 +446,7 @@ extension AppModel {
             title: title
         )
 
+        materializeDraftComposerOverrideIfNeeded(into: thread.id)
         selectedThreadID = thread.id
         draftChatProjectID = nil
         detailDestination = .thread

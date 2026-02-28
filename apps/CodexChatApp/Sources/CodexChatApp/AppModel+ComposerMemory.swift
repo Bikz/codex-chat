@@ -3,6 +3,7 @@ import CodexChatCore
 extension AppModel {
     func setComposerMemoryMode(_ mode: ComposerMemoryMode) {
         composerMemoryMode = mode
+        setComposerMemoryModeOverrideForCurrentContext(mode)
     }
 
     func effectiveComposerMemoryWriteMode(for project: ProjectRecord?) -> ProjectMemoryWriteMode {
