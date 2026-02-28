@@ -9,6 +9,7 @@ private struct RemoteRelayControlSignal: Decodable {
     let sessionID: String?
     let connectedDeviceCount: Int?
     let requestID: String?
+    let deviceName: String?
     let requesterIP: String?
     let requestedAt: Date?
     let expiresAt: Date?
@@ -1055,6 +1056,7 @@ extension AppModel {
 
         remoteControlPendingPairRequest = RemoteControlPairRequestPrompt(
             requestID: requestID,
+            deviceName: signal.deviceName,
             requesterIP: signal.requesterIP,
             requestedAt: signal.requestedAt,
             expiresAt: signal.expiresAt

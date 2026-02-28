@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f1625" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Codex Chat Remote</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css?v=20260227c" />
@@ -33,12 +35,27 @@
           <button id="pairButton" class="primary">Pair Device</button>
           <button id="reconnectButton">Reconnect</button>
           <button id="snapshotButton">Request Snapshot</button>
+          <button id="forgetButton" hidden>Forget This Device</button>
         </div>
         <p id="statusText" class="status">Waiting to pair.</p>
       </section>
 
       <section id="preConnectPanel" class="panel pre-connect">
         <h2>Pair to continue</h2>
+        <section id="welcomePanel" class="welcome-card" hidden>
+          <h3>Welcome from QR</h3>
+          <p>For the best experience, add this app to your home screen before pairing.</p>
+          <ol class="welcome-steps">
+            <li>Install to home screen.</li>
+            <li>Tap <strong>Pair Device</strong> and approve on your Mac.</li>
+            <li>This device will reconnect automatically until revoked from desktop.</li>
+          </ol>
+          <div class="welcome-actions">
+            <button id="installButton" class="primary" hidden>Add to Home Screen</button>
+            <button id="dismissWelcomeButton">Continue in Browser</button>
+          </div>
+          <p id="installHint" class="install-hint" hidden></p>
+        </section>
         <p>Projects, threads, approvals, and chat controls appear after desktop approves pairing and this device is connected.</p>
       </section>
 

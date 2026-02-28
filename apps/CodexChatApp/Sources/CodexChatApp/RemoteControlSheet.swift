@@ -116,6 +116,18 @@ struct RemoteControlSheet: View {
             Label("Pairing approval needed", systemImage: "hand.raised.fill")
                 .font(.headline)
 
+            if let deviceName = request.deviceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !deviceName.isEmpty
+            {
+                Text("Device: \(deviceName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Device: Unknown device")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if let requesterIP = request.requesterIP,
                !requesterIP.isEmpty
             {

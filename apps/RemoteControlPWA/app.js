@@ -8,9 +8,12 @@ const state = {
   wsURL: null,
   socket: null,
   isAuthenticated: false,
+  arrivedFromQRCode: false,
   reconnectAttempts: 0,
   reconnectTimer: null,
   reconnectDisabledReason: null,
+  installPromptEvent: null,
+  welcomeDismissed: false,
   isPairingInFlight: false,
   lastIncomingSeq: null,
   lastSyncedAt: null,
@@ -33,6 +36,14 @@ const state = {
 
 const MAX_QUEUED_COMMANDS = 64;
 const MAX_QUEUED_COMMAND_BYTES = 256 * 1024;
+const PERSISTED_PAIRING_KEY = "codexchat.remote.pairedDevice.v1";
+const RECONNECT_DISABLED_REASONS = new Set([
+  "device_revoked",
+  "stopped_by_desktop",
+  "idle_timeout",
+  "session_expired",
+  "replaced_by_new_pair_start"
+]);
 
 const dom = {
   connectionBadge: document.getElementById("connectionBadge"),
@@ -44,7 +55,12 @@ const dom = {
   pairButton: document.getElementById("pairButton"),
   reconnectButton: document.getElementById("reconnectButton"),
   snapshotButton: document.getElementById("snapshotButton"),
+  forgetButton: document.getElementById("forgetButton"),
   preConnectPanel: document.getElementById("preConnectPanel"),
+  welcomePanel: document.getElementById("welcomePanel"),
+  installButton: document.getElementById("installButton"),
+  dismissWelcomeButton: document.getElementById("dismissWelcomeButton"),
+  installHint: document.getElementById("installHint"),
   workspacePanel: document.getElementById("workspacePanel"),
   projectList: document.getElementById("projectList"),
   threadList: document.getElementById("threadList"),
@@ -58,6 +74,147 @@ const dom = {
 function setStatus(text, level = "info") {
   dom.statusText.textContent = text;
   dom.statusText.style.color = level === "error" ? "var(--danger)" : level === "warn" ? "var(--warning)" : "var(--muted)";
+}
+
+function canUseStorage() {
+  try {
+    return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  } catch {
+    return false;
+  }
+}
+
+function persistPairedDeviceState() {
+  if (!canUseStorage()) {
+    return;
+  }
+  if (!state.sessionID || !state.deviceSessionToken || !state.wsURL) {
+    return;
+  }
+
+  const payload = {
+    sessionID: state.sessionID,
+    deviceID: state.deviceID,
+    deviceName: state.deviceName,
+    relayBaseURL: state.relayBaseURL,
+    deviceSessionToken: state.deviceSessionToken,
+    wsURL: state.wsURL,
+    storedAt: new Date().toISOString()
+  };
+  window.localStorage.setItem(PERSISTED_PAIRING_KEY, JSON.stringify(payload));
+}
+
+function clearPersistedPairedDeviceState() {
+  if (!canUseStorage()) {
+    return;
+  }
+  window.localStorage.removeItem(PERSISTED_PAIRING_KEY);
+}
+
+function restorePersistedPairedDeviceState() {
+  if (!canUseStorage()) {
+    return false;
+  }
+
+  let parsed = null;
+  try {
+    const raw = window.localStorage.getItem(PERSISTED_PAIRING_KEY);
+    if (!raw) {
+      return false;
+    }
+    parsed = JSON.parse(raw);
+  } catch {
+    clearPersistedPairedDeviceState();
+    return false;
+  }
+
+  const validSessionID = typeof parsed?.sessionID === "string" && parsed.sessionID.length > 0;
+  const validToken = typeof parsed?.deviceSessionToken === "string" && parsed.deviceSessionToken.length > 0;
+  const validWSURL = typeof parsed?.wsURL === "string" && parsed.wsURL.length > 0;
+
+  if (!validSessionID || !validToken || !validWSURL) {
+    clearPersistedPairedDeviceState();
+    return false;
+  }
+
+  state.sessionID = parsed.sessionID;
+  state.deviceSessionToken = parsed.deviceSessionToken;
+  state.wsURL = parsed.wsURL;
+  state.deviceID = typeof parsed?.deviceID === "string" && parsed.deviceID.length > 0 ? parsed.deviceID : null;
+  if (typeof parsed?.relayBaseURL === "string" && parsed.relayBaseURL.length > 0) {
+    state.relayBaseURL = normalizeRelayBaseURL(parsed.relayBaseURL);
+  }
+  dom.sessionValue.textContent = state.sessionID;
+  dom.pairingHint.textContent = "Restored saved pairing for this browser. Reconnect to resume remote control.";
+  return true;
+}
+
+function isStandaloneDisplayMode() {
+  const displayModeStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches === true;
+  const iOSStandalone = typeof navigator !== "undefined" && navigator.standalone === true;
+  return displayModeStandalone || iOSStandalone;
+}
+
+function isIOSDevice() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod/i.test(ua);
+}
+
+function refreshWelcomePanel() {
+  const showWelcome = Boolean(state.arrivedFromQRCode && !state.isAuthenticated && !state.welcomeDismissed);
+  dom.welcomePanel.hidden = !showWelcome;
+  if (!showWelcome) {
+    return;
+  }
+
+  const canShowInstallPrompt = Boolean(state.installPromptEvent) && !isStandaloneDisplayMode();
+  dom.installButton.hidden = !canShowInstallPrompt;
+  dom.installHint.hidden = false;
+
+  if (isStandaloneDisplayMode()) {
+    dom.installHint.textContent = "Installed app mode detected. Pair once and this device can reconnect automatically.";
+    return;
+  }
+
+  if (canShowInstallPrompt) {
+    dom.installHint.textContent = "Tip: install now for faster launch and better background reconnect behavior.";
+    return;
+  }
+
+  if (isIOSDevice()) {
+    dom.installHint.textContent = "On iPhone/iPad: tap Share, then Add to Home Screen.";
+    return;
+  }
+
+  dom.installHint.textContent = "If your browser supports install, use the browser menu to add this app to your home screen.";
+}
+
+function refreshRememberedDeviceStateUI() {
+  const hasRememberedDevice = Boolean(state.deviceSessionToken && state.wsURL);
+  dom.forgetButton.hidden = !hasRememberedDevice;
+}
+
+function forgetRememberedDevice() {
+  clearPersistedPairedDeviceState();
+  closeSocket();
+  state.deviceSessionToken = null;
+  state.wsURL = null;
+  state.deviceID = null;
+  state.reconnectDisabledReason = null;
+  state.pendingSnapshotReason = null;
+  state.queuedCommands = [];
+  state.queuedCommandsBytes = 0;
+  state.awaitingGapSnapshot = false;
+  state.lastIncomingSeq = null;
+  dom.seqValue.textContent = "-";
+  if (!state.joinToken) {
+    state.sessionID = null;
+    dom.sessionValue.textContent = "Not paired";
+    dom.pairingHint.textContent = "Open via desktop QR link to auto-fill session details.";
+  }
+  refreshPairButtonState();
+  updateWorkspaceVisibility();
+  setStatus("Removed saved pairing from this browser. Scan the QR code again to pair.", "warn");
 }
 
 function refreshPairButtonState() {
@@ -101,6 +258,8 @@ function updateWorkspaceVisibility() {
   const showWorkspace = state.isAuthenticated;
   dom.workspacePanel.hidden = !showWorkspace;
   dom.preConnectPanel.hidden = showWorkspace;
+  refreshWelcomePanel();
+  refreshRememberedDeviceStateUI();
 }
 
 function markSynced() {
@@ -132,9 +291,11 @@ function parseJoinFromHash() {
   const joinToken = params.get("jt");
   const relayBaseURL = normalizeRelayBaseURL(params.get("relay"));
   if (sessionID && joinToken) {
+    state.arrivedFromQRCode = true;
+    state.welcomeDismissed = false;
     state.sessionID = sessionID;
     state.joinToken = joinToken;
-    state.relayBaseURL = relayBaseURL;
+    state.relayBaseURL = relayBaseURL || state.relayBaseURL;
     dom.sessionValue.textContent = sessionID;
     const relayHint = relayBaseURL ? ` Relay: ${relayBaseURL}` : "";
     dom.pairingHint.textContent = `Session and one-time join token detected from QR link.${relayHint}`;
@@ -538,6 +699,7 @@ function onSocketMessage(event) {
     state.awaitingGapSnapshot = false;
     updateWorkspaceVisibility();
     markSynced();
+    persistPairedDeviceState();
     setStatus("WebSocket authenticated.");
     flushQueuedCommands();
     requestSnapshot(state.pendingSnapshotReason || "initial_sync");
@@ -547,13 +709,16 @@ function onSocketMessage(event) {
   if (message.type === "disconnect") {
     state.isAuthenticated = false;
     const reason = typeof message.reason === "string" ? message.reason : "unknown";
-    if (reason === "device_revoked" || reason === "stopped_by_desktop") {
+    if (RECONNECT_DISABLED_REASONS.has(reason)) {
       state.reconnectDisabledReason = reason;
       state.deviceSessionToken = null;
+      state.wsURL = null;
+      state.deviceID = null;
       state.joinToken = null;
       state.queuedCommands = [];
       state.queuedCommandsBytes = 0;
       state.pendingSnapshotReason = null;
+      clearPersistedPairedDeviceState();
       refreshPairButtonState();
     }
     updateWorkspaceVisibility();
@@ -672,6 +837,10 @@ function disconnectMessageForReason(reason) {
       return "Another tab or device reconnected. Attempting to resume...";
     case "idle_timeout":
       return "Remote session timed out due to inactivity. Start a new session on desktop.";
+    case "session_expired":
+      return "Remote session expired. Start a new session on desktop and pair again.";
+    case "replaced_by_new_pair_start":
+      return "Desktop started a new remote session. Scan the latest QR code to reconnect.";
     case "relay_over_capacity":
       return "Relay is currently at connection capacity. Retrying shortly.";
     default:
@@ -956,12 +1125,14 @@ async function pairDevice() {
     state.isAuthenticated = false;
     state.joinToken = null;
     state.reconnectDisabledReason = null;
+    state.welcomeDismissed = true;
     state.queuedCommands = [];
     state.queuedCommandsBytes = 0;
     state.pendingSnapshotReason = null;
     state.awaitingGapSnapshot = false;
     dom.sessionValue.textContent = state.sessionID;
     refreshPairButtonState();
+    persistPairedDeviceState();
     setStatus("Pairing successful. Connecting...");
     connectSocket();
   } catch (error) {
@@ -974,6 +1145,38 @@ async function pairDevice() {
     state.isPairingInFlight = false;
     refreshPairButtonState();
   }
+}
+
+async function promptInstall() {
+  if (isStandaloneDisplayMode()) {
+    setStatus("App is already running in home-screen mode.");
+    state.welcomeDismissed = true;
+    refreshWelcomePanel();
+    return;
+  }
+
+  if (!state.installPromptEvent) {
+    if (isIOSDevice()) {
+      setStatus("On iPhone/iPad, use Share -> Add to Home Screen.", "warn");
+    } else {
+      setStatus("Install prompt not available yet. Use your browser menu to install this app.", "warn");
+    }
+    return;
+  }
+
+  const installPrompt = state.installPromptEvent;
+  state.installPromptEvent = null;
+  try {
+    await installPrompt.prompt();
+    const result = await installPrompt.userChoice;
+    if (result?.outcome === "accepted") {
+      state.welcomeDismissed = true;
+      setStatus("Installed. Pair once and this device will reconnect automatically.");
+    }
+  } catch {
+    setStatus("Install prompt could not be completed. You can continue in browser.", "warn");
+  }
+  refreshWelcomePanel();
 }
 
 function wireComposer() {
@@ -1014,6 +1217,27 @@ function wireButtons() {
   dom.snapshotButton.addEventListener("click", () => {
     requestSnapshot("manual_request");
   });
+  dom.forgetButton.addEventListener("click", forgetRememberedDevice);
+  dom.installButton.addEventListener("click", () => {
+    promptInstall();
+  });
+  dom.dismissWelcomeButton.addEventListener("click", () => {
+    state.welcomeDismissed = true;
+    refreshWelcomePanel();
+  });
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    state.installPromptEvent = event;
+    refreshWelcomePanel();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    state.installPromptEvent = null;
+    state.welcomeDismissed = true;
+    refreshWelcomePanel();
+    setStatus("Installed to home screen. Pair once to keep this device connected.");
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") {
@@ -1040,6 +1264,7 @@ function registerServiceWorker() {
 
 function init() {
   state.deviceName = inferredDeviceName();
+  const restored = restorePersistedPairedDeviceState();
   parseJoinFromHash();
   wireButtons();
   wireComposer();
@@ -1049,9 +1274,16 @@ function init() {
   renderApprovals();
   updateWorkspaceVisibility();
   refreshPairButtonState();
+  refreshWelcomePanel();
+  refreshRememberedDeviceStateUI();
   refreshSyncFreshness();
   setInterval(refreshSyncFreshness, 5_000);
   registerServiceWorker();
+
+  if (restored && !state.joinToken && state.deviceSessionToken && state.wsURL) {
+    setStatus("Restored saved pairing. Reconnecting...");
+    connectSocket();
+  }
 }
 
 init();

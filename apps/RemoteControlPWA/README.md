@@ -16,10 +16,12 @@ Then open `http://localhost:4173`.
 1. Desktop starts a remote session and shows QR link with `#sid=<session>&jt=<join_token>&relay=<relay_base_url>`.
 2. PWA opens from that link and calls `POST /pair/join` on the relay.
    - Join payload includes a best-effort `deviceName` inferred from the browser/device.
+   - Landing from QR shows a welcome/install card to encourage home-screen install before pairing.
 3. Desktop must explicitly approve the pairing request in the Remote Control sheet.
 4. Relay returns `deviceSessionToken` + `wsURL`.
 5. PWA opens `wsURL`, then sends `{"type":"relay.auth","token":"<deviceSessionToken>"}`.
 6. On websocket auth, relay rotates the device session token and the PWA stores the new token for reconnects.
+7. Paired-device credentials persist in browser storage so the PWA can reconnect automatically after app/browser relaunch until desktop revokes or ends the session.
 
 ## MVP behavior
 
@@ -34,6 +36,8 @@ Then open `http://localhost:4173`.
 - `Last synced` freshness tracking with stale-state indicator.
 - Reconnect backoff when backgrounding or network drops.
 - Foreground resume triggers an explicit snapshot resync when already connected.
+- Saved paired-device credentials auto-restore on launch and trigger reconnect without rescanning QR.
+- Dedicated "Forget This Device" control clears locally saved pairing credentials.
 - Sequence-gap handling requests snapshot resync without advancing local sequence state until a snapshot arrives.
 - If desktop revokes the device, PWA stops auto-reconnect and requires re-pair.
 - Relay validation/rate-limit/replay errors (including snapshot-request throttling) surface as explicit status messages with recovery hints.

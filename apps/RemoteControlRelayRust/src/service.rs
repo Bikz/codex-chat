@@ -1329,6 +1329,13 @@ async fn pair_join(
 
     refresh_sessions_from_persistence(&state, false).await;
 
+    let requested_device_name = request
+        .device_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(64).collect::<String>());
+
     let (
         decision_rx,
         request_id,
@@ -1441,6 +1448,7 @@ async fn pair_join(
                 message_type: "relay.pair_request".to_string(),
                 session_id: session.session_id.clone(),
                 request_id: pending.request_id.clone(),
+                device_name: requested_device_name.clone(),
                 requester_ip: pending.requester_ip.clone(),
                 requested_at: iso_from_millis(pending.requested_at_ms),
                 expires_at: iso_from_millis(pending.expires_at_ms),
@@ -1522,7 +1530,7 @@ async fn pair_join(
     let mut relay = state.inner.lock().await;
     relay.pending_join_waiters = relay.pending_join_waiters.saturating_sub(1);
 
-    let device_name = sanitize_device_name(request.device_name.as_deref());
+    let device_name = sanitize_device_name(requested_device_name.as_deref());
     let (device_id, device_session_token, ws_url, session_id_for_token) = {
         let Some(session) = relay.sessions.get_mut(&request.session_id) else {
             return pair_join_failure_response(

@@ -229,6 +229,9 @@ pub struct RelayPairRequest {
     pub session_id: String,
     #[serde(rename = "requestID")]
     pub request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "deviceName")]
+    pub device_name: Option<String>,
     #[serde(rename = "requesterIP")]
     pub requester_ip: String,
     #[serde(rename = "requestedAt")]
