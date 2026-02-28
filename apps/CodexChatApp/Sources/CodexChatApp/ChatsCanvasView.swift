@@ -1303,21 +1303,21 @@ private struct ComposerControlBar: View {
         HStack(spacing: 8) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .regular))
                     .frame(width: 14, height: 14)
                     .foregroundStyle(tint)
             }
 
             Text(value)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.92))
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.primary.opacity(0.88))
                 .lineLimit(1)
                 .truncationMode(.tail)
 
             Spacer(minLength: 2)
 
             Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 9, weight: .regular))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
