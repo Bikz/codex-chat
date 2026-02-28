@@ -28,10 +28,17 @@ const state = {
   threads: [],
   pendingApprovals: [],
   selectedProjectID: null,
+  selectedProjectFilterID: "all",
   selectedThreadID: null,
+  currentView: "home",
+  isProjectSheetOpen: false,
+  isAccountSheetOpen: false,
+  approvalsExpanded: false,
   messagesByThreadID: new Map(),
   turnStateByThreadID: new Map(),
-  unreadByThreadID: new Map()
+  unreadByThreadID: new Map(),
+  expandedMessageIDs: new Set(),
+  focusTrapCleanup: null
 };
 
 const MAX_QUEUED_COMMANDS = 64;
@@ -46,6 +53,7 @@ const RECONNECT_DISABLED_REASONS = new Set([
 ]);
 
 const dom = {
+  accountButton: document.getElementById("accountButton"),
   connectionBadge: document.getElementById("connectionBadge"),
   pairingHint: document.getElementById("pairingHint"),
   sessionValue: document.getElementById("sessionValue"),
@@ -53,6 +61,7 @@ const dom = {
   lastSyncedValue: document.getElementById("lastSyncedValue"),
   statusText: document.getElementById("statusText"),
   pairButton: document.getElementById("pairButton"),
+  preconnectPairButton: document.getElementById("preconnectPairButton"),
   reconnectButton: document.getElementById("reconnectButton"),
   snapshotButton: document.getElementById("snapshotButton"),
   forgetButton: document.getElementById("forgetButton"),
@@ -62,18 +71,32 @@ const dom = {
   dismissWelcomeButton: document.getElementById("dismissWelcomeButton"),
   installHint: document.getElementById("installHint"),
   workspacePanel: document.getElementById("workspacePanel"),
-  projectList: document.getElementById("projectList"),
-  threadList: document.getElementById("threadList"),
-  approvalList: document.getElementById("approvalList"),
+  homeView: document.getElementById("homeView"),
+  chatView: document.getElementById("chatView"),
+  viewAllProjectsButton: document.getElementById("viewAllProjectsButton"),
+  projectCircleStrip: document.getElementById("projectCircleStrip"),
+  chatList: document.getElementById("chatList"),
+  chatListEmpty: document.getElementById("chatListEmpty"),
   threadTitle: document.getElementById("threadTitle"),
+  threadStatusChip: document.getElementById("threadStatusChip"),
+  chatBackButton: document.getElementById("chatBackButton"),
+  toggleApprovalsButton: document.getElementById("toggleApprovalsButton"),
+  approvalGlobalSummary: document.getElementById("approvalGlobalSummary"),
+  approvalTray: document.getElementById("approvalTray"),
   messageList: document.getElementById("messageList"),
   composerForm: document.getElementById("composerForm"),
-  composerInput: document.getElementById("composerInput")
+  composerInput: document.getElementById("composerInput"),
+  projectSheet: document.getElementById("projectSheet"),
+  projectSheetList: document.getElementById("projectSheetList"),
+  closeProjectSheetButton: document.getElementById("closeProjectSheetButton"),
+  accountSheet: document.getElementById("accountSheet"),
+  closeAccountSheetButton: document.getElementById("closeAccountSheetButton")
 };
 
 function setStatus(text, level = "info") {
   dom.statusText.textContent = text;
-  dom.statusText.style.color = level === "error" ? "var(--danger)" : level === "warn" ? "var(--warning)" : "var(--muted)";
+  const color = level === "error" ? "var(--danger)" : level === "warn" ? "var(--warning)" : "var(--muted)";
+  dom.statusText.style.color = color;
 }
 
 function canUseStorage() {
@@ -214,11 +237,14 @@ function forgetRememberedDevice() {
   }
   refreshPairButtonState();
   updateWorkspaceVisibility();
+  renderAll();
   setStatus("Removed saved pairing from this browser. Scan the QR code again to pair.", "warn");
 }
 
 function refreshPairButtonState() {
-  dom.pairButton.disabled = state.isPairingInFlight || !state.joinToken;
+  const disabled = state.isPairingInFlight || !state.joinToken;
+  dom.pairButton.disabled = disabled;
+  dom.preconnectPairButton.disabled = disabled;
 }
 
 function setConnectionBadge(isConnected) {
@@ -258,6 +284,11 @@ function updateWorkspaceVisibility() {
   const showWorkspace = state.isAuthenticated;
   dom.workspacePanel.hidden = !showWorkspace;
   dom.preConnectPanel.hidden = showWorkspace;
+
+  if (!showWorkspace) {
+    state.currentView = "home";
+  }
+
   refreshWelcomePanel();
   refreshRememberedDeviceStateUI();
 }
@@ -280,6 +311,7 @@ function refreshSyncFreshness() {
   if (isStale && !state.isSyncStale) {
     state.isSyncStale = true;
     setConnectionBadge(true);
+    renderChatDetail();
     setStatus("Connection is live but may be stale. Use Request Snapshot to resync.", "warn");
   }
 }
@@ -357,76 +389,263 @@ function inferredDeviceName() {
   return "Remote Device";
 }
 
-function renderProjects() {
-  dom.projectList.innerHTML = "";
-  if (state.projects.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "No projects yet";
-    dom.projectList.appendChild(li);
-    return;
-  }
+function parseRouteHash() {
+  const hash = window.location.hash.replace(/^#/, "");
+  const params = new URLSearchParams(hash);
+  const view = params.get("view");
+  const tid = params.get("tid");
+  const pid = params.get("pid");
+  return {
+    view: view === "thread" ? "thread" : "home",
+    threadID: tid || null,
+    projectID: pid || "all"
+  };
+}
 
-  for (const project of state.projects) {
-    const li = document.createElement("li");
-    li.textContent = project.name;
-    li.classList.toggle("active", project.id === state.selectedProjectID);
-    li.addEventListener("click", () => {
-      state.selectedProjectID = project.id;
-      sendCommand("project.select", { projectID: project.id });
-      renderProjects();
-      renderThreads();
-    });
-    dom.projectList.appendChild(li);
+function updateRouteHash(view, options = {}) {
+  const params = new URLSearchParams();
+  params.set("view", view);
+  if (view === "thread" && options.threadID) {
+    params.set("tid", options.threadID);
+  }
+  if (options.projectID) {
+    params.set("pid", options.projectID);
+  }
+  const nextHash = `#${params.toString()}`;
+  if (window.location.hash !== nextHash) {
+    window.location.hash = nextHash;
   }
 }
 
-function renderThreads() {
-  dom.threadList.innerHTML = "";
-  const visibleThreads = state.selectedProjectID
-    ? state.threads.filter((thread) => thread.projectID === state.selectedProjectID)
-    : state.threads;
-  const pendingApprovalsByThreadID = new Map();
+function applyRoute(route, shouldNormalize = true) {
+  const normalizedProjectID = route.projectID === "all" ? "all" : route.projectID;
+  const hasProject = normalizedProjectID === "all" || state.projects.some((project) => project.id === normalizedProjectID);
+  if (hasProject) {
+    state.selectedProjectFilterID = normalizedProjectID;
+  }
+
+  if (route.view === "thread" && route.threadID && state.threads.some((thread) => thread.id === route.threadID)) {
+    state.selectedThreadID = route.threadID;
+    state.unreadByThreadID.set(route.threadID, false);
+    state.currentView = "thread";
+  } else {
+    state.currentView = "home";
+  }
+
+  if (shouldNormalize) {
+    if (state.currentView === "thread" && state.selectedThreadID) {
+      updateRouteHash("thread", { threadID: state.selectedThreadID, projectID: state.selectedProjectFilterID });
+    } else {
+      updateRouteHash("home", { projectID: state.selectedProjectFilterID });
+    }
+  }
+
+  renderAll();
+}
+
+function getThreadByID(threadID) {
+  return state.threads.find((thread) => thread.id === threadID) || null;
+}
+
+function getVisibleThreads() {
+  if (state.selectedProjectFilterID === "all") {
+    return state.threads;
+  }
+  return state.threads.filter((thread) => thread.projectID === state.selectedProjectFilterID);
+}
+
+function threadPreview(threadID) {
+  const messages = state.messagesByThreadID.get(threadID) || [];
+  if (!messages.length) {
+    return "No messages yet";
+  }
+  const latest = messages[messages.length - 1];
+  return latest.text || "No messages yet";
+}
+
+function pendingApprovalsByThread() {
+  const counts = new Map();
   for (const approval of state.pendingApprovals) {
     if (!approval?.threadID) {
       continue;
     }
-    pendingApprovalsByThreadID.set(
-      approval.threadID,
-      (pendingApprovalsByThreadID.get(approval.threadID) || 0) + 1
-    );
+    counts.set(approval.threadID, (counts.get(approval.threadID) || 0) + 1);
+  }
+  return counts;
+}
+
+function sortedProjectsByActivity() {
+  const countByProject = new Map();
+  for (const project of state.projects) {
+    countByProject.set(project.id, 0);
+  }
+  for (const thread of state.threads) {
+    countByProject.set(thread.projectID, (countByProject.get(thread.projectID) || 0) + 1);
   }
 
-  if (visibleThreads.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "No threads yet";
-    dom.threadList.appendChild(li);
+  return state.projects
+    .slice()
+    .sort((a, b) => {
+      const countDiff = (countByProject.get(b.id) || 0) - (countByProject.get(a.id) || 0);
+      if (countDiff !== 0) {
+        return countDiff;
+      }
+      return a.name.localeCompare(b.name);
+    });
+}
+
+function selectProjectFilter(projectID, shouldSendSelectCommand = true) {
+  const nextID = projectID || "all";
+  state.selectedProjectFilterID = nextID;
+  if (shouldSendSelectCommand && nextID !== "all") {
+    sendCommand("project.select", { projectID: nextID });
+  }
+  if (state.currentView === "thread" && state.selectedThreadID) {
+    const thread = getThreadByID(state.selectedThreadID);
+    if (thread && nextID !== "all" && thread.projectID !== nextID) {
+      state.currentView = "home";
+    }
+  }
+  updateRouteHash(state.currentView === "thread" ? "thread" : "home", {
+    threadID: state.currentView === "thread" ? state.selectedThreadID : null,
+    projectID: state.selectedProjectFilterID
+  });
+  renderHome();
+  renderNavigation();
+}
+
+function navigateHome() {
+  state.currentView = "home";
+  updateRouteHash("home", { projectID: state.selectedProjectFilterID });
+  renderNavigation();
+}
+
+function navigateToThread(threadID) {
+  const thread = getThreadByID(threadID);
+  if (!thread) {
     return;
   }
 
+  state.selectedThreadID = threadID;
+  state.unreadByThreadID.set(threadID, false);
+  state.currentView = "thread";
+  sendCommand("thread.select", { threadID });
+  updateRouteHash("thread", { threadID, projectID: state.selectedProjectFilterID });
+  renderAll();
+}
+
+function ensureCurrentRouteIsValid() {
+  if (state.currentView === "thread") {
+    if (!state.selectedThreadID || !getThreadByID(state.selectedThreadID)) {
+      state.currentView = "home";
+      state.selectedThreadID = null;
+      updateRouteHash("home", { projectID: state.selectedProjectFilterID });
+    }
+  }
+}
+
+function renderProjectStrip() {
+  dom.projectCircleStrip.innerHTML = "";
+
+  const allButton = document.createElement("button");
+  allButton.type = "button";
+  allButton.className = "project-circle";
+  allButton.textContent = "All";
+  allButton.setAttribute("role", "listitem");
+  allButton.classList.toggle("active", state.selectedProjectFilterID === "all");
+  allButton.setAttribute("aria-label", "Show all projects");
+  allButton.addEventListener("click", () => {
+    selectProjectFilter("all", false);
+  });
+  dom.projectCircleStrip.appendChild(allButton);
+
+  const topProjects = sortedProjectsByActivity().slice(0, 6);
+  for (const project of topProjects) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "project-circle";
+    button.textContent = project.name;
+    button.setAttribute("role", "listitem");
+    button.classList.toggle("active", project.id === state.selectedProjectFilterID);
+    button.setAttribute("aria-label", `Show chats for ${project.name}`);
+    button.addEventListener("click", () => {
+      selectProjectFilter(project.id, true);
+    });
+    dom.projectCircleStrip.appendChild(button);
+  }
+}
+
+function renderProjectSheet() {
+  dom.projectSheetList.innerHTML = "";
+
+  const options = [{ id: "all", name: "All projects" }, ...sortedProjectsByActivity()];
+  for (const project of options) {
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = project.name;
+    button.classList.toggle("primary", project.id === state.selectedProjectFilterID);
+    button.addEventListener("click", () => {
+      selectProjectFilter(project.id, project.id !== "all");
+      closeProjectSheet();
+    });
+    li.appendChild(button);
+    dom.projectSheetList.appendChild(li);
+  }
+}
+
+function renderChatList() {
+  dom.chatList.innerHTML = "";
+
+  const visibleThreads = getVisibleThreads();
+  const approvalsByThread = pendingApprovalsByThread();
+
+  let emptyMessage = "";
+  if (state.threads.length === 0 && state.projects.length === 0) {
+    emptyMessage = "No projects yet";
+  } else if (state.threads.length === 0) {
+    emptyMessage = "No chats yet";
+  } else if (visibleThreads.length === 0 && state.selectedProjectFilterID !== "all") {
+    emptyMessage = "No chats in this project";
+  }
+
+  if (emptyMessage) {
+    dom.chatListEmpty.textContent = emptyMessage;
+    dom.chatListEmpty.hidden = false;
+    return;
+  }
+  dom.chatListEmpty.hidden = true;
+
   for (const thread of visibleThreads) {
     const li = document.createElement("li");
-    const row = document.createElement("div");
-    row.className = "thread-row";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "chat-row";
+    row.classList.toggle("active", thread.id === state.selectedThreadID);
+    row.setAttribute("aria-label", `Open chat ${thread.title}`);
+
+    const main = document.createElement("div");
+    main.className = "chat-main";
 
     const title = document.createElement("span");
-    title.className = "thread-title";
+    title.className = "chat-title";
     title.textContent = thread.title;
 
     const badges = document.createElement("span");
-    badges.className = "thread-badges";
+    badges.className = "chat-badges";
 
-    const isRunning = state.turnStateByThreadID.get(thread.id) === true;
-    if (isRunning) {
+    const running = state.turnStateByThreadID.get(thread.id) === true;
+    if (running) {
       const runningBadge = document.createElement("span");
-      runningBadge.className = "thread-badge running";
+      runningBadge.className = "mini-badge running";
       runningBadge.textContent = "Running";
       badges.appendChild(runningBadge);
     }
 
-    const approvalCount = pendingApprovalsByThreadID.get(thread.id) || 0;
+    const approvalCount = approvalsByThread.get(thread.id) || 0;
     if (approvalCount > 0) {
       const approvalBadge = document.createElement("span");
-      approvalBadge.className = "thread-badge approval";
+      approvalBadge.className = "mini-badge approval";
       approvalBadge.textContent = approvalCount === 1 ? "1 approval" : `${approvalCount} approvals`;
       badges.appendChild(approvalBadge);
     }
@@ -434,24 +653,43 @@ function renderThreads() {
     const hasUnread = state.unreadByThreadID.get(thread.id) === true;
     if (hasUnread && thread.id !== state.selectedThreadID) {
       const unreadBadge = document.createElement("span");
-      unreadBadge.className = "thread-badge unread";
+      unreadBadge.className = "mini-badge unread";
       unreadBadge.textContent = "New";
       badges.appendChild(unreadBadge);
     }
 
-    row.append(title, badges);
-    li.appendChild(row);
-    li.classList.toggle("active", thread.id === state.selectedThreadID);
-    li.addEventListener("click", () => {
-      state.selectedThreadID = thread.id;
-      state.unreadByThreadID.set(thread.id, false);
-      dom.threadTitle.textContent = thread.title;
-      sendCommand("thread.select", { threadID: thread.id });
-      renderThreads();
-      renderMessages();
+    const preview = document.createElement("div");
+    preview.className = "chat-preview";
+    preview.textContent = threadPreview(thread.id);
+
+    main.append(title, badges);
+    row.append(main, preview);
+
+    row.addEventListener("click", () => {
+      navigateToThread(thread.id);
     });
-    dom.threadList.appendChild(li);
+
+    li.appendChild(row);
+    dom.chatList.appendChild(li);
   }
+}
+
+function roleClass(role) {
+  if (role === "user") {
+    return "role-user";
+  }
+  if (role === "system") {
+    return "role-system";
+  }
+  return "role-assistant";
+}
+
+function messageIsCollapsible(text) {
+  if (!text) {
+    return false;
+  }
+  const lineCount = text.split(/\r?\n/).length;
+  return lineCount > 8 || text.length > 480;
 }
 
 function renderMessages() {
@@ -460,77 +698,63 @@ function renderMessages() {
   const messages = threadID ? state.messagesByThreadID.get(threadID) || [] : [];
 
   if (!threadID) {
-    const div = document.createElement("div");
-    div.className = "message";
-    div.textContent = "Select a thread to view conversation updates.";
-    dom.messageList.appendChild(div);
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Select a chat to view conversation updates.";
+    dom.messageList.appendChild(empty);
     return;
   }
 
   if (messages.length === 0) {
-    const div = document.createElement("div");
-    div.className = "message";
-    div.textContent = "No messages yet.";
-    dom.messageList.appendChild(div);
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No messages yet.";
+    dom.messageList.appendChild(empty);
     return;
   }
 
   for (const message of messages) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "message";
+    const messageID = message.id || `${message.threadID}-${message.createdAt || Date.now()}-${message.role || "assistant"}`;
+    const wrapper = document.createElement("article");
+    wrapper.className = `message ${roleClass(message.role)}`;
 
     const meta = document.createElement("div");
-    meta.className = "meta";
+    meta.className = "message-meta";
     const timestamp = new Date(message.createdAt || Date.now()).toLocaleTimeString();
-    meta.textContent = `${message.role || "system"} · ${timestamp}`;
+    meta.textContent = `${message.role || "assistant"} · ${timestamp}`;
 
     const body = document.createElement("div");
+    body.className = "message-body";
     body.textContent = message.text || "";
 
+    const collapsible = messageIsCollapsible(message.text || "");
+    if (collapsible && !state.expandedMessageIDs.has(messageID)) {
+      body.classList.add("collapsed");
+    }
+
     wrapper.append(meta, body);
+
+    if (collapsible) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "expand-toggle";
+      const expanded = state.expandedMessageIDs.has(messageID);
+      toggle.textContent = expanded ? "Show less" : "Show more";
+      toggle.addEventListener("click", () => {
+        if (state.expandedMessageIDs.has(messageID)) {
+          state.expandedMessageIDs.delete(messageID);
+        } else {
+          state.expandedMessageIDs.add(messageID);
+        }
+        renderMessages();
+      });
+      wrapper.appendChild(toggle);
+    }
+
     dom.messageList.appendChild(wrapper);
   }
 
   dom.messageList.scrollTop = dom.messageList.scrollHeight;
-}
-
-function renderApprovals() {
-  dom.approvalList.innerHTML = "";
-  if (!Array.isArray(state.pendingApprovals) || state.pendingApprovals.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "No pending approvals";
-    dom.approvalList.appendChild(li);
-    return;
-  }
-
-  for (const approval of state.pendingApprovals) {
-    const li = document.createElement("li");
-    const row = document.createElement("div");
-    row.className = "approval-row";
-
-    const title = document.createElement("strong");
-    title.textContent = `#${approval.requestID || "?"}`;
-
-    const summary = document.createElement("div");
-    summary.className = "approval-summary";
-    summary.textContent = approval.summary || "Pending approval request";
-
-    row.append(title, summary);
-
-    if (state.canApproveRemotely) {
-      const actions = document.createElement("div");
-      actions.className = "approval-actions";
-      actions.append(
-        approvalButton("Approve once", approval, "approve_once", true),
-        approvalButton("Approve session", approval, "approve_for_session"),
-        approvalButton("Decline", approval, "decline")
-      );
-      row.append(actions);
-    }
-
-    li.append(row);
-    dom.approvalList.appendChild(li);
-  }
 }
 
 function approvalButton(label, approval, decision, isPrimary = false) {
@@ -549,6 +773,116 @@ function approvalButton(label, approval, decision, isPrimary = false) {
   return button;
 }
 
+function renderApprovalsTray() {
+  dom.approvalTray.innerHTML = "";
+  const threadID = state.selectedThreadID;
+  const threadApprovals = state.pendingApprovals.filter((approval) => approval.threadID === threadID);
+  const globalApprovals = state.pendingApprovals.filter((approval) => !approval.threadID);
+
+  if (globalApprovals.length > 0) {
+    const label =
+      globalApprovals.length === 1
+        ? "1 session approval is pending outside this chat."
+        : `${globalApprovals.length} session approvals are pending outside this chat.`;
+    dom.approvalGlobalSummary.textContent = label;
+    dom.approvalGlobalSummary.hidden = false;
+  } else {
+    dom.approvalGlobalSummary.hidden = true;
+  }
+
+  const allVisibleApprovals = [...threadApprovals, ...globalApprovals];
+  if (allVisibleApprovals.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "approval-summary-line";
+    empty.textContent = "No pending approvals.";
+    dom.approvalTray.appendChild(empty);
+    return;
+  }
+
+  for (const approval of allVisibleApprovals) {
+    const card = document.createElement("article");
+    card.className = "approval-card";
+
+    const title = document.createElement("div");
+    title.className = "approval-title";
+    title.textContent = `#${approval.requestID || "?"}`;
+
+    const text = document.createElement("div");
+    text.className = "approval-text";
+    text.textContent = approval.summary || "Pending approval request";
+
+    card.append(title, text);
+
+    if (state.canApproveRemotely) {
+      const actions = document.createElement("div");
+      actions.className = "approval-actions";
+      actions.append(
+        approvalButton("Approve once", approval, "approve_once", true),
+        approvalButton("Approve session", approval, "approve_for_session"),
+        approvalButton("Decline", approval, "decline")
+      );
+      card.appendChild(actions);
+    }
+
+    dom.approvalTray.appendChild(card);
+  }
+}
+
+function renderChatDetail() {
+  const thread = state.selectedThreadID ? getThreadByID(state.selectedThreadID) : null;
+  dom.threadTitle.textContent = thread ? thread.title : "Thread";
+
+  if (!thread) {
+    dom.threadStatusChip.hidden = true;
+    renderMessages();
+    renderApprovalsTray();
+    return;
+  }
+
+  const isRunning = state.turnStateByThreadID.get(thread.id) === true;
+  if (isRunning) {
+    dom.threadStatusChip.hidden = false;
+    dom.threadStatusChip.textContent = "Running";
+  } else if (state.isSyncStale) {
+    dom.threadStatusChip.hidden = false;
+    dom.threadStatusChip.textContent = "Sync stale";
+  } else {
+    dom.threadStatusChip.hidden = true;
+  }
+
+  dom.approvalTray.hidden = !state.approvalsExpanded;
+  dom.toggleApprovalsButton.setAttribute("aria-expanded", state.approvalsExpanded ? "true" : "false");
+  dom.toggleApprovalsButton.textContent = state.approvalsExpanded ? "Hide" : "Show";
+
+  renderMessages();
+  renderApprovalsTray();
+}
+
+function renderHome() {
+  renderProjectStrip();
+  renderProjectSheet();
+  renderChatList();
+}
+
+function renderNavigation() {
+  ensureCurrentRouteIsValid();
+  const showChat = state.currentView === "thread" && Boolean(state.selectedThreadID);
+  dom.homeView.hidden = showChat;
+  dom.chatView.hidden = !showChat;
+}
+
+function renderAccountSheet() {
+  dom.accountSheet.hidden = !state.isAccountSheetOpen;
+  dom.projectSheet.hidden = !state.isProjectSheetOpen;
+}
+
+function renderAll() {
+  renderHome();
+  renderChatDetail();
+  renderNavigation();
+  renderAccountSheet();
+}
+
 function messageSignature(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return "";
@@ -562,10 +896,15 @@ function applySnapshot(snapshot) {
   state.threads = Array.isArray(snapshot.threads) ? snapshot.threads : [];
   state.pendingApprovals = Array.isArray(snapshot.pendingApprovals) ? snapshot.pendingApprovals : [];
   state.selectedProjectID = snapshot.selectedProjectID || state.selectedProjectID;
-  state.selectedThreadID = snapshot.selectedThreadID || state.selectedThreadID;
-  if (state.selectedThreadID) {
-    state.unreadByThreadID.set(state.selectedThreadID, false);
+  if (state.selectedProjectFilterID !== "all" && !state.projects.some((project) => project.id === state.selectedProjectFilterID)) {
+    state.selectedProjectFilterID = "all";
   }
+
+  if (snapshot.selectedThreadID && state.threads.some((thread) => thread.id === snapshot.selectedThreadID)) {
+    state.selectedThreadID = snapshot.selectedThreadID;
+    state.unreadByThreadID.set(snapshot.selectedThreadID, false);
+  }
+
   if (snapshot.turnState?.threadID) {
     state.turnStateByThreadID.set(snapshot.turnState.threadID, Boolean(snapshot.turnState.isTurnInProgress));
   }
@@ -604,10 +943,8 @@ function applySnapshot(snapshot) {
     }
   }
 
-  renderProjects();
-  renderThreads();
-  renderMessages();
-  renderApprovals();
+  ensureCurrentRouteIsValid();
+  renderAll();
 }
 
 function appendMessageFromEvent(eventPayload) {
@@ -646,8 +983,7 @@ function appendMessageFromEvent(eventPayload) {
     state.unreadByThreadID.set(threadID, false);
   }
 
-  renderThreads();
-  renderMessages();
+  renderAll();
 }
 
 function processSequence(seq) {
@@ -703,6 +1039,7 @@ function onSocketMessage(event) {
     setStatus("WebSocket authenticated.");
     flushQueuedCommands();
     requestSnapshot(state.pendingSnapshotReason || "initial_sync");
+    renderAll();
     return;
   }
 
@@ -722,6 +1059,7 @@ function onSocketMessage(event) {
       refreshPairButtonState();
     }
     updateWorkspaceVisibility();
+    renderAll();
     setStatus(disconnectMessageForReason(reason), "warn");
     return;
   }
@@ -759,10 +1097,7 @@ function onSocketMessage(event) {
   const payload = message.payload;
   const isSnapshotPayload = Boolean(payload && typeof payload === "object" && payload.type === "snapshot");
   const sequenceDecision = processSequence(message.seq);
-  if (sequenceDecision === "stale") {
-    return;
-  }
-  if (sequenceDecision === "ignored") {
+  if (sequenceDecision === "stale" || sequenceDecision === "ignored") {
     return;
   }
   if (sequenceDecision === "gap") {
@@ -796,7 +1131,7 @@ function onSocketMessage(event) {
   if (payload.type === "hello") {
     markSynced();
     state.canApproveRemotely = Boolean(payload.payload?.supportsApprovals);
-    renderApprovals();
+    renderApprovalsTray();
     if (!state.canApproveRemotely) {
       setStatus("Connected. Remote approvals are disabled on desktop.", "warn");
     }
@@ -819,7 +1154,7 @@ function onSocketMessage(event) {
       if (eventPayload.threadID) {
         state.turnStateByThreadID.set(eventPayload.threadID, stateLabel === "running");
       }
-      renderThreads();
+      renderAll();
       const threadLabel = eventPayload.threadID ? ` (${eventPayload.threadID.slice(0, 8)})` : "";
       setStatus(`Turn status${threadLabel}: ${stateLabel}.`);
       return;
@@ -867,11 +1202,7 @@ function connectSocket(force = false) {
     return;
   }
 
-  if (
-    !force &&
-    state.socket &&
-    (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)
-  ) {
+  if (!force && state.socket && (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)) {
     return;
   }
 
@@ -904,6 +1235,7 @@ function connectSocket(force = false) {
     state.isSyncStale = false;
     updateWorkspaceVisibility();
     setConnectionBadge(false);
+    renderAll();
     if (state.reconnectDisabledReason) {
       setStatus(disconnectMessageForReason(state.reconnectDisabledReason), "warn");
       return;
@@ -1070,6 +1402,7 @@ function requestSnapshot(reason) {
 async function pairDevice() {
   if (!state.sessionID || !state.joinToken) {
     setStatus("Missing session data. Re-open from QR link.", "error");
+    openAccountSheet();
     return;
   }
   if (state.isPairingInFlight) {
@@ -1179,6 +1512,88 @@ async function promptInstall() {
   refreshWelcomePanel();
 }
 
+function getFocusableElements(container) {
+  return [...container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+    (el) => !el.hasAttribute("disabled") && el.offsetParent !== null
+  );
+}
+
+function trapFocus(sheetElement) {
+  if (state.focusTrapCleanup) {
+    state.focusTrapCleanup();
+  }
+
+  const keyListener = (event) => {
+    if (event.key === "Escape") {
+      if (sheetElement === dom.accountSheet) {
+        closeAccountSheet();
+      } else if (sheetElement === dom.projectSheet) {
+        closeProjectSheet();
+      }
+      return;
+    }
+
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    const focusables = getFocusableElements(sheetElement);
+    if (!focusables.length) {
+      return;
+    }
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  document.addEventListener("keydown", keyListener);
+  state.focusTrapCleanup = () => {
+    document.removeEventListener("keydown", keyListener);
+    state.focusTrapCleanup = null;
+  };
+}
+
+function openAccountSheet() {
+  state.isAccountSheetOpen = true;
+  state.isProjectSheetOpen = false;
+  renderAccountSheet();
+  trapFocus(dom.accountSheet);
+  dom.closeAccountSheetButton.focus();
+}
+
+function closeAccountSheet() {
+  state.isAccountSheetOpen = false;
+  renderAccountSheet();
+  if (state.focusTrapCleanup) {
+    state.focusTrapCleanup();
+  }
+}
+
+function openProjectSheet() {
+  state.isProjectSheetOpen = true;
+  state.isAccountSheetOpen = false;
+  renderAccountSheet();
+  trapFocus(dom.projectSheet);
+  dom.closeProjectSheetButton.focus();
+}
+
+function closeProjectSheet() {
+  state.isProjectSheetOpen = false;
+  renderAccountSheet();
+  if (state.focusTrapCleanup) {
+    state.focusTrapCleanup();
+  }
+}
+
 function wireComposer() {
   dom.composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1210,7 +1625,16 @@ function wireComposer() {
 }
 
 function wireButtons() {
+  dom.accountButton.addEventListener("click", () => {
+    openAccountSheet();
+  });
+
   dom.pairButton.addEventListener("click", pairDevice);
+  dom.preconnectPairButton.addEventListener("click", () => {
+    openAccountSheet();
+    pairDevice();
+  });
+
   dom.reconnectButton.addEventListener("click", () => {
     connectSocket(true);
   });
@@ -1218,6 +1642,38 @@ function wireButtons() {
     requestSnapshot("manual_request");
   });
   dom.forgetButton.addEventListener("click", forgetRememberedDevice);
+
+  dom.chatBackButton.addEventListener("click", () => {
+    navigateHome();
+  });
+
+  dom.toggleApprovalsButton.addEventListener("click", () => {
+    state.approvalsExpanded = !state.approvalsExpanded;
+    renderChatDetail();
+  });
+
+  dom.viewAllProjectsButton.addEventListener("click", () => {
+    openProjectSheet();
+  });
+
+  dom.closeAccountSheetButton.addEventListener("click", () => {
+    closeAccountSheet();
+  });
+  dom.closeProjectSheetButton.addEventListener("click", () => {
+    closeProjectSheet();
+  });
+
+  document.querySelectorAll(".sheet-backdrop").forEach((backdrop) => {
+    backdrop.addEventListener("click", () => {
+      const sheetType = backdrop.getAttribute("data-close-sheet");
+      if (sheetType === "project") {
+        closeProjectSheet();
+      } else {
+        closeAccountSheet();
+      }
+    });
+  });
+
   dom.installButton.addEventListener("click", () => {
     promptInstall();
   });
@@ -1252,6 +1708,33 @@ function wireButtons() {
     setStatus("Resyncing after returning to foreground...");
     requestSnapshot("visibility_resume");
   });
+
+  window.addEventListener("hashchange", () => {
+    applyRoute(parseRouteHash(), false);
+  });
+}
+
+function updateThemeColorMeta() {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    return;
+  }
+  const prefersLight = window.matchMedia?.("(prefers-color-scheme: light)")?.matches === true;
+  meta.setAttribute("content", prefersLight ? "#ffffff" : "#000000");
+}
+
+function wireThemeColorMeta() {
+  updateThemeColorMeta();
+  const media = window.matchMedia?.("(prefers-color-scheme: light)");
+  if (!media) {
+    return;
+  }
+  const onChange = () => updateThemeColorMeta();
+  if (typeof media.addEventListener === "function") {
+    media.addEventListener("change", onChange);
+  } else if (typeof media.addListener === "function") {
+    media.addListener(onChange);
+  }
 }
 
 function registerServiceWorker() {
@@ -1268,10 +1751,8 @@ function init() {
   parseJoinFromHash();
   wireButtons();
   wireComposer();
-  renderProjects();
-  renderThreads();
-  renderMessages();
-  renderApprovals();
+  wireThemeColorMeta();
+  renderAll();
   updateWorkspaceVisibility();
   refreshPairButtonState();
   refreshWelcomePanel();
@@ -1279,6 +1760,8 @@ function init() {
   refreshSyncFreshness();
   setInterval(refreshSyncFreshness, 5_000);
   registerServiceWorker();
+
+  applyRoute(parseRouteHash(), true);
 
   if (restored && !state.joinToken && state.deviceSessionToken && state.wsURL) {
     setStatus("Restored saved pairing. Reconnecting...");
