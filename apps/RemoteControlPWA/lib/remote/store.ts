@@ -49,6 +49,11 @@ export interface RemoteStoreState {
   turnStateByThreadID: Map<string, boolean>;
   unreadByThreadID: Map<string, boolean>;
   expandedMessageIDs: Set<string>;
+  isChatAtBottom: boolean;
+  showJumpToLatest: boolean;
+  userDetachedFromBottomAt: number | null;
+  visibleMessageLimit: number;
+  isComposerDispatching: boolean;
   isE2EMode: boolean;
   keyboardOffset: number;
   visualViewportHeight: number;
@@ -98,6 +103,11 @@ export function createInitialState(): RemoteStoreState {
     turnStateByThreadID: new Map(),
     unreadByThreadID: new Map(),
     expandedMessageIDs: new Set(),
+    isChatAtBottom: true,
+    showJumpToLatest: false,
+    userDetachedFromBottomAt: null,
+    visibleMessageLimit: 90,
+    isComposerDispatching: false,
     isE2EMode: false,
     keyboardOffset: 0,
     visualViewportHeight: 0,

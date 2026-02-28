@@ -77,6 +77,11 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 - Account sheet contains pairing/session controls.
 - Inline approval indicators on chat rows and in-chat approval tray actions.
 - Message wrapping and long-message collapse/expand in transcript view.
+- Smart transcript anchoring: auto-follow only when already near the bottom.
+- Floating `Jump to latest` button when new messages arrive while reading older content.
+- Progressive transcript rendering (`Show older messages`) for very long threads.
+- Specialized transcript cards for command execution, diffs, and reasoning summaries with safe plain-text fallback.
+- Composer auto-resize with `Cmd/Ctrl+Enter` send shortcut and dispatching state indicator.
 
 ## Mobile hardening guarantees
 

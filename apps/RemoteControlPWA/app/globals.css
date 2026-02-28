@@ -115,6 +115,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -487,6 +492,7 @@ textarea:focus-visible,
 .transcript-panel {
   padding: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .messages {
@@ -496,6 +502,15 @@ textarea:focus-visible,
   padding: 0.8rem;
   display: grid;
   gap: 0.45rem;
+}
+
+.show-older-button {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  justify-self: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
 }
 
 .message {
@@ -548,6 +563,115 @@ textarea:focus-visible,
   font-size: 0.78rem;
 }
 
+.tool-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.tool-card-toggle {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  min-height: 44px;
+  padding: 0.5rem 0.55rem;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  text-align: left;
+}
+
+.tool-card-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.81rem;
+  font-weight: 610;
+}
+
+.tool-card-chips {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.22rem;
+  flex-wrap: wrap;
+}
+
+.tool-chip {
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  padding: 0.12rem 0.38rem;
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.64rem;
+  color: var(--muted);
+}
+
+.tool-chip.started {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.tool-chip.completed {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.tool-card-body {
+  border-top: 1px solid var(--line);
+  padding: 0.42rem 0.55rem 0.55rem;
+  display: grid;
+  gap: 0.44rem;
+}
+
+.tool-section {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.tool-section h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tool-section pre {
+  margin: 0;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.44rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.77rem;
+  line-height: 1.33;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.jump-to-latest {
+  position: absolute;
+  right: 0.7rem;
+  bottom: 0.7rem;
+  z-index: 7;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.jump-to-latest.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 .composer {
   position: sticky;
   bottom: max(0px, var(--keyboard-offset));
@@ -556,19 +680,53 @@ textarea:focus-visible,
   gap: 0.48rem;
 }
 
-textarea {
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+.composer-input {
   width: 100%;
-  min-height: 120px;
-  resize: vertical;
+  min-height: 44px;
+  max-height: 200px;
+  resize: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-alt);
   color: var(--fg);
-  padding: 0.7rem;
+  padding: 0.58rem 0.7rem;
+  line-height: 1.35;
 }
 
-textarea::placeholder {
+.composer-input::placeholder {
   color: var(--muted);
+}
+
+.composer-send {
+  min-width: 84px;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+
+.sending-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+}
+
+.spinner {
+  width: 0.78rem;
+  height: 0.78rem;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: var(--accent-fg);
+  border-radius: 999px;
+  animation: spin 0.85s linear infinite;
+}
+
+.composer-hint {
+  color: var(--muted);
+  font-size: 0.74rem;
 }
 
 .sheet-backdrop {
@@ -732,6 +890,18 @@ textarea::placeholder {
     font-size: 0.62rem;
     min-height: 20px;
   }
+
+  .composer-hint {
+    font-size: 0.69rem;
+  }
+
+  .tool-card-title {
+    font-size: 0.74rem;
+  }
+
+  .tool-chip {
+    font-size: 0.6rem;
+  }
 }
 
 @media (max-height: 480px) {
@@ -752,12 +922,18 @@ textarea::placeholder {
     padding: 0.62rem;
   }
 
-  textarea {
-    min-height: 88px;
+  .composer-input {
+    min-height: 44px;
   }
 
   .sheet-card {
     max-height: min(calc(var(--vvh) - var(--safe-top) - 0.5rem), 460px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

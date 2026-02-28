@@ -373,6 +373,10 @@ class RemoteClient {
       nextPartial.selectedThreadID = route.threadID;
       nextPartial.unreadByThreadID = unread;
       nextPartial.currentView = 'thread';
+      nextPartial.isChatAtBottom = true;
+      nextPartial.showJumpToLatest = false;
+      nextPartial.userDetachedFromBottomAt = null;
+      nextPartial.visibleMessageLimit = 90;
     } else {
       nextPartial.currentView = 'home';
     }
@@ -426,7 +430,11 @@ class RemoteClient {
     remoteStoreApi.setState({
       selectedThreadID: threadID,
       unreadByThreadID: unread,
-      currentView: 'thread'
+      currentView: 'thread',
+      isChatAtBottom: true,
+      showJumpToLatest: false,
+      userDetachedFromBottomAt: null,
+      visibleMessageLimit: 90
     });
 
     this.sendCommand('thread.select', { threadID });
@@ -1256,6 +1264,7 @@ class RemoteClient {
       return false;
     }
 
+    remoteStoreApi.setState({ isComposerDispatching: true });
     const wasConnected = state.socket?.readyState === WebSocket.OPEN;
     const sent = this.sendCommand('thread.send_message', {
       threadID: state.selectedThreadID,
@@ -1263,8 +1272,13 @@ class RemoteClient {
     });
 
     if (!sent) {
+      remoteStoreApi.setState({ isComposerDispatching: false });
       return false;
     }
+
+    window.setTimeout(() => {
+      remoteStoreApi.setState({ isComposerDispatching: false });
+    }, 280);
 
     if (wasConnected) {
       this.setStatus('Message sent to relay. Waiting for desktop confirmation...');

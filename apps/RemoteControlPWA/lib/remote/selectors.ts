@@ -43,3 +43,16 @@ export function messageIsCollapsible(text: string): boolean {
   const lineCount = text.split(/\r?\n/).length;
   return lineCount > 8 || text.length > 480;
 }
+
+export function getVisibleMessageWindow<T>(messages: T[], limit: number): { items: T[]; hiddenCount: number } {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { items: [], hiddenCount: 0 };
+  }
+
+  const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : messages.length;
+  const startIndex = Math.max(0, messages.length - normalizedLimit);
+  return {
+    items: messages.slice(startIndex),
+    hiddenCount: startIndex
+  };
+}

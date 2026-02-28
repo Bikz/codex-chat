@@ -34,6 +34,32 @@ async function seedDemo(page: Parameters<typeof test>[0]["page"]) {
   }, snapshotPayload);
 }
 
+async function seedCustom(page: Parameters<typeof test>[0]["page"], payload: unknown) {
+  await page.goto("/?e2e=1#view=home&pid=all");
+  await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
+  await page.evaluate((nextPayload) => {
+    (window as any).__codexRemotePWAHarness.resetStorage();
+    (window as any).__codexRemotePWAHarness.seed(nextPayload, { authenticated: true });
+  }, payload);
+}
+
+function createLongThreadPayload(messageCount: number) {
+  return {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t-long", projectID: "p1", title: "Scroll anchor thread", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t-long",
+    messages: Array.from({ length: messageCount }, (_, index) => ({
+      id: `ml-${index + 1}`,
+      threadID: "t-long",
+      role: "assistant",
+      text: `message ${index + 1}`,
+      createdAt: `2026-02-28T15:${String(index % 59).padStart(2, "0")}:00.000Z`
+    })),
+    pendingApprovals: []
+  };
+}
+
 test("mobile-home-view-renders", async ({ page }) => {
   await seedDemo(page);
 
@@ -104,4 +130,65 @@ test("mobile-theme-color-meta", async ({ page }) => {
   await expect
     .poll(async () => page.locator('meta[name="theme-color"]').getAttribute("content"))
     .toBe("#000000");
+});
+
+test("mobile-smart-scroll-jump-to-latest", async ({ page }) => {
+  await seedCustom(page, createLongThreadPayload(140));
+
+  await page.getByRole("button", { name: "Open chat Scroll anchor thread" }).click();
+  await expect(page.locator("#messageList")).toBeVisible();
+
+  await page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>("#messageList");
+    if (!list) return;
+    list.scrollTop = 0;
+    (window as any).__codexRemotePWAHarness.setChatDetached(true);
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().isChatAtBottom)).toBe(false);
+
+  await page.evaluate((payload) => {
+    (window as any).__codexRemotePWAHarness.seed(payload, { authenticated: true });
+  }, createLongThreadPayload(141));
+
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().showJumpToLatest)).toBe(true);
+  await expect(page.locator("#jumpToLatestButton")).toBeVisible();
+
+  await page.locator("#jumpToLatestButton").click();
+  await expect(page.locator("#jumpToLatestButton")).toBeHidden();
+
+  const distance = await page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>("#messageList");
+    if (!list) return 999;
+    return list.scrollHeight - list.scrollTop - list.clientHeight;
+  });
+  expect(distance).toBeLessThan(12);
+});
+
+test("mobile-composer-autoresize-and-send", async ({ page }) => {
+  await seedDemo(page);
+  await page.evaluate(() => {
+    (window as any).__codexRemotePWAHarness.openThread("t1");
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().selectedThreadID)).toBe("t1");
+  await expect(page).toHaveURL(/view=thread/);
+
+  const composerInput = page.locator("#composerInput");
+  const initialHeight = await composerInput.evaluate((element) => element.getBoundingClientRect().height);
+
+  const longText = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\\n");
+  await composerInput.fill(longText);
+
+  const grownHeight = await composerInput.evaluate((element) => element.getBoundingClientRect().height);
+  expect(grownHeight).toBeGreaterThan(initialHeight);
+  expect(grownHeight).toBeLessThanOrEqual(205);
+
+  await composerInput.fill("shortcut send");
+  await expect(page.getByRole("button", { name: "Send message" })).toBeEnabled();
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().queuedCommandsCount)).toBe(0);
+
+  await page.evaluate(() => {
+    const form = document.querySelector<HTMLFormElement>("#composerForm");
+    form?.requestSubmit();
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().queuedCommandsCount)).toBeGreaterThan(0);
 });

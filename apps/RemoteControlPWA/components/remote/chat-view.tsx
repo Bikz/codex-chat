@@ -1,12 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ApprovalsTray } from '@/components/remote/approvals-tray';
 import { Composer } from '@/components/remote/composer';
+import { CommandCard } from '@/components/remote/message-cards/command-card';
+import { DiffCard } from '@/components/remote/message-cards/diff-card';
+import { ReasoningCard } from '@/components/remote/message-cards/reasoning-card';
 import { getRemoteClient } from '@/lib/remote/client';
-import { messageIsCollapsible } from '@/lib/remote/selectors';
-import { useRemoteStore } from '@/lib/remote/store';
+import { parseMessageText } from '@/lib/remote/message-parser';
+import { getVisibleMessageWindow, messageIsCollapsible } from '@/lib/remote/selectors';
+import { remoteStoreApi, useRemoteStore } from '@/lib/remote/store';
+import { isNearBottom } from '@/lib/remote/scroll-anchor';
 import { useShallow } from 'zustand/react/shallow';
+
+const REVEAL_CHUNK_SIZE = 80;
 
 function roleClass(role: string | undefined) {
   if (role === 'user') return 'role-user';
@@ -17,6 +24,9 @@ function roleClass(role: string | undefined) {
 export function ChatView({ hidden }: { hidden: boolean }) {
   const client = getRemoteClient();
   const messageListRef = useRef<HTMLDivElement>(null);
+  const previousThreadIDRef = useRef<string | null>(null);
+  const previousMessageCountRef = useRef(0);
+  const revealAnchorRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
 
   const {
     selectedThreadID,
@@ -25,7 +35,11 @@ export function ChatView({ hidden }: { hidden: boolean }) {
     expandedMessageIDs,
     approvalsExpanded,
     turnStateByThreadID,
-    isSyncStale
+    isSyncStale,
+    visibleMessageLimit,
+    isChatAtBottom,
+    showJumpToLatest,
+    userDetachedFromBottomAt
   } = useRemoteStore(
     useShallow((state) => ({
       selectedThreadID: state.selectedThreadID,
@@ -34,19 +48,140 @@ export function ChatView({ hidden }: { hidden: boolean }) {
       expandedMessageIDs: state.expandedMessageIDs,
       approvalsExpanded: state.approvalsExpanded,
       turnStateByThreadID: state.turnStateByThreadID,
-      isSyncStale: state.isSyncStale
+      isSyncStale: state.isSyncStale,
+      visibleMessageLimit: state.visibleMessageLimit,
+      isChatAtBottom: state.isChatAtBottom,
+      showJumpToLatest: state.showJumpToLatest,
+      userDetachedFromBottomAt: state.userDetachedFromBottomAt
     }))
   );
 
-  const thread = useMemo(() => threads.find((item) => item.id === selectedThreadID) || null, [threads, selectedThreadID]);
-  const messages = useMemo(() => (selectedThreadID ? messagesByThreadID.get(selectedThreadID) || [] : []), [messagesByThreadID, selectedThreadID]);
+  const isChatAtBottomRef = useRef(isChatAtBottom);
+  const showJumpToLatestRef = useRef(showJumpToLatest);
+  const userDetachedRef = useRef(userDetachedFromBottomAt);
 
   useEffect(() => {
-    if (!messageListRef.current) {
+    isChatAtBottomRef.current = isChatAtBottom;
+    showJumpToLatestRef.current = showJumpToLatest;
+    userDetachedRef.current = userDetachedFromBottomAt;
+  }, [isChatAtBottom, showJumpToLatest, userDetachedFromBottomAt]);
+
+  const thread = useMemo(() => threads.find((item) => item.id === selectedThreadID) || null, [threads, selectedThreadID]);
+  const messages = useMemo(() => (selectedThreadID ? messagesByThreadID.get(selectedThreadID) || [] : []), [messagesByThreadID, selectedThreadID]);
+  const visibleWindow = useMemo(() => getVisibleMessageWindow(messages, visibleMessageLimit), [messages, visibleMessageLimit]);
+
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const list = messageListRef.current;
+    if (!list) {
       return;
     }
-    messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-  }, [messages.length, expandedMessageIDs]);
+    list.scrollTo({
+      top: list.scrollHeight,
+      behavior
+    });
+  }, []);
+
+  const onMessageScroll = useCallback(() => {
+    const list = messageListRef.current;
+    if (!list) {
+      return;
+    }
+
+    const nearBottom = isNearBottom({
+      scrollTop: list.scrollTop,
+      scrollHeight: list.scrollHeight,
+      clientHeight: list.clientHeight
+    });
+
+    const patch: Partial<ReturnType<typeof remoteStoreApi.getState>> = {};
+    if (nearBottom !== isChatAtBottomRef.current) {
+      patch.isChatAtBottom = nearBottom;
+    }
+
+    if (nearBottom) {
+      if (showJumpToLatestRef.current) {
+        patch.showJumpToLatest = false;
+      }
+      if (userDetachedRef.current !== null) {
+        patch.userDetachedFromBottomAt = null;
+      }
+    } else if (isChatAtBottomRef.current && userDetachedRef.current === null) {
+      patch.userDetachedFromBottomAt = Date.now();
+    }
+
+    if (Object.keys(patch).length > 0) {
+      remoteStoreApi.setState(patch);
+    }
+  }, []);
+
+  useEffect(() => {
+    const list = messageListRef.current;
+    const previousThreadID = previousThreadIDRef.current;
+    const threadChanged = previousThreadID !== selectedThreadID;
+    const messageCountGrew = !threadChanged && messages.length > previousMessageCountRef.current;
+
+    if (threadChanged) {
+      previousThreadIDRef.current = selectedThreadID;
+      previousMessageCountRef.current = messages.length;
+      remoteStoreApi.setState({
+        isChatAtBottom: true,
+        showJumpToLatest: false,
+        userDetachedFromBottomAt: null
+      });
+      if (list) {
+        requestAnimationFrame(() => {
+          scrollToLatest('auto');
+        });
+      }
+      return;
+    }
+
+    if (messageCountGrew) {
+      const currentStoreState = remoteStoreApi.getState();
+      if (currentStoreState.isChatAtBottom) {
+        requestAnimationFrame(() => {
+          scrollToLatest('auto');
+        });
+        remoteStoreApi.setState({
+          isChatAtBottom: true,
+          showJumpToLatest: false,
+          userDetachedFromBottomAt: null
+        });
+      } else {
+        remoteStoreApi.setState({
+          showJumpToLatest: true
+        });
+      }
+    }
+
+    previousMessageCountRef.current = messages.length;
+  }, [messages.length, scrollToLatest, selectedThreadID]);
+
+  useEffect(() => {
+    const anchor = revealAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const list = messageListRef.current;
+    if (!list) {
+      revealAnchorRef.current = null;
+      return;
+    }
+
+    const delta = list.scrollHeight - anchor.scrollHeight;
+    list.scrollTop = anchor.scrollTop + Math.max(0, delta);
+    revealAnchorRef.current = null;
+  }, [visibleMessageLimit, visibleWindow.hiddenCount]);
+
+  useEffect(() => {
+    if (!isChatAtBottom) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      scrollToLatest('auto');
+    });
+  }, [expandedMessageIDs, isChatAtBottom, scrollToLatest]);
 
   const isRunning = thread ? turnStateByThreadID.get(thread.id) === true : false;
 
@@ -82,28 +217,108 @@ export function ChatView({ hidden }: { hidden: boolean }) {
       </section>
 
       <section className="panel transcript-panel" aria-label="Transcript">
-        <div id="messageList" ref={messageListRef} className="messages" aria-live="polite">
+        <div id="messageList" ref={messageListRef} className="messages" aria-live="polite" onScroll={onMessageScroll}>
+          {selectedThreadID && visibleWindow.hiddenCount > 0 ? (
+            <button
+              id="showOlderMessagesButton"
+              type="button"
+              className="ghost show-older-button"
+              onClick={() => {
+                const list = messageListRef.current;
+                if (list) {
+                  revealAnchorRef.current = {
+                    scrollTop: list.scrollTop,
+                    scrollHeight: list.scrollHeight
+                  };
+                }
+                remoteStoreApi.setState((state) => ({
+                  visibleMessageLimit: Math.min(state.visibleMessageLimit + REVEAL_CHUNK_SIZE, messages.length)
+                }));
+              }}
+            >
+              Show older messages ({visibleWindow.hiddenCount})
+            </button>
+          ) : null}
+
           {!selectedThreadID ? <div className="empty-state">Select a chat to view conversation updates.</div> : null}
           {selectedThreadID && messages.length === 0 ? <div className="empty-state">No messages yet.</div> : null}
-          {messages.map((message) => {
+
+          {visibleWindow.items.map((message) => {
             const messageID = message.id || `${message.threadID}-${message.createdAt}-${message.role}`;
-            const collapsible = messageIsCollapsible(message.text || '');
+            const parsedMessage = parseMessageText(message.text || '');
+            const longTextCollapsible = messageIsCollapsible(message.text || '');
+            const cardCollapsible = parsedMessage.mode !== 'plain';
+            const shouldShowToggle = cardCollapsible || longTextCollapsible;
             const expanded = expandedMessageIDs.has(messageID);
+            const collapsed = shouldShowToggle && !expanded;
+
             return (
               <article key={messageID} className={`message ${roleClass(message.role)}`}>
                 <div className="message-meta">
                   {(message.role || 'assistant').toLowerCase()} · {new Date(message.createdAt || Date.now()).toLocaleTimeString()}
                 </div>
-                <div className={`message-body ${collapsible && !expanded ? 'collapsed' : ''}`}>{message.text || ''}</div>
-                {collapsible ? (
-                  <button className="expand-toggle" type="button" onClick={() => client.toggleMessageExpanded(messageID)}>
-                    {expanded ? 'Show less' : 'Show more'}
-                  </button>
+
+                {parsedMessage.mode === 'plain' ? (
+                  <>
+                    <div className={`message-body ${collapsed ? 'collapsed' : ''}`}>{message.text || ''}</div>
+                    {shouldShowToggle ? (
+                      <button className="expand-toggle" type="button" onClick={() => client.toggleMessageExpanded(messageID)}>
+                        {expanded ? 'Show less' : 'Show more'}
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {parsedMessage.mode === 'command_execution' ? (
+                  <CommandCard
+                    title="Command execution"
+                    status={parsedMessage.status}
+                    command={parsedMessage.command}
+                    details={parsedMessage.details}
+                    durationMs={parsedMessage.durationMs}
+                    collapsed={collapsed}
+                    onToggle={() => client.toggleMessageExpanded(messageID)}
+                  />
+                ) : null}
+
+                {parsedMessage.mode === 'diff_patch' ? (
+                  <DiffCard
+                    title={parsedMessage.title || 'Code diff'}
+                    diff={parsedMessage.diff}
+                    collapsed={collapsed}
+                    onToggle={() => client.toggleMessageExpanded(messageID)}
+                  />
+                ) : null}
+
+                {parsedMessage.mode === 'reasoning_summary' ? (
+                  <ReasoningCard
+                    status={parsedMessage.status}
+                    summary={parsedMessage.summary}
+                    collapsed={collapsed}
+                    onToggle={() => client.toggleMessageExpanded(messageID)}
+                  />
                 ) : null}
               </article>
             );
           })}
         </div>
+
+        <button
+          id="jumpToLatestButton"
+          type="button"
+          className={`primary jump-to-latest ${showJumpToLatest ? 'visible' : ''}`}
+          hidden={!showJumpToLatest}
+          onClick={() => {
+            scrollToLatest('smooth');
+            remoteStoreApi.setState({
+              isChatAtBottom: true,
+              showJumpToLatest: false,
+              userDetachedFromBottomAt: null
+            });
+          }}
+        >
+          Jump to latest
+        </button>
       </section>
 
       <Composer />

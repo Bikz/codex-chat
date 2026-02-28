@@ -58,6 +58,11 @@ Use this checklist before cutting a release for the mobile web client.
 - Confirm `Request Snapshot` recovers stale state without full re-pair.
 - Confirm chat rows show `Running` / `New` / approval badges when corresponding state exists.
 - Confirm long transcript messages (>8 lines or >480 chars) collapse by default and can be expanded/collapsed.
+- Scroll up in a long thread, receive new message updates, and confirm transcript is not force-scrolled.
+- Confirm `Jump to latest` appears when detached from bottom and returns to bottom when tapped.
+- For long threads, confirm `Show older messages` reveals older transcript chunks without losing current reading position.
+- Confirm command/diff/reasoning-style messages render as collapsible cards and ambiguous text still renders as normal bubbles.
+- Confirm composer auto-resizes while typing (up to cap) and `Cmd/Ctrl+Enter` sends while plain `Enter` adds a newline.
 
 ## Theme and readability
 
