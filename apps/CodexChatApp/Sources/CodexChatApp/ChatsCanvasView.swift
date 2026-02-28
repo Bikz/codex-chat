@@ -1305,7 +1305,7 @@ private struct ComposerControlBar: View {
         Button {
             isControlPopoverVisible = true
         } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
+            Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(model.hasComposerOverrideForCurrentContext ? Color(hex: tokens.palette.accentHex) : .secondary)
                 .frame(width: 30, height: 30)
