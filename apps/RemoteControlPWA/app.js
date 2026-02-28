@@ -38,7 +38,9 @@ const state = {
   turnStateByThreadID: new Map(),
   unreadByThreadID: new Map(),
   expandedMessageIDs: new Set(),
-  focusTrapCleanup: null
+  focusTrapCleanup: null,
+  visualViewportCleanup: null,
+  isE2EMode: typeof window !== "undefined" && new URLSearchParams(window.location.search).get("e2e") === "1"
 };
 
 const MAX_QUEUED_COMMANDS = 64;
@@ -97,6 +99,19 @@ function setStatus(text, level = "info") {
   dom.statusText.textContent = text;
   const color = level === "error" ? "var(--danger)" : level === "warn" ? "var(--warning)" : "var(--muted)";
   dom.statusText.style.color = color;
+}
+
+function setRootCSSVar(name, value) {
+  document.documentElement.style.setProperty(name, value);
+}
+
+function syncVisualViewportMetrics() {
+  const vv = window.visualViewport;
+  const viewportHeight = vv ? vv.height : window.innerHeight;
+  const keyboardOffset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+
+  setRootCSSVar("--vvh", `${Math.max(1, Math.round(viewportHeight))}px`);
+  setRootCSSVar("--keyboard-offset", `${Math.max(0, Math.round(keyboardOffset))}px`);
 }
 
 function canUseStorage() {
@@ -1594,7 +1609,37 @@ function closeProjectSheet() {
   }
 }
 
+function wireVisualViewport() {
+  syncVisualViewportMetrics();
+
+  const onResize = () => syncVisualViewportMetrics();
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onResize);
+
+  const vv = window.visualViewport;
+  if (vv) {
+    vv.addEventListener("resize", onResize);
+    vv.addEventListener("scroll", onResize);
+  }
+
+  state.visualViewportCleanup = () => {
+    window.removeEventListener("resize", onResize);
+    window.removeEventListener("orientationchange", onResize);
+    if (vv) {
+      vv.removeEventListener("resize", onResize);
+      vv.removeEventListener("scroll", onResize);
+    }
+    state.visualViewportCleanup = null;
+  };
+}
+
 function wireComposer() {
+  dom.composerInput.addEventListener("focus", () => {
+    window.setTimeout(() => {
+      dom.composerInput.scrollIntoView({ block: "nearest" });
+    }, 120);
+  });
+
   dom.composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = dom.composerInput.value.trim();
@@ -1738,6 +1783,9 @@ function wireThemeColorMeta() {
 }
 
 function registerServiceWorker() {
+  if (state.isE2EMode) {
+    return;
+  }
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {
       setStatus("Service worker registration failed.", "warn");
@@ -1745,13 +1793,64 @@ function registerServiceWorker() {
   }
 }
 
+function exposeE2EHarness() {
+  if (!state.isE2EMode) {
+    return;
+  }
+
+  const harness = {
+    seed(snapshot, options = {}) {
+      state.isAuthenticated = options.authenticated !== false;
+      updateWorkspaceVisibility();
+      applySnapshot(snapshot || {});
+      if (options.expandApprovals) {
+        state.approvalsExpanded = true;
+      }
+      renderAll();
+    },
+    openThread(threadID) {
+      navigateToThread(threadID);
+    },
+    openAccountSheet() {
+      openAccountSheet();
+    },
+    closeAccountSheet() {
+      closeAccountSheet();
+    },
+    setApprovalsExpanded(expanded) {
+      state.approvalsExpanded = Boolean(expanded);
+      renderChatDetail();
+    },
+    resetStorage() {
+      if (canUseStorage()) {
+        window.localStorage.clear();
+      }
+    },
+    getState() {
+      return {
+        currentView: state.currentView,
+        selectedProjectFilterID: state.selectedProjectFilterID,
+        selectedThreadID: state.selectedThreadID,
+        approvalsExpanded: state.approvalsExpanded
+      };
+    }
+  };
+
+  Object.defineProperty(window, "__codexRemotePWAHarness", {
+    value: harness,
+    configurable: true
+  });
+}
+
 function init() {
   state.deviceName = inferredDeviceName();
   const restored = restorePersistedPairedDeviceState();
   parseJoinFromHash();
+  wireVisualViewport();
   wireButtons();
   wireComposer();
   wireThemeColorMeta();
+  exposeE2EHarness();
   renderAll();
   updateWorkspaceVisibility();
   refreshPairButtonState();
