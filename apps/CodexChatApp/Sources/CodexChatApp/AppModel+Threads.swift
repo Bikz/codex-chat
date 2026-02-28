@@ -10,7 +10,7 @@ extension AppModel {
         composerFocusRequestID &+= 1
     }
 
-    func startChatFromEmptyState() {
+    func activateDraftChatFromCurrentContext() {
         if hasActiveDraftChatForSelectedProject {
             requestComposerFocus()
             return

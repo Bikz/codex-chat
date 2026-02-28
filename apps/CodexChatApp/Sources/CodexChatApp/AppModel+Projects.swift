@@ -483,7 +483,7 @@ extension AppModel {
         }
 
         beginDraftChat(in: targetProjectID)
-        appendLog(.debug, "Activated draft chat fallback because no active thread was selected.")
+        appendLog(.debug, "Activated draft chat fallback because no chat selection was available.")
     }
 
     func ensureGeneralProject() async throws {

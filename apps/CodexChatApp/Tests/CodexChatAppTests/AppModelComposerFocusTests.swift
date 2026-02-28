@@ -15,27 +15,27 @@ final class AppModelComposerFocusTests: XCTestCase {
         XCTAssertEqual(model.selectedProjectID, projectID)
     }
 
-    func testStartChatFromEmptyStateFocusesExistingDraft() {
+    func testActivateDraftChatFromCurrentContextFocusesExistingDraft() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectID = UUID()
         model.selectedProjectID = projectID
         model.draftChatProjectID = projectID
         let baseline = model.composerFocusRequestID
 
-        model.startChatFromEmptyState()
+        model.activateDraftChatFromCurrentContext()
 
         XCTAssertEqual(model.composerFocusRequestID, baseline + 1)
         XCTAssertEqual(model.draftChatProjectID, projectID)
     }
 
-    func testStartChatFromEmptyStateCreatesDraftWhenMissing() {
+    func testActivateDraftChatFromCurrentContextCreatesDraftWhenMissing() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectID = UUID()
         model.selectedProjectID = projectID
         model.draftChatProjectID = nil
         let baseline = model.composerFocusRequestID
 
-        model.startChatFromEmptyState()
+        model.activateDraftChatFromCurrentContext()
 
         XCTAssertEqual(model.composerFocusRequestID, baseline + 1)
         XCTAssertEqual(model.selectedProjectID, projectID)

@@ -1025,7 +1025,7 @@ extension AppModel {
         }
 
         if selectedThreadID == nil, !hasActiveDraftChatForSelectedProject {
-            startChatFromEmptyState()
+            activateDraftChatFromCurrentContext()
         }
 
         composerText = text
