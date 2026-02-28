@@ -25,12 +25,17 @@ Then open `http://localhost:4173`.
 
 ## MVP behavior
 
-- Two-pane mirror layout (projects + threads + active thread messages).
+- Single-page conversation-first layout (home list + focused chat detail + back navigation).
+- Project circles on home (`All` + top projects + `View all`) with per-project chat filtering.
+- Hash-based navigation contract:
+  - `#view=home&pid=<project-id|all>`
+  - `#view=thread&tid=<thread-id>&pid=<project-id|all>`
 - Thread send command (`thread.send_message`) through websocket.
-- Approval queue view with remote approve/decline commands when desktop enables remote approvals.
+- Inline approval indicators on chat rows and in-chat approval tray actions when desktop enables remote approvals.
 - Sequence tracking and gap detection.
 - Manual + automatic snapshot requests on reconnect.
 - Live delta event handling for message appends and turn status updates.
+- Message wrapping and long-message collapse/expand in transcript view.
 - Composer does not optimistically append outbound user messages; transcript updates render only after relay-confirmed events/snapshots.
 - Outbound `thread.send_message` and `approval.respond` commands queue while offline and flush only after websocket re-auth succeeds.
 - `Last synced` freshness tracking with stale-state indicator.
