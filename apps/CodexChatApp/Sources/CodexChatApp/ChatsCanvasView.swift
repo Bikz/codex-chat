@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatCore
 import CodexChatUI
 import SwiftUI
@@ -7,6 +8,8 @@ struct ChatsCanvasView: View {
     static let emptyStateTitle = "Start a conversation"
     static let emptyStateShortcutHint = "Shortcut: Shift-Command-N"
     static let emptyStatePrimaryActionLabel: String? = nil
+    static let composerPrimaryVisibleControlIDs = ["model", "reasoning"]
+    static let composerPopoverControlIDs = ["web-search", "memory-mode", "execution-permissions"]
 
     struct ComposerSurfaceStyle: Equatable {
         let fillOpacity: Double
@@ -122,6 +125,7 @@ struct ChatsCanvasView: View {
     @Binding var isInsertMemorySheetVisible: Bool
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openSettings) private var openSettings
     @FocusState private var isComposerFocused: Bool
     @State private var isComposerDropTargeted = false
     @State private var permissionRecoveryDetailsNotice: AppModel.PermissionRecoveryNotice?
@@ -131,7 +135,7 @@ struct ChatsCanvasView: View {
             if !model.isSelectedProjectTrusted, model.selectedProjectID != nil {
                 ProjectTrustBanner(
                     onTrust: model.trustSelectedProject,
-                    onSettings: model.showProjectSettings
+                    onSettings: openProjectSettings
                 )
                 .padding(.horizontal, tokens.spacing.medium)
                 .padding(.top, tokens.spacing.small)
@@ -194,6 +198,12 @@ struct ChatsCanvasView: View {
                 }
             )
         }
+    }
+
+    private func openProjectSettings() {
+        model.requestSettingsNavigationToProjects(projectID: model.selectedProjectID)
+        openSettings()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private var composerSurface: some View {
@@ -1124,154 +1134,112 @@ private struct ComposerControlBar: View {
     @Environment(\.designTokens) private var tokens
     @State private var isCustomModelSheetVisible = false
     @State private var customModelDraft = ""
+    @State private var isControlPopoverVisible = false
+    @State private var executionSandboxMode: ProjectSandboxMode = .readOnly
+    @State private var executionApprovalPolicy: ProjectApprovalPolicy = .untrusted
+    @State private var executionNetworkAccess = false
+    @State private var pendingExecutionSafetySettings: ProjectSafetySettings?
+    @State private var isExecutionDangerConfirmationVisible = false
+    @State private var executionDangerConfirmationInput = ""
+    @State private var executionDangerConfirmationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                let selectedModelID = model.defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
-                Menu {
-                    if model.runtimeDefaultModelID != nil {
-                        Button {
-                            model.setDefaultModel("")
-                        } label: {
-                            menuOptionLabel(
-                                title: "Runtime default",
-                                subtitle: model.runtimeDefaultModelID.map { model.modelDisplayName(for: $0) },
-                                isSelected: model.isUsingRuntimeDefaultModel
-                            )
-                        }
+        HStack(spacing: 8) {
+            controlsPopoverButton
 
-                        if !model.featuredModelPresets.isEmpty || !model.overflowModelPresets.isEmpty {
-                            Divider()
-                        }
-                    }
-
-                    ForEach(model.featuredModelPresets, id: \.self) { preset in
-                        Button {
-                            model.setDefaultModel(preset)
-                        } label: {
-                            menuOptionLabel(
-                                title: model.modelMenuLabel(for: preset),
-                                isSelected: selectedModelID.caseInsensitiveCompare(
-                                    preset.trimmingCharacters(in: .whitespacesAndNewlines)
-                                ) == .orderedSame
-                            )
-                        }
-                    }
-
-                    if !model.overflowModelPresets.isEmpty {
-                        Divider()
-
-                        Menu("More…") {
-                            ForEach(model.overflowModelPresets, id: \.self) { preset in
-                                Button {
-                                    model.setDefaultModel(preset)
-                                } label: {
-                                    menuOptionLabel(
-                                        title: model.modelMenuLabel(for: preset),
-                                        isSelected: selectedModelID.caseInsensitiveCompare(
-                                            preset.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        ) == .orderedSame
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    Button("Custom…") {
-                        customModelDraft = model.defaultModel
-                        isCustomModelSheetVisible = true
-                    }
-                } label: {
-                    controlChip(
-                        value: model.defaultModelDisplayName,
-                        systemImage: nil,
-                        tint: Color.primary.opacity(0.78),
-                        minWidth: 148
-                    )
-                }
-                .menuStyle(.borderlessButton)
-                .accessibilityLabel("Model")
-                .accessibilityValue(model.defaultModelDisplayName)
-                .help("Select model")
-
-                if model.canChooseReasoningForSelectedModel {
-                    Menu {
-                        ForEach(model.reasoningPresets, id: \.self) { level in
-                            Button {
-                                model.setDefaultReasoning(level)
-                            } label: {
-                                menuOptionLabel(title: level.title, isSelected: level == model.defaultReasoning)
-                            }
-                        }
+            let selectedModelID = model.defaultModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            Menu {
+                if model.runtimeDefaultModelID != nil {
+                    Button {
+                        model.setDefaultModel("")
                     } label: {
-                        controlChip(
-                            value: model.defaultReasoning.title,
-                            systemImage: nil,
-                            tint: Color.primary.opacity(0.72),
-                            minWidth: 118
+                        menuOptionLabel(
+                            title: "Runtime default",
+                            subtitle: model.runtimeDefaultModelID.map { model.modelDisplayName(for: $0) },
+                            isSelected: model.isUsingRuntimeDefaultModel
                         )
                     }
-                    .menuStyle(.borderlessButton)
-                    .accessibilityLabel("Reasoning")
-                    .accessibilityValue(model.defaultReasoning.title)
-                    .help("Select reasoning effort")
+
+                    if !model.featuredModelPresets.isEmpty || !model.overflowModelPresets.isEmpty {
+                        Divider()
+                    }
                 }
 
-                if model.canChooseWebSearchForSelectedModel {
-                    Menu {
-                        ForEach(model.webSearchPresets, id: \.self) { mode in
+                ForEach(model.featuredModelPresets, id: \.self) { preset in
+                    Button {
+                        model.setDefaultModel(preset)
+                    } label: {
+                        menuOptionLabel(
+                            title: model.modelMenuLabel(for: preset),
+                            isSelected: selectedModelID.caseInsensitiveCompare(
+                                preset.trimmingCharacters(in: .whitespacesAndNewlines)
+                            ) == .orderedSame
+                        )
+                    }
+                }
+
+                if !model.overflowModelPresets.isEmpty {
+                    Divider()
+
+                    Menu("More…") {
+                        ForEach(model.overflowModelPresets, id: \.self) { preset in
                             Button {
-                                model.setDefaultWebSearch(mode)
+                                model.setDefaultModel(preset)
                             } label: {
                                 menuOptionLabel(
-                                    title: webSearchLabel(mode),
-                                    subtitle: webSearchDescription(mode),
-                                    isSelected: mode == model.defaultWebSearch
+                                    title: model.modelMenuLabel(for: preset),
+                                    isSelected: selectedModelID.caseInsensitiveCompare(
+                                        preset.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    ) == .orderedSame
                                 )
                             }
                         }
-                    } label: {
-                        controlChip(
-                            value: webSearchLabel(model.defaultWebSearch),
-                            systemImage: "globe",
-                            tint: webSearchTint(model.defaultWebSearch),
-                            minWidth: 94
-                        )
                     }
-                    .menuStyle(.borderlessButton)
-                    .accessibilityLabel("Web search mode")
-                    .help("Select web search mode")
                 }
 
+                Divider()
+
+                Button("Custom…") {
+                    customModelDraft = model.defaultModel
+                    isCustomModelSheetVisible = true
+                }
+            } label: {
+                controlChip(
+                    value: model.defaultModelDisplayName,
+                    systemImage: nil,
+                    tint: Color.primary.opacity(0.78),
+                    minWidth: 148
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Model")
+            .accessibilityValue(model.defaultModelDisplayName)
+            .help("Select model")
+
+            if model.canChooseReasoningForSelectedModel {
                 Menu {
-                    ForEach(AppModel.ComposerMemoryMode.allCases, id: \.self) { mode in
+                    ForEach(model.reasoningPresets, id: \.self) { level in
                         Button {
-                            model.setComposerMemoryMode(mode)
+                            model.setDefaultReasoning(level)
                         } label: {
-                            menuOptionLabel(
-                                title: memoryModeLabel(mode),
-                                subtitle: memoryModeDescription(mode),
-                                isSelected: mode == model.composerMemoryMode
-                            )
+                            menuOptionLabel(title: level.title, isSelected: level == model.defaultReasoning)
                         }
                     }
                 } label: {
                     controlChip(
-                        value: model.composerMemoryDisplayLabel,
-                        systemImage: "brain",
-                        tint: Color.primary.opacity(0.7),
-                        minWidth: 108
+                        value: model.defaultReasoning.title,
+                        systemImage: nil,
+                        tint: Color.primary.opacity(0.72),
+                        minWidth: 118
                     )
                 }
                 .menuStyle(.borderlessButton)
-                .accessibilityLabel("Memory mode")
-                .help("Select memory behavior for this turn")
-
-                Spacer()
+                .accessibilityLabel("Reasoning")
+                .accessibilityValue(model.defaultReasoning.title)
+                .help("Select reasoning effort")
             }
+
+            Spacer()
         }
         .sheet(isPresented: $isCustomModelSheetVisible) {
             CustomModelSheet(
@@ -1284,6 +1252,220 @@ private struct ComposerControlBar: View {
                     isCustomModelSheetVisible = false
                 }
             )
+        }
+        .sheet(isPresented: $isExecutionDangerConfirmationVisible) {
+            DangerConfirmationSheet(
+                phrase: model.dangerConfirmationPhrase,
+                subtitle: "Type the confirmation phrase to apply risky thread execution overrides.",
+                input: $executionDangerConfirmationInput,
+                errorText: executionDangerConfirmationError,
+                onCancel: {
+                    executionDangerConfirmationInput = ""
+                    executionDangerConfirmationError = nil
+                    pendingExecutionSafetySettings = nil
+                    isExecutionDangerConfirmationVisible = false
+                },
+                onConfirm: {
+                    guard DangerConfirmationSheet.isPhraseMatch(
+                        input: executionDangerConfirmationInput,
+                        phrase: model.dangerConfirmationPhrase
+                    ) else {
+                        executionDangerConfirmationError = "Phrase did not match."
+                        return
+                    }
+                    if let pendingExecutionSafetySettings {
+                        applyExecutionSafetyOverride(pendingExecutionSafetySettings)
+                    }
+                    executionDangerConfirmationInput = ""
+                    executionDangerConfirmationError = nil
+                    pendingExecutionSafetySettings = nil
+                    isExecutionDangerConfirmationVisible = false
+                }
+            )
+        }
+        .onAppear {
+            syncExecutionDraftFromCurrentContext()
+        }
+        .onChange(of: model.selectedThreadID) { _, _ in
+            syncExecutionDraftFromCurrentContext()
+        }
+        .onChange(of: model.draftChatProjectID) { _, _ in
+            syncExecutionDraftFromCurrentContext()
+        }
+    }
+
+    private var controlsPopoverButton: some View {
+        Button {
+            isControlPopoverVisible = true
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(model.hasComposerOverrideForCurrentContext ? Color(hex: tokens.palette.accentHex) : .secondary)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(hex: tokens.palette.panelHex).opacity(model.isTransparentThemeMode ? 0.66 : 0.94))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(tokens.surfaces.hairlineOpacity))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("More turn controls")
+        .accessibilityHint("Opens web, memory, and execution controls for this thread.")
+        .help("More turn controls")
+        .popover(isPresented: $isControlPopoverVisible, arrowEdge: .top) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Thread Controls")
+                        .font(.headline)
+
+                    if model.canChooseWebSearchForSelectedModel {
+                        Picker(
+                            "Web search",
+                            selection: Binding(
+                                get: { model.composerWebSearchModeForCurrentContext },
+                                set: { model.setComposerWebSearchOverrideForCurrentContext($0) }
+                            )
+                        ) {
+                            ForEach(model.webSearchPresets, id: \.self) { mode in
+                                Text(webSearchLabel(mode)).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Web search")
+                                .font(.subheadline.weight(.medium))
+                            Text("Not available for the selected model.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Picker(
+                        "Memory mode",
+                        selection: Binding(
+                            get: { model.composerMemoryMode },
+                            set: { model.setComposerMemoryMode($0) }
+                        )
+                    ) {
+                        ForEach(AppModel.ComposerMemoryMode.allCases, id: \.self) { mode in
+                            Text(memoryModeLabel(mode)).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    NavigationLink {
+                        executionPermissionsView
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.shield")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Execution & Permissions")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Text(executionSummaryText)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+
+                    Divider()
+
+                    Button("Reset to inherited", role: .destructive) {
+                        model.clearComposerOverridesForCurrentContext()
+                        syncExecutionDraftFromCurrentContext()
+                    }
+                    .disabled(!model.hasComposerOverrideForCurrentContext)
+                }
+                .padding(14)
+                .frame(minWidth: 312)
+            }
+        }
+    }
+
+    private var executionPermissionsView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Sandbox mode", selection: $executionSandboxMode) {
+                ForEach(ProjectSandboxMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("Approval policy", selection: $executionApprovalPolicy) {
+                ForEach(ProjectApprovalPolicy.allCases, id: \.self) { policy in
+                    Text(policy.title).tag(policy)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Toggle("Allow network access in workspace-write", isOn: $executionNetworkAccess)
+                .disabled(executionSandboxMode != .workspaceWrite)
+                .onChange(of: executionSandboxMode) { _, newValue in
+                    executionNetworkAccess = AppModel.clampedNetworkAccess(
+                        for: newValue,
+                        networkAccess: executionNetworkAccess
+                    )
+                }
+
+            HStack(spacing: 8) {
+                Button("Apply override") {
+                    let settings = ProjectSafetySettings(
+                        sandboxMode: executionSandboxMode,
+                        approvalPolicy: executionApprovalPolicy,
+                        networkAccess: AppModel.clampedNetworkAccess(
+                            for: executionSandboxMode,
+                            networkAccess: executionNetworkAccess
+                        ),
+                        webSearch: model.composerWebSearchModeForCurrentContext
+                    )
+                    guard requiresExecutionDangerConfirmation(for: settings) else {
+                        applyExecutionSafetyOverride(settings)
+                        return
+                    }
+                    pendingExecutionSafetySettings = settings
+                    executionDangerConfirmationInput = ""
+                    executionDangerConfirmationError = nil
+                    isExecutionDangerConfirmationVisible = true
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Use inherited safety") {
+                    let inherited = inheritedSafetySettings
+                    executionSandboxMode = inherited.sandboxMode
+                    executionApprovalPolicy = inherited.approvalPolicy
+                    executionNetworkAccess = inherited.networkAccess
+                    applyExecutionSafetyOverride(inherited)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!model.hasComposerSafetyOverrideForCurrentContext)
+            }
+
+            Text(
+                model.hasComposerSafetyOverrideForCurrentContext
+                    ? "Thread safety override active."
+                    : "Using inherited project/global safety settings."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(minWidth: 336)
+        .navigationTitle("Execution")
+        .onAppear {
+            syncExecutionDraftFromCurrentContext()
         }
     }
 
@@ -1338,17 +1520,6 @@ private struct ComposerControlBar: View {
         }
     }
 
-    private func webSearchDescription(_ mode: ProjectWebSearchMode) -> String {
-        switch mode {
-        case .cached:
-            "Uses cached web context."
-        case .live:
-            "Fetches fresh web results."
-        case .disabled:
-            "Disables web search."
-        }
-    }
-
     private func memoryModeLabel(_ mode: AppModel.ComposerMemoryMode) -> String {
         switch mode {
         case .projectDefault:
@@ -1359,19 +1530,6 @@ private struct ComposerControlBar: View {
             "Summaries"
         case .summariesAndKeyFacts:
             "Summaries + facts"
-        }
-    }
-
-    private func memoryModeDescription(_ mode: AppModel.ComposerMemoryMode) -> String? {
-        switch mode {
-        case .projectDefault:
-            "Uses the project default memory setting."
-        case .off:
-            "Skips memory writes for this turn."
-        case .summariesOnly:
-            "Writes summary memory only."
-        case .summariesAndKeyFacts:
-            "Writes summaries and key facts."
         }
     }
 
@@ -1402,15 +1560,51 @@ private struct ComposerControlBar: View {
         }
     }
 
-    private func webSearchTint(_ mode: ProjectWebSearchMode) -> Color {
-        switch mode {
-        case .cached:
-            .secondary
-        case .live:
-            Color(hex: tokens.palette.accentHex)
-        case .disabled:
-            .orange
+    private var executionSummaryText: String {
+        let settings = model.composerSafetySettingsForCurrentContext
+        let networkLabel = settings.networkAccess ? "network on" : "network off"
+        return "\(settings.sandboxMode.title), \(settings.approvalPolicy.title), \(networkLabel)"
+    }
+
+    private var inheritedSafetySettings: ProjectSafetySettings {
+        guard let project = model.selectedProject else {
+            return model.defaultSafetySettings
         }
+        return ProjectSafetySettings(
+            sandboxMode: project.sandboxMode,
+            approvalPolicy: project.approvalPolicy,
+            networkAccess: project.networkAccess,
+            webSearch: project.webSearch
+        )
+    }
+
+    private func requiresExecutionDangerConfirmation(for settings: ProjectSafetySettings) -> Bool {
+        model.requiresDangerConfirmation(
+            sandboxMode: settings.sandboxMode,
+            approvalPolicy: settings.approvalPolicy
+        ) && settings != inheritedSafetySettings
+    }
+
+    private func applyExecutionSafetyOverride(_ settings: ProjectSafetySettings) {
+        model.setComposerSafetyOverrideForCurrentContext(
+            sandboxMode: settings.sandboxMode,
+            approvalPolicy: settings.approvalPolicy,
+            networkAccess: AppModel.clampedNetworkAccess(
+                for: settings.sandboxMode,
+                networkAccess: settings.networkAccess
+            )
+        )
+        syncExecutionDraftFromCurrentContext()
+    }
+
+    private func syncExecutionDraftFromCurrentContext() {
+        let settings = model.composerSafetySettingsForCurrentContext
+        executionSandboxMode = settings.sandboxMode
+        executionApprovalPolicy = settings.approvalPolicy
+        executionNetworkAccess = AppModel.clampedNetworkAccess(
+            for: settings.sandboxMode,
+            networkAccess: settings.networkAccess
+        )
     }
 }
 

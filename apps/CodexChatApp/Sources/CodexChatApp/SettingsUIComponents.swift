@@ -5,7 +5,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     case account
     case appearance
     case runtime
-    case generalProject
+    case projects
     case safetyDefaults
     case experimental
     case diagnostics
@@ -25,8 +25,8 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
             "Appearance"
         case .runtime:
             "Runtime"
-        case .generalProject:
-            "General Project"
+        case .projects:
+            "Projects"
         case .safetyDefaults:
             "Safety Defaults"
         case .experimental:
@@ -46,7 +46,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
             "paintpalette"
         case .runtime:
             "cpu"
-        case .generalProject:
+        case .projects:
             "folder"
         case .safetyDefaults:
             "shield"
@@ -67,8 +67,8 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
             "Theme, gradients, and transparency controls."
         case .runtime:
             "Model defaults and runtime behavior."
-        case .generalProject:
-            "Baseline project trust and memory settings."
+        case .projects:
+            "Project trust, safety, memory, and archived chat controls."
         case .safetyDefaults:
             "Default safety posture for newly created projects."
         case .experimental:

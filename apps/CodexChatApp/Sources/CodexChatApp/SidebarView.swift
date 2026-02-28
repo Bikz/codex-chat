@@ -6,6 +6,7 @@ import SwiftUI
 struct SidebarView: View {
     static let projectsPreviewCountStorageKey = "codexchat.sidebar.projectsPreviewCount"
     static let threadFilterStorageKey = "codexchat.sidebar.threadFilter"
+    static let showRecentsStorageKey = "codexchat.sidebar.showRecents"
     static let projectsPreviewCountOptions = [3, 5, 8, 12]
 
     enum ThreadListFilter: String, CaseIterable {
@@ -42,6 +43,7 @@ struct SidebarView: View {
     @State private var projectThreadLoadErrorsByProjectID: [UUID: String] = [:]
     @AppStorage(Self.projectsPreviewCountStorageKey) private var projectsPreviewCountSetting = 3
     @AppStorage(Self.threadFilterStorageKey) private var threadFilterRawValue = ThreadListFilter.all.rawValue
+    @AppStorage(Self.showRecentsStorageKey) private var isRecentsSectionVisible = true
 
     private var sidebarBodyFont: Font {
         .system(size: 14, weight: .regular)
@@ -209,24 +211,26 @@ struct SidebarView: View {
             }
             .listRowSeparator(.hidden)
 
-            Section {
-                recentThreadRows
-            } header: {
-                SidebarSectionHeader(
-                    title: "Recents",
-                    font: sidebarSectionFont,
-                    trailingAlignmentWidth: SidebarLayoutSpec.threadTrailingWidth,
-                    horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
-                    trailingPadding: SidebarLayoutSpec.headerActionTrailingPadding,
-                    leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
-                    topPadding: SidebarLayoutSpec.sectionHeaderTopPadding,
-                    bottomPadding: SidebarLayoutSpec.sectionHeaderBottomPadding,
-                    actionSlotSize: SidebarLayoutSpec.controlButtonSize,
-                    actionSymbolSize: SidebarLayoutSpec.controlIconFontSize,
-                    titleTracking: 0.3
-                )
+            if isRecentsSectionVisible {
+                Section {
+                    recentThreadRows
+                } header: {
+                    SidebarSectionHeader(
+                        title: "Recents",
+                        font: sidebarSectionFont,
+                        trailingAlignmentWidth: SidebarLayoutSpec.threadTrailingWidth,
+                        horizontalPadding: SidebarLayoutSpec.selectedRowInset + SidebarLayoutSpec.rowHorizontalPadding,
+                        trailingPadding: SidebarLayoutSpec.headerActionTrailingPadding,
+                        leadingInset: SidebarLayoutSpec.sectionHeaderLeadingInset,
+                        topPadding: SidebarLayoutSpec.sectionHeaderTopPadding,
+                        bottomPadding: SidebarLayoutSpec.sectionHeaderBottomPadding,
+                        actionSlotSize: SidebarLayoutSpec.controlButtonSize,
+                        actionSymbolSize: SidebarLayoutSpec.controlIconFontSize,
+                        titleTracking: 0.3
+                    )
+                }
+                .listRowSeparator(.hidden)
             }
-            .listRowSeparator(.hidden)
 
             Section {
                 generalThreadRows
@@ -457,10 +461,7 @@ struct SidebarView: View {
                     model.createThread(in: project.id)
                 }
                 Button("Project settings") {
-                    if model.selectedProjectID != project.id {
-                        model.selectProject(project.id)
-                    }
-                    model.showProjectSettings()
+                    openProjectSettings(projectID: project.id)
                 }
             }
 
@@ -484,10 +485,7 @@ struct SidebarView: View {
                 .allowsHitTesting(projectControlsVisible)
 
                 Button {
-                    if model.selectedProjectID != project.id {
-                        model.selectProject(project.id)
-                    }
-                    model.showProjectSettings()
+                    openProjectSettings(projectID: project.id)
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(sidebarMetaIconFont)
@@ -574,19 +572,17 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var recentThreadRows: some View {
-        let recentThreads = filteredThreads(model.threads + model.generalThreads)
-            .sorted { lhs, rhs in
-                if lhs.updatedAt != rhs.updatedAt {
-                    return lhs.updatedAt > rhs.updatedAt
-                }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-            .prefix(6)
+        let recentThreads = Self.recentThreads(
+            model.threads + model.generalThreads,
+            filter: activeThreadFilter,
+            pendingThreadIDs: model.pendingApprovalThreadIDs,
+            unreadThreadIDs: model.unreadThreadIDs
+        )
 
         if recentThreads.isEmpty {
             sidebarStatusRow(systemImage: "clock", title: "No recent chats")
         } else {
-            ForEach(Array(recentThreads)) { thread in
+            ForEach(recentThreads) { thread in
                 threadRow(thread, isGeneralThread: false)
             }
         }
@@ -953,6 +949,14 @@ struct SidebarView: View {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private func openProjectSettings(projectID: UUID) {
+        if model.selectedProjectID != projectID {
+            model.selectProject(projectID)
+        }
+        model.requestSettingsNavigationToProjects(projectID: projectID)
+        openSettingsWindow()
+    }
+
     private func suppressThreadSelectionInteraction(for duration: TimeInterval = 0.24) {
         threadSelectionSuppressionGeneration += 1
         let generation = threadSelectionSuppressionGeneration
@@ -1018,6 +1022,28 @@ struct SidebarView: View {
         case .unread:
             threads.filter { unreadThreadIDs.contains($0.id) }
         }
+    }
+
+    static func recentThreads(
+        _ threads: [ThreadRecord],
+        filter: ThreadListFilter,
+        pendingThreadIDs: Set<UUID>,
+        unreadThreadIDs: Set<UUID>,
+        limit: Int = 6
+    ) -> [ThreadRecord] {
+        let filtered = filteredThreads(
+            threads,
+            filter: filter,
+            pendingThreadIDs: pendingThreadIDs,
+            unreadThreadIDs: unreadThreadIDs
+        )
+        .sorted { lhs, rhs in
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        return Array(filtered.prefix(max(limit, 0)))
     }
 
     static func trailingControlsVisible(isHovered: Bool, isSelected: Bool) -> Bool {

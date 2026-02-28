@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatCore
 import CodexChatUI
 import CodexMemory
@@ -13,6 +14,7 @@ struct MemorySnippetInsertSheet: View {
     @ObservedObject var model: AppModel
     @Binding var isPresented: Bool
     @Environment(\.designTokens) private var tokens
+    @Environment(\.openSettings) private var openSettings
 
     @State private var query = ""
     @State private var mode: SearchMode = .keyword
@@ -26,7 +28,9 @@ struct MemorySnippetInsertSheet: View {
                     .font(.title3.weight(.semibold))
                 Spacer()
                 Button("Open Memory Settings") {
-                    model.showProjectSettings()
+                    model.requestSettingsNavigationToProjects(projectID: model.selectedProjectID)
+                    openSettings()
+                    NSApp.activate(ignoringOtherApps: true)
                     isPresented = false
                 }
                 .buttonStyle(.bordered)

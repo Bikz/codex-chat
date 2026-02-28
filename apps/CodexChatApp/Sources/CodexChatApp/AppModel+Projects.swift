@@ -4,6 +4,16 @@ import CodexMemory
 import Foundation
 
 extension AppModel {
+    static func clampedNetworkAccess(
+        for sandboxMode: ProjectSandboxMode,
+        networkAccess: Bool
+    ) -> Bool {
+        guard sandboxMode == .workspaceWrite else {
+            return false
+        }
+        return networkAccess
+    }
+
     func isProjectSidebarVisuallySelected(_ projectID: UUID) -> Bool {
         guard selectedProjectID == projectID else {
             return false
@@ -102,14 +112,6 @@ extension AppModel {
         } else if repairedProjectCount > 0 {
             appendLog(.debug, "Launch health check repaired project structure for \(repairedProjectCount) project(s).")
         }
-    }
-
-    func showProjectSettings() {
-        isProjectSettingsVisible = true
-    }
-
-    func closeProjectSettings() {
-        isProjectSettingsVisible = false
     }
 
     func removeSelectedProjectFromCodexChat() {

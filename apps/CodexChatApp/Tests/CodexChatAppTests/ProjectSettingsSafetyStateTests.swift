@@ -5,12 +5,12 @@ import XCTest
 @MainActor
 final class ProjectSettingsSafetyStateTests: XCTestCase {
     func testClampedNetworkAccessTurnsOffOutsideWorkspaceWrite() {
-        XCTAssertTrue(ProjectSettingsSheet.clampedNetworkAccess(for: .workspaceWrite, networkAccess: true))
-        XCTAssertFalse(ProjectSettingsSheet.clampedNetworkAccess(for: .readOnly, networkAccess: true))
-        XCTAssertFalse(ProjectSettingsSheet.clampedNetworkAccess(for: .dangerFullAccess, networkAccess: true))
+        XCTAssertTrue(AppModel.clampedNetworkAccess(for: .workspaceWrite, networkAccess: true))
+        XCTAssertFalse(AppModel.clampedNetworkAccess(for: .readOnly, networkAccess: true))
+        XCTAssertFalse(AppModel.clampedNetworkAccess(for: .dangerFullAccess, networkAccess: true))
     }
 
-    func testSafetyDraftMirrorsSelectedProjectValues() {
+    func testProjectSafetySettingsMirrorProjectRecordValues() {
         let project = ProjectRecord(
             name: "Workspace",
             path: "/tmp/workspace",
@@ -23,11 +23,16 @@ final class ProjectSettingsSafetyStateTests: XCTestCase {
             memoryEmbeddingsEnabled: true
         )
 
-        let draft = ProjectSettingsSheet.safetyDraft(from: project)
+        let settings = ProjectSafetySettings(
+            sandboxMode: project.sandboxMode,
+            approvalPolicy: project.approvalPolicy,
+            networkAccess: project.networkAccess,
+            webSearch: project.webSearch
+        )
 
-        XCTAssertEqual(draft.sandboxMode, .workspaceWrite)
-        XCTAssertEqual(draft.approvalPolicy, .never)
-        XCTAssertTrue(draft.networkAccess)
-        XCTAssertEqual(draft.webSearchMode, .live)
+        XCTAssertEqual(settings.sandboxMode, .workspaceWrite)
+        XCTAssertEqual(settings.approvalPolicy, .never)
+        XCTAssertTrue(settings.networkAccess)
+        XCTAssertEqual(settings.webSearch, .live)
     }
 }

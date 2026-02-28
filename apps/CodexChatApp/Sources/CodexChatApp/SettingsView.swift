@@ -9,12 +9,14 @@ struct SettingsView: View {
     static let themePresetGridColumnCount = 5
     static let sidebarProjectsPreviewStorageKey = SidebarView.projectsPreviewCountStorageKey
     static let sidebarProjectsPreviewOptions = SidebarView.projectsPreviewCountOptions
+    static let sidebarShowRecentsStorageKey = SidebarView.showRecentsStorageKey
 
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
     @AppStorage(Self.sidebarProjectsPreviewStorageKey) private var sidebarProjectsPreviewCountSetting = 3
+    @AppStorage(Self.sidebarShowRecentsStorageKey) private var sidebarShowRecentsSection = true
 
     @State private var selectedSection: SettingsSection = .defaultSelection
 
@@ -26,19 +28,21 @@ struct SettingsView: View {
     @State private var pendingSafetyDefaults: ProjectSafetySettings?
     @State private var isSafetyApplyPromptVisible = false
 
-    @State private var generalSandboxMode: ProjectSandboxMode = .readOnly
-    @State private var generalApprovalPolicy: ProjectApprovalPolicy = .untrusted
-    @State private var generalNetworkAccess = false
-    @State private var generalWebSearchMode: ProjectWebSearchMode = .cached
-    @State private var generalMemoryWriteMode: ProjectMemoryWriteMode = .off
-    @State private var generalMemoryEmbeddingsEnabled = false
-    @State private var isSyncingGeneralProject = false
-    @State private var pendingGeneralSafetySettings: ProjectSafetySettings?
-    @State private var isGeneralDangerConfirmationVisible = false
-    @State private var generalDangerConfirmationInput = ""
-    @State private var generalDangerConfirmationError: String?
+    @State private var selectedSettingsProjectID: UUID?
+    @State private var projectSandboxMode: ProjectSandboxMode = .readOnly
+    @State private var projectApprovalPolicy: ProjectApprovalPolicy = .untrusted
+    @State private var projectNetworkAccess = false
+    @State private var projectWebSearchMode: ProjectWebSearchMode = .cached
+    @State private var projectMemoryWriteMode: ProjectMemoryWriteMode = .off
+    @State private var projectMemoryEmbeddingsEnabled = false
+    @State private var isSyncingProjectSettings = false
+    @State private var pendingProjectSafetySettings: ProjectSafetySettings?
+    @State private var isProjectDangerConfirmationVisible = false
+    @State private var projectDangerConfirmationInput = ""
+    @State private var projectDangerConfirmationError: String?
+    @State private var isRemoveProjectConfirmationVisible = false
     @State private var isRuntimeConfigExpanded = false
-    @State private var lastSyncedGeneralProject: ProjectRecord?
+    @State private var lastSyncedSettingsProject: ProjectRecord?
     @State private var isAdvancedModsUnlockConfirmationVisible = false
     @State private var advancedModsUnlockInput = ""
     @State private var advancedModsUnlockError: String?
@@ -96,9 +100,14 @@ struct SettingsView: View {
         .onAppear {
             runtimeModelDraft = model.isUsingRuntimeDefaultModel ? "" : model.defaultModel
             syncSafetyDefaultsFromModel()
-            syncGeneralProjectFromModel(force: true)
+            syncSettingsProjectSelectionFromModel(force: true)
+            syncProjectDraftFromSelectedSettingsProject(force: true)
             syncThemeDraftFromModel()
             customThemeEditorAppearance = colorScheme == .dark ? .dark : .light
+            applyPendingSettingsNavigationTarget()
+            Task {
+                try? await model.refreshArchivedThreads()
+            }
         }
         .onChange(of: model.defaultSafetySettings) { _, _ in
             syncSafetyDefaultsFromModel()
@@ -107,17 +116,31 @@ struct SettingsView: View {
             runtimeModelDraft = model.isUsingRuntimeDefaultModel ? "" : newValue
         }
         .onChange(of: selectedSection) { _, newValue in
-            if newValue == .generalProject {
-                syncGeneralProjectFromModel(force: true)
+            if newValue == .projects {
+                syncSettingsProjectSelectionFromModel(force: true)
+                syncProjectDraftFromSelectedSettingsProject(force: true)
+                Task {
+                    try? await model.refreshArchivedThreads()
+                }
             } else if newValue != .runtime {
                 isRuntimeConfigExpanded = false
             }
         }
         .onReceive(model.$projectsState) { _ in
-            guard selectedSection == .generalProject else {
+            guard selectedSection == .projects else {
                 return
             }
-            syncGeneralProjectFromModel()
+            syncSettingsProjectSelectionFromModel()
+            syncProjectDraftFromSelectedSettingsProject()
+        }
+        .onChange(of: selectedSettingsProjectID) { _, _ in
+            syncProjectDraftFromSelectedSettingsProject(force: true)
+            Task {
+                try? await model.refreshArchivedThreads()
+            }
+        }
+        .onReceive(model.$settingsNavigationTarget) { _ in
+            applyPendingSettingsNavigationTarget()
         }
         .onChange(of: model.savedCustomThemePreset) { _, _ in
             syncThemeDraftFromModel()
@@ -141,40 +164,47 @@ struct SettingsView: View {
         } message: {
             Text("Choose whether these defaults should affect only newly created projects or also update existing projects.")
         }
-        .sheet(isPresented: $isGeneralDangerConfirmationVisible) {
+        .sheet(isPresented: $isProjectDangerConfirmationVisible) {
             DangerConfirmationSheet(
                 phrase: model.dangerConfirmationPhrase,
-                subtitle: "Type the confirmation phrase to enable dangerous General project settings.",
-                input: $generalDangerConfirmationInput,
-                errorText: generalDangerConfirmationError,
+                subtitle: "Type the confirmation phrase to enable dangerous project settings.",
+                input: $projectDangerConfirmationInput,
+                errorText: projectDangerConfirmationError,
                 onCancel: {
-                    generalDangerConfirmationInput = ""
-                    generalDangerConfirmationError = nil
-                    pendingGeneralSafetySettings = nil
-                    isGeneralDangerConfirmationVisible = false
+                    projectDangerConfirmationInput = ""
+                    projectDangerConfirmationError = nil
+                    pendingProjectSafetySettings = nil
+                    isProjectDangerConfirmationVisible = false
                 },
                 onConfirm: {
                     guard DangerConfirmationSheet.isPhraseMatch(
-                        input: generalDangerConfirmationInput,
+                        input: projectDangerConfirmationInput,
                         phrase: model.dangerConfirmationPhrase
                     ) else {
-                        generalDangerConfirmationError = "Phrase did not match."
+                        projectDangerConfirmationError = "Phrase did not match."
                         return
                     }
-                    if let pendingGeneralSafetySettings {
-                        model.updateGeneralProjectSafetySettings(
-                            sandboxMode: pendingGeneralSafetySettings.sandboxMode,
-                            approvalPolicy: pendingGeneralSafetySettings.approvalPolicy,
-                            networkAccess: pendingGeneralSafetySettings.networkAccess,
-                            webSearch: pendingGeneralSafetySettings.webSearch
-                        )
+                    if let pendingProjectSafetySettings {
+                        saveProjectSafetySettings(pendingProjectSafetySettings)
                     }
-                    generalDangerConfirmationInput = ""
-                    generalDangerConfirmationError = nil
-                    pendingGeneralSafetySettings = nil
-                    isGeneralDangerConfirmationVisible = false
+                    projectDangerConfirmationInput = ""
+                    projectDangerConfirmationError = nil
+                    pendingProjectSafetySettings = nil
+                    isProjectDangerConfirmationVisible = false
                 }
             )
+        }
+        .alert("Remove project from CodexChat?", isPresented: $isRemoveProjectConfirmationVisible) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                removeSelectedSettingsProjectFromCodexChat()
+            }
+        } message: {
+            if let project = selectedSettingsProject {
+                Text("\"\(project.name)\" will be disconnected from CodexChat. Project files stay on disk.")
+            } else {
+                Text("This project will be disconnected from CodexChat. Project files stay on disk.")
+            }
         }
         .sheet(isPresented: $isAdvancedModsUnlockConfirmationVisible) {
             DangerConfirmationSheet(
@@ -250,8 +280,8 @@ struct SettingsView: View {
             appearanceCard
         case .runtime:
             runtimeContent
-        case .generalProject:
-            generalProjectContent
+        case .projects:
+            projectsContent
         case .safetyDefaults:
             safetyDefaultsCard
         case .experimental:
@@ -608,20 +638,27 @@ struct SettingsView: View {
                 Divider()
 
                 SettingsFieldRow(label: "Sidebar") {
-                    Picker(
-                        "Projects shown",
-                        selection: Binding(
-                            get: { sidebarProjectsPreviewCount },
-                            set: { sidebarProjectsPreviewCountSetting = $0 }
-                        )
-                    ) {
-                        ForEach(Self.sidebarProjectsPreviewOptions, id: \.self) { count in
-                            Text("\(count)").tag(count)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker(
+                            "Projects shown",
+                            selection: Binding(
+                                get: { sidebarProjectsPreviewCount },
+                                set: { sidebarProjectsPreviewCountSetting = $0 }
+                            )
+                        ) {
+                            ForEach(Self.sidebarProjectsPreviewOptions, id: \.self) { count in
+                                Text("\(count)").tag(count)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 260)
+                        .accessibilityLabel("Sidebar projects shown")
+
+                        Toggle("Show Recents section", isOn: $sidebarShowRecentsSection)
+                            .toggleStyle(.switch)
+                            .font(.subheadline)
+                            .accessibilityLabel("Show recents section")
                     }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 260)
-                    .accessibilityLabel("Sidebar projects shown")
                 }
 
                 ThemeStudioPreview(customization: model.userThemeCustomization, tokens: tokens)
@@ -750,35 +787,66 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var generalProjectContent: some View {
-        if let project = model.generalProject {
-            generalProjectSummaryCard(project)
-            generalProjectSafetyCard
-            generalProjectMemoryCard
+    private var projectsContent: some View {
+        projectsSelectionCard
+
+        if let project = selectedSettingsProject {
+            projectSummaryCard(project)
+            projectSafetyCard(project)
+            projectMemoryCard(project)
+            archivedChatsCard(project)
+            if !project.isGeneralProject {
+                projectDisconnectCard(project)
+            }
         } else {
             SettingsSectionCard(
-                title: "General Project",
-                subtitle: "Shared baseline project for defaults and global memory behavior."
+                title: "Projects",
+                subtitle: "Select a project to view trust, safety, memory, and archived chat settings."
             ) {
-                Text("General project is unavailable.")
+                Text("No project is currently available.")
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    private func generalProjectSummaryCard(_ generalProject: ProjectRecord) -> some View {
+    private var projectsSelectionCard: some View {
         SettingsSectionCard(
-            title: "General Project",
-            subtitle: "Baseline project metadata and trust state."
+            title: "Project Selection",
+            subtitle: "Choose a project to edit its baseline controls."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Project", selection: Binding(
+                    get: { selectedSettingsProjectID },
+                    set: { selectedSettingsProjectID = $0 }
+                )) {
+                    ForEach(settingsProjects) { project in
+                        Text(projectPickerTitle(project)).tag(Optional(project.id))
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if let project = selectedSettingsProject {
+                    Text(project.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+
+    private func projectSummaryCard(_ project: ProjectRecord) -> some View {
+        SettingsSectionCard(
+            title: project.isGeneralProject ? "General Project" : "Project",
+            subtitle: "Identity and trust posture for the selected project."
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 SettingsFieldRow(label: "Name") {
-                    Text(generalProject.name)
-                        .foregroundStyle(.secondary)
+                    Text(project.name)
                 }
 
                 SettingsFieldRow(label: "Path") {
-                    Text(generalProject.path)
+                    Text(project.path)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
@@ -786,139 +854,212 @@ struct SettingsView: View {
 
                 SettingsFieldRow(label: "Trust") {
                     SettingsStatusBadge(
-                        generalProject.trustState == .trusted ? "Trusted" : "Untrusted",
-                        tone: generalProject.trustState == .trusted ? .accent : .neutral
+                        project.trustState == .trusted ? "Trusted" : "Untrusted",
+                        tone: project.trustState == .trusted ? .accent : .neutral
+                    )
+                }
+
+                let isGitInitialized = AppModel.isGitProject(path: project.path)
+                SettingsFieldRow(label: "Git") {
+                    SettingsStatusBadge(
+                        isGitInitialized ? "Initialized" : "Not initialized",
+                        tone: isGitInitialized ? .accent : .neutral
                     )
                 }
 
                 HStack(spacing: 8) {
                     Button("Trust") {
-                        model.trustGeneralProject()
+                        updateProjectTrustState(projectID: project.id, trustState: .trusted)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(generalProject.trustState == .trusted)
-                    .accessibilityHint("Marks this project as trusted.")
+                    .disabled(project.trustState == .trusted)
 
                     Button("Mark Untrusted", role: .destructive) {
-                        model.untrustGeneralProject()
+                        updateProjectTrustState(projectID: project.id, trustState: .untrusted)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(generalProject.trustState == .untrusted)
-                    .accessibilityHint("Marks this project as untrusted.")
+                    .disabled(project.trustState == .untrusted)
+
+                    if !isGitInitialized {
+                        Button("Initialize Git Repository") {
+                            if model.selectedProjectID != project.id {
+                                model.selectProject(project.id)
+                            }
+                            model.initializeGitForSelectedProject()
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
             }
         }
     }
 
-    private var generalProjectSafetyCard: some View {
+    private func projectSafetyCard(_ project: ProjectRecord) -> some View {
         SettingsSectionCard(
             title: "Trust & Safety",
             subtitle: "Controls for sandboxing, approvals, network access, and web search."
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Sandbox mode", selection: $generalSandboxMode) {
+                Picker("Sandbox mode", selection: $projectSandboxMode) {
                     ForEach(ProjectSandboxMode.allCases, id: \.self) { mode in
                         Text(mode.title).tag(mode)
                     }
                 }
                 .pickerStyle(.menu)
 
-                Picker("Approval policy", selection: $generalApprovalPolicy) {
+                Picker("Approval policy", selection: $projectApprovalPolicy) {
                     ForEach(ProjectApprovalPolicy.allCases, id: \.self) { policy in
                         Text(policy.title).tag(policy)
                     }
                 }
                 .pickerStyle(.menu)
 
-                Toggle("Allow network access in workspace-write", isOn: $generalNetworkAccess)
-                    .disabled(generalSandboxMode != .workspaceWrite)
-                    .onChange(of: generalSandboxMode) { _, newValue in
-                        generalNetworkAccess = ProjectSettingsSheet.clampedNetworkAccess(
+                Toggle("Allow network access in workspace-write", isOn: $projectNetworkAccess)
+                    .disabled(projectSandboxMode != .workspaceWrite)
+                    .onChange(of: projectSandboxMode) { _, newValue in
+                        projectNetworkAccess = AppModel.clampedNetworkAccess(
                             for: newValue,
-                            networkAccess: generalNetworkAccess
+                            networkAccess: projectNetworkAccess
                         )
                     }
                     .accessibilityHint("Only available when sandbox mode is workspace-write.")
 
-                Picker("Web search mode", selection: $generalWebSearchMode) {
+                Picker("Web search mode", selection: $projectWebSearchMode) {
                     ForEach(ProjectWebSearchMode.allCases, id: \.self) { mode in
                         Text(mode.title).tag(mode)
                     }
                 }
                 .pickerStyle(.menu)
 
-                Button("Save General Safety Settings") {
+                Button(project.isGeneralProject ? "Save General Safety Settings" : "Save Safety Settings") {
                     let settings = ProjectSafetySettings(
-                        sandboxMode: generalSandboxMode,
-                        approvalPolicy: generalApprovalPolicy,
-                        networkAccess: generalNetworkAccess,
-                        webSearch: generalWebSearchMode
+                        sandboxMode: projectSandboxMode,
+                        approvalPolicy: projectApprovalPolicy,
+                        networkAccess: AppModel.clampedNetworkAccess(
+                            for: projectSandboxMode,
+                            networkAccess: projectNetworkAccess
+                        ),
+                        webSearch: projectWebSearchMode
                     )
 
                     if model.requiresDangerConfirmation(
                         sandboxMode: settings.sandboxMode,
                         approvalPolicy: settings.approvalPolicy
                     ) {
-                        pendingGeneralSafetySettings = settings
-                        generalDangerConfirmationInput = ""
-                        generalDangerConfirmationError = nil
-                        isGeneralDangerConfirmationVisible = true
+                        pendingProjectSafetySettings = settings
+                        projectDangerConfirmationInput = ""
+                        projectDangerConfirmationError = nil
+                        isProjectDangerConfirmationVisible = true
                     } else {
-                        model.updateGeneralProjectSafetySettings(
-                            sandboxMode: settings.sandboxMode,
-                            approvalPolicy: settings.approvalPolicy,
-                            networkAccess: settings.networkAccess,
-                            webSearch: settings.webSearch
-                        )
+                        saveProjectSafetySettings(settings)
                     }
                 }
                 .buttonStyle(.bordered)
-                .accessibilityHint("Saves updated safety controls for the General project.")
-
-                if let status = model.projectStatusMessage {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
     }
 
-    private var generalProjectMemoryCard: some View {
+    private func projectMemoryCard(_ project: ProjectRecord) -> some View {
         SettingsSectionCard(
             title: "Memory",
-            subtitle: "Memory write and retrieval behavior for the General project."
+            subtitle: "Memory write and retrieval behavior for the selected project."
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("After each completed turn", selection: $generalMemoryWriteMode) {
+                Picker("After each completed turn", selection: $projectMemoryWriteMode) {
                     Text("Off").tag(ProjectMemoryWriteMode.off)
                     Text("Summaries only").tag(ProjectMemoryWriteMode.summariesOnly)
                     Text("Summaries + key facts").tag(ProjectMemoryWriteMode.summariesAndKeyFacts)
                 }
                 .pickerStyle(.menu)
-                .disabled(isSyncingGeneralProject)
+                .disabled(isSyncingProjectSettings)
 
-                Toggle("Enable semantic retrieval (advanced)", isOn: $generalMemoryEmbeddingsEnabled)
-                    .disabled(isSyncingGeneralProject)
+                Toggle("Enable semantic retrieval (advanced)", isOn: $projectMemoryEmbeddingsEnabled)
+                    .disabled(isSyncingProjectSettings)
 
-                Button("Save General Memory Settings") {
-                    model.updateGeneralProjectMemorySettings(
-                        writeMode: generalMemoryWriteMode,
-                        embeddingsEnabled: generalMemoryEmbeddingsEnabled
+                Button(project.isGeneralProject ? "Save General Memory Settings" : "Save Memory Settings") {
+                    saveProjectMemorySettings(
+                        writeMode: projectMemoryWriteMode,
+                        embeddingsEnabled: projectMemoryEmbeddingsEnabled
                     )
                 }
                 .buttonStyle(.bordered)
 
-                Text("General project memory is stored under the General project folder in `memory/*.md`.")
+                Text("Memory files are stored under `memory/*.md` in the selected project.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
 
-                if let memoryStatus = model.memoryStatusMessage {
-                    Text(memoryStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+    private func archivedChatsCard(_ project: ProjectRecord) -> some View {
+        SettingsSectionCard(
+            title: "Archived Chats",
+            subtitle: "Restore archived conversations for the selected project."
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                switch model.archivedThreadsState {
+                case .idle, .loading:
+                    LoadingStateView(title: "Loading archived chats…")
+                        .frame(maxHeight: 120)
+                case let .failed(message):
+                    ErrorStateView(
+                        title: "Archived chats unavailable",
+                        message: message,
+                        actionLabel: "Retry"
+                    ) {
+                        Task {
+                            try? await model.refreshArchivedThreads()
+                        }
+                    }
+                    .frame(maxHeight: 160)
+                case let .loaded(allArchivedThreads):
+                    let threads = allArchivedThreads.filter { $0.projectId == project.id }
+                    if threads.isEmpty {
+                        Text("No archived chats for this project.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 8) {
+                                ForEach(threads) { thread in
+                                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(thread.title)
+                                                .font(.subheadline.weight(.medium))
+                                            Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+
+                                        Spacer(minLength: 0)
+
+                                        Button("Restore") {
+                                            model.unarchiveThread(threadID: thread.id)
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 180)
+                    }
                 }
             }
+        }
+    }
+
+    private func projectDisconnectCard(_ project: ProjectRecord) -> some View {
+        SettingsSectionCard(
+            title: "Remove from CodexChat",
+            subtitle: "Disconnect this project from the sidebar without deleting files on disk."
+        ) {
+            Button(role: .destructive) {
+                isRemoveProjectConfirmationVisible = true
+            } label: {
+                Label("Remove \(project.name)", systemImage: "trash")
+            }
+            .buttonStyle(.bordered)
         }
     }
 
@@ -945,7 +1086,7 @@ struct SettingsView: View {
                 Toggle("Allow network access in workspace-write", isOn: $safetyNetworkAccess)
                     .disabled(safetySandboxMode != .workspaceWrite)
                     .onChange(of: safetySandboxMode) { _, newValue in
-                        safetyNetworkAccess = ProjectSettingsSheet.clampedNetworkAccess(
+                        safetyNetworkAccess = AppModel.clampedNetworkAccess(
                             for: newValue,
                             networkAccess: safetyNetworkAccess
                         )
@@ -1353,23 +1494,172 @@ struct SettingsView: View {
         }
     }
 
-    private func syncGeneralProjectFromModel(force: Bool = false) {
-        guard let project = model.generalProject else {
-            lastSyncedGeneralProject = nil
+    private var settingsProjects: [ProjectRecord] {
+        model.projects.sorted { lhs, rhs in
+            if lhs.isGeneralProject != rhs.isGeneralProject {
+                return lhs.isGeneralProject && !rhs.isGeneralProject
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private var selectedSettingsProject: ProjectRecord? {
+        guard let selectedSettingsProjectID else {
+            return nil
+        }
+        return settingsProjects.first(where: { $0.id == selectedSettingsProjectID })
+    }
+
+    private func projectPickerTitle(_ project: ProjectRecord) -> String {
+        project.isGeneralProject ? "\(project.name) (General)" : project.name
+    }
+
+    private func syncSettingsProjectSelectionFromModel(force: Bool = false) {
+        if !force,
+           let selectedSettingsProjectID,
+           settingsProjects.contains(where: { $0.id == selectedSettingsProjectID })
+        {
             return
         }
-        guard force || lastSyncedGeneralProject != project else {
+
+        if let explicitSelection = model.selectedProjectID,
+           settingsProjects.contains(where: { $0.id == explicitSelection })
+        {
+            selectedSettingsProjectID = explicitSelection
             return
         }
-        isSyncingGeneralProject = true
-        generalSandboxMode = project.sandboxMode
-        generalApprovalPolicy = project.approvalPolicy
-        generalNetworkAccess = project.networkAccess
-        generalWebSearchMode = project.webSearch
-        generalMemoryWriteMode = project.memoryWriteMode
-        generalMemoryEmbeddingsEnabled = project.memoryEmbeddingsEnabled
-        lastSyncedGeneralProject = project
-        isSyncingGeneralProject = false
+
+        selectedSettingsProjectID = settingsProjects.first?.id
+    }
+
+    private func syncProjectDraftFromSelectedSettingsProject(force: Bool = false) {
+        guard let project = selectedSettingsProject else {
+            lastSyncedSettingsProject = nil
+            return
+        }
+        guard force || lastSyncedSettingsProject != project else {
+            return
+        }
+        isSyncingProjectSettings = true
+        projectSandboxMode = project.sandboxMode
+        projectApprovalPolicy = project.approvalPolicy
+        projectNetworkAccess = project.networkAccess
+        projectWebSearchMode = project.webSearch
+        projectMemoryWriteMode = project.memoryWriteMode
+        projectMemoryEmbeddingsEnabled = project.memoryEmbeddingsEnabled
+        lastSyncedSettingsProject = project
+        isSyncingProjectSettings = false
+    }
+
+    private func applyPendingSettingsNavigationTarget() {
+        guard let target = model.consumeSettingsNavigationTarget() else {
+            return
+        }
+
+        switch target.section {
+        case .projects:
+            selectedSection = .projects
+            selectedSettingsProjectID = target.projectID ?? selectedSettingsProjectID
+            syncSettingsProjectSelectionFromModel(force: true)
+            syncProjectDraftFromSelectedSettingsProject(force: true)
+            Task {
+                try? await model.refreshArchivedThreads()
+            }
+        }
+    }
+
+    private func updateProjectTrustState(projectID: UUID, trustState: ProjectTrustState) {
+        guard let projectRepository = model.projectRepository else {
+            return
+        }
+
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectTrustState(id: projectID, trustState: trustState)
+                try await model.refreshProjects()
+                model.projectStatusMessage = trustState == .trusted
+                    ? "Project trusted. Runtime can act with normal settings."
+                    : "Project marked untrusted. Read-only is recommended."
+                syncSettingsProjectSelectionFromModel(force: true)
+                syncProjectDraftFromSelectedSettingsProject(force: true)
+            } catch {
+                model.projectStatusMessage = "Failed to update trust state: \(error.localizedDescription)"
+                model.appendLog(.error, "Failed to update trust state: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func saveProjectSafetySettings(_ settings: ProjectSafetySettings) {
+        guard let project = selectedSettingsProject,
+              let projectRepository = model.projectRepository
+        else {
+            return
+        }
+
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectSafetySettings(id: project.id, settings: settings)
+                try await model.refreshProjects()
+                model.projectStatusMessage = project.isGeneralProject
+                    ? "Updated safety settings for the General project."
+                    : "Updated safety settings for this project."
+                syncSettingsProjectSelectionFromModel(force: true)
+                syncProjectDraftFromSelectedSettingsProject(force: true)
+            } catch {
+                model.projectStatusMessage = "Failed to update safety settings: \(error.localizedDescription)"
+                model.appendLog(.error, "Failed to update safety settings: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func saveProjectMemorySettings(
+        writeMode: ProjectMemoryWriteMode,
+        embeddingsEnabled: Bool
+    ) {
+        guard let project = selectedSettingsProject,
+              let projectRepository = model.projectRepository
+        else {
+            return
+        }
+
+        let settings = ProjectMemorySettings(writeMode: writeMode, embeddingsEnabled: embeddingsEnabled)
+        Task {
+            do {
+                _ = try await projectRepository.updateProjectMemorySettings(id: project.id, settings: settings)
+                try await model.refreshProjects()
+                model.memoryStatusMessage = project.isGeneralProject
+                    ? "Updated memory settings for the General project."
+                    : "Updated memory settings for this project."
+                syncSettingsProjectSelectionFromModel(force: true)
+                syncProjectDraftFromSelectedSettingsProject(force: true)
+            } catch {
+                model.memoryStatusMessage = "Failed to update memory settings: \(error.localizedDescription)"
+                model.appendLog(.error, "Failed to update memory settings: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func removeSelectedSettingsProjectFromCodexChat() {
+        guard let project = selectedSettingsProject,
+              !project.isGeneralProject,
+              let projectRepository = model.projectRepository
+        else {
+            model.projectStatusMessage = "The General project cannot be removed."
+            return
+        }
+
+        Task {
+            do {
+                try await projectRepository.deleteProject(id: project.id)
+                try await model.refreshProjects()
+                selectedSettingsProjectID = settingsProjects.first?.id
+                syncProjectDraftFromSelectedSettingsProject(force: true)
+                model.projectStatusMessage = "Removed project \(project.name) from CodexChat."
+            } catch {
+                model.projectStatusMessage = "Failed to remove project: \(error.localizedDescription)"
+                model.appendLog(.error, "Failed to remove project: \(error.localizedDescription)")
+            }
+        }
     }
 }
 

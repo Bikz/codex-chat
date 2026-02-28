@@ -932,7 +932,6 @@ final class AppModel: ObservableObject {
     @Published var isCodexConfigBusy = false
 
     @Published var isDiagnosticsVisible = false
-    @Published var isProjectSettingsVisible = false
     @Published var isNewProjectSheetVisible = false
     @Published var isRemoteControlSheetVisible = false
     @Published var isShellWorkspaceVisible = false

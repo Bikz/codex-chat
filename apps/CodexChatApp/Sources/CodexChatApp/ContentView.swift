@@ -154,9 +154,6 @@ struct ContentView: View {
         .sheet(isPresented: $model.isAPIKeyPromptVisible) {
             APIKeyLoginSheet(model: model)
         }
-        .sheet(isPresented: $model.isProjectSettingsVisible) {
-            ProjectSettingsSheet(model: model)
-        }
         .sheet(isPresented: $model.isRemoteControlSheetVisible, onDismiss: model.dismissRemoteControlSheet) {
             RemoteControlSheet(model: model)
         }

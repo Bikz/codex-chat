@@ -46,10 +46,6 @@ final class SettingsLiquidGlassStyleTests: XCTestCase {
         XCTAssertEqual(SettingsView.minimumWindowSize.height, 620, accuracy: 0.0001)
         XCTAssertEqual(SettingsView.detailMaxContentWidth, 980, accuracy: 0.0001)
         XCTAssertEqual(SettingsView.themePresetGridColumnCount, 5)
-
-        XCTAssertEqual(ProjectSettingsSheet.minimumWindowSize.width, 760, accuracy: 0.0001)
-        XCTAssertEqual(ProjectSettingsSheet.minimumWindowSize.height, 620, accuracy: 0.0001)
-        XCTAssertEqual(ProjectSettingsSheet.detailMaxContentWidth, 980, accuracy: 0.0001)
     }
 
     func testSettingsSectionSubtitlesArePresentForEachSection() {
