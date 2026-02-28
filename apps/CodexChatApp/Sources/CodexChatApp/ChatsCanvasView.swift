@@ -738,14 +738,7 @@ struct ChatsCanvasView: View {
             switch model.conversationState {
             case .idle:
                 conversationWithModsBar {
-                    EmptyStateView(
-                        title: "No active thread",
-                        message: "Choose or create a thread to start chatting.",
-                        systemImage: "bubble.left.and.bubble.right",
-                        actionLabel: "Start chat",
-                        action: model.startChatFromEmptyState,
-                        shortcutHint: "Shortcut: Shift-Command-N"
-                    )
+                    ThreadEmptyStateView()
                 }
             case .loading:
                 conversationWithModsBar {
