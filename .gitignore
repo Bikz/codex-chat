@@ -29,6 +29,7 @@ node_modules/
 /chats/
 /memory/
 /output/
+/apps/RemoteControlPWA/output/
 /tmp/
 
 # Local editor and env

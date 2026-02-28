@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "start": "python3 -m http.server 4173"
+    "start": "python3 -m http.server 4173",
+    "test:e2e:mobile": "playwright test",
+    "test:e2e:mobile:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
   }
 }
