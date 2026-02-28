@@ -57,9 +57,11 @@ This MVP delivers:
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)
   - Single-page conversation-first shell (home list + focused chat detail)
   - Hash navigation (`#view=home` and `#view=thread&tid=...&pid=...`) for browser back continuity
+  - Mobile-safe layout hardening (`safe-area-inset` support + visual-viewport keyboard offset handling)
   - Reconnect with backoff and snapshot re-request
   - Live event ingestion (`thread.message.append`, `turn.status.update`, approval refresh triggers)
   - Snapshot merge logic that preserves cached thread history and keeps per-thread memory bounded
+  - Playwright mobile E2E coverage (`apps/RemoteControlPWA/tests/mobile-ui.spec.ts`)
 
 ## Local run
 

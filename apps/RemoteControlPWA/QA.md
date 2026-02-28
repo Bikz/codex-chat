@@ -16,6 +16,14 @@ Use this checklist before cutting a release for the mobile web client.
 - Use browser/hardware back from detail and confirm it returns to home view without exiting pairing state.
 - Tap `View all` and confirm project sheet opens, focus stays inside sheet, and `Esc`/close button dismisses.
 
+## Device matrix (required)
+
+- iPhone Safari in-browser (portrait + landscape).
+- iPhone Chrome in-browser (portrait + landscape).
+- iPhone home-screen standalone mode (portrait + landscape).
+- Android Chrome (portrait + landscape).
+- Samsung Internet (portrait + landscape).
+
 ## Send and sync reliability
 
 - While connected, send a message and confirm it appears only after relay-confirmed event/snapshot.
@@ -29,6 +37,9 @@ Use this checklist before cutting a release for the mobile web client.
 - Confirm reconnect happens automatically if socket dropped.
 - Confirm `Last synced` updates and no duplicate messages appear after resume.
 - Force a sequence gap (restart relay or pause/resume network) and confirm snapshot resync recovers conversation state.
+- While composer is focused with keyboard open, confirm the composer and send button remain visible above keyboard.
+- Confirm transcript remains scrollable with keyboard open and no content is trapped below the composer.
+- Confirm top and bottom controls respect safe-area spacing on notched/home-indicator devices.
 
 ## Rotation and replay defenses
 
@@ -53,3 +64,10 @@ Use this checklist before cutting a release for the mobile web client.
 - In light mode, verify white-first surfaces with black text and neutral borders (no dark gradient/glass).
 - In dark mode, verify black-first surfaces with white text and neutral borders (no blue gradient/glass).
 - Switch system theme and confirm browser `theme-color` updates (`#ffffff` light, `#000000` dark).
+
+## Automated mobile E2E
+
+- Run `pnpm --filter @codexchat/remote-control-pwa test:e2e:mobile`.
+- Confirm both projects pass:
+  - `iphone-webkit`
+  - `android-chrome`

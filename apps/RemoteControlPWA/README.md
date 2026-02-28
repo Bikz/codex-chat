@@ -11,6 +11,20 @@ pnpm start
 
 Then open `http://localhost:4173`.
 
+## Run mobile E2E tests
+
+```bash
+cd apps/RemoteControlPWA
+pnpm test:e2e:mobile
+```
+
+Optional headed run:
+
+```bash
+cd apps/RemoteControlPWA
+pnpm test:e2e:mobile:headed
+```
+
 ## Pairing flow
 
 1. Desktop starts a remote session and shows QR link with `#sid=<session>&jt=<join_token>&relay=<relay_base_url>`.
@@ -36,6 +50,10 @@ Then open `http://localhost:4173`.
 - Manual + automatic snapshot requests on reconnect.
 - Live delta event handling for message appends and turn status updates.
 - Message wrapping and long-message collapse/expand in transcript view.
+- Mobile viewport hardening:
+  - safe-area-aware spacing (`env(safe-area-inset-*)`) for notch/home-indicator devices
+  - dynamic viewport sizing with keyboard-aware composer offset via `visualViewport` when available
+  - fallback sticky behavior when `visualViewport` is unavailable
 - Composer does not optimistically append outbound user messages; transcript updates render only after relay-confirmed events/snapshots.
 - Outbound `thread.send_message` and `approval.respond` commands queue while offline and flush only after websocket re-auth succeeds.
 - `Last synced` freshness tracking with stale-state indicator.
