@@ -23,6 +23,7 @@ declare global {
       setApprovalsExpanded: (expanded: boolean) => void;
       setChatDetached: (detached: boolean) => void;
       setDesktopConnected: (connected: boolean | null) => void;
+      sendComposerMessage: (text: string) => boolean;
       importJoinLink: (raw: string) => boolean;
       injectMessage: (message: Record<string, unknown>) => void;
       resetStorage: () => void;
@@ -36,6 +37,10 @@ declare global {
         showJumpToLatest: boolean;
         queuedCommandsCount: number;
         joinToken: string | null;
+        sessionID: string | null;
+        deviceSessionToken: string | null;
+        wsURL: string | null;
+        isAuthenticated: boolean;
         desktopConnected: boolean | null;
       };
     };
@@ -98,6 +103,9 @@ export function exposeE2EHarness() {
     setDesktopConnected(connected: boolean | null) {
       remoteStoreApi.setState({ desktopConnected: connected });
     },
+    sendComposerMessage(text: string) {
+      return client.sendComposerMessage(text);
+    },
     importJoinLink(raw: string) {
       return client.importJoinLink(raw);
     },
@@ -122,6 +130,10 @@ export function exposeE2EHarness() {
         showJumpToLatest: state.showJumpToLatest,
         queuedCommandsCount: state.queuedCommands.length,
         joinToken: state.joinToken,
+        sessionID: state.sessionID,
+        deviceSessionToken: state.deviceSessionToken,
+        wsURL: state.wsURL,
+        isAuthenticated: state.isAuthenticated,
         desktopConnected: state.desktopConnected
       };
     }

@@ -565,6 +565,50 @@ test("mobile-auth-ok-token-rotation-persists-latest-device-token", async ({ page
   }).toBe("device-token-2");
 });
 
+test("mobile-restores-persisted-pairing-after-reload-without-qr", async ({ page }) => {
+  await page.goto("/?e2e=1#view=home&pid=all");
+  await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
+
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      "codexchat.remote.pairedDevice.v1",
+      JSON.stringify({
+        sessionID: "e2e-session",
+        deviceID: "device-1",
+        deviceName: "Test iPhone",
+        relayBaseURL: "https://remote.bikz.cc",
+        deviceSessionToken: "device-token-restored",
+        wsURL: "wss://remote.bikz.cc/ws",
+        storedAt: new Date().toISOString()
+      })
+    );
+  });
+
+  await page.reload();
+  await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
+
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => (window as any).__codexRemotePWAHarness.getState());
+    })
+    .toMatchObject({
+      sessionID: "e2e-session",
+      deviceSessionToken: "device-token-restored",
+      wsURL: "wss://remote.bikz.cc/ws",
+      joinToken: null
+    });
+
+  await page.evaluate((payload) => {
+    (window as any).__codexRemotePWAHarness.seed(payload, { authenticated: false });
+  }, snapshotPayload);
+  const didQueue = await page.evaluate(() => (window as any).__codexRemotePWAHarness.sendComposerMessage("restored pairing send"));
+  expect(didQueue).toBe(true);
+
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().queuedCommandsCount)).toBe(
+    1
+  );
+});
+
 test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
   await seedCustom(page, {
     projects: [{ id: "p1", name: "General" }],
