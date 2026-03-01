@@ -3712,6 +3712,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sweep_sessions_preserves_idle_session_when_trusted_devices_exist() {
+        let session_id = "session-1";
+        let mut session = make_test_session(session_id, "device-1", "device-token-1");
+        session.idle_timeout_seconds = 60;
+        session.created_at_ms = now_ms() - 120_000;
+        session.last_activity_at_ms = now_ms() - 120_000;
+
+        let mut state = make_test_state_with_session(session);
+        state.config.session_retention_ms = 1_000;
+        sweep_sessions(&state).await;
+
+        let relay = state.inner.lock().await;
+        assert!(relay.sessions.contains_key(session_id));
+    }
+
+    #[tokio::test]
+    async fn sweep_sessions_expires_idle_session_without_trusted_devices() {
+        let session_id = "session-1";
+        let mut session = make_test_session(session_id, "device-1", "device-token-1");
+        session.idle_timeout_seconds = 60;
+        session.devices.clear();
+        session.created_at_ms = now_ms() - 120_000;
+        session.last_activity_at_ms = now_ms() - 120_000;
+
+        let mut state = make_test_state_with_session(session);
+        state.config.session_retention_ms = 1_000;
+        sweep_sessions(&state).await;
+
+        let relay = state.inner.lock().await;
+        assert!(!relay.sessions.contains_key(session_id));
+    }
+
+    #[tokio::test]
     async fn cross_instance_targeted_revoke_removes_device_tokens_locally() {
         let session_id = "session-1";
         let state = make_test_state_with_session(make_test_session(
