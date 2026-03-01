@@ -37,6 +37,10 @@ class RemoteClient {
 
   private appInstalledListener: (() => void) | null = null;
 
+  private displayModeMediaQuery: MediaQueryList | null = null;
+
+  private displayModeChangeListener: (() => void) | null = null;
+
   private focusTrapCleanup: (() => void) | null = null;
 
   init() {
@@ -62,6 +66,7 @@ class RemoteClient {
     window.addEventListener('hashchange', this.hashChangeListener);
 
     this.visibilityListener = () => {
+      this.syncStandaloneModeState();
       if (document.visibilityState !== 'visible') {
         return;
       }
@@ -86,11 +91,24 @@ class RemoteClient {
     this.appInstalledListener = () => {
       remoteStoreApi.setState({
         installPromptEvent: null,
-        welcomeDismissed: true
+        welcomeDismissed: true,
+        isStandaloneMode: true
       });
       this.setStatus('Installed to home screen. Pair once to keep this device connected.');
     };
     window.addEventListener('appinstalled', this.appInstalledListener);
+
+    this.displayModeMediaQuery = window.matchMedia?.('(display-mode: standalone)') ?? null;
+    if (this.displayModeMediaQuery) {
+      this.displayModeChangeListener = () => {
+        this.syncStandaloneModeState();
+      };
+      if (typeof this.displayModeMediaQuery.addEventListener === 'function') {
+        this.displayModeMediaQuery.addEventListener('change', this.displayModeChangeListener);
+      } else {
+        this.displayModeMediaQuery.addListener(this.displayModeChangeListener);
+      }
+    }
 
     this.refreshInterval = window.setInterval(() => this.refreshSyncFreshness(), 5_000);
 
@@ -130,6 +148,15 @@ class RemoteClient {
     if (this.appInstalledListener) {
       window.removeEventListener('appinstalled', this.appInstalledListener);
       this.appInstalledListener = null;
+    }
+    if (this.displayModeMediaQuery && this.displayModeChangeListener) {
+      if (typeof this.displayModeMediaQuery.removeEventListener === 'function') {
+        this.displayModeMediaQuery.removeEventListener('change', this.displayModeChangeListener);
+      } else {
+        this.displayModeMediaQuery.removeListener(this.displayModeChangeListener);
+      }
+      this.displayModeChangeListener = null;
+      this.displayModeMediaQuery = null;
     }
     if (this.refreshInterval !== null) {
       window.clearInterval(this.refreshInterval);
@@ -244,6 +271,12 @@ class RemoteClient {
     const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
     const iOSStandalone = navigatorWithStandalone.standalone === true;
     return displayModeStandalone || iOSStandalone;
+  }
+
+  private syncStandaloneModeState() {
+    remoteStoreApi.setState({
+      isStandaloneMode: this.isStandaloneDisplayMode()
+    });
   }
 
   private isIOSDevice() {

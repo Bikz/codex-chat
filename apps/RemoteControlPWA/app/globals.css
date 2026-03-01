@@ -883,9 +883,12 @@ textarea:focus-visible,
 
 .sheet-card {
   position: fixed;
-  left: 0;
-  right: 0;
+  left: 50%;
+  right: auto;
   bottom: 0;
+  width: min(calc(100vw - 1rem - var(--safe-left) - var(--safe-right)), 100%);
+  max-width: calc(100vw - 1rem - var(--safe-left) - var(--safe-right));
+  transform: translateX(-50%);
   z-index: 50;
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
@@ -1041,12 +1044,20 @@ textarea:focus-visible,
   }
 
   .sheet-card {
-    left: 50%;
-    right: auto;
-    width: min(560px, calc(100vw - 2rem));
-    transform: translateX(-50%);
+    width: min(560px, calc(100vw - 2rem - var(--safe-left) - var(--safe-right)));
+    max-width: calc(100vw - 2rem - var(--safe-left) - var(--safe-right));
     border-radius: 20px;
     border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (display-mode: standalone) {
+  .topbar {
+    padding-top: calc(0.62rem + var(--safe-top));
+  }
+
+  .app-main {
+    padding-bottom: calc(0.62rem + var(--safe-bottom));
   }
 }
 
