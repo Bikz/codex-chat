@@ -56,10 +56,11 @@ extension AppModel {
         source: String,
         scope: SkillInstallScope,
         installer: SkillInstallerKind,
+        projectIDs: [UUID]? = nil,
         allowUntrustedSource: Bool = false,
         pinnedRef: String? = nil
     ) {
-        if scope == .project, selectedProject == nil {
+        if scope == .project, projectIDs?.isEmpty ?? true, selectedProject == nil {
             skillStatusMessage = "Select a project to install a project-scoped skill."
             return
         }
@@ -96,6 +97,7 @@ extension AppModel {
                     source: source,
                     installer: installer,
                     requestedScope: scope,
+                    selectedProjectIDsOverride: projectIDs,
                     installedPath: result.installedPath
                 )
                 try await refreshSkills()
@@ -118,14 +120,18 @@ extension AppModel {
         }
     }
 
-    func installCatalogSkill(_ listing: CatalogSkillListing, scope: SkillInstallScope) {
+    func installCatalogSkill(
+        _ listing: CatalogSkillListing,
+        scope: SkillInstallScope,
+        projectIDs: [UUID]? = nil
+    ) {
         let source = listing.installSource ?? listing.repositoryURL
         guard let source, !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             skillStatusMessage = "Catalog listing \(listing.name) has no install source URL."
             return
         }
 
-        installSkill(source: source, scope: scope, installer: .git)
+        installSkill(source: source, scope: scope, installer: .git, projectIDs: projectIDs)
     }
 
     func updateSkill(_ item: SkillListItem) {
@@ -340,6 +346,7 @@ extension AppModel {
         source: String,
         installer: SkillInstallerKind,
         requestedScope: SkillInstallScope,
+        selectedProjectIDsOverride: [UUID]?,
         installedPath: String
     ) async throws {
         let sharedSkillURL = URL(fileURLWithPath: installedPath, isDirectory: true)
@@ -358,16 +365,33 @@ extension AppModel {
             selectedProjectIDs = []
             targetProjects = try await projectRepository?.listProjects() ?? []
         case .project:
-            guard let selectedProject else {
+            let requestedProjectIDs: Set<UUID> = if let selectedProjectIDsOverride {
+                Set(selectedProjectIDsOverride)
+            } else if let selectedProject {
+                [selectedProject.id]
+            } else {
+                []
+            }
+            guard !requestedProjectIDs.isEmpty else {
                 throw NSError(
                     domain: "CodexChatApp.SkillInstall",
                     code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Select a project before installing to selected projects."]
                 )
             }
+
+            let knownProjects = try await projectRepository?.listProjects() ?? projects
+            let resolvedProjects = knownProjects.filter { requestedProjectIDs.contains($0.id) }
+            guard !resolvedProjects.isEmpty else {
+                throw NSError(
+                    domain: "CodexChatApp.SkillInstall",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "No valid target projects were found for skill install."]
+                )
+            }
             mode = .selected
-            selectedProjectIDs = [selectedProject.id]
-            targetProjects = [selectedProject]
+            selectedProjectIDs = resolvedProjects.map(\.id)
+            targetProjects = resolvedProjects
         }
 
         let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)

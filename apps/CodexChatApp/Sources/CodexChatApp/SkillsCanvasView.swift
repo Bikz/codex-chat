@@ -1,13 +1,25 @@
 import CodexChatUI
+import CodexSkills
 import SwiftUI
 
 struct SkillsCanvasView: View {
+    private enum Tab: String, CaseIterable, Identifiable {
+        case installed = "Installed"
+        case marketplace = "Marketplace"
+
+        var id: String {
+            rawValue
+        }
+    }
+
     @ObservedObject var model: AppModel
     @Binding var isInstallSkillSheetVisible: Bool
     @Environment(\.designTokens) private var tokens
 
     @State private var query = ""
     @State private var animateCards = false
+    @State private var selectedTab: Tab = .installed
+    @State private var pendingProjectInstallListing: CatalogSkillListing?
 
     private let cardColumns = [
         GridItem(.flexible(minimum: 240), spacing: 12, alignment: .top),
@@ -38,15 +50,15 @@ struct SkillsCanvasView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button {
-                    isInstallSkillSheetVisible = true
-                } label: {
-                    Label("Install", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-
                 Spacer(minLength: 0)
             }
+
+            Picker("Skills section", selection: $selectedTab) {
+                ForEach(Tab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
 
             Text(SkillsModsPresentation.skillsSectionDescription)
                 .font(.caption)
@@ -88,8 +100,11 @@ struct SkillsCanvasView: View {
                             )
                     }
 
-                    installedSkillsSection(skills)
-                    availableSkillsSection(installedSkills: skills)
+                    if selectedTab == .installed {
+                        installedSkillsSection(skills)
+                    } else {
+                        availableSkillsSection(installedSkills: skills)
+                    }
                 }
                 .padding(.horizontal, SkillsModsTheme.pageHorizontalInset)
                 .padding(.top, 16)
@@ -97,6 +112,20 @@ struct SkillsCanvasView: View {
             }
             .onAppear {
                 animateCards = true
+            }
+            .sheet(item: $pendingProjectInstallListing) { listing in
+                SkillInstallProjectSelectionSheet(
+                    listing: listing,
+                    projects: model.projects.filter { !$0.isGeneralProject },
+                    initiallySelectedProjectIDs: Set(model.selectedProjectID.map { [$0] } ?? []),
+                    onCancel: {
+                        pendingProjectInstallListing = nil
+                    },
+                    onInstall: { projectIDs in
+                        pendingProjectInstallListing = nil
+                        model.installCatalogSkill(listing, scope: .project, projectIDs: projectIDs)
+                    }
+                )
             }
         }
     }
@@ -195,12 +224,12 @@ struct SkillsCanvasView: View {
                         ForEach(visible) { listing in
                             CatalogSkillRow(
                                 listing: listing,
-                                canInstallToProject: model.selectedProjectID != nil,
-                                onInstallProject: {
-                                    model.installCatalogSkill(listing, scope: .project)
-                                },
-                                onInstallGlobal: {
+                                canInstallToSelectedProjects: !model.projects.filter { !$0.isGeneralProject }.isEmpty,
+                                onInstallAllProjects: {
                                     model.installCatalogSkill(listing, scope: .global)
+                                },
+                                onInstallSelectedProjects: {
+                                    pendingProjectInstallListing = listing
                                 }
                             )
                         }

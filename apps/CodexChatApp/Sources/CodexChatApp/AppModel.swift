@@ -74,9 +74,28 @@ final class AppModel: ObservableObject {
         let skill: DiscoveredSkill
         var enabledTargets: Set<SkillEnablementTarget>
         var isEnabledForSelectedProject: Bool
+        var selectedProjectCount: Int?
         var updateCapability: SkillUpdateCapability
         var updateSource: String?
         var updateInstaller: SkillInstallerKind?
+
+        init(
+            skill: DiscoveredSkill,
+            enabledTargets: Set<SkillEnablementTarget>,
+            isEnabledForSelectedProject: Bool,
+            selectedProjectCount: Int? = nil,
+            updateCapability: SkillUpdateCapability,
+            updateSource: String?,
+            updateInstaller: SkillInstallerKind?
+        ) {
+            self.skill = skill
+            self.enabledTargets = enabledTargets
+            self.isEnabledForSelectedProject = isEnabledForSelectedProject
+            self.selectedProjectCount = selectedProjectCount
+            self.updateCapability = updateCapability
+            self.updateSource = updateSource
+            self.updateInstaller = updateInstaller
+        }
 
         var id: String {
             skill.id
@@ -96,6 +115,19 @@ final class AppModel: ObservableObject {
 
         var isEnabledForProject: Bool {
             isEnabledForSelectedProject
+        }
+
+        var installScopeSummary: String {
+            if isEnabledGlobally {
+                return "All projects"
+            }
+            if let selectedProjectCount {
+                return selectedProjectCount == 1 ? "1 project" : "\(selectedProjectCount) projects"
+            }
+            if isEnabledForProjectTarget {
+                return "Selected projects"
+            }
+            return "Not installed"
         }
     }
 
@@ -2074,6 +2106,7 @@ final class AppModel: ObservableObject {
                     skill: skill,
                     enabledTargets: installTargets,
                     isEnabledForSelectedProject: isAvailableForSelectedProject,
+                    selectedProjectCount: installRecord.mode == .selected ? installRecord.projectIDs.count : nil,
                     updateCapability: mappedCapability,
                     updateSource: updateCapability.source,
                     updateInstaller: updateCapability.installer

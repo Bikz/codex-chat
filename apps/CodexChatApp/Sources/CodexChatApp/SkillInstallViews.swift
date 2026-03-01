@@ -160,9 +160,9 @@ struct SkillRow: View {
 
 struct CatalogSkillRow: View {
     let listing: CatalogSkillListing
-    let canInstallToProject: Bool
-    let onInstallProject: () -> Void
-    let onInstallGlobal: () -> Void
+    let canInstallToSelectedProjects: Bool
+    let onInstallAllProjects: () -> Void
+    let onInstallSelectedProjects: () -> Void
 
     var body: some View {
         SkillsModsCard(padding: 12) {
@@ -184,9 +184,9 @@ struct CatalogSkillRow: View {
                     Spacer()
 
                     Menu {
-                        Button("Install to Project", action: onInstallProject)
-                            .disabled(!canInstallToProject)
-                        Button("Install Globally", action: onInstallGlobal)
+                        Button("Install to All projects", action: onInstallAllProjects)
+                        Button("Install to Selected projects…", action: onInstallSelectedProjects)
+                            .disabled(!canInstallToSelectedProjects)
                     } label: {
                         Label("Install", systemImage: "square.and.arrow.down")
                     }
@@ -210,6 +210,90 @@ struct CatalogSkillRow: View {
                 }
             }
         }
+    }
+}
+
+struct SkillInstallProjectSelectionSheet: View {
+    let listing: CatalogSkillListing
+    let projects: [ProjectRecord]
+    let initiallySelectedProjectIDs: Set<UUID>
+    let onCancel: () -> Void
+    let onInstall: ([UUID]) -> Void
+
+    @State private var query = ""
+    @State private var selectedProjectIDs: Set<UUID> = []
+
+    private var filteredProjects: [ProjectRecord] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return projects
+        }
+        return projects.filter { project in
+            project.name.localizedCaseInsensitiveContains(trimmed)
+                || project.path.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Install to Selected projects")
+                .font(.title3.weight(.semibold))
+
+            Text(listing.name)
+                .font(.headline)
+
+            SkillsModsSearchField(text: $query, placeholder: "Search projects")
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(filteredProjects) { project in
+                        Toggle(isOn: binding(for: project.id)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(project.name)
+                                    .font(.subheadline.weight(.medium))
+                                Text(project.path)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+            }
+            .frame(maxHeight: 300)
+
+            HStack {
+                Spacer()
+
+                Button("Cancel", action: onCancel)
+
+                Button("Install") {
+                    onInstall(Array(selectedProjectIDs))
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedProjectIDs.isEmpty)
+            }
+        }
+        .padding(22)
+        .frame(minWidth: 560)
+        .onAppear {
+            selectedProjectIDs = initiallySelectedProjectIDs
+        }
+    }
+
+    private func binding(for projectID: UUID) -> Binding<Bool> {
+        Binding(
+            get: { selectedProjectIDs.contains(projectID) },
+            set: { isSelected in
+                if isSelected {
+                    selectedProjectIDs.insert(projectID)
+                } else {
+                    selectedProjectIDs.remove(projectID)
+                }
+            }
+        )
     }
 }
 
