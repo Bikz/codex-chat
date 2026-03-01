@@ -358,6 +358,7 @@ public final class SkillCatalogService: @unchecked Sendable {
     private let fileManager: FileManager
     private let codexHomeURL: URL
     private let agentsHomeURL: URL
+    private let sharedSkillsStoreURL: URL?
     private let processRunner: ProcessRunner
     private let discoveryCacheLock = NSLock()
     private var discoveryCache: [DiscoveryCacheKey: DiscoveryCacheEntry] = [:]
@@ -366,12 +367,14 @@ public final class SkillCatalogService: @unchecked Sendable {
         fileManager: FileManager = .default,
         codexHomeURL: URL? = nil,
         agentsHomeURL: URL? = nil,
+        sharedSkillsStoreURL: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         processRunner: @escaping ProcessRunner = SkillCatalogService.defaultProcessRunner
     ) {
         self.fileManager = fileManager
         self.codexHomeURL = codexHomeURL ?? Self.resolveCodexHome(environment: environment)
         self.agentsHomeURL = agentsHomeURL ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".agents")
+        self.sharedSkillsStoreURL = sharedSkillsStoreURL?.standardizedFileURL
         self.processRunner = processRunner
     }
 
@@ -758,6 +761,9 @@ public final class SkillCatalogService: @unchecked Sendable {
 
     private func discoveryRoots(projectPath: String?) -> [(URL, SkillScope)] {
         var roots: [(URL, SkillScope)] = []
+        if let sharedSkillsStoreURL {
+            roots.append((sharedSkillsStoreURL, .global))
+        }
         roots.append((codexHomeURL.appendingPathComponent("skills", isDirectory: true), .global))
         roots.append((agentsHomeURL.appendingPathComponent("skills", isDirectory: true), .global))
 
@@ -779,6 +785,9 @@ public final class SkillCatalogService: @unchecked Sendable {
     private func installRoot(scope: SkillScope, projectPath: String?) throws -> URL {
         switch scope {
         case .global:
+            if let sharedSkillsStoreURL {
+                return sharedSkillsStoreURL
+            }
             return codexHomeURL.appendingPathComponent("skills", isDirectory: true)
         case .project:
             guard let projectPath else {

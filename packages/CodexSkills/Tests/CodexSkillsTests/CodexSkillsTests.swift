@@ -201,6 +201,41 @@ final class CodexSkillsTests: XCTestCase {
         }
     }
 
+    func testGlobalInstallUsesSharedSkillsStoreWhenConfigured() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-shared-store-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sharedStore = root.appendingPathComponent("skills-store", isDirectory: true)
+        let service = SkillCatalogService(
+            codexHomeURL: root.appendingPathComponent(".codex", isDirectory: true),
+            agentsHomeURL: root.appendingPathComponent(".agents", isDirectory: true),
+            sharedSkillsStoreURL: sharedStore,
+            processRunner: { argv, _ in
+                if argv.prefix(4) == ["git", "clone", "--depth", "1"], let destination = argv.last {
+                    try FileManager.default.createDirectory(
+                        at: URL(fileURLWithPath: destination, isDirectory: true),
+                        withIntermediateDirectories: true
+                    )
+                }
+                return "ok"
+            }
+        )
+
+        let result = try service.installSkill(
+            SkillInstallRequest(
+                source: "https://github.com/openai/agent-browser.git",
+                scope: .global,
+                projectPath: nil,
+                installer: .git
+            )
+        )
+
+        XCTAssertTrue(result.installedPath.hasPrefix(sharedStore.path + "/"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.installedPath))
+    }
+
     func testGitInstallSupportsPinnedRefAndPersistsMetadata() throws {
         final class InvocationCapture: @unchecked Sendable {
             private let lock = NSLock()

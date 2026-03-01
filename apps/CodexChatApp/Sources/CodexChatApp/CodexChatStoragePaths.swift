@@ -40,6 +40,10 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         globalURL.appendingPathComponent("agents-home", isDirectory: true)
     }
 
+    var sharedSkillsStoreURL: URL {
+        agentsHomeURL.appendingPathComponent("skills-store", isDirectory: true)
+    }
+
     var systemURL: URL {
         rootURL.appendingPathComponent("system", isDirectory: true)
     }
@@ -106,6 +110,7 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         try fileManager.createDirectory(at: globalModsURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: codexHomeURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: agentsHomeURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: sharedSkillsStoreURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: systemURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: modSnapshotsURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: codexHomeQuarantineRootURL, withIntermediateDirectories: true)

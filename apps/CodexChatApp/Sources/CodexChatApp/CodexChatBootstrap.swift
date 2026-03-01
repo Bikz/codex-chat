@@ -211,7 +211,8 @@ public enum CodexChatBootstrap {
         let repositories = MetadataRepositories(database: database)
         let skillCatalogService = SkillCatalogService(
             codexHomeURL: storagePaths.codexHomeURL,
-            agentsHomeURL: storagePaths.agentsHomeURL
+            agentsHomeURL: storagePaths.agentsHomeURL,
+            sharedSkillsStoreURL: storagePaths.sharedSkillsStoreURL
         )
         let skillCatalogProvider = RemoteJSONSkillCatalogProvider()
         let harnessEnvironment = try makeHarnessEnvironment(
