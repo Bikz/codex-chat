@@ -85,6 +85,78 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         XCTAssertEqual(destination, install.sharedPath)
     }
 
+    func testRefreshSkillsMigratesLegacyEnablementIntoSharedStoreRegistry() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-skill-legacy-migration-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+
+        let projectPath = root.appendingPathComponent("project-beta", isDirectory: true)
+        let legacySkillPath = projectPath
+            .appendingPathComponent(".agents/skills/legacy-skill", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacySkillPath, withIntermediateDirectories: true)
+        try """
+        # Legacy Skill
+
+        Migrated legacy skill.
+        """.write(
+            to: legacySkillPath.appendingPathComponent("SKILL.md", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Beta",
+            path: projectPath.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            projectID: project.id,
+            skillPath: legacySkillPath.path,
+            enabled: true
+        )
+
+        let catalogService = SkillCatalogService(
+            codexHomeURL: paths.codexHomeURL,
+            agentsHomeURL: paths.agentsHomeURL,
+            sharedSkillsStoreURL: paths.sharedSkillsStoreURL
+        )
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            skillCatalogService: catalogService,
+            storagePaths: paths
+        )
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        try await model.refreshSkills()
+
+        let installs = try await repositories.skillInstallRegistryRepository.list()
+        XCTAssertEqual(installs.count, 1)
+        let install = try XCTUnwrap(installs.first)
+        XCTAssertEqual(install.mode, .selected)
+        XCTAssertEqual(install.projectIDs, [project.id])
+        XCTAssertTrue(CodexChatStoragePaths.isPath(install.sharedPath, insideRoot: paths.sharedSkillsStoreURL.path))
+
+        let projectLinkPath = projectPath
+            .appendingPathComponent(".agents/skills", isDirectory: true)
+            .appendingPathComponent(URL(fileURLWithPath: install.sharedPath, isDirectory: true).lastPathComponent, isDirectory: true)
+            .path
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectLinkPath))
+        let linkDestination = try FileManager.default.destinationOfSymbolicLink(atPath: projectLinkPath)
+        XCTAssertEqual(linkDestination, install.sharedPath)
+
+        let migrationMarker = try await repositories.preferenceRepository.getPreference(key: .skillsInstallMigrationV1)
+        XCTAssertEqual(migrationMarker, "1")
+    }
+
     private func waitUntil(
         timeout: TimeInterval,
         condition: @escaping @MainActor () -> Bool

@@ -406,6 +406,7 @@ public enum AppPreferenceKey: String, CaseIterable, Sendable {
     case threadComposerOverridesV1 = "thread_composer_overrides_v1"
     case transcriptDetailLevel = "transcript_detail_level"
     case threadTitleIndexBackfillV1 = "thread_title_index_backfill_v1"
+    case skillsInstallMigrationV1 = "skills.install_migration_v1"
     case userThemeCustomizationV1 = "theme.user_customization_v1"
     case savedCustomThemePresetV1 = "theme.saved_custom_preset_v1"
 }

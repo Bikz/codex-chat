@@ -2016,6 +2016,7 @@ final class AppModel: ObservableObject {
 
     func refreshSkills() async throws {
         skillsState = .loading
+        await migrateLegacySkillInstallsIfNeeded()
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
         var discoveredByResolvedPath: [String: DiscoveredSkill] = [:]
