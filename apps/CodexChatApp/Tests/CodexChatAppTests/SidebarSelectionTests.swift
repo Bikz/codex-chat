@@ -189,6 +189,33 @@ final class SidebarSelectionTests: XCTestCase {
         XCTAssertEqual(recents.map(\.id), [pending.id])
     }
 
+    func testRecentThreadsDeduplicatesSameThreadIDAcrossSources() throws {
+        let id = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let older = ThreadRecord(
+            id: id,
+            projectId: UUID(),
+            title: "Simple greeting",
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let newer = ThreadRecord(
+            id: id,
+            projectId: UUID(),
+            title: "Simple greeting",
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_050)
+        )
+
+        let recents = SidebarView.recentThreads(
+            [older, newer],
+            filter: .all,
+            pendingThreadIDs: [],
+            unreadThreadIDs: []
+        )
+
+        XCTAssertEqual(recents.count, 1)
+        XCTAssertEqual(recents.first?.id, id)
+        XCTAssertEqual(recents.first?.updatedAt, newer.updatedAt)
+    }
+
     func testIsDarkColorHexDetectsDarkAndLightColors() {
         XCTAssertTrue(SidebarView.isDarkColorHex("#0A0A0A"))
         XCTAssertFalse(SidebarView.isDarkColorHex("#F5F5F5"))

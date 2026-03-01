@@ -1037,13 +1037,24 @@ struct SidebarView: View {
             pendingThreadIDs: pendingThreadIDs,
             unreadThreadIDs: unreadThreadIDs
         )
-        .sorted { lhs, rhs in
+        let dedupedByThreadID = filtered.reduce(into: [UUID: ThreadRecord]()) { partialResult, thread in
+            guard let existing = partialResult[thread.id] else {
+                partialResult[thread.id] = thread
+                return
+            }
+
+            if thread.updatedAt > existing.updatedAt {
+                partialResult[thread.id] = thread
+            }
+        }
+        let deduped = Array(dedupedByThreadID.values)
+        let sorted = deduped.sorted { lhs, rhs in
             if lhs.updatedAt != rhs.updatedAt {
                 return lhs.updatedAt > rhs.updatedAt
             }
             return lhs.id.uuidString < rhs.id.uuidString
         }
-        return Array(filtered.prefix(max(limit, 0)))
+        return Array(sorted.prefix(max(limit, 0)))
     }
 
     static func trailingControlsVisible(isHovered: Bool, isSelected: Bool) -> Bool {
