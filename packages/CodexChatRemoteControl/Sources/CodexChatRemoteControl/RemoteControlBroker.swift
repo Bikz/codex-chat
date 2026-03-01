@@ -259,8 +259,6 @@ public actor RemoteControlBroker {
         trustedDevices: [],
         disconnectReason: nil
     )
-    private var idleTimeoutTask: Task<Void, Never>?
-
     public init(
         relayRegistrar: any RemoteControlRelayRegistering = NoopRemoteControlRelayRegistrar(),
         tokenFactory: RemoteControlTokenFactory = RemoteControlTokenFactory()
@@ -269,18 +267,12 @@ public actor RemoteControlBroker {
         self.tokenFactory = tokenFactory
     }
 
-    deinit {
-        idleTimeoutTask?.cancel()
-    }
-
     @discardableResult
     public func startSession(
         joinBaseURL: URL,
         relayWebSocketURL: URL,
         policy: RemoteControlPairingSecurityPolicy = .init()
     ) async throws -> RemoteControlSessionDescriptor {
-        idleTimeoutTask?.cancel()
-
         let descriptor = try tokenFactory.makeSessionDescriptor(
             joinBaseURL: joinBaseURL,
             relayWebSocketURL: relayWebSocketURL,
@@ -315,9 +307,20 @@ public actor RemoteControlBroker {
             disconnectReason: nil
         )
 
-        scheduleIdleTimeout(seconds: effectiveDescriptor.idleTimeout)
-
         return effectiveDescriptor
+    }
+
+    public func restoreSession(
+        _ descriptor: RemoteControlSessionDescriptor,
+        trustedDevices: [RemoteControlTrustedDevice] = []
+    ) {
+        status = RemoteControlBrokerStatus(
+            phase: .active,
+            session: descriptor,
+            connectedDeviceCount: trustedDevices.filter(\.connected).count,
+            trustedDevices: trustedDevices,
+            disconnectReason: nil
+        )
     }
 
     @discardableResult
@@ -433,9 +436,6 @@ public actor RemoteControlBroker {
     }
 
     public func stopSession(reason: String = "Stopped by user") async {
-        idleTimeoutTask?.cancel()
-        idleTimeoutTask = nil
-
         if let session = status.session {
             let request = RemoteControlPairStopRequest(
                 sessionID: session.sessionID,
@@ -459,24 +459,6 @@ public actor RemoteControlBroker {
     }
 
     public func bumpActivity() {
-        guard let session = status.session else {
-            return
-        }
-        scheduleIdleTimeout(seconds: session.idleTimeout)
-    }
-
-    private func scheduleIdleTimeout(seconds: TimeInterval) {
-        idleTimeoutTask?.cancel()
-        idleTimeoutTask = Task { [weak self] in
-            guard !Task.isCancelled else {
-                return
-            }
-            let nanoseconds = UInt64(max(1, seconds) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            guard !Task.isCancelled else {
-                return
-            }
-            await self?.stopSession(reason: "Idle timeout")
-        }
+        // Session retention is relay-managed; keep this as a semantic no-op.
     }
 }

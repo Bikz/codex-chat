@@ -181,4 +181,37 @@ final class RemoteControlBrokerTests: XCTestCase {
         XCTAssertEqual(refreshRequest?.desktopSessionToken, descriptor.desktopSessionToken)
         XCTAssertEqual(refreshRequest?.joinToken, refreshed.joinTokenLease.token)
     }
+
+    func testRestoreSessionTransitionsBrokerToActiveWithoutPairStart() async throws {
+        let registrar = RecordingRelayRegistrar()
+        let tokenFactory = RemoteControlTokenFactory(
+            dateProvider: SystemRemoteControlDateProvider(),
+            randomDataSource: StaticRandomSource()
+        )
+        let descriptor = try tokenFactory.makeSessionDescriptor(
+            joinBaseURL: XCTUnwrap(URL(string: "https://remote.codexchat.example/rc")),
+            relayWebSocketURL: XCTUnwrap(URL(string: "wss://relay.codexchat.example/ws"))
+        )
+        let broker = RemoteControlBroker(relayRegistrar: registrar, tokenFactory: tokenFactory)
+        await broker.restoreSession(
+            descriptor,
+            trustedDevices: [
+                RemoteControlTrustedDevice(
+                    deviceID: "device-1",
+                    deviceName: "Test Phone",
+                    connected: true,
+                    joinedAt: Date().addingTimeInterval(-30),
+                    lastSeenAt: Date()
+                ),
+            ]
+        )
+
+        let status = await broker.currentStatus()
+        XCTAssertEqual(status.phase, .active)
+        XCTAssertEqual(status.session, descriptor)
+        XCTAssertEqual(status.connectedDeviceCount, 1)
+        XCTAssertEqual(status.trustedDevices.map(\.deviceID), ["device-1"])
+        let pairStartRequest = await registrar.latestRequest()
+        XCTAssertNil(pairStartRequest)
+    }
 }
