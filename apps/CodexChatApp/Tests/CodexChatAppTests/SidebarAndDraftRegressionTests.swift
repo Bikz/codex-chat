@@ -26,6 +26,7 @@ final class SidebarAndDraftRegressionTests: XCTestCase {
 
     func testComposerPrimaryControlsRemainModelAndReasoningOnly() {
         XCTAssertEqual(ChatsCanvasView.composerPrimaryVisibleControlIDs, ["model", "reasoning"])
+        XCTAssertFalse(ChatsCanvasView.composerControlChipShowsTrailingChevron)
         XCTAssertEqual(
             ChatsCanvasView.composerPopoverControlIDs,
             ["web-search", "memory-mode", "execution-permissions"]

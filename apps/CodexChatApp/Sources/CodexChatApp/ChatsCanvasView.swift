@@ -10,6 +10,7 @@ struct ChatsCanvasView: View {
     static let emptyStatePrimaryActionLabel: String? = nil
     static let composerPrimaryVisibleControlIDs = ["model", "reasoning"]
     static let composerPopoverControlIDs = ["web-search", "memory-mode", "execution-permissions"]
+    static let composerControlChipShowsTrailingChevron = false
     static let composerExecutionControlLeadingSymbol: String? = nil
     static let composerExecutionControlDisclosureSymbol = "chevron.right"
     static let composerShowsResetToInheritedAction = false
@@ -1430,9 +1431,11 @@ private struct ComposerControlBar: View {
 
             Spacer(minLength: 2)
 
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .regular))
-                .foregroundStyle(.secondary)
+            if ChatsCanvasView.composerControlChipShowsTrailingChevron {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
