@@ -46,6 +46,8 @@ Use this checklist before cutting a release for the mobile web client.
 - Confirm transcript remains scrollable with keyboard open and no content is trapped below the composer.
 - Confirm top and bottom controls respect safe-area spacing on notched/home-indicator devices.
 - Confirm no page-level horizontal scroll in home or thread views (`scrollWidth` must match viewport width).
+- Open account/project/scanner sheets and confirm `scrollWidth` still matches viewport width.
+- Seed long unbroken strings (thread title/project/session/device/command output) and confirm no horizontal scrolling in home, thread, and sheets.
 
 ## Rotation and replay defenses
 
@@ -86,3 +88,7 @@ Use this checklist before cutting a release for the mobile web client.
 - Confirm both Playwright projects pass:
   - `iphone-webkit`
   - `android-chrome`
+- Confirm new overflow regressions pass:
+  - `mobile-long-unbroken-strings-stay-contained`
+  - `mobile-all-sheets-no-horizontal-overflow`
+  - `mobile-orientation-resize-preserves-layout-containment`

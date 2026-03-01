@@ -93,9 +93,11 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 - safe-area-aware spacing (`env(safe-area-inset-*)`) for notch/home-indicator devices
 - dynamic viewport sizing with keyboard-aware composer offset via `visualViewport` when available
 - fallback sticky behavior when `visualViewport` is unavailable
+- manifest display is `standalone` with `orientation: any` for install-mode rotation support
 - touch-target minimum sizing on primary actions
 - in-app QR scanner sheet (camera + manual/clipboard fallback)
-- page-level horizontal overflow is blocked as a release requirement (`scrollWidth <= clientWidth` in home and thread views)
+- page-level horizontal overflow is blocked as a release requirement (`scrollWidth <= clientWidth`) across home, thread, and sheet surfaces
+- long unbroken dynamic strings (thread titles, project names, session/device identifiers, command output) are wrapped or truncated to prevent overflow
 
 ## Reliability guarantees (unchanged protocol behavior)
 
