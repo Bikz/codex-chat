@@ -280,7 +280,7 @@ struct InstallSkillSheet: View {
 
             Picker("Scope", selection: $scope) {
                 Text("All projects").tag(SkillInstallScope.global)
-                Text("Selected project").tag(SkillInstallScope.project)
+                Text("Selected projects").tag(SkillInstallScope.project)
             }
             .pickerStyle(.segmented)
 
