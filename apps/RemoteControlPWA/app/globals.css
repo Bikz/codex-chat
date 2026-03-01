@@ -158,12 +158,12 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.7rem;
+  gap: 0.62rem;
   border-bottom: 1px solid var(--line);
   background: var(--canvas);
-  padding-top: calc(0.9rem + var(--safe-top));
+  padding-top: calc(0.78rem + var(--safe-top));
   padding-right: calc(1rem + var(--safe-right));
-  padding-bottom: 0.86rem;
+  padding-bottom: 0.72rem;
   padding-left: calc(1rem + var(--safe-left));
 }
 
@@ -174,7 +174,7 @@ textarea:focus-visible,
 .subtitle {
   margin-top: 0.2rem;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.86rem;
 }
 
 .connection-button {
@@ -212,9 +212,9 @@ textarea:focus-visible,
   max-width: 760px;
   margin: 0 auto;
   min-height: calc(var(--vvh) - var(--safe-top));
-  padding-top: 0.8rem;
+  padding-top: 0.72rem;
   padding-right: calc(0.8rem + var(--safe-right));
-  padding-bottom: calc(0.8rem + var(--safe-bottom));
+  padding-bottom: calc(0.7rem + var(--safe-bottom));
   padding-left: calc(0.8rem + var(--safe-left));
 }
 
@@ -236,7 +236,7 @@ textarea:focus-visible,
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow);
-  padding: 0.8rem;
+  padding: 0.74rem;
 }
 
 .preconnect-card {
@@ -309,12 +309,20 @@ textarea:focus-visible,
   gap: 0.5rem;
 }
 
+.compact-button {
+  min-height: 34px;
+  padding: 0.18rem 0.56rem;
+  font-size: 0.8rem;
+}
+
 .project-strip {
-  margin-top: 0.6rem;
+  margin-top: 0.5rem;
   display: flex;
-  gap: 0.65rem;
+  gap: 0.58rem;
   overflow-x: auto;
-  padding-bottom: 0.2rem;
+  padding-bottom: 0.24rem;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
 }
 
 .project-circle {
@@ -322,16 +330,19 @@ textarea:focus-visible,
   background: var(--surface-alt);
   color: var(--fg);
   border-radius: var(--pill);
-  min-width: 66px;
-  min-height: 66px;
+  min-width: 62px;
+  min-height: 62px;
   padding: 0.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   line-height: 1.18;
   font-weight: 590;
+  overflow: hidden;
+  word-break: break-word;
+  scroll-snap-align: start;
 }
 
 .project-circle.active {
@@ -341,10 +352,10 @@ textarea:focus-visible,
 
 .chat-list {
   list-style: none;
-  margin: 0.65rem 0 0;
+  margin: 0.58rem 0 0;
   padding: 0;
   display: grid;
-  gap: 0.52rem;
+  gap: 0.48rem;
 }
 
 .chat-row {
@@ -353,7 +364,7 @@ textarea:focus-visible,
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-alt);
-  padding: 0.66rem 0.74rem;
+  padding: 0.62rem 0.7rem;
 }
 
 .chat-row.active {
@@ -369,18 +380,19 @@ textarea:focus-visible,
 
 .chat-title {
   font-weight: 620;
+  font-size: 1rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .chat-preview {
-  margin-top: 0.3rem;
+  margin-top: 0.26rem;
   color: var(--muted);
-  font-size: 0.83rem;
-  line-height: 1.32;
+  font-size: 0.81rem;
+  line-height: 1.28;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -395,7 +407,7 @@ textarea:focus-visible,
 .mini-badge {
   border: 1px solid var(--line);
   border-radius: var(--pill);
-  min-height: 21px;
+  min-height: 22px;
   padding: 0 0.4rem;
   display: inline-flex;
   align-items: center;
@@ -971,6 +983,46 @@ textarea:focus-visible,
 
   .tool-chip {
     font-size: 0.6rem;
+  }
+}
+
+@media (max-width: 430px) {
+  h1 {
+    font-size: 1.08rem;
+  }
+
+  .subtitle {
+    font-size: 0.83rem;
+    line-height: 1.32;
+  }
+
+  .topbar {
+    padding-right: calc(0.78rem + var(--safe-right));
+    padding-left: calc(0.78rem + var(--safe-left));
+  }
+
+  .app-main {
+    padding-right: calc(0.64rem + var(--safe-right));
+    padding-left: calc(0.64rem + var(--safe-left));
+  }
+
+  .project-circle {
+    min-width: 58px;
+    min-height: 58px;
+    font-size: 0.67rem;
+  }
+
+  .chat-title {
+    font-size: 0.96rem;
+  }
+
+  .chat-preview {
+    font-size: 0.78rem;
+  }
+
+  .compact-button {
+    min-height: 32px;
+    font-size: 0.76rem;
   }
 }
 

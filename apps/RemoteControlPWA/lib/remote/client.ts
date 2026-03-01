@@ -607,7 +607,38 @@ class RemoteClient {
       return 'No messages yet';
     }
     const latest = messages[messages.length - 1];
-    return latest.text || 'No messages yet';
+    return this.compactPreviewText(latest.text || '');
+  }
+
+  private compactPreviewText(rawText: string) {
+    const collapsed = rawText.replace(/\s+/g, ' ').trim();
+    if (!collapsed) {
+      return 'No messages yet';
+    }
+
+    const jsonStart = collapsed.indexOf('{');
+    if (jsonStart >= 0 && collapsed.includes('"text"')) {
+      try {
+        const parsed = JSON.parse(collapsed.slice(jsonStart)) as { text?: string };
+        if (typeof parsed?.text === 'string' && parsed.text.trim().length > 0) {
+          return parsed.text.trim();
+        }
+      } catch {
+        // Ignore parse failures and fall back to plain text cleanup.
+      }
+    }
+
+    const clean = collapsed
+      .replace(/^Completed\s+agentMessage:\s*/i, '')
+      .replace(/^Started\s+reasoning:\s*/i, '')
+      .replace(/^Completed\s+reasoning:\s*/i, '')
+      .replace(/^Completed\s+commandExecution:\s*/i, '');
+
+    if (clean.length <= 160) {
+      return clean;
+    }
+
+    return `${clean.slice(0, 157)}...`;
   }
 
   private updateWorkspaceVisibility() {
