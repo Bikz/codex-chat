@@ -74,10 +74,13 @@ extension AppModel {
         )
         let turnOptions = runtimeTurnOptions()
         var runtimeSkillInputs: [RuntimeSkillInput] = []
-        if sourceQueueItemID == nil,
-           let selectedSkillInput = selectedSkillForComposer.map({ RuntimeSkillInput(name: $0.skill.name, path: $0.skill.skillPath) })
-        {
-            runtimeSkillInputs.append(selectedSkillInput)
+        if sourceQueueItemID == nil {
+            runtimeSkillInputs.append(
+                contentsOf: SkillReferenceResolver.runtimeSkillInputs(
+                    messageText: trimmedText,
+                    availableSkills: enabledSkillsForSelectedProject
+                )
+            )
         }
         if sourceQueueItemID == nil,
            let harnessSkillInput = prepareHarnessSkillInputIfNeeded(
