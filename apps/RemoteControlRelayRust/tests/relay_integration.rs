@@ -1360,6 +1360,40 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .and_then(Value::as_str)
         .expect("deviceID")
         .to_string();
+    let device_session_token = join_payload
+        .get("deviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("deviceSessionToken")
+        .to_string();
+
+    let mut mobile_request = ws_url
+        .clone()
+        .into_client_request()
+        .expect("mobile request");
+    mobile_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut mobile_socket, _) = tokio_tungstenite::connect_async(mobile_request)
+        .await
+        .expect("mobile websocket");
+    mobile_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": device_session_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("mobile auth send");
+    let mobile_auth = next_matching_json_message(&mut mobile_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+    })
+    .await;
+    let rotated_device_token = mobile_auth
+        .get("nextDeviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("rotated device token")
+        .to_string();
 
     let rejected_list_response = client
         .post(format!("{base}/devices/list"))
@@ -1438,6 +1472,14 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .await
         .expect("device revoke");
     assert_eq!(revoke_response.status(), StatusCode::OK);
+    let revoke_disconnect = next_matching_json_message(&mut mobile_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("disconnect")
+    })
+    .await;
+    assert_eq!(
+        revoke_disconnect.get("reason").and_then(Value::as_str),
+        Some("device_revoked")
+    );
 
     let list_after_revoke = client
         .post(format!("{base}/devices/list"))
@@ -1458,6 +1500,50 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .and_then(Value::as_array)
         .expect("devices array after revoke");
     assert_eq!(devices_after.len(), 0);
+
+    let mut reconnect_request = ws_url
+        .into_client_request()
+        .expect("mobile reconnect request");
+    reconnect_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut mobile_reconnect_socket, _) = tokio_tungstenite::connect_async(reconnect_request)
+        .await
+        .expect("mobile reconnect websocket");
+    mobile_reconnect_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": rotated_device_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("mobile reconnect auth send");
+    let reconnect_rejected = tokio::time::timeout(Duration::from_millis(1_000), async {
+        while let Some(frame) = mobile_reconnect_socket.next().await {
+            match frame {
+                Ok(Message::Text(raw)) => {
+                    let payload: Value =
+                        serde_json::from_str(raw.as_ref()).unwrap_or_else(|_| json!({}));
+                    if payload.get("type").and_then(Value::as_str) == Some("auth_ok") {
+                        return false;
+                    }
+                    if payload.get("type").and_then(Value::as_str) == Some("disconnect") {
+                        return true;
+                    }
+                }
+                Ok(Message::Close(_)) | Err(_) => return true,
+                _ => {}
+            }
+        }
+        true
+    })
+    .await
+    .expect("expected reconnect attempt to resolve");
+    assert!(
+        reconnect_rejected,
+        "revoked device token should not authenticate after device revoke"
+    );
 
     task.abort();
 }
