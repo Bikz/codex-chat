@@ -1,6 +1,12 @@
 import Foundation
 import Security
 
+protocol SecretCredentialStoring: Sendable {
+    func saveSecret(_ secret: String, account: String) throws
+    func deleteSecret(account: String) throws
+    func readSecret(account: String) throws -> String?
+}
+
 enum APIKeychainStoreError: LocalizedError {
     case osStatus(OSStatus)
 
@@ -15,6 +21,7 @@ enum APIKeychainStoreError: LocalizedError {
 
 final class APIKeychainStore: @unchecked Sendable {
     static let runtimeAPIKeyAccount = "codexchat.runtime.openai_api_key"
+    static let remoteControlSessionAccount = "codexchat.remote_control.session"
 
     private let service = "app.codexchat.credentials"
 
@@ -88,3 +95,5 @@ final class APIKeychainStore: @unchecked Sendable {
         return String(data: data, encoding: .utf8)
     }
 }
+
+extension APIKeychainStore: SecretCredentialStoring {}
