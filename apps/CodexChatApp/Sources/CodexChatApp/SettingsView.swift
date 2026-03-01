@@ -10,13 +10,14 @@ struct SettingsView: View {
     static let sidebarProjectsPreviewStorageKey = SidebarView.projectsPreviewCountStorageKey
     static let sidebarProjectsPreviewOptions = SidebarView.projectsPreviewCountOptions
     static let sidebarShowRecentsStorageKey = SidebarView.showRecentsStorageKey
+    static let sidebarShowRecentsDefault = SidebarView.showRecentsDefault
 
     @ObservedObject var model: AppModel
     @Environment(\.designTokens) private var tokens
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AccountDisplayNamePreference.key) private var preferredAccountDisplayName = ""
     @AppStorage(Self.sidebarProjectsPreviewStorageKey) private var sidebarProjectsPreviewCountSetting = 3
-    @AppStorage(Self.sidebarShowRecentsStorageKey) private var sidebarShowRecentsSection = true
+    @AppStorage(Self.sidebarShowRecentsStorageKey) private var sidebarShowRecentsSection = Self.sidebarShowRecentsDefault
 
     @State private var selectedSection: SettingsSection = .defaultSelection
 

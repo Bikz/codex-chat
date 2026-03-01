@@ -7,6 +7,7 @@ struct SidebarView: View {
     static let projectsPreviewCountStorageKey = "codexchat.sidebar.projectsPreviewCount"
     static let threadFilterStorageKey = "codexchat.sidebar.threadFilter"
     static let showRecentsStorageKey = "codexchat.sidebar.showRecents"
+    static let showRecentsDefault = false
     static let projectsPreviewCountOptions = [3, 5, 8, 12]
 
     enum ThreadListFilter: String, CaseIterable {
@@ -43,7 +44,7 @@ struct SidebarView: View {
     @State private var projectThreadLoadErrorsByProjectID: [UUID: String] = [:]
     @AppStorage(Self.projectsPreviewCountStorageKey) private var projectsPreviewCountSetting = 3
     @AppStorage(Self.threadFilterStorageKey) private var threadFilterRawValue = ThreadListFilter.all.rawValue
-    @AppStorage(Self.showRecentsStorageKey) private var isRecentsSectionVisible = true
+    @AppStorage(Self.showRecentsStorageKey) private var isRecentsSectionVisible = Self.showRecentsDefault
 
     private var sidebarBodyFont: Font {
         .system(size: 14, weight: .regular)

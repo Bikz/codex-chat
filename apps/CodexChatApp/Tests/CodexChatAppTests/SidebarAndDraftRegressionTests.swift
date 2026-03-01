@@ -8,12 +8,14 @@ final class SidebarAndDraftRegressionTests: XCTestCase {
         XCTAssertEqual(SidebarView.projectsPreviewCountOptions, [3, 5, 8, 12])
         XCTAssertEqual(SidebarView.threadFilterStorageKey, "codexchat.sidebar.threadFilter")
         XCTAssertEqual(SidebarView.showRecentsStorageKey, "codexchat.sidebar.showRecents")
+        XCTAssertFalse(SidebarView.showRecentsDefault)
     }
 
     func testSettingsAppearanceUsesSidebarProjectsPreviewConfig() {
         XCTAssertEqual(SettingsView.sidebarProjectsPreviewStorageKey, SidebarView.projectsPreviewCountStorageKey)
         XCTAssertEqual(SettingsView.sidebarProjectsPreviewOptions, SidebarView.projectsPreviewCountOptions)
         XCTAssertEqual(SettingsView.sidebarShowRecentsStorageKey, SidebarView.showRecentsStorageKey)
+        XCTAssertEqual(SettingsView.sidebarShowRecentsDefault, SidebarView.showRecentsDefault)
     }
 
     func testDraftEmptyStateRemainsShortcutOnly() {
