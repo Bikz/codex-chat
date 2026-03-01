@@ -490,6 +490,132 @@ test("mobile receives desktop status updates and offline commands are rejected",
   }
 });
 
+test("trusted mobile reauths while desktop is offline without re-pairing", async () => {
+  const port = await reservePort();
+  const host = "127.0.0.1";
+  const baseURL = `http://${host}:${port}`;
+  const wsURL = `ws://${host}:${port}/ws`;
+
+  const relayProcess = spawn("node", ["src/server.mjs"], {
+    cwd: relayRoot,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: host,
+      PUBLIC_BASE_URL: baseURL,
+      ALLOWED_ORIGINS: "http://localhost:4173"
+    }
+  });
+
+  let desktopSocket = null;
+  let mobileSocket = null;
+  let mobileReconnectSocket = null;
+
+  try {
+    await waitForRelay(baseURL);
+
+    const sessionID = randomToken(16);
+    const joinToken = randomToken(32);
+    const desktopSessionToken = randomToken(32);
+    const joinTokenExpiresAt = new Date(Date.now() + 120_000).toISOString();
+
+    const pairStartResponse = await fetch(`${baseURL}/pair/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken,
+        desktopSessionToken,
+        joinTokenExpiresAt,
+        relayWebSocketURL: wsURL,
+        idleTimeoutSeconds: 1800
+      })
+    });
+    assert.equal(pairStartResponse.status, 200);
+
+    desktopSocket = await openWebSocket(wsURL);
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: desktopSessionToken
+      })
+    );
+    const desktopAuth = await nextJSONMessage(desktopSocket);
+    assert.equal(desktopAuth.type, "auth_ok");
+    assert.equal(desktopAuth.desktopConnected, true);
+
+    const joinPromise = fetch(`${baseURL}/pair/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken
+      })
+    });
+
+    const pairRequest = await nextJSONMessage(desktopSocket);
+    assert.equal(pairRequest.type, "relay.pair_request");
+
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.pair_decision",
+        sessionID,
+        requestID: pairRequest.requestID,
+        approved: true
+      })
+    );
+
+    const joinResponse = await joinPromise;
+    assert.equal(joinResponse.status, 200);
+    const joinPayload = await joinResponse.json();
+
+    mobileSocket = await openWebSocket(wsURL, {
+      origin: "http://localhost:4173"
+    });
+    mobileSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: joinPayload.deviceSessionToken
+      })
+    );
+    const mobileAuth = await nextJSONMessage(mobileSocket);
+    assert.equal(mobileAuth.type, "auth_ok");
+    assert.equal(mobileAuth.desktopConnected, true);
+    assert.equal(typeof mobileAuth.nextDeviceSessionToken, "string");
+    const rotatedToken = mobileAuth.nextDeviceSessionToken;
+
+    mobileSocket.close();
+    desktopSocket.close();
+    await wait(120);
+
+    mobileReconnectSocket = await openWebSocket(wsURL, {
+      origin: "http://localhost:4173"
+    });
+    mobileReconnectSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: rotatedToken
+      })
+    );
+    const reconnectAuth = await nextJSONMessage(mobileReconnectSocket);
+    assert.equal(reconnectAuth.type, "auth_ok");
+    assert.equal(reconnectAuth.role, "mobile");
+    assert.equal(reconnectAuth.desktopConnected, false);
+    assert.equal(typeof reconnectAuth.nextDeviceSessionToken, "string");
+    assert.notEqual(reconnectAuth.nextDeviceSessionToken, rotatedToken);
+  } finally {
+    mobileReconnectSocket?.close();
+    mobileSocket?.close();
+    desktopSocket?.close();
+    relayProcess.kill("SIGTERM");
+    await wait(150);
+    if (relayProcess.exitCode === null) {
+      relayProcess.kill("SIGKILL");
+    }
+  }
+});
+
 test("trusted sessions survive retention sweeps while desktop is offline", async () => {
   const port = await reservePort();
   const host = "127.0.0.1";
