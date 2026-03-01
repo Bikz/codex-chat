@@ -664,6 +664,36 @@ test("mobile-approvals-tray", async ({ page }) => {
   await expect(page.getByText("Allow command execution?")).toBeVisible();
 });
 
+test("mobile-approvals-long-unbroken-content-no-overflow", async ({ page }) => {
+  await seedCustom(page, {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Approval stress thread", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [
+      {
+        id: "m1",
+        threadID: "t1",
+        role: "assistant",
+        text: "Approval queue check",
+        createdAt: "2026-02-28T15:00:00.000Z"
+      }
+    ],
+    pendingApprovals: [
+      {
+        requestID: `req_${"R".repeat(140)}`,
+        threadID: "t1",
+        summary: `summary_${"S".repeat(900)}`
+      }
+    ]
+  });
+
+  await page.getByRole("button", { name: "Open chat Approval stress thread" }).click();
+  await page.locator("#toggleApprovalsButton").click();
+  await expect(page.locator("#approvalTray")).toBeVisible();
+  await expectNoPageHorizontalOverflow(page);
+});
+
 test("mobile-long-message-collapse", async ({ page }) => {
   await seedDemo(page);
 

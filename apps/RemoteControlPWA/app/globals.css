@@ -585,6 +585,8 @@ textarea:focus-visible,
 .approval-summary-line {
   color: var(--muted);
   font-size: 0.81rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .approval-tray {
@@ -604,11 +606,15 @@ textarea:focus-visible,
 .approval-title {
   font-size: 0.83rem;
   font-weight: 620;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .approval-text {
   font-size: 0.8rem;
   color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .approval-actions {
