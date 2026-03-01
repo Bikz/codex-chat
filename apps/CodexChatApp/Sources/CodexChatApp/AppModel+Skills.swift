@@ -81,8 +81,8 @@ extension AppModel {
 
         let request = SkillInstallRequest(
             source: source,
-            scope: mapSkillScope(scope),
-            projectPath: selectedProject?.path,
+            scope: .global,
+            projectPath: nil,
             installer: installer,
             pinnedRef: pinnedRef,
             allowUntrustedSource: allowUntrustedSource
@@ -92,6 +92,12 @@ extension AppModel {
             defer { isSkillOperationInProgress = false }
             do {
                 let result = try skillCatalogService.installSkill(request)
+                try await registerInstalledSkill(
+                    source: source,
+                    installer: installer,
+                    requestedScope: scope,
+                    installedPath: result.installedPath
+                )
                 try await refreshSkills()
                 await refreshSkillsCatalog()
                 skillStatusMessage = "Installed skill to \(result.installedPath)."
@@ -302,12 +308,97 @@ extension AppModel {
         }
     }
 
-    private func mapSkillScope(_ scope: SkillInstallScope) -> SkillScope {
-        switch scope {
-        case .project:
-            .project
+    func applyAllProjectsSkillLinksIfNeeded(to project: ProjectRecord) async throws {
+        guard let skillInstallRegistryRepository else {
+            return
+        }
+
+        let allProjectRecords = try await skillInstallRegistryRepository.list()
+            .filter { $0.mode == .all }
+        guard !allProjectRecords.isEmpty else {
+            return
+        }
+
+        let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
+        let projectRootURL = URL(fileURLWithPath: project.path, isDirectory: true)
+        for record in allProjectRecords {
+            let sharedSkillURL = URL(fileURLWithPath: record.sharedPath, isDirectory: true)
+            guard FileManager.default.fileExists(atPath: sharedSkillURL.path) else {
+                continue
+            }
+
+            let folderName = sharedSkillURL.lastPathComponent
+            _ = try linkManager.reconcileProjectSkillLink(
+                folderName: folderName,
+                sharedSkillDirectoryURL: sharedSkillURL,
+                projectRootURL: projectRootURL
+            )
+        }
+    }
+
+    private func registerInstalledSkill(
+        source: String,
+        installer: SkillInstallerKind,
+        requestedScope: SkillInstallScope,
+        installedPath: String
+    ) async throws {
+        let sharedSkillURL = URL(fileURLWithPath: installedPath, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let sharedPath = sharedSkillURL.path
+        let folderName = sharedSkillURL.lastPathComponent
+        let skillID = SkillStoreKeyBuilder.makeKey(source: source, fallbackName: folderName)
+
+        let targetProjects: [ProjectRecord]
+        let mode: SkillInstallMode
+        let selectedProjectIDs: [UUID]
+        switch requestedScope {
         case .global:
-            .global
+            mode = .all
+            selectedProjectIDs = []
+            targetProjects = try await projectRepository?.listProjects() ?? []
+        case .project:
+            guard let selectedProject else {
+                throw NSError(
+                    domain: "CodexChatApp.SkillInstall",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Select a project before installing to selected projects."]
+                )
+            }
+            mode = .selected
+            selectedProjectIDs = [selectedProject.id]
+            targetProjects = [selectedProject]
+        }
+
+        let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
+        for project in targetProjects {
+            _ = try linkManager.ensureProjectSkillLink(
+                folderName: folderName,
+                sharedSkillDirectoryURL: sharedSkillURL,
+                projectRootURL: URL(fileURLWithPath: project.path, isDirectory: true)
+            )
+        }
+
+        if let skillInstallRegistryRepository {
+            _ = try await skillInstallRegistryRepository.upsert(
+                SkillInstallRecord(
+                    skillID: skillID,
+                    source: source,
+                    installer: mapSkillInstallMethod(installer),
+                    sharedPath: sharedPath,
+                    mode: mode,
+                    projectIDs: selectedProjectIDs
+                )
+            )
+        }
+    }
+
+    private func mapSkillInstallMethod(_ installer: SkillInstallerKind) -> SkillInstallMethod {
+        switch installer {
+        case .git:
+            .git
+        case .npx:
+            .npx
         }
     }
 

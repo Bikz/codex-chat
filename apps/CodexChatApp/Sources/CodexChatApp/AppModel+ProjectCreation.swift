@@ -57,6 +57,7 @@ extension AppModel {
                 isGeneralProject: false
             )
             try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
+            try await applyAllProjectsSkillLinksIfNeeded(to: project)
 
             try await activateProject(project)
             projectStatusMessage = "Created new project at \(destinationURL.path)."
@@ -127,6 +128,7 @@ extension AppModel {
 
         let path = url.standardizedFileURL.path
         if let existing = try await projectRepository.getProject(path: path) {
+            try await applyAllProjectsSkillLinksIfNeeded(to: existing)
             try await activateProject(existing)
             projectStatusMessage = "Opened existing project at \(path)."
             appendLog(.info, "Opened existing project \(existing.name)")
@@ -141,6 +143,7 @@ extension AppModel {
             isGeneralProject: false
         )
         try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
+        try await applyAllProjectsSkillLinksIfNeeded(to: project)
 
         try await activateProject(project)
         projectStatusMessage = trustState == .trusted

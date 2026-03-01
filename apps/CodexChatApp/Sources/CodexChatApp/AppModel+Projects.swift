@@ -505,6 +505,7 @@ extension AppModel {
             }
 
             try await prepareProjectFolderStructure(projectPath: generalURL.path)
+            try await applyAllProjectsSkillLinksIfNeeded(to: existing)
             try ensureGeneralAgentsGuidance(projectURL: generalURL)
             try await ensureGeneralProjectSafetyMigrated(projectID: existing.id)
             try await refreshGeneralThreads(generalProjectID: existing.id)
@@ -527,6 +528,7 @@ extension AppModel {
         try await preferenceRepository?.setPreference(key: .generalProjectSafetyMigrationV1, value: "1")
 
         try await prepareProjectFolderStructure(projectPath: project.path)
+        try await applyAllProjectsSkillLinksIfNeeded(to: project)
         try await refreshProjects()
         try await refreshGeneralThreads(generalProjectID: project.id)
         appendLog(.info, "Created General project at \(generalURL.path)")

@@ -1060,6 +1060,7 @@ final class AppModel: ObservableObject {
     let followUpQueueRepository: (any FollowUpQueueRepository)?
     let projectSecretRepository: (any ProjectSecretRepository)?
     let projectSkillEnablementRepository: (any ProjectSkillEnablementRepository)?
+    let skillInstallRegistryRepository: (any SkillInstallRegistryRepository)?
     let chatSearchRepository: (any ChatSearchRepository)?
     let extensionInstallRepository: (any ExtensionInstallRepository)?
     let extensionPermissionRepository: (any ExtensionPermissionRepository)?
@@ -1232,6 +1233,7 @@ final class AppModel: ObservableObject {
         followUpQueueRepository = repositories?.followUpQueueRepository
         projectSecretRepository = repositories?.projectSecretRepository
         projectSkillEnablementRepository = repositories?.projectSkillEnablementRepository
+        skillInstallRegistryRepository = repositories?.skillInstallRegistryRepository
         chatSearchRepository = repositories?.chatSearchRepository
         extensionInstallRepository = repositories?.extensionInstallRepository
         extensionPermissionRepository = repositories?.extensionPermissionRepository
@@ -1986,6 +1988,22 @@ final class AppModel: ObservableObject {
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
         let selectedProjectID = selectedProjectID
+        let skillInstallRecords: [SkillInstallRecord] = if let skillInstallRegistryRepository {
+            try await skillInstallRegistryRepository.list()
+        } else {
+            []
+        }
+        let installRecordBySharedPath = Dictionary(
+            uniqueKeysWithValues: skillInstallRecords.map { record in
+                (
+                    URL(fileURLWithPath: record.sharedPath, isDirectory: true)
+                        .resolvingSymlinksInPath()
+                        .standardizedFileURL
+                        .path,
+                    record
+                )
+            }
+        )
         let globalEnabledPaths: Set<String> = if let projectSkillEnablementRepository {
             try await projectSkillEnablementRepository.enabledSkillPaths(target: .global, projectID: nil)
         } else {
@@ -2032,6 +2050,34 @@ final class AppModel: ObservableObject {
                 .reinstall
             case .unavailable:
                 .unavailable
+            }
+
+            let resolvedSkillPath = URL(fileURLWithPath: skill.skillPath, isDirectory: true)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+                .path
+
+            if let installRecord = installRecordBySharedPath[resolvedSkillPath] {
+                let isAvailableForSelectedProject: Bool = if let selectedProjectID {
+                    installRecord.mode == .all || installRecord.projectIDs.contains(selectedProjectID)
+                } else {
+                    false
+                }
+                let installTargets: Set<SkillEnablementTarget> = switch installRecord.mode {
+                case .all:
+                    [.global]
+                case .selected:
+                    [.project]
+                }
+
+                return SkillListItem(
+                    skill: skill,
+                    enabledTargets: installTargets,
+                    isEnabledForSelectedProject: isAvailableForSelectedProject,
+                    updateCapability: mappedCapability,
+                    updateSource: updateCapability.source,
+                    updateInstaller: updateCapability.installer
+                )
             }
 
             return SkillListItem(
