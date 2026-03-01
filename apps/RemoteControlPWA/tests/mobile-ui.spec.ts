@@ -391,8 +391,8 @@ test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
 
 test("mobile-command-ack-rejection-surfaces-status-immediately", async ({ page }) => {
   await seedCustom(page, snapshotPayload);
-  await page.getByRole("button", { name: "Open account and connection controls" }).click();
-  await expect(page.locator("#statusText")).toBeVisible();
+  await page.getByRole("button", { name: "Open chat Daily sync" }).click();
+  const transcript = page.getByLabel("Transcript");
 
   await injectEnvelope(page, {
     schemaVersion: 1,
@@ -411,6 +411,10 @@ test("mobile-command-ack-rejection-surfaces-status-immediately", async ({ page }
     }
   });
 
+  await expect(transcript.getByText("Desktop is waiting for approval. Resolve approval first.")).toBeVisible({ timeout: 350 });
+
+  await page.getByRole("button", { name: "Open account and connection controls" }).click();
+  await expect(page.locator("#statusText")).toBeVisible();
   await expect(page.locator("#statusText")).toContainText(/waiting for approval/i, { timeout: 350 });
 });
 

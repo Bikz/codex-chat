@@ -866,6 +866,48 @@ class RemoteClient {
     });
   }
 
+  private appendLocalSystemMessage(threadID: string, messageID: string, text: string) {
+    if (!threadID || !messageID || !text) {
+      return;
+    }
+
+    const state = remoteStoreApi.getState();
+    if (!state.threads.some((thread) => thread.id === threadID)) {
+      return;
+    }
+
+    const nextMessagesByThread = new Map(state.messagesByThreadID);
+    const bucket = (nextMessagesByThread.get(threadID) || []).slice();
+    if (bucket.some((message) => message.id === messageID)) {
+      return;
+    }
+
+    bucket.push({
+      id: messageID,
+      threadID,
+      role: 'system',
+      text,
+      createdAt: new Date().toISOString()
+    });
+
+    if (bucket.length > 240) {
+      bucket.splice(0, bucket.length - 240);
+    }
+    nextMessagesByThread.set(threadID, bucket);
+
+    const unread = new Map(state.unreadByThreadID);
+    if (state.selectedThreadID !== threadID) {
+      unread.set(threadID, true);
+    } else {
+      unread.set(threadID, false);
+    }
+
+    remoteStoreApi.setState({
+      messagesByThreadID: nextMessagesByThread,
+      unreadByThreadID: unread
+    });
+  }
+
   private processSequence(seq: unknown): 'accepted' | 'ignored' | 'gap' | 'stale' {
     const state = remoteStoreApi.getState();
     const result = processIncomingSequence(state.lastIncomingSeq, seq);
@@ -1034,8 +1076,21 @@ class RemoteClient {
       const status = typeof ackPayload.status === 'string' ? ackPayload.status : 'accepted';
       const reason = typeof ackPayload.reason === 'string' ? ackPayload.reason : null;
       const commandName = typeof ackPayload.commandName === 'string' ? ackPayload.commandName : null;
+      const commandID = typeof ackPayload.commandID === 'string' ? ackPayload.commandID : null;
+      const commandSeq = typeof ackPayload.commandSeq === 'number' && Number.isSafeInteger(ackPayload.commandSeq) ? ackPayload.commandSeq : null;
+      const ackThreadID =
+        typeof ackPayload.threadID === 'string' && ackPayload.threadID.length > 0
+          ? ackPayload.threadID
+          : remoteStoreApi.getState().selectedThreadID;
       if (status === 'rejected') {
-        this.setStatus(this.commandRejectionMessage(reason, commandName), 'warn');
+        const rejectionMessage = this.commandRejectionMessage(reason, commandName);
+        this.setStatus(rejectionMessage, 'warn');
+
+        if (ackThreadID) {
+          const fallbackKey = commandSeq !== null ? String(commandSeq) : String(Date.now());
+          const syntheticMessageID = `local-command-ack-reject-${commandID || fallbackKey}`;
+          this.appendLocalSystemMessage(ackThreadID, syntheticMessageID, rejectionMessage);
+        }
       }
       return;
     }
