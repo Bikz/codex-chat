@@ -183,7 +183,10 @@ async fn pair_connected_mobile(
         .expect("device token")
         .to_string();
 
-    let mut mobile_request = ws_url.into_client_request().expect("mobile request");
+    let mut mobile_request = ws_url
+        .clone()
+        .into_client_request()
+        .expect("mobile request");
     mobile_request.headers_mut().insert(
         "Origin",
         "http://localhost:4173".parse().expect("origin header"),
@@ -474,7 +477,10 @@ async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
         .expect("device token")
         .to_string();
 
-    let mut mobile_request = ws_url.into_client_request().expect("mobile request");
+    let mut mobile_request = ws_url
+        .clone()
+        .into_client_request()
+        .expect("mobile request");
     mobile_request.headers_mut().insert(
         "Origin",
         "http://localhost:4173".parse().expect("origin header"),
@@ -527,7 +533,7 @@ async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
 }
 
 #[tokio::test]
-async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
+async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desktop_reconnect() {
     let (base, task) = spawn_test_server().await;
     let client = reqwest::Client::new();
 
@@ -562,7 +568,7 @@ async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
 
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
+            json!({ "type": "relay.auth", "token": desktop_session_token.clone() })
                 .to_string()
                 .into(),
         ))
@@ -631,7 +637,7 @@ async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
         .send(Message::Text(
             json!({
                 "type": "relay.pair_decision",
-                "sessionID": session_id,
+                "sessionID": session_id.clone(),
                 "requestID": request_id,
                 "approved": true,
             })
@@ -651,7 +657,10 @@ async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
         .expect("device token")
         .to_string();
 
-    let mut mobile_request = ws_url.into_client_request().expect("mobile request");
+    let mut mobile_request = ws_url
+        .clone()
+        .into_client_request()
+        .expect("mobile request");
     mobile_request.headers_mut().insert(
         "Origin",
         "http://localhost:4173".parse().expect("origin header"),
@@ -698,6 +707,116 @@ async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
         .and_then(Value::as_str)
         .expect("rotated token");
     assert_ne!(next_token, "");
+
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop websocket close");
+
+    let desktop_offline_status = next_matching_json_message(&mut mobile_socket, 1_500, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.desktop_status")
+    })
+    .await;
+    assert_eq!(
+        desktop_offline_status
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(false)
+    );
+
+    mobile_socket
+        .send(Message::Text(
+            json!({
+                "schemaVersion": 1,
+                "sessionID": session_id.clone(),
+                "seq": 10,
+                "payload": {
+                    "type": "command",
+                    "payload": {
+                        "name": "thread.select",
+                        "threadID": "thread-offline"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send command while desktop offline");
+    let offline_error = next_matching_json_message(&mut mobile_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.error")
+    })
+    .await;
+    assert_eq!(
+        offline_error.get("error").and_then(Value::as_str),
+        Some("desktop_offline")
+    );
+
+    let (mut desktop_reconnect_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket reconnect");
+    desktop_reconnect_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": desktop_session_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("desktop reconnect auth send");
+    let reconnect_auth = next_matching_json_message(&mut desktop_reconnect_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+    })
+    .await;
+    assert_eq!(
+        reconnect_auth
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+
+    let desktop_online_status = next_matching_json_message(&mut mobile_socket, 1_500, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.desktop_status")
+    })
+    .await;
+    assert_eq!(
+        desktop_online_status
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+
+    mobile_socket
+        .send(Message::Text(
+            json!({
+                "schemaVersion": 1,
+                "sessionID": session_id,
+                "seq": 11,
+                "payload": {
+                    "type": "command",
+                    "payload": {
+                        "name": "thread.select",
+                        "threadID": "thread-online"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send command after desktop reconnect");
+    let forwarded = next_matching_json_message(&mut desktop_reconnect_socket, 1_000, |payload| {
+        payload
+            .pointer("/payload/payload/threadID")
+            .and_then(Value::as_str)
+            == Some("thread-online")
+    })
+    .await;
+    assert_eq!(
+        forwarded
+            .pointer("/payload/payload/name")
+            .and_then(Value::as_str),
+        Some("thread.select")
+    );
 
     task.abort();
 }
