@@ -97,6 +97,7 @@ DMG contents:
 
 - `CodexChat.app`
 - `Applications` shortcut (drag-and-drop install UX)
+- `Install CodexChat.txt` (3-step first-launch instructions)
 
 ## Dry Run (No Signing/Notarization)
 

@@ -173,10 +173,16 @@ validate_notarized_item() {
 
 create_dmg() {
   local dmg_source="$WORK_DIR/dmg-root"
+  local install_guide="$dmg_source/Install CodexChat.txt"
   rm -rf "$dmg_source"
   mkdir -p "$dmg_source"
   cp -R "$APP_BUNDLE_PATH" "$dmg_source/"
   ln -s /Applications "$dmg_source/Applications"
+  cat >"$install_guide" <<'EOF'
+1. Drag CodexChat to Applications
+2. Open Applications
+3. Right-click CodexChat and choose Open
+EOF
 
   echo "Creating DMG..."
   rm -f "$DMG_PATH"
