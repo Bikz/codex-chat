@@ -94,6 +94,39 @@ function createSystemHeavyPayload(reasoningStatus: "started" | "completed" = "st
   };
 }
 
+function createSystemPolicyPayload() {
+  return {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Policy thread", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [
+      {
+        id: "m-tech",
+        threadID: "t1",
+        role: "system",
+        text: 'Started userMessage: {"id":"msg_123","type":"userMessage"}',
+        createdAt: "2026-02-28T15:00:00.000Z"
+      },
+      {
+        id: "m-approval",
+        threadID: "t1",
+        role: "system",
+        text: "Approval required: Allow command execution?",
+        createdAt: "2026-02-28T15:00:01.000Z"
+      },
+      {
+        id: "m-error",
+        threadID: "t1",
+        role: "system",
+        text: "Turn failed to start",
+        createdAt: "2026-02-28T15:00:02.000Z"
+      }
+    ],
+    pendingApprovals: []
+  };
+}
+
 async function seedDemo(page: Parameters<typeof test>[0]["page"]) {
   await page.goto("/?e2e=1#view=home&pid=all");
   await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
@@ -110,6 +143,12 @@ async function seedCustom(page: Parameters<typeof test>[0]["page"], payload: unk
     (window as any).__codexRemotePWAHarness.resetStorage();
     (window as any).__codexRemotePWAHarness.seed(nextPayload, { authenticated: true });
   }, payload);
+}
+
+async function injectEnvelope(page: Parameters<typeof test>[0]["page"], message: unknown) {
+  await page.evaluate((nextMessage) => {
+    (window as any).__codexRemotePWAHarness.injectMessage(nextMessage as Record<string, unknown>);
+  }, message);
 }
 
 function createLongThreadPayload(messageCount: number) {
@@ -216,6 +255,163 @@ test("mobile-transcript-hides-system", async ({ page }) => {
   await expect(page.locator(".message")).toHaveCount(1);
   await expect(page.getByText("Started userMessage")).toHaveCount(0);
   await expect(page.getByText("Completed userMessage")).toHaveCount(0);
+});
+
+test("mobile-transcript-default-shows-user-relevant-system-notices", async ({ page }) => {
+  await seedCustom(page, createSystemPolicyPayload());
+  await page.getByRole("button", { name: "Open chat Policy thread" }).click();
+
+  await expect(page.getByText("Approval required: Allow command execution?")).toBeVisible();
+  await expect(page.getByText("Turn failed to start")).toBeVisible();
+  await expect(page.getByText("Started userMessage")).toHaveCount(0);
+});
+
+test("mobile-transcript-toggle-can-show-all-system-messages", async ({ page }) => {
+  await seedCustom(page, createSystemPolicyPayload());
+  await page.getByRole("button", { name: "Open chat Policy thread" }).click();
+  await expect(page.getByText("Started userMessage")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Open account and connection controls" }).click();
+  await page.locator("#showSystemMessagesToggle").check();
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByText("Started userMessage")).toBeVisible();
+});
+
+test("mobile-event-injection-updates-transcript-immediately", async ({ page }) => {
+  await seedCustom(page, {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Latency thread", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [],
+    pendingApprovals: []
+  });
+  await page.getByRole("button", { name: "Open chat Latency thread" }).click();
+
+  const start = Date.now();
+  await injectEnvelope(page, {
+    schemaVersion: 1,
+    sessionID: "e2e-session",
+    seq: 1,
+    timestamp: new Date().toISOString(),
+    payload: {
+      type: "event",
+      payload: {
+        name: "thread.message.append",
+        threadID: "t1",
+        body: "Remote event message",
+        messageID: "evt-1",
+        role: "assistant",
+        createdAt: new Date().toISOString()
+      }
+    }
+  });
+
+  const transcript = page.getByLabel("Transcript");
+  await expect(transcript.getByText("Remote event message")).toBeVisible({ timeout: 350 });
+  const elapsed = Date.now() - start;
+  expect(elapsed).toBeLessThan(350);
+});
+
+test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
+  await seedCustom(page, {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Dedupe thread", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [
+      { id: "m1", threadID: "t1", role: "assistant", text: "First", createdAt: "2026-02-28T15:00:00.000Z" }
+    ],
+    pendingApprovals: []
+  });
+  await page.getByRole("button", { name: "Open chat Dedupe thread" }).click();
+
+  await injectEnvelope(page, {
+    schemaVersion: 1,
+    sessionID: "e2e-session",
+    seq: 1,
+    timestamp: new Date().toISOString(),
+    payload: {
+      type: "event",
+      payload: {
+        name: "thread.message.append",
+        threadID: "t1",
+        body: "Second",
+        messageID: "m2",
+        role: "assistant",
+        createdAt: "2026-02-28T15:00:01.000Z"
+      }
+    }
+  });
+  await injectEnvelope(page, {
+    schemaVersion: 1,
+    sessionID: "e2e-session",
+    seq: 2,
+    timestamp: new Date().toISOString(),
+    payload: {
+      type: "event",
+      payload: {
+        name: "thread.message.append",
+        threadID: "t1",
+        body: "Second (duplicate)",
+        messageID: "m2",
+        role: "assistant",
+        createdAt: "2026-02-28T15:00:02.000Z"
+      }
+    }
+  });
+
+  await injectEnvelope(page, {
+    schemaVersion: 1,
+    sessionID: "e2e-session",
+    seq: 3,
+    timestamp: new Date().toISOString(),
+    payload: {
+      type: "snapshot",
+      payload: {
+        projects: [{ id: "p1", name: "General" }],
+        threads: [{ id: "t1", projectID: "p1", title: "Dedupe thread", isPinned: false }],
+        selectedProjectID: "p1",
+        selectedThreadID: "t1",
+        messages: [
+          { id: "m1", threadID: "t1", role: "assistant", text: "First", createdAt: "2026-02-28T15:00:00.000Z" },
+          { id: "m2", threadID: "t1", role: "assistant", text: "Second", createdAt: "2026-02-28T15:00:01.000Z" }
+        ],
+        pendingApprovals: []
+      }
+    }
+  });
+
+  const transcript = page.getByLabel("Transcript");
+  await expect(transcript.getByText("First")).toBeVisible();
+  await expect(transcript.getByText("Second")).toBeVisible();
+  await expect(transcript.getByText("Second (duplicate)")).toHaveCount(0);
+});
+
+test("mobile-command-ack-rejection-surfaces-status-immediately", async ({ page }) => {
+  await seedCustom(page, snapshotPayload);
+  await page.getByRole("button", { name: "Open account and connection controls" }).click();
+  await expect(page.locator("#statusText")).toBeVisible();
+
+  await injectEnvelope(page, {
+    schemaVersion: 1,
+    sessionID: "e2e-session",
+    seq: 10,
+    timestamp: new Date().toISOString(),
+    payload: {
+      type: "command_ack",
+      payload: {
+        commandSeq: 4,
+        commandID: "cmd-4",
+        commandName: "thread.send_message",
+        status: "rejected",
+        reason: "approval_required"
+      }
+    }
+  });
+
+  await expect(page.locator("#statusText")).toContainText(/waiting for approval/i, { timeout: 350 });
 });
 
 test("mobile-reasoning-rail", async ({ page }) => {

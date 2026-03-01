@@ -39,6 +39,8 @@ export function pendingApprovalsByThread(pendingApprovals: Approval[]): Map<stri
 
 const TECHNICAL_EVENT_PREFIX = /^(Started|Completed)\s+(userMessage|agentMessage|commandExecution|reasoning):/i;
 const TECHNICAL_PAYLOAD_MARKERS = /"type"\s*:\s*"(agentMessage|userMessage|commandExecution|reasoning)"/i;
+const USER_RELEVANT_SYSTEM_MARKERS =
+  /\b(error|failed|failure|warning|approval|approve|denied|timed out|timeout|stale|offline|disconnected|reconnect|unavailable|blocked|status)\b/i;
 
 function compactPreviewText(rawText: string): string {
   const collapsed = rawText.replace(/\s+/g, ' ').trim();
@@ -75,8 +77,36 @@ function isTechnicalMessageText(rawText: string): boolean {
   return parsed.mode !== 'plain';
 }
 
-export function getVisibleTranscriptMessages(messages: RemoteMessage[]): RemoteMessage[] {
-  return messages.filter((message) => message.role !== 'system');
+export function isTechnicalSystemMessageText(rawText: string): boolean {
+  return isTechnicalMessageText(rawText);
+}
+
+export function isUserRelevantSystemMessageText(rawText: string): boolean {
+  const collapsed = rawText.replace(/\s+/g, ' ').trim();
+  if (!collapsed) {
+    return false;
+  }
+  if (isTechnicalMessageText(collapsed)) {
+    return false;
+  }
+  return USER_RELEVANT_SYSTEM_MARKERS.test(collapsed);
+}
+
+export function getVisibleTranscriptMessages(
+  messages: RemoteMessage[],
+  options: { showAllSystemMessages?: boolean } = {}
+): RemoteMessage[] {
+  const showAllSystemMessages = options.showAllSystemMessages === true;
+
+  return messages.filter((message) => {
+    if (message.role !== 'system') {
+      return true;
+    }
+    if (showAllSystemMessages) {
+      return true;
+    }
+    return isUserRelevantSystemMessageText(message.text || '');
+  });
 }
 
 export function getUserVisibleThreadPreview(messages: RemoteMessage[]): string {

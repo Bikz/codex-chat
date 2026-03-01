@@ -14,12 +14,14 @@ declare global {
       setApprovalsExpanded: (expanded: boolean) => void;
       setChatDetached: (detached: boolean) => void;
       importJoinLink: (raw: string) => boolean;
+      injectMessage: (message: Record<string, unknown>) => void;
       resetStorage: () => void;
       getState: () => {
         currentView: string;
         selectedProjectFilterID: string;
         selectedThreadID: string | null;
         approvalsExpanded: boolean;
+        showAllSystemMessages: boolean;
         isChatAtBottom: boolean;
         showJumpToLatest: boolean;
         queuedCommandsCount: number;
@@ -66,6 +68,9 @@ export function exposeE2EHarness() {
     importJoinLink(raw: string) {
       return client.importJoinLink(raw);
     },
+    injectMessage(message: Record<string, unknown>) {
+      client.ingestServerMessageForTesting(message);
+    },
     resetStorage() {
       if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
         window.localStorage.clear();
@@ -78,6 +83,7 @@ export function exposeE2EHarness() {
         selectedProjectFilterID: state.selectedProjectFilterID,
         selectedThreadID: state.selectedThreadID,
         approvalsExpanded: state.approvalsExpanded,
+        showAllSystemMessages: state.showAllSystemMessages,
         isChatAtBottom: state.isChatAtBottom,
         showJumpToLatest: state.showJumpToLatest,
         queuedCommandsCount: state.queuedCommands.length,

@@ -48,6 +48,7 @@ export interface RemoteStoreState {
   isProjectSheetOpen: boolean;
   isAccountSheetOpen: boolean;
   approvalsExpanded: boolean;
+  showAllSystemMessages: boolean;
   messagesByThreadID: Map<string, RemoteMessage[]>;
   turnStateByThreadID: Map<string, boolean>;
   unreadByThreadID: Map<string, boolean>;
@@ -107,6 +108,7 @@ export function createInitialState(): RemoteStoreState {
     isProjectSheetOpen: false,
     isAccountSheetOpen: false,
     approvalsExpanded: false,
+    showAllSystemMessages: false,
     messagesByThreadID: new Map(),
     turnStateByThreadID: new Map(),
     unreadByThreadID: new Map(),

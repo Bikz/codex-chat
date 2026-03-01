@@ -19,7 +19,8 @@ export function AccountSheet() {
     connectionStatusText,
     isAuthenticated,
     isSyncStale,
-    lastSyncedAt
+    lastSyncedAt,
+    showAllSystemMessages
   } = useRemoteStore(
     useShallow((state) => ({
       isAccountSheetOpen: state.isAccountSheetOpen,
@@ -32,7 +33,8 @@ export function AccountSheet() {
       connectionStatusText: state.connectionStatusText,
       isAuthenticated: state.isAuthenticated,
       isSyncStale: state.isSyncStale,
-      lastSyncedAt: state.lastSyncedAt
+      lastSyncedAt: state.lastSyncedAt,
+      showAllSystemMessages: state.showAllSystemMessages
     }))
   );
 
@@ -90,6 +92,17 @@ export function AccountSheet() {
               Forget This Device
             </button>
           </div>
+
+          <label className="switch-row" htmlFor="showSystemMessagesToggle">
+            <span>Show all system messages</span>
+            <input
+              id="showSystemMessagesToggle"
+              type="checkbox"
+              checked={showAllSystemMessages}
+              onChange={(event) => client.setShowAllSystemMessages(event.currentTarget.checked)}
+            />
+          </label>
+          <p className="pairing-hint">By default, only user-relevant system notices are shown in transcript.</p>
 
           <p id="statusText" className={`status ${statusLevel}`}>
             {connectionStatusText || (isAuthenticated ? (isSyncStale ? 'Connected but stale.' : 'Connected.') : 'Waiting to pair.')}

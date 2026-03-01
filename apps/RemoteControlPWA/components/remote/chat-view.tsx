@@ -39,7 +39,8 @@ export function ChatView({ hidden }: { hidden: boolean }) {
     showJumpToLatest,
     userDetachedFromBottomAt,
     reasoningStateByThreadID,
-    reasoningUpdatedAtByThreadID
+    reasoningUpdatedAtByThreadID,
+    showAllSystemMessages
   } = useRemoteStore(
     useShallow((state) => ({
       selectedThreadID: state.selectedThreadID,
@@ -54,7 +55,8 @@ export function ChatView({ hidden }: { hidden: boolean }) {
       showJumpToLatest: state.showJumpToLatest,
       userDetachedFromBottomAt: state.userDetachedFromBottomAt,
       reasoningStateByThreadID: state.reasoningStateByThreadID,
-      reasoningUpdatedAtByThreadID: state.reasoningUpdatedAtByThreadID
+      reasoningUpdatedAtByThreadID: state.reasoningUpdatedAtByThreadID,
+      showAllSystemMessages: state.showAllSystemMessages
     }))
   );
 
@@ -70,7 +72,10 @@ export function ChatView({ hidden }: { hidden: boolean }) {
 
   const thread = useMemo(() => threads.find((item) => item.id === selectedThreadID) || null, [threads, selectedThreadID]);
   const rawMessages = useMemo(() => (selectedThreadID ? messagesByThreadID.get(selectedThreadID) || [] : []), [messagesByThreadID, selectedThreadID]);
-  const messages = useMemo(() => getVisibleTranscriptMessages(rawMessages), [rawMessages]);
+  const messages = useMemo(
+    () => getVisibleTranscriptMessages(rawMessages, { showAllSystemMessages }),
+    [rawMessages, showAllSystemMessages]
+  );
   const visibleWindow = useMemo(() => getVisibleMessageWindow(messages, visibleMessageLimit), [messages, visibleMessageLimit]);
   const reasoningState = thread ? reasoningStateByThreadID.get(thread.id) || 'idle' : 'idle';
   const reasoningUpdatedAt = thread ? reasoningUpdatedAtByThreadID.get(thread.id) || null : null;

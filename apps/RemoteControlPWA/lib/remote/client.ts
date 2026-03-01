@@ -590,6 +590,10 @@ class RemoteClient {
     remoteStoreApi.setState({ approvalsExpanded: !state.approvalsExpanded });
   }
 
+  setShowAllSystemMessages(enabled: boolean) {
+    remoteStoreApi.setState({ showAllSystemMessages: Boolean(enabled) });
+  }
+
   toggleMessageExpanded(messageID: string) {
     const state = remoteStoreApi.getState();
     const next = new Set(state.expandedMessageIDs);
@@ -667,6 +671,17 @@ class RemoteClient {
     return `${lastMessage.id || ''}:${lastMessage.createdAt || ''}:${lastMessage.text || ''}`;
   }
 
+  private normalizeSnapshotMessageBucket(messages: RemoteMessage[]) {
+    const dedupedByID = new Map<string, RemoteMessage>();
+    for (const message of messages) {
+      if (!message || typeof message.id !== 'string' || message.id.length === 0) {
+        continue;
+      }
+      dedupedByID.set(message.id, message);
+    }
+    return Array.from(dedupedByID.values()).slice(-240);
+  }
+
   applySnapshot(snapshot: RemoteSnapshot) {
     const state = remoteStoreApi.getState();
     const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
@@ -708,7 +723,7 @@ class RemoteClient {
     const nextReasoningUpdatedAtByThread = new Map(state.reasoningUpdatedAtByThreadID);
     for (const [threadID, bucket] of nextByThread.entries()) {
       const previousBucket = state.messagesByThreadID.get(threadID) || [];
-      const normalizedBucket = bucket.slice(-240);
+      const normalizedBucket = this.normalizeSnapshotMessageBucket(bucket);
       const didChange = this.messageSignature(previousBucket) !== this.messageSignature(normalizedBucket);
       if (didChange && threadID !== selectedThreadID) {
         unread.set(threadID, true);
@@ -860,6 +875,10 @@ class RemoteClient {
     return result.decision;
   }
 
+  ingestServerMessageForTesting(message: Record<string, unknown>) {
+    this.handleIncomingServerMessage(message);
+  }
+
   private onSocketMessage = (event: MessageEvent<string>) => {
     let message: Record<string, unknown>;
     try {
@@ -868,7 +887,10 @@ class RemoteClient {
       this.setStatus('Received invalid socket payload.', 'warn');
       return;
     }
+    this.handleIncomingServerMessage(message);
+  };
 
+  private handleIncomingServerMessage(message: Record<string, unknown>) {
     if (message.type === 'auth_ok') {
       const payload = message as {
         nextDeviceSessionToken?: string;
@@ -1006,6 +1028,18 @@ class RemoteClient {
       return;
     }
 
+    if (payload.type === 'command_ack') {
+      this.markSynced();
+      const ackPayload = (payload.payload as Record<string, unknown>) || {};
+      const status = typeof ackPayload.status === 'string' ? ackPayload.status : 'accepted';
+      const reason = typeof ackPayload.reason === 'string' ? ackPayload.reason : null;
+      const commandName = typeof ackPayload.commandName === 'string' ? ackPayload.commandName : null;
+      if (status === 'rejected') {
+        this.setStatus(this.commandRejectionMessage(reason, commandName), 'warn');
+      }
+      return;
+    }
+
     if (payload.type === 'event') {
       this.markSynced();
       const eventPayload = (payload.payload as Record<string, unknown>) || {};
@@ -1028,7 +1062,36 @@ class RemoteClient {
         this.setStatus(`Turn status${threadLabel}: ${stateLabel}.`);
       }
     }
-  };
+  }
+
+  private commandRejectionMessage(reason: string | null, commandName: string | null) {
+    switch (reason) {
+      case 'desktop_offline':
+        return 'Desktop runtime is offline. Reconnect desktop and try again.';
+      case 'approval_required':
+        return 'Desktop is waiting for approval. Resolve approval first.';
+      case 'desktop_busy':
+        return 'Desktop is busy and could not apply this command yet.';
+      case 'invalid_thread':
+      case 'unknown_thread':
+      case 'thread_required':
+        return 'Desktop could not resolve the target thread for this command.';
+      case 'invalid_project':
+      case 'unknown_project':
+        return 'Desktop could not resolve the target project for this command.';
+      case 'empty_message':
+        return 'Cannot send an empty message.';
+      case 'remote_approvals_disabled':
+        return 'Desktop has remote approvals disabled.';
+      case 'invalid_approval_decision':
+        return 'Desktop rejected the approval action due to invalid decision.';
+      default:
+        if (commandName === 'thread.send_message') {
+          return 'Desktop rejected the message command.';
+        }
+        return 'Desktop rejected the latest command.';
+    }
+  }
 
   private disconnectMessageForReason(reason: string) {
     switch (reason) {
@@ -1219,15 +1282,19 @@ class RemoteClient {
       return false;
     }
 
+    const commandSeq = state.nextOutgoingSeq;
+    const commandID = `cmd-${commandSeq}`;
+
     const envelope = {
       schemaVersion: 1,
       sessionID: state.sessionID,
-      seq: state.nextOutgoingSeq,
+      seq: commandSeq,
       timestamp: new Date().toISOString(),
       payload: {
         type: 'command',
         payload: {
           name,
+          commandID,
           threadID: options.threadID || null,
           projectID: options.projectID || null,
           text: options.text || null,

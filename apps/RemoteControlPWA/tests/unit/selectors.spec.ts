@@ -4,6 +4,8 @@ import {
   getVisibleMessageWindow,
   getVisibleThreads,
   getVisibleTranscriptMessages,
+  isTechnicalSystemMessageText,
+  isUserRelevantSystemMessageText,
   messageIsCollapsible,
   sortedProjectsByActivity
 } from '@/lib/remote/selectors';
@@ -65,13 +67,38 @@ describe('selectors', () => {
     expect(getUserVisibleThreadPreview(messages)).toBe('No user-visible messages yet');
   });
 
-  it('filters system messages from transcript', () => {
+  it('hides technical system messages but keeps user-relevant system notices', () => {
     const messages = [
       { id: 'm1', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:00.000Z' },
       { id: 'm2', threadID: 't1', role: 'system', text: 'Started reasoning: {}', createdAt: '2026-01-01T00:00:01.000Z' },
-      { id: 'm3', threadID: 't1', role: 'user', text: 'hey', createdAt: '2026-01-01T00:00:02.000Z' }
+      {
+        id: 'm3',
+        threadID: 't1',
+        role: 'system',
+        text: 'Approval required: Allow command execution?',
+        createdAt: '2026-01-01T00:00:02.000Z'
+      },
+      { id: 'm4', threadID: 't1', role: 'system', text: 'Turn failed to start', createdAt: '2026-01-01T00:00:03.000Z' },
+      { id: 'm5', threadID: 't1', role: 'user', text: 'hey', createdAt: '2026-01-01T00:00:04.000Z' }
     ];
 
-    expect(getVisibleTranscriptMessages(messages).map((message) => message.id)).toEqual(['m1', 'm3']);
+    expect(getVisibleTranscriptMessages(messages).map((message) => message.id)).toEqual(['m1', 'm3', 'm4', 'm5']);
+  });
+
+  it('shows every system message when debug toggle is enabled', () => {
+    const messages = [
+      { id: 'm1', threadID: 't1', role: 'system', text: 'Started reasoning: {}', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'm2', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:01.000Z' }
+    ];
+
+    expect(getVisibleTranscriptMessages(messages, { showAllSystemMessages: true }).map((message) => message.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('classifies technical vs user-relevant system text', () => {
+    expect(isTechnicalSystemMessageText('Started userMessage: {"id":"m1"}')).toBe(true);
+    expect(isTechnicalSystemMessageText('Completed commandExecution: {"command":"echo hi"}')).toBe(true);
+    expect(isUserRelevantSystemMessageText('Approval required: allow command')).toBe(true);
+    expect(isUserRelevantSystemMessageText('Turn failed to start')).toBe(true);
+    expect(isUserRelevantSystemMessageText('Started userMessage: {"id":"m1"}')).toBe(false);
   });
 });

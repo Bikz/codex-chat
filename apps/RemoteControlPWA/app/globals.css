@@ -946,6 +946,21 @@ textarea:focus-visible,
   gap: 0.42rem;
 }
 
+.switch-row {
+  margin-top: 0.72rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.72rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.switch-row input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+}
+
 .status.error {
   color: var(--danger);
 }
