@@ -763,10 +763,11 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
         ))
         .await
         .expect("desktop reconnect auth send");
-    let reconnect_auth = next_matching_json_message(&mut desktop_reconnect_socket, 1_000, |payload| {
-        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
-    })
-    .await;
+    let reconnect_auth =
+        next_matching_json_message(&mut desktop_reconnect_socket, 1_000, |payload| {
+            payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+        })
+        .await;
     assert_eq!(
         reconnect_auth
             .get("desktopConnected")
