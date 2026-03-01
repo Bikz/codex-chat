@@ -46,7 +46,7 @@ export function ProjectSheet() {
                     client.closeProjectSheet();
                   }}
                 >
-                  {project.name}
+                  <span className="break-anywhere">{project.name}</span>
                 </button>
               </li>
             ))}

@@ -226,7 +226,9 @@ export function ChatView({ hidden }: { hidden: boolean }) {
         <button id="chatBackButton" className="ghost back-button" type="button" aria-label="Back to chats" onClick={() => client.navigateHome()}>
           Back
         </button>
-        <h2 id="threadTitle">{thread ? thread.title : 'Thread'}</h2>
+        <h2 id="threadTitle" className="truncate-1">
+          {thread ? thread.title : 'Thread'}
+        </h2>
         <span id="threadStatusChip" className="thread-status" hidden={!thread || (!isRunning && !isSyncStale)}>
           {isRunning ? 'Running' : 'Sync stale'}
         </span>

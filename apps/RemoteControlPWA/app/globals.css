@@ -160,6 +160,22 @@ textarea:focus-visible,
   border: 0;
 }
 
+.min-w-0 {
+  min-width: 0;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.truncate-1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -174,6 +190,10 @@ textarea:focus-visible,
   padding-right: calc(1rem + var(--safe-right));
   padding-bottom: 0.72rem;
   padding-left: calc(1rem + var(--safe-left));
+}
+
+.topbar > * {
+  min-width: 0;
 }
 
 .title-wrap {
@@ -407,6 +427,7 @@ textarea:focus-visible,
 }
 
 .chat-title {
+  flex: 1 1 auto;
   font-weight: 620;
   font-size: 1rem;
   min-width: 0;
@@ -436,8 +457,10 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.25rem;
-  flex-shrink: 0;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .mini-badge {
@@ -490,6 +513,7 @@ textarea:focus-visible,
 
 .chat-topbar h2 {
   flex: 1;
+  min-width: 0;
   text-transform: none;
   letter-spacing: 0;
   color: var(--fg);
@@ -515,6 +539,7 @@ textarea:focus-visible,
 
 .reasoning-rail {
   min-height: 30px;
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--pill);
   background: var(--surface-alt);
@@ -524,6 +549,8 @@ textarea:focus-visible,
   align-items: center;
   padding: 0 0.65rem;
   max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .reasoning-rail.started {
@@ -783,8 +810,13 @@ textarea:focus-visible,
   gap: 0.45rem;
 }
 
+.composer-row > * {
+  min-width: 0;
+}
+
 .composer-input {
   width: 100%;
+  min-width: 0;
   min-height: 44px;
   max-height: 200px;
   resize: none;
@@ -903,6 +935,17 @@ textarea:focus-visible,
   margin-bottom: 0.55rem;
 }
 
+.sheet-head > * {
+  min-width: 0;
+}
+
+.sheet-head h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sheet-list {
   margin: 0;
   padding: 0;
@@ -914,6 +957,9 @@ textarea:focus-visible,
 .sheet-list button {
   width: 100%;
   text-align: left;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .kv {
@@ -929,14 +975,18 @@ textarea:focus-visible,
 
 .kv dd {
   margin: 0;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .pairing-hint,
 .status {
   color: var(--muted);
   line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .actions {

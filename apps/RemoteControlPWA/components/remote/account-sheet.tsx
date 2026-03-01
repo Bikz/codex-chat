@@ -11,6 +11,7 @@ export function AccountSheet() {
   const {
     isAccountSheetOpen,
     sessionID,
+    deviceName,
     reconnectDisabledReason,
     deviceSessionToken,
     wsURL,
@@ -25,6 +26,7 @@ export function AccountSheet() {
     useShallow((state) => ({
       isAccountSheetOpen: state.isAccountSheetOpen,
       sessionID: state.sessionID,
+      deviceName: state.deviceName,
       reconnectDisabledReason: state.reconnectDisabledReason,
       deviceSessionToken: state.deviceSessionToken,
       wsURL: state.wsURL,
@@ -74,7 +76,13 @@ export function AccountSheet() {
 
           <dl className="kv">
             <dt>Session</dt>
-            <dd id="sessionValue">{sessionID || 'Not paired'}</dd>
+            <dd id="sessionValue" className="break-anywhere">
+              {sessionID || 'Not paired'}
+            </dd>
+            <dt>Device</dt>
+            <dd id="deviceNameValue" className="break-anywhere">
+              {deviceName || 'Unknown device'}
+            </dd>
             <dt>Last seq</dt>
             <dd id="seqValue">{typeof lastIncomingSeq === 'number' ? String(lastIncomingSeq) : '-'}</dd>
             <dt>Last synced</dt>
@@ -102,9 +110,9 @@ export function AccountSheet() {
               onChange={(event) => client.setShowAllSystemMessages(event.currentTarget.checked)}
             />
           </label>
-          <p className="pairing-hint">By default, only user-relevant system notices are shown in transcript.</p>
+          <p className="pairing-hint break-anywhere">By default, only user-relevant system notices are shown in transcript.</p>
 
-          <p id="statusText" className={`status ${statusLevel}`}>
+          <p id="statusText" className={`status break-anywhere ${statusLevel}`}>
             {connectionStatusText || (isAuthenticated ? (isSyncStale ? 'Connected but stale.' : 'Connected.') : 'Waiting to pair.')}
           </p>
         </Dialog.Content>

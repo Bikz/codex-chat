@@ -41,7 +41,7 @@ export function RemoteControlApp() {
   return (
     <>
       <header className="topbar">
-        <div className="title-wrap">
+        <div className="title-wrap min-w-0">
           <h1>Codex Chat Remote</h1>
           <p className="subtitle">Control your local Codex Chat session securely.</p>
         </div>
