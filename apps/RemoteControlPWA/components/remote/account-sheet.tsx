@@ -91,7 +91,7 @@ export function AccountSheet() {
             <dd id="lastSyncedValue">{lastSyncedLabel}</dd>
             <dt>Mac</dt>
             <dd id="desktopStatusValue">
-              {isAuthenticated ? (desktopConnected === false ? 'Offline' : 'Online') : '-'}
+              {isAuthenticated ? (desktopConnected === false ? 'Offline' : desktopConnected === true ? 'Online' : 'Unknown') : '-'}
             </dd>
           </dl>
 
