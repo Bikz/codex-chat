@@ -26,6 +26,60 @@ private enum RemoteControlSnapshotReason: String {
     case sequenceGap = "sequence_gap"
 }
 
+private struct RemoteControlCommandAckReplayCache {
+    private var ackByCommandIdentity: [String: RemoteControlCommandAckPayload] = [:]
+    private var commandIdentityOrder: [String] = []
+
+    func ack(for commandIdentity: String) -> RemoteControlCommandAckPayload? {
+        ackByCommandIdentity[commandIdentity]
+    }
+
+    mutating func store(
+        _ ack: RemoteControlCommandAckPayload,
+        for commandIdentity: String,
+        limit: Int
+    ) {
+        if ackByCommandIdentity[commandIdentity] == nil {
+            commandIdentityOrder.append(commandIdentity)
+        }
+        ackByCommandIdentity[commandIdentity] = ack
+
+        let overflow = commandIdentityOrder.count - limit
+        if overflow > 0 {
+            let evictedCommandIdentities = commandIdentityOrder.prefix(overflow)
+            for commandIdentity in evictedCommandIdentities {
+                ackByCommandIdentity.removeValue(forKey: commandIdentity)
+            }
+            commandIdentityOrder.removeFirst(overflow)
+        }
+    }
+}
+
+@MainActor
+private enum RemoteControlCommandAckReplayStore {
+    private static var cacheByModelID: [ObjectIdentifier: RemoteControlCommandAckReplayCache] = [:]
+
+    static func ack(for model: AppModel, commandIdentity: String) -> RemoteControlCommandAckPayload? {
+        cacheByModelID[ObjectIdentifier(model)]?.ack(for: commandIdentity)
+    }
+
+    static func store(
+        _ ack: RemoteControlCommandAckPayload,
+        for model: AppModel,
+        commandIdentity: String,
+        limit: Int
+    ) {
+        let modelID = ObjectIdentifier(model)
+        var cache = cacheByModelID[modelID] ?? RemoteControlCommandAckReplayCache()
+        cache.store(ack, for: commandIdentity, limit: limit)
+        cacheByModelID[modelID] = cache
+    }
+
+    static func reset(for model: AppModel) {
+        cacheByModelID.removeValue(forKey: ObjectIdentifier(model))
+    }
+}
+
 extension AppModel {
     private static let defaultRemoteControlJoinURL = "https://remote.bikz.cc/rc"
     private static let defaultRemoteControlRelayWSURL = "wss://remote.bikz.cc/ws"
@@ -38,6 +92,7 @@ extension AppModel {
     private static let remoteControlSnapshotMessageCountLimit = 120
     private static let remoteControlSyncThreadLimit = 12
     private static let remoteControlInboundSequenceTrackerLimit = 24
+    private static let remoteControlCommandAckReplayCacheLimit = 256
     private static let remoteControlCommandMutationPollNanoseconds: UInt64 = 10_000_000
     private static let remoteControlCommandMutationTimeoutNanoseconds: UInt64 = 1_200_000_000
 
@@ -80,6 +135,7 @@ extension AppModel {
             guard let self else { return }
             do {
                 closeRemoteControlWebSocket(reason: "Starting new session")
+                resetRemoteControlCommandAckReplayCache()
                 let descriptor = try await remoteControlBroker.startSession(
                     joinBaseURL: urls.joinURL,
                     relayWebSocketURL: urls.relayWebSocketURL
@@ -111,6 +167,7 @@ extension AppModel {
         Task { [weak self] in
             guard let self else { return }
             closeRemoteControlWebSocket(reason: "Stopped by user")
+            resetRemoteControlCommandAckReplayCache()
             await remoteControlBroker.stopSession(reason: "Stopped by user")
             await refreshRemoteControlStatus()
             remoteControlStatusMessage = "Remote session stopped."
@@ -360,6 +417,13 @@ extension AppModel {
         guard let envelope = try? decoder.decode(RemoteControlEnvelope.self, from: data) else {
             return
         }
+        await handleRemoteControlEnvelope(envelope, relayConnectionID: relayConnectionID)
+    }
+
+    func handleRemoteControlEnvelope(
+        _ envelope: RemoteControlEnvelope,
+        relayConnectionID: String?
+    ) async {
         guard envelope.schemaVersion == RemoteControlProtocol.schemaVersion else {
             return
         }
@@ -372,6 +436,9 @@ extension AppModel {
         case .accepted:
             break
         case .stale:
+            if case let .command(commandPayload) = envelope.payload {
+                await replayRemoteControlCommandAckIfCached(for: commandPayload)
+            }
             return
         case .gapDetected:
             await queueRemoteControlSyncFlush(
@@ -802,6 +869,66 @@ extension AppModel {
         }
     }
 
+    private func replayRemoteControlCommandAckIfCached(
+        for command: RemoteControlCommandPayload
+    ) async {
+        guard let cachedAck = cachedRemoteControlCommandAck(for: command) else {
+            return
+        }
+        await sendRemoteControlCommandAck(cachedAck)
+    }
+
+    private func cachedRemoteControlCommandAck(
+        for command: RemoteControlCommandPayload
+    ) -> RemoteControlCommandAckPayload? {
+        let commandIdentity = remoteControlCommandIdentity(for: command)
+        return RemoteControlCommandAckReplayStore.ack(
+            for: self,
+            commandIdentity: commandIdentity
+        )
+    }
+
+    private func cacheRemoteControlCommandAck(
+        _ ack: RemoteControlCommandAckPayload,
+        for command: RemoteControlCommandPayload
+    ) {
+        let commandIdentity = remoteControlCommandIdentity(for: command)
+        RemoteControlCommandAckReplayStore.store(
+            ack,
+            for: self,
+            commandIdentity: commandIdentity,
+            limit: Self.remoteControlCommandAckReplayCacheLimit
+        )
+    }
+
+    private func resetRemoteControlCommandAckReplayCache() {
+        RemoteControlCommandAckReplayStore.reset(for: self)
+    }
+
+    private func remoteControlCommandIdentity(for command: RemoteControlCommandPayload) -> String {
+        if let commandID = command.commandID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !commandID.isEmpty
+        {
+            return "command_id:\(commandID)"
+        }
+
+        let fields: [String] = [
+            command.name.rawValue,
+            command.threadID ?? "",
+            command.projectID ?? "",
+            command.text ?? "",
+            command.approvalRequestID ?? "",
+            command.approvalDecision?.lowercased() ?? "",
+        ]
+        var encodedFields: [String] = []
+        encodedFields.reserveCapacity(fields.count)
+        for field in fields {
+            encodedFields.append("\(field.utf8.count)#\(field)")
+        }
+
+        return "fallback:\(encodedFields.joined(separator: "|"))"
+    }
+
     private func remoteControlTranscriptMutationStamp(for threadID: UUID?) -> UInt64 {
         if let threadID {
             return transcriptRevisionsByThreadID[threadID] ?? 0
@@ -1133,10 +1260,16 @@ extension AppModel {
         _ command: RemoteControlCommandPayload,
         inboundCommandSequence: UInt64
     ) async -> RemoteControlCommandAckPayload {
+        if let cachedAck = cachedRemoteControlCommandAck(for: command) {
+            await sendRemoteControlCommandAck(cachedAck)
+            return cachedAck
+        }
+
         let ack = await applyRemoteControlCommand(
             command,
             inboundCommandSequence: inboundCommandSequence
         )
+        cacheRemoteControlCommandAck(ack, for: command)
         await sendRemoteControlCommandAck(ack)
         if ack.status == .accepted {
             await queueRemoteControlSyncFlush(
