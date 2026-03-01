@@ -59,6 +59,9 @@ make remote-control-compat
 - Snapshot re-sync requests are throttled per device via `MAX_SNAPSHOT_REQUESTS_PER_MINUTE` (default `60`).
 - Inbound websocket message throughput is capped per authenticated socket via `MAX_WS_MESSAGES_PER_MINUTE` (default `1200`).
 - Relay sends websocket ping heartbeats every `WS_HEARTBEAT_INTERVAL_MS` (default `20000`) and disconnects stalled sockets after `WS_HEARTBEAT_TIMEOUT_MS` (default `60000`).
+- `auth_ok` websocket responses include `desktopConnected`; mobile sockets also receive `relay.desktop_status` when desktop connectivity changes.
+- When desktop is offline, mobile `command` and `relay.snapshot_request` payloads are rejected with `relay.error` (`error: desktop_offline`) instead of being silently dropped.
+- Session sweep preserves paired sessions that have trusted devices even when all sockets are offline; idle/retention expiry still removes anonymous sessions with no trusted devices.
 - `thread.send_message` command text is bounded by `MAX_REMOTE_COMMAND_TEXT_BYTES` (default `16384`).
 - Relay enforces strict allowlisted JSON fields for command and snapshot payloads; unexpected fields are rejected with `relay.error`.
 - Optional Redis durability can be enabled with `REDIS_URL` and `REDIS_KEY_PREFIX` (persisted per session key for restart recovery).
