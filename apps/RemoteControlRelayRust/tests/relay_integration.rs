@@ -876,6 +876,190 @@ async fn mobile_receives_desktop_offline_status_and_command_rejection() {
 }
 
 #[tokio::test]
+async fn trusted_mobile_reauths_while_desktop_offline_without_repairing() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let start_response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+    desktop_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": desktop_session_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("desktop auth send");
+    let _desktop_auth = next_matching_json_message(&mut desktop_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+    })
+    .await;
+
+    let join_future = tokio::spawn({
+        let client = client.clone();
+        let base = base.clone();
+        let session_id = session_id.clone();
+        let join_token = join_token.clone();
+        async move {
+            client
+                .post(format!("{base}/pair/join"))
+                .header("Origin", "http://localhost:4173")
+                .json(&json!({ "sessionID": session_id, "joinToken": join_token }))
+                .send()
+                .await
+                .expect("pair join request")
+        }
+    });
+
+    let pair_request = next_matching_json_message(&mut desktop_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.pair_request")
+    })
+    .await;
+    let request_id = pair_request
+        .get("requestID")
+        .and_then(Value::as_str)
+        .expect("request id")
+        .to_string();
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.pair_decision",
+                "sessionID": session_id,
+                "requestID": request_id,
+                "approved": true,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("pair decision send");
+
+    let join_response = join_future.await.expect("join task");
+    assert_eq!(join_response.status(), StatusCode::OK);
+    let join_payload: Value = join_response.json().await.expect("join payload");
+    let device_token = join_payload
+        .get("deviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("device token")
+        .to_string();
+
+    let mut mobile_request = ws_url
+        .clone()
+        .into_client_request()
+        .expect("mobile request");
+    mobile_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut mobile_socket, _) = tokio_tungstenite::connect_async(mobile_request)
+        .await
+        .expect("mobile websocket");
+    mobile_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": device_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("mobile auth send");
+    let mobile_auth = next_matching_json_message(&mut mobile_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+    })
+    .await;
+    let rotated_token = mobile_auth
+        .get("nextDeviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("rotated token")
+        .to_string();
+    assert_eq!(
+        mobile_auth.get("desktopConnected").and_then(Value::as_bool),
+        Some(true)
+    );
+
+    mobile_socket
+        .close(None)
+        .await
+        .expect("mobile socket close");
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop socket close");
+
+    let mut mobile_reconnect_request = ws_url
+        .into_client_request()
+        .expect("mobile reconnect request");
+    mobile_reconnect_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut mobile_reconnect_socket, _) =
+        tokio_tungstenite::connect_async(mobile_reconnect_request)
+            .await
+            .expect("mobile reconnect websocket");
+    mobile_reconnect_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": rotated_token })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("mobile reconnect auth send");
+    let reconnect_auth =
+        next_matching_json_message(&mut mobile_reconnect_socket, 1_000, |payload| {
+            payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+        })
+        .await;
+    assert_eq!(
+        reconnect_auth.get("role").and_then(Value::as_str),
+        Some("mobile")
+    );
+    assert_eq!(
+        reconnect_auth
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(false)
+    );
+    assert_eq!(
+        reconnect_auth
+            .get("nextDeviceSessionToken")
+            .and_then(Value::as_str)
+            .is_some(),
+        true
+    );
+
+    mobile_reconnect_socket
+        .close(None)
+        .await
+        .expect("mobile reconnect close");
+    task.abort();
+}
+
+#[tokio::test]
 async fn pair_stop_closes_session_and_invalidates_join() {
     let (base, task) = spawn_test_server().await;
     let client = reqwest::Client::new();
