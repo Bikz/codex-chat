@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const longMessage = Array.from({ length: 12 }, (_, index) => `line ${index + 1} with verbose mobile text`).join("\n");
+const longToken = "A".repeat(200);
 
 const snapshotPayload = {
   projects: [
@@ -28,7 +29,7 @@ const snapshotPayload = {
 function createLargeProjectPayload() {
   const projects = Array.from({ length: 12 }, (_, index) => ({
     id: `p${index + 1}`,
-    name: `Project-${index + 1}-Very-Long-Name-${index + 1}`
+    name: `Project${index + 1}${"X".repeat(60)}`
   }));
   return {
     projects,
@@ -46,6 +47,37 @@ function createLargeProjectPayload() {
         threadID: "t1",
         role: "assistant",
         text: "User-visible message",
+        createdAt: "2026-02-28T15:00:00.000Z"
+      }
+    ],
+    pendingApprovals: []
+  };
+}
+
+function createLongTokenOverflowPayload() {
+  const projects = Array.from({ length: 10 }, (_, index) => ({
+    id: `lp${index + 1}`,
+    name: `project_${index + 1}_${"Q".repeat(72)}`
+  }));
+
+  return {
+    projects,
+    threads: [
+      {
+        id: "lt1",
+        projectID: projects[0].id,
+        title: `thread_${"T".repeat(220)}`,
+        isPinned: false
+      }
+    ],
+    selectedProjectID: projects[0].id,
+    selectedThreadID: "lt1",
+    messages: [
+      {
+        id: "ltm1",
+        threadID: "lt1",
+        role: "assistant",
+        text: `Completed commandExecution:\n{"command":"echo ok","durationMs":22,"stdout":"${"S".repeat(900)}"}`,
         createdAt: "2026-02-28T15:00:00.000Z"
       }
     ],
@@ -165,6 +197,39 @@ async function injectEnvelope(page: Parameters<typeof test>[0]["page"], message:
   }, message);
 }
 
+async function expectNoPageHorizontalOverflow(page: Parameters<typeof test>[0]["page"]) {
+  const dimensions = await page.evaluate(() => ({
+    htmlScrollWidth: document.documentElement.scrollWidth,
+    htmlClientWidth: document.documentElement.clientWidth,
+    bodyScrollWidth: document.body.scrollWidth,
+    bodyClientWidth: document.body.clientWidth
+  }));
+
+  const hasHTMLOverflow = dimensions.htmlScrollWidth > dimensions.htmlClientWidth + 1;
+  const hasBodyOverflow = dimensions.bodyScrollWidth > dimensions.bodyClientWidth + 1;
+  if (hasHTMLOverflow || hasBodyOverflow) {
+    const offenders = await page.evaluate(() => {
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+      return nodes
+        .filter((node) => node.scrollWidth > node.clientWidth + 1)
+        .slice(0, 15)
+        .map((node) => ({
+          tag: node.tagName.toLowerCase(),
+          id: node.id || null,
+          className: node.className || null,
+          scrollWidth: node.scrollWidth,
+          clientWidth: node.clientWidth
+        }));
+    });
+    throw new Error(
+      `Horizontal overflow detected: ${JSON.stringify({
+        dimensions,
+        offenders
+      })}`
+    );
+  }
+}
+
 function createLongThreadPayload(messageCount: number) {
   return {
     projects: [{ id: "p1", name: "General" }],
@@ -192,16 +257,7 @@ test("mobile-home-view-renders", async ({ page }) => {
 
 test("mobile-no-horizontal-overflow-home", async ({ page }) => {
   await seedCustom(page, createLargeProjectPayload());
-
-  const dimensions = await page.evaluate(() => ({
-    htmlScrollWidth: document.documentElement.scrollWidth,
-    htmlClientWidth: document.documentElement.clientWidth,
-    bodyScrollWidth: document.body.scrollWidth,
-    bodyClientWidth: document.body.clientWidth
-  }));
-
-  expect(dimensions.htmlScrollWidth).toBeLessThanOrEqual(dimensions.htmlClientWidth + 1);
-  expect(dimensions.bodyScrollWidth).toBeLessThanOrEqual(dimensions.bodyClientWidth + 1);
+  await expectNoPageHorizontalOverflow(page);
 });
 
 test("mobile-no-horizontal-overflow-thread", async ({ page }) => {
@@ -222,13 +278,92 @@ test("mobile-no-horizontal-overflow-thread", async ({ page }) => {
     pendingApprovals: []
   });
   await page.locator("#chatList .chat-row").first().click();
+  await expectNoPageHorizontalOverflow(page);
+});
 
-  const dimensions = await page.evaluate(() => ({
-    htmlScrollWidth: document.documentElement.scrollWidth,
-    htmlClientWidth: document.documentElement.clientWidth
-  }));
+test("mobile-long-unbroken-strings-stay-contained", async ({ page }) => {
+  await seedCustom(page, createLongTokenOverflowPayload());
 
-  expect(dimensions.htmlScrollWidth).toBeLessThanOrEqual(dimensions.htmlClientWidth + 1);
+  const longSessionID = `sid_${longToken}`;
+  const longDeviceName = `device_${"D".repeat(180)}`;
+  await page.evaluate(
+    ({ sessionID, deviceName }) => {
+      const harness = (window as any).__codexRemotePWAHarness;
+      harness.setSessionID(sessionID);
+      harness.setDeviceName(deviceName);
+    },
+    { sessionID: longSessionID, deviceName: longDeviceName }
+  );
+
+  await page.getByRole("button", { name: "Open account and connection controls" }).click();
+  await expect(page.locator("#accountSheet")).toBeVisible();
+  await expect(page.locator("#sessionValue")).toContainText("sid_");
+  await expectNoPageHorizontalOverflow(page);
+  await page.locator("#closeAccountSheetButton").click();
+  await expect(page.locator("#accountSheet")).toBeHidden();
+
+  await expect(page.locator("#projectStripViewAllButton")).toBeVisible();
+  await page.locator("#projectStripViewAllButton").click();
+  await expect(page.locator("#projectSheet")).toBeVisible();
+  await expectNoPageHorizontalOverflow(page);
+  await page.locator("#closeProjectSheetButton").click();
+  await expect(page.locator("#projectSheet")).toBeHidden();
+
+  await page.locator("#chatList .chat-row").first().click();
+  await expect(page.locator("#chatView")).toBeVisible();
+  await page.locator(".tool-card-toggle").first().click();
+  await expectNoPageHorizontalOverflow(page);
+});
+
+test("mobile-all-sheets-no-horizontal-overflow", async ({ page }) => {
+  await page.goto("/?e2e=1#view=home&pid=all");
+  await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
+
+  await page.getByRole("button", { name: "Scan QR" }).first().click();
+  await expect(page.locator("#qrScannerSheet")).toBeVisible();
+  await page.locator("#manualPairLinkInput").fill(
+    `https://remote.bikz.cc/#sid=${`s${"L".repeat(160)}`}&jt=test-join&relay=https://remote.bikz.cc`
+  );
+  await expectNoPageHorizontalOverflow(page);
+  await page.locator("#closeQRScannerButton").click();
+  await expect(page.locator("#qrScannerSheet")).toBeHidden();
+
+  await page.evaluate((payload) => {
+    const harness = (window as any).__codexRemotePWAHarness;
+    harness.resetStorage();
+    harness.seed(payload, { authenticated: true });
+  }, createLongTokenOverflowPayload());
+  await expect(page.locator("#workspacePanel")).toBeVisible();
+  await expect(page.locator("#projectStripViewAllButton")).toBeVisible();
+
+  await page.getByRole("button", { name: "Open account and connection controls" }).click();
+  await expect(page.locator("#accountSheet")).toBeVisible();
+  await expectNoPageHorizontalOverflow(page);
+  await page.locator("#closeAccountSheetButton").click();
+  await expect(page.locator("#accountSheet")).toBeHidden();
+
+  await page.locator("#projectStripViewAllButton").click();
+  await expect(page.locator("#projectSheet")).toBeVisible();
+  await expectNoPageHorizontalOverflow(page);
+  await page.locator("#closeProjectSheetButton").click();
+  await expect(page.locator("#projectSheet")).toBeHidden();
+});
+
+test("mobile-orientation-resize-preserves-layout-containment", async ({ page }) => {
+  await seedCustom(page, createLongTokenOverflowPayload());
+  await page.locator("#chatList .chat-row").first().click();
+  await expect(page.locator("#chatView")).toBeVisible();
+
+  const viewports = [
+    { width: 844, height: 390 },
+    { width: 390, height: 844 }
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(120);
+    await expectNoPageHorizontalOverflow(page);
+  }
 });
 
 test("mobile-project-grid-two-rows", async ({ page }) => {

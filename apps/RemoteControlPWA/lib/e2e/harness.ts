@@ -11,6 +11,8 @@ declare global {
       openThread: (threadID: string) => void;
       openAccountSheet: () => void;
       closeAccountSheet: () => void;
+      setSessionID: (sessionID: string | null) => void;
+      setDeviceName: (deviceName: string | null) => void;
       setApprovalsExpanded: (expanded: boolean) => void;
       setChatDetached: (detached: boolean) => void;
       importJoinLink: (raw: string) => boolean;
@@ -54,6 +56,12 @@ export function exposeE2EHarness() {
     },
     closeAccountSheet() {
       client.closeAccountSheet();
+    },
+    setSessionID(sessionID: string | null) {
+      remoteStoreApi.setState({ sessionID });
+    },
+    setDeviceName(deviceName: string | null) {
+      remoteStoreApi.setState({ deviceName });
     },
     setApprovalsExpanded(expanded: boolean) {
       remoteStoreApi.setState({ approvalsExpanded: Boolean(expanded) });
