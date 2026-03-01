@@ -564,6 +564,51 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertNil(clearedDescriptor, "Invalid persisted session should be cleared.")
     }
 
+    func testPrepareForTeardownKeepsPersistedRemoteSessionAndDoesNotStopRelaySession() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_200)
+        let joinURL = try XCTUnwrap(URL(string: "https://remote.example/rc#sid=session-teardown&jt=join-token-teardown"))
+        let relayWebSocketURL = try XCTUnwrap(URL(string: "wss://remote.example/ws"))
+        let descriptor = RemoteControlSessionDescriptor(
+            sessionID: "session-teardown",
+            joinTokenLease: RemoteControlJoinTokenLease(
+                token: "join-token-teardown",
+                issuedAt: now,
+                expiresAt: now.addingTimeInterval(120)
+            ),
+            joinURL: joinURL,
+            relayWebSocketURL: relayWebSocketURL,
+            desktopSessionToken: "desktop-token-teardown",
+            createdAt: now,
+            idleTimeout: 1800
+        )
+        let credentialStore = InMemoryRemoteControlSessionCredentialStore(descriptor: descriptor)
+        let registrar = RestoreSessionRelayRegistrar()
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        await broker.restoreSession(descriptor)
+
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            remoteControlBroker: broker,
+            remoteControlSessionCredentialStore: credentialStore
+        )
+        model.remoteControlStatus = await broker.currentStatus()
+
+        model.prepareForTeardown()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        let stopRequests = await registrar.stopRequests
+        XCTAssertEqual(stopRequests.count, 0, "Normal app teardown should not end relay session.")
+
+        let persistedDescriptor = try credentialStore.loadSessionDescriptor()
+        XCTAssertEqual(
+            persistedDescriptor,
+            descriptor,
+            "Persisted remote session should remain available across desktop restarts."
+        )
+    }
+
     private func waitUntil(
         timeoutSeconds: TimeInterval,
         pollNanoseconds: UInt64 = 10_000_000,
