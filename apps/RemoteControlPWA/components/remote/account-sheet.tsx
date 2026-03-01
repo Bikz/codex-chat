@@ -10,11 +10,7 @@ export function AccountSheet() {
   const client = getRemoteClient();
   const {
     isAccountSheetOpen,
-    isStandaloneMode,
     sessionID,
-    joinToken,
-    isPairingInFlight,
-    pairingLinkURL,
     reconnectDisabledReason,
     deviceSessionToken,
     wsURL,
@@ -27,11 +23,7 @@ export function AccountSheet() {
   } = useRemoteStore(
     useShallow((state) => ({
       isAccountSheetOpen: state.isAccountSheetOpen,
-      isStandaloneMode: state.isStandaloneMode,
       sessionID: state.sessionID,
-      joinToken: state.joinToken,
-      isPairingInFlight: state.isPairingInFlight,
-      pairingLinkURL: state.pairingLinkURL,
       reconnectDisabledReason: state.reconnectDisabledReason,
       deviceSessionToken: state.deviceSessionToken,
       wsURL: state.wsURL,
@@ -55,7 +47,6 @@ export function AccountSheet() {
     return new Date(lastSyncedAt).toLocaleTimeString();
   }, [lastSyncedAt]);
 
-  const pairDisabled = isPairingInFlight || !joinToken;
   const reconnectDisabled = Boolean(reconnectDisabledReason);
   const hasRememberedDevice = Boolean(deviceSessionToken && wsURL);
 
@@ -76,7 +67,7 @@ export function AccountSheet() {
           </div>
 
           <p id="pairingHint" className="pairing-hint">
-            {sessionID ? 'Session detected. Pair this device or reconnect to resume control.' : 'Open via desktop QR link to auto-fill session details.'}
+            {sessionID ? 'Session details and sync health.' : 'No active session details yet. Start from Pair this phone.'}
           </p>
 
           <dl className="kv">
@@ -89,15 +80,6 @@ export function AccountSheet() {
           </dl>
 
           <div className="actions">
-            <button id="pairButton" className="primary" type="button" disabled={pairDisabled} onClick={() => void client.pairDevice()}>
-              Pair Device
-            </button>
-            <button id="scanQRFromAccountButton" type="button" onClick={() => client.openQRScanner()}>
-              Scan QR
-            </button>
-            <button id="pastePairLinkAccountButton" type="button" onClick={() => void client.pasteJoinLinkFromClipboard()}>
-              Paste Pair Link
-            </button>
             <button id="reconnectButton" type="button" disabled={reconnectDisabled} onClick={() => client.reconnect()}>
               Reconnect
             </button>
@@ -108,15 +90,6 @@ export function AccountSheet() {
               Forget This Device
             </button>
           </div>
-
-          {!isStandaloneMode && pairingLinkURL ? (
-            <p className="pairing-hint">
-              Browser-opened pair link detected. Open installed app and tap Paste Pair Link.
-              <button id="copyPairLinkAccountButton" className="ghost inline-link-button" type="button" onClick={() => void client.copyPairingLinkToClipboard()}>
-                Copy link
-              </button>
-            </p>
-          ) : null}
 
           <p id="statusText" className={`status ${statusLevel}`}>
             {connectionStatusText || (isAuthenticated ? (isSyncStale ? 'Connected but stale.' : 'Connected.') : 'Waiting to pair.')}

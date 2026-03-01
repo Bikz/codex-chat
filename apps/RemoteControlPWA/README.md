@@ -75,8 +75,9 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 ## UI contract
 
 - Single-page conversation-first layout (home list + focused chat detail + back navigation).
+- Disconnected mode uses a single pairing surface (`Pair this phone`) with `Scan QR`, `Paste Pair Link`, and `Pair Device`.
 - Project circles on home (`All` + top projects + `View all`) with per-project chat filtering.
-- Account sheet contains pairing/session controls.
+- Account sheet is diagnostics/maintenance only (session metadata, reconnect/snapshot/forget).
 - Inline approval indicators on chat rows and in-chat approval tray actions.
 - Message wrapping and long-message collapse/expand in transcript view.
 - Smart transcript anchoring: auto-follow only when already near the bottom.

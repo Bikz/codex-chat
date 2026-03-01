@@ -1289,8 +1289,7 @@ class RemoteClient {
   async pairDevice() {
     const state = remoteStoreApi.getState();
     if (!state.sessionID || !state.joinToken) {
-      this.setStatus('Missing session data. Re-open from QR link.', 'error');
-      this.openAccountSheet();
+      this.setStatus('Missing session data. Use Scan QR or Paste Pair Link first.', 'error');
       return;
     }
 

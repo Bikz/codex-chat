@@ -6,6 +6,7 @@ Use this checklist before cutting a release for the mobile web client.
 
 - Start a remote session in desktop, scan QR, and complete local desktop approval.
 - Confirm PWA reaches `Connected` and shows home with project circles + chat list.
+- Confirm disconnected screen shows one pairing control surface (no duplicate pair/scan/paste controls in account sheet).
 - From unauthenticated state, open `Scan QR` and confirm scanner sheet opens/closes with camera prompt.
 - Verify `Paste Pair Link` imports `#sid` + `jt` payload and enables `Pair Device`.
 - On iOS camera-opened browser flow, confirm `Copy Pair Link` guidance appears and copy action succeeds.
