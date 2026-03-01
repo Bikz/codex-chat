@@ -3,7 +3,7 @@
   "short_name": "Codex Remote",
   "start_url": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#000000",
   "theme_color": "#000000",
   "description": "Remote companion UI for controlling local Codex Chat sessions.",
