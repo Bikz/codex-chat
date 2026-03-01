@@ -92,4 +92,38 @@ describe('remote client lifecycle', () => {
     vi.advanceTimersByTime(1_100);
     expect(connectSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('does not consume outgoing sequence when non-queueable command is rejected offline', () => {
+    remoteStoreApi.setState({
+      sessionID: 'session-1',
+      selectedProjectFilterID: 'all'
+    });
+
+    const client = getRemoteClient();
+    expect(remoteStoreApi.getState().nextOutgoingSeq).toBe(1);
+
+    client.selectProjectFilter('project-offline', true);
+
+    const nextState = remoteStoreApi.getState();
+    expect(nextState.nextOutgoingSeq).toBe(1);
+    expect(nextState.queuedCommands).toHaveLength(0);
+  });
+
+  it('does not consume outgoing sequence when oversized message cannot be queued offline', () => {
+    remoteStoreApi.setState({
+      sessionID: 'session-1',
+      selectedThreadID: 'thread-1'
+    });
+
+    const client = getRemoteClient();
+    const hugeMessage = 'x'.repeat(300 * 1024);
+
+    expect(remoteStoreApi.getState().nextOutgoingSeq).toBe(1);
+    expect(client.sendComposerMessage(hugeMessage)).toBe(false);
+
+    const nextState = remoteStoreApi.getState();
+    expect(nextState.nextOutgoingSeq).toBe(1);
+    expect(nextState.queuedCommands).toHaveLength(0);
+    expect(nextState.queuedCommandsBytes).toBe(0);
+  });
 });

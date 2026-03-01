@@ -1450,8 +1450,12 @@ class RemoteClient {
       }
     };
 
-    this.rememberCommandThreadID(commandSeq, commandThreadID);
-    remoteStoreApi.setState({ nextOutgoingSeq: state.nextOutgoingSeq + 1 });
+    const consumeCommandSequence = () => {
+      this.rememberCommandThreadID(commandSeq, commandThreadID);
+      remoteStoreApi.setState((current) => ({
+        nextOutgoingSeq: current.nextOutgoingSeq + 1
+      }));
+    };
 
     const latest = remoteStoreApi.getState();
     if (!latest.socket || latest.socket.readyState !== WebSocket.OPEN) {
@@ -1471,6 +1475,7 @@ class RemoteClient {
         this.setStatus('Command is too large to queue offline. Reconnect and retry.', 'error');
         return false;
       }
+      consumeCommandSequence();
 
       const now = remoteStoreApi.getState();
       const droppedSuffix =
@@ -1484,7 +1489,13 @@ class RemoteClient {
       return true;
     }
 
-    return this.sendRaw(envelope);
+    const didSend = this.sendRaw(envelope);
+    if (!didSend) {
+      return false;
+    }
+
+    consumeCommandSequence();
+    return true;
   }
 
   requestSnapshot(reason: string) {
