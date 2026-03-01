@@ -159,8 +159,6 @@ struct PersistedSessionRecord {
     idle_timeout_seconds: u64,
     created_at_ms: i64,
     last_activity_at_ms: i64,
-    #[serde(default)]
-    desktop_connected: bool,
     devices: HashMap<String, DeviceRecord>,
 }
 
@@ -187,7 +185,6 @@ impl PersistedSessionRecord {
             idle_timeout_seconds: session.idle_timeout_seconds,
             created_at_ms: session.created_at_ms,
             last_activity_at_ms: session.last_activity_at_ms,
-            desktop_connected: desktop_connected(session),
             devices: session.devices.clone(),
         }
     }
@@ -207,7 +204,7 @@ impl PersistedSessionRecord {
             created_at_ms: self.created_at_ms,
             last_activity_at_ms: self.last_activity_at_ms,
             desktop_socket: None,
-            desktop_connected: self.desktop_connected,
+            desktop_connected: false,
             mobile_sockets: HashMap::new(),
             devices: self.devices,
             command_rate_buckets: HashMap::new(),
