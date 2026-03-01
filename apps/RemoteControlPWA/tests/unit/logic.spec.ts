@@ -162,4 +162,58 @@ describe('remote client lifecycle', () => {
     const persisted = JSON.parse(raw || '{}') as { deviceSessionToken?: string };
     expect(persisted.deviceSessionToken).toBe('token-new');
   });
+
+  it('clears persisted credentials when disconnect reason requires re-pair', () => {
+    const client = getRemoteClient();
+    const nonReconnectableReasons = ['device_revoked', 'stopped_by_desktop'] as const;
+
+    for (const reason of nonReconnectableReasons) {
+      window.localStorage.setItem(
+        'codexchat.remote.pairedDevice.v1',
+        JSON.stringify({
+          sessionID: 'session-1',
+          deviceID: 'device-1',
+          relayBaseURL: 'https://relay.example',
+          deviceSessionToken: 'token-old',
+          wsURL: 'wss://relay.example/ws',
+          storedAt: new Date().toISOString()
+        })
+      );
+
+      remoteStoreApi.setState({
+        isAuthenticated: true,
+        sessionID: 'session-1',
+        deviceID: 'device-1',
+        joinToken: 'join-token',
+        deviceSessionToken: 'token-old',
+        wsURL: 'wss://relay.example/ws',
+        reconnectDisabledReason: null,
+        queuedCommands: [
+          {
+            envelope: { schemaVersion: 1 },
+            bytes: 24
+          }
+        ],
+        queuedCommandsBytes: 24,
+        pendingSnapshotReason: 'initial_sync'
+      });
+
+      client.ingestServerMessageForTesting({
+        type: 'disconnect',
+        reason
+      });
+
+      const nextState = remoteStoreApi.getState();
+      expect(nextState.reconnectDisabledReason).toBe(reason);
+      expect(nextState.isAuthenticated).toBe(false);
+      expect(nextState.deviceSessionToken).toBeNull();
+      expect(nextState.wsURL).toBeNull();
+      expect(nextState.deviceID).toBeNull();
+      expect(nextState.joinToken).toBeNull();
+      expect(nextState.queuedCommands).toHaveLength(0);
+      expect(nextState.queuedCommandsBytes).toBe(0);
+      expect(nextState.pendingSnapshotReason).toBeNull();
+      expect(window.localStorage.getItem('codexchat.remote.pairedDevice.v1')).toBeNull();
+    }
+  });
 });
