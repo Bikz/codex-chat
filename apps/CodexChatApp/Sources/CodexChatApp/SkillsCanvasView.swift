@@ -140,7 +140,7 @@ struct SkillsCanvasView: View {
             if skills.isEmpty {
                 EmptyStateView(
                     title: "No installed skills yet",
-                    message: "Install a skill from git or npx, then enable it for Global, General, or Project.",
+                    message: "Install a skill from the marketplace to all projects or selected projects.",
                     systemImage: "square.stack.3d.up"
                 )
             } else if visibleSkills.isEmpty {
@@ -155,19 +155,21 @@ struct SkillsCanvasView: View {
                         SkillRow(
                             item: item,
                             hasSelectedProject: model.selectedProjectID != nil,
-                            selectedEnablementTarget: model.selectedSkillEnablementTarget(for: item),
-                            onEnablementTargetChanged: { target in
-                                model.setSkillEnablementTarget(target, for: item.id)
-                            },
-                            onToggle: { enabled in
-                                model.setSkillEnabled(item, enabled: enabled)
-                            },
                             onInsert: {
                                 model.selectSkillForComposer(item)
                                 model.detailDestination = .thread
                             },
                             onUpdate: {
                                 model.updateSkill(item)
+                            },
+                            onRemoveFromProject: {
+                                model.removeSkillFromSelectedProject(item)
+                            },
+                            onRemove: {
+                                model.uninstallSkill(item)
+                            },
+                            onReveal: {
+                                model.revealSkill(item)
                             }
                         )
                         .opacity(animateCards ? 1 : 0)

@@ -32,7 +32,7 @@ enum SkillsModsPresentation {
     Mods bar content comes from the active mod. Hidden by default, and opens automatically when new modsBar output arrives.
     """
     static let modsBarToolbarEmptyHelp = "No active modsBar mod. Install one in Skills & Mods > Mods."
-    static let skillsSectionDescription = "Installed skills are shown first. Available skills from skills.sh are listed below."
+    static let skillsSectionDescription = "Switch between installed skills and the skills.sh marketplace."
     static let modArchetypes: [ModArchetype] = [
         .init(title: "Theme Packs", detail: "Visual token overrides (`schemaVersion: 1`)."),
         .init(title: "Turn/Thread Hooks", detail: "Event-driven summaries and side effects."),

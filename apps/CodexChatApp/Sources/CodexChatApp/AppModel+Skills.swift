@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatCore
 import CodexSkills
 import Foundation
@@ -172,6 +173,66 @@ extension AppModel {
                 }
             }
         }
+    }
+
+    func uninstallSkill(_ item: SkillListItem) {
+        isSkillOperationInProgress = true
+        skillStatusMessage = nil
+
+        Task {
+            defer { isSkillOperationInProgress = false }
+            do {
+                try await removeSkillInstallRecordAndLinks(item, uninstallSharedSkill: true)
+                try await refreshSkills()
+                await refreshSkillsCatalog()
+                if selectedSkillIDForComposer == item.id {
+                    selectedSkillIDForComposer = nil
+                }
+                skillStatusMessage = "Removed \(item.skill.name)."
+                appendLog(.info, "Removed skill \(item.skill.name)")
+            } catch {
+                skillStatusMessage = "Failed to remove skill: \(error.localizedDescription)"
+                appendLog(.error, "Skill remove failed for \(item.skill.name): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func removeSkillFromSelectedProject(_ item: SkillListItem) {
+        guard let selectedProject else {
+            skillStatusMessage = "Select a project first."
+            return
+        }
+
+        isSkillOperationInProgress = true
+        skillStatusMessage = nil
+
+        Task {
+            defer { isSkillOperationInProgress = false }
+            do {
+                try await removeSkillInstallRecordAndLinks(
+                    item,
+                    uninstallSharedSkill: false,
+                    limitToProjectID: selectedProject.id
+                )
+                try await refreshSkills()
+                await refreshSkillsCatalog()
+                if selectedSkillIDForComposer == item.id,
+                   !skills.contains(where: { $0.id == item.id && $0.isEnabledForSelectedProject })
+                {
+                    selectedSkillIDForComposer = nil
+                }
+                skillStatusMessage = "Removed \(item.skill.name) from \(selectedProject.name)."
+                appendLog(.info, "Removed skill \(item.skill.name) from project \(selectedProject.id.uuidString)")
+            } catch {
+                skillStatusMessage = "Failed to remove skill from project: \(error.localizedDescription)"
+                appendLog(.error, "Skill remove-from-project failed for \(item.skill.name): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func revealSkill(_ item: SkillListItem) {
+        let url = URL(fileURLWithPath: item.skill.skillPath, isDirectory: true)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     func setSkillEnablementTarget(_ target: SkillEnablementTarget, for skillID: String) {
@@ -423,6 +484,125 @@ extension AppModel {
             .git
         case .npx:
             .npx
+        }
+    }
+
+    private func removeSkillInstallRecordAndLinks(
+        _ item: SkillListItem,
+        uninstallSharedSkill: Bool,
+        limitToProjectID: UUID? = nil
+    ) async throws {
+        guard let skillInstallRegistryRepository else {
+            throw NSError(
+                domain: "CodexChatApp.SkillInstall",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Skill install registry is unavailable."]
+            )
+        }
+
+        guard var record = try await installRecord(for: item) else {
+            throw NSError(
+                domain: "CodexChatApp.SkillInstall",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Skill install record was not found."]
+            )
+        }
+
+        let sharedSkillURL = URL(fileURLWithPath: record.sharedPath, isDirectory: true)
+        let folderName = sharedSkillURL.lastPathComponent
+        let allProjects = try await projectRepository?.listProjects() ?? projects
+        let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
+
+        if let limitToProjectID {
+            let project = allProjects.first(where: { $0.id == limitToProjectID })
+            if let project {
+                try linkManager.removeProjectSkillLink(
+                    folderName: folderName,
+                    projectRootURL: URL(fileURLWithPath: project.path, isDirectory: true)
+                )
+            }
+
+            switch record.mode {
+            case .all:
+                let remainingProjectIDs = allProjects
+                    .map(\.id)
+                    .filter { $0 != limitToProjectID }
+                if remainingProjectIDs.isEmpty {
+                    try await skillInstallRegistryRepository.delete(skillID: record.skillID)
+                    if uninstallSharedSkill, FileManager.default.fileExists(atPath: sharedSkillURL.path) {
+                        try FileManager.default.removeItem(at: sharedSkillURL)
+                    }
+                    return
+                }
+                record = SkillInstallRecord(
+                    skillID: record.skillID,
+                    source: record.source,
+                    installer: record.installer,
+                    sharedPath: record.sharedPath,
+                    mode: .selected,
+                    projectIDs: remainingProjectIDs,
+                    createdAt: record.createdAt,
+                    updatedAt: Date()
+                )
+                _ = try await skillInstallRegistryRepository.upsert(record)
+            case .selected:
+                let remainingProjectIDs = record.projectIDs.filter { $0 != limitToProjectID }
+                if remainingProjectIDs.isEmpty {
+                    try await skillInstallRegistryRepository.delete(skillID: record.skillID)
+                    if uninstallSharedSkill, FileManager.default.fileExists(atPath: sharedSkillURL.path) {
+                        try FileManager.default.removeItem(at: sharedSkillURL)
+                    }
+                    return
+                }
+                record = SkillInstallRecord(
+                    skillID: record.skillID,
+                    source: record.source,
+                    installer: record.installer,
+                    sharedPath: record.sharedPath,
+                    mode: .selected,
+                    projectIDs: remainingProjectIDs,
+                    createdAt: record.createdAt,
+                    updatedAt: Date()
+                )
+                _ = try await skillInstallRegistryRepository.upsert(record)
+            }
+            return
+        }
+
+        let targetProjects: [ProjectRecord] = switch record.mode {
+        case .all:
+            allProjects
+        case .selected:
+            allProjects.filter { record.projectIDs.contains($0.id) }
+        }
+
+        for project in targetProjects {
+            try linkManager.removeProjectSkillLink(
+                folderName: folderName,
+                projectRootURL: URL(fileURLWithPath: project.path, isDirectory: true)
+            )
+        }
+
+        try await skillInstallRegistryRepository.delete(skillID: record.skillID)
+        if uninstallSharedSkill, FileManager.default.fileExists(atPath: sharedSkillURL.path) {
+            try FileManager.default.removeItem(at: sharedSkillURL)
+        }
+    }
+
+    private func installRecord(for item: SkillListItem) async throws -> SkillInstallRecord? {
+        guard let skillInstallRegistryRepository else {
+            return nil
+        }
+        let resolvedSkillPath = URL(fileURLWithPath: item.skill.skillPath, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        let records = try await skillInstallRegistryRepository.list()
+        return records.first { record in
+            URL(fileURLWithPath: record.sharedPath, isDirectory: true)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+                .path == resolvedSkillPath
         }
     }
 
