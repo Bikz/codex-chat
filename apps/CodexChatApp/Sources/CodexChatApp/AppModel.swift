@@ -2018,6 +2018,23 @@ final class AppModel: ObservableObject {
         skillsState = .loading
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
+        var discoveredByResolvedPath: [String: DiscoveredSkill] = [:]
+        discoveredByResolvedPath.reserveCapacity(discovered.count)
+        for skill in discovered {
+            let resolvedPath = URL(fileURLWithPath: skill.skillPath, isDirectory: true)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+                .path
+            if discoveredByResolvedPath[resolvedPath] == nil {
+                discoveredByResolvedPath[resolvedPath] = skill
+            }
+        }
+        let dedupedDiscovered = discoveredByResolvedPath.values.sorted {
+            if $0.scope != $1.scope {
+                return $0.scope.rawValue < $1.scope.rawValue
+            }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
         let selectedProjectID = selectedProjectID
         let skillInstallRecords: [SkillInstallRecord] = if let skillInstallRegistryRepository {
             try await skillInstallRegistryRepository.list()
@@ -2035,44 +2052,7 @@ final class AppModel: ObservableObject {
                 )
             }
         )
-        let globalEnabledPaths: Set<String> = if let projectSkillEnablementRepository {
-            try await projectSkillEnablementRepository.enabledSkillPaths(target: .global, projectID: nil)
-        } else {
-            []
-        }
-        let generalEnabledPaths: Set<String> = if let projectSkillEnablementRepository {
-            try await projectSkillEnablementRepository.enabledSkillPaths(target: .general, projectID: nil)
-        } else {
-            []
-        }
-        let projectEnabledPaths: Set<String> = if let selectedProjectID,
-                                                  let projectSkillEnablementRepository
-        {
-            try await projectSkillEnablementRepository.enabledSkillPaths(target: .project, projectID: selectedProjectID)
-        } else {
-            []
-        }
-        let resolvedEnabledPaths: Set<String> = if let projectSkillEnablementRepository {
-            try await projectSkillEnablementRepository.resolvedEnabledSkillPaths(
-                forProjectID: selectedProjectID,
-                generalProjectID: generalProject?.id
-            )
-        } else {
-            []
-        }
-
-        let items = discovered.map { skill in
-            var enabledTargets = Set<SkillEnablementTarget>()
-            if globalEnabledPaths.contains(skill.skillPath) {
-                enabledTargets.insert(.global)
-            }
-            if generalEnabledPaths.contains(skill.skillPath) {
-                enabledTargets.insert(.general)
-            }
-            if projectEnabledPaths.contains(skill.skillPath) {
-                enabledTargets.insert(.project)
-            }
-
+        let items = dedupedDiscovered.map { skill in
             let updateCapability = skillCatalogService.updateCapability(for: skill)
             let mappedCapability: SkillUpdateCapability = switch updateCapability.kind {
             case .gitUpdate:
@@ -2112,10 +2092,25 @@ final class AppModel: ObservableObject {
                 )
             }
 
+            let fallbackTargets: Set<SkillEnablementTarget> = switch skill.scope {
+            case .global:
+                [.global]
+            case .project:
+                [.project]
+            }
+            let fallbackSelectedProjectCount: Int? = switch skill.scope {
+            case .global:
+                nil
+            case .project:
+                selectedProjectID == nil ? nil : 1
+            }
+            let isAvailableForSelectedProject = selectedProjectID != nil
+
             return SkillListItem(
                 skill: skill,
-                enabledTargets: enabledTargets,
-                isEnabledForSelectedProject: resolvedEnabledPaths.contains(skill.skillPath),
+                enabledTargets: fallbackTargets,
+                isEnabledForSelectedProject: isAvailableForSelectedProject,
+                selectedProjectCount: fallbackSelectedProjectCount,
                 updateCapability: mappedCapability,
                 updateSource: updateCapability.source,
                 updateInstaller: updateCapability.installer
