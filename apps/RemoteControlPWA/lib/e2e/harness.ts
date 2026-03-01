@@ -13,6 +13,7 @@ declare global {
       closeAccountSheet: () => void;
       setApprovalsExpanded: (expanded: boolean) => void;
       setChatDetached: (detached: boolean) => void;
+      importJoinLink: (raw: string) => boolean;
       resetStorage: () => void;
       getState: () => {
         currentView: string;
@@ -22,6 +23,7 @@ declare global {
         isChatAtBottom: boolean;
         showJumpToLatest: boolean;
         queuedCommandsCount: number;
+        joinToken: string | null;
       };
     };
   }
@@ -61,6 +63,9 @@ export function exposeE2EHarness() {
         userDetachedFromBottomAt: detached ? Date.now() : null
       });
     },
+    importJoinLink(raw: string) {
+      return client.importJoinLink(raw);
+    },
     resetStorage() {
       if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
         window.localStorage.clear();
@@ -75,7 +80,8 @@ export function exposeE2EHarness() {
         approvalsExpanded: state.approvalsExpanded,
         isChatAtBottom: state.isChatAtBottom,
         showJumpToLatest: state.showJumpToLatest,
-        queuedCommandsCount: state.queuedCommands.length
+        queuedCommandsCount: state.queuedCommands.length,
+        joinToken: state.joinToken
       };
     }
   };

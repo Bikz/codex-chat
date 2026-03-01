@@ -55,11 +55,13 @@ pnpm test:e2e:mobile:headed
 2. PWA opens from that link and calls `POST /pair/join` on the relay.
    - Join payload includes a best-effort `deviceName` inferred from the browser/device.
    - Landing from QR shows a welcome/install card to encourage home-screen install before pairing.
-3. Desktop must explicitly approve the pairing request in the Remote Control sheet.
-4. Relay returns `deviceSessionToken` + `wsURL`.
-5. PWA opens `wsURL`, then sends `{"type":"relay.auth","token":"<deviceSessionToken>"}`.
-6. On websocket auth, relay rotates the device session token and the PWA stores the new token for reconnects.
-7. Paired-device credentials persist in browser storage so the PWA can reconnect automatically after app/browser relaunch until desktop revokes or ends the session.
+   - If phone camera opens the link in browser first, the UI now provides `Copy Pair Link` + `Paste Pair Link` handoff guidance for the installed app.
+3. You can also scan directly in the PWA via `Scan QR` (camera) or import via `Paste Pair Link`.
+4. Desktop must explicitly approve the pairing request in the Remote Control sheet.
+5. Relay returns `deviceSessionToken` + `wsURL`.
+6. PWA opens `wsURL`, then sends `{"type":"relay.auth","token":"<deviceSessionToken>"}`.
+7. On websocket auth, relay rotates the device session token and the PWA stores the new token for reconnects.
+8. Paired-device credentials persist in browser storage so the PWA can reconnect automatically after app/browser relaunch until desktop revokes or ends the session.
 
 ## Navigation contract
 
@@ -89,6 +91,7 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 - dynamic viewport sizing with keyboard-aware composer offset via `visualViewport` when available
 - fallback sticky behavior when `visualViewport` is unavailable
 - touch-target minimum sizing on primary actions
+- in-app QR scanner sheet (camera + manual/clipboard fallback)
 
 ## Reliability guarantees (unchanged protocol behavior)
 
@@ -106,6 +109,7 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 ## Limitations
 
 - iOS/browser backgrounding can drop socket connections; PWA resumes with reconnect + snapshot.
+- iOS does not reliably deep-link a scanned HTTPS QR directly into an installed PWA instance. Browser-opened links require manual handoff (`Copy Pair Link` in browser, then `Paste Pair Link` in installed app), or scanning directly from inside the installed app.
 
 ## QA
 

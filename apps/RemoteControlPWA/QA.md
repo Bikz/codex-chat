@@ -6,6 +6,9 @@ Use this checklist before cutting a release for the mobile web client.
 
 - Start a remote session in desktop, scan QR, and complete local desktop approval.
 - Confirm PWA reaches `Connected` and shows home with project circles + chat list.
+- From unauthenticated state, open `Scan QR` and confirm scanner sheet opens/closes with camera prompt.
+- Verify `Paste Pair Link` imports `#sid` + `jt` payload and enables `Pair Device`.
+- On iOS camera-opened browser flow, confirm `Copy Pair Link` guidance appears and copy action succeeds.
 - Revoke the device from desktop and confirm PWA shows revoke state and stops auto reconnect.
 - Stop the desktop session and confirm PWA shows stopped session message.
 

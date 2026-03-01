@@ -132,6 +132,30 @@ test("mobile-theme-color-meta", async ({ page }) => {
     .toBe("#000000");
 });
 
+test("mobile-scanner-sheet-open-close", async ({ page }) => {
+  await page.goto("/?e2e=1");
+  await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
+  await page.getByRole("button", { name: "Scan QR" }).first().click();
+  await expect(page.locator("#qrScannerSheet")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#qrScannerSheet")).toBeHidden();
+});
+
+test("mobile-import-join-link-enables-pair", async ({ page }) => {
+  await page.goto("/?e2e=1");
+  await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
+
+  await expect(page.locator("#preconnectPairButton")).toBeDisabled();
+  await page.evaluate(() => {
+    (window as any).__codexRemotePWAHarness.importJoinLink("https://remote.bikz.cc/#sid=test-session&jt=test-join&relay=https://remote.bikz.cc");
+  });
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().joinToken))
+    .toBe("test-join");
+  await expect(page.locator("#preconnectPairButton")).toBeEnabled();
+});
+
 test("mobile-smart-scroll-jump-to-latest", async ({ page }) => {
   await seedCustom(page, createLongThreadPayload(140));
 

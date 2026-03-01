@@ -1,6 +1,7 @@
 'use client';
 
 import { buildRouteHash, normalizeProjectID, parseRouteHash, type HashRoute } from '@/lib/navigation/hash-route';
+import { buildJoinLink, parseJoinLink, type ParsedJoinLink } from '@/lib/remote/join-link';
 import { processIncomingSequence, queueEnvelopeWithLimits } from '@/lib/remote/logic';
 import { messageIsCollapsible } from '@/lib/remote/selectors';
 import { createInitialState, remoteStoreApi } from '@/lib/remote/store';
@@ -42,9 +43,11 @@ class RemoteClient {
     this.initialized = true;
 
     const e2e = new URLSearchParams(window.location.search).get('e2e') === '1';
+    const isStandaloneMode = this.isStandaloneDisplayMode();
     remoteStoreApi.setState({
       isE2EMode: e2e,
-      deviceName: this.inferredDeviceName()
+      deviceName: this.inferredDeviceName(),
+      isStandaloneMode
     });
 
     const restored = this.restorePersistedPairedDeviceState();
@@ -299,24 +302,81 @@ class RemoteClient {
   }
 
   private parseJoinFromHash() {
-    const hash = window.location.hash.replace(/^#/, '');
-    const params = new URLSearchParams(hash);
-    const sessionID = params.get('sid');
-    const joinToken = params.get('jt');
-    const relayBaseURL = this.normalizeRelayBaseURL(params.get('relay'));
-
-    if (sessionID && joinToken) {
-      remoteStoreApi.setState((state) => ({
-        ...state,
-        arrivedFromQRCode: true,
-        welcomeDismissed: false,
-        sessionID,
-        joinToken,
-        relayBaseURL: relayBaseURL || state.relayBaseURL
-      }));
-
-      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+    const parsed = parseJoinLink(window.location.hash);
+    if (!parsed) {
+      return;
     }
+
+    const currentURL = window.location.href;
+    this.applyJoinDetails(parsed, {
+      pairLinkURL: currentURL,
+      source: this.isStandaloneDisplayMode() ? 'in_app_qr' : 'browser_qr'
+    });
+
+    window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+  }
+
+  private applyJoinDetails(
+    join: ParsedJoinLink,
+    options: { pairLinkURL?: string; source: 'scanner' | 'clipboard' | 'manual' | 'in_app_qr' | 'browser_qr' }
+  ) {
+    const state = remoteStoreApi.getState();
+    const hasSessionChanged = Boolean(state.sessionID && state.sessionID !== join.sessionID);
+    if (hasSessionChanged) {
+      this.clearPersistedPairedDeviceState();
+      this.closeSocket();
+    }
+
+    const fallbackPairLink = buildJoinLink(`${window.location.origin}${window.location.pathname}`, join);
+    remoteStoreApi.setState((current) => ({
+      ...current,
+      arrivedFromQRCode: true,
+      welcomeDismissed: false,
+      sessionID: join.sessionID,
+      joinToken: join.joinToken,
+      relayBaseURL: join.relayBaseURL || current.relayBaseURL,
+      pairingLinkURL: options.pairLinkURL || fallbackPairLink,
+      reconnectDisabledReason: null,
+      isQRScannerOpen: false,
+      ...(hasSessionChanged
+        ? {
+            deviceSessionToken: null,
+            wsURL: null,
+            deviceID: null,
+            isAuthenticated: false,
+            queuedCommands: [],
+            queuedCommandsBytes: 0,
+            pendingSnapshotReason: null,
+            awaitingGapSnapshot: false,
+            lastIncomingSeq: null
+          }
+        : {})
+    }));
+
+    if (options.source === 'browser_qr') {
+      this.setStatus(
+        'QR opened in browser. To continue in installed app, open the app and use Scan QR or Paste Pair Link.',
+        'warn'
+      );
+      return;
+    }
+
+    if (options.source === 'scanner') {
+      this.setStatus('QR scanned. Tap Pair Device and approve on desktop.');
+      return;
+    }
+
+    if (options.source === 'clipboard') {
+      this.setStatus('Pair link imported from clipboard. Tap Pair Device to continue.');
+      return;
+    }
+
+    if (options.source === 'manual') {
+      this.setStatus('Pair link imported. Tap Pair Device to continue.');
+      return;
+    }
+
+    this.setStatus('Pair link loaded. Tap Pair Device and approve on desktop.');
   }
 
   private baseRelayURL() {
@@ -338,6 +398,58 @@ class RemoteClient {
     if (/Macintosh|Mac OS X/i.test(ua)) return 'Mac Browser';
     if (/Windows/i.test(ua)) return 'Windows Browser';
     return 'Remote Device';
+  }
+
+  importJoinLink(rawText: string, source: 'scanner' | 'clipboard' | 'manual' = 'manual') {
+    const parsed = parseJoinLink(rawText);
+    if (!parsed) {
+      this.setStatus('No valid pairing link found. Scan the latest QR code from desktop.', 'error');
+      return false;
+    }
+
+    this.applyJoinDetails(parsed, { source });
+    return true;
+  }
+
+  async pasteJoinLinkFromClipboard() {
+    if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+      this.setStatus('Clipboard access is unavailable. Paste the pair link manually instead.', 'warn');
+      return false;
+    }
+
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      if (!clipboardText.trim()) {
+        this.setStatus('Clipboard is empty. Copy the pair link first.', 'warn');
+        return false;
+      }
+      return this.importJoinLink(clipboardText, 'clipboard');
+    } catch {
+      this.setStatus('Clipboard permission denied. Paste the pair link manually.', 'warn');
+      return false;
+    }
+  }
+
+  async copyPairingLinkToClipboard() {
+    const state = remoteStoreApi.getState();
+    if (!state.pairingLinkURL) {
+      this.setStatus('No pairing link available to copy yet.', 'warn');
+      return false;
+    }
+
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+      this.setStatus('Clipboard write is unavailable on this browser.', 'warn');
+      return false;
+    }
+
+    try {
+      await navigator.clipboard.writeText(state.pairingLinkURL);
+      this.setStatus('Pair link copied. Open the installed app and tap Paste Pair Link.');
+      return true;
+    } catch {
+      this.setStatus('Unable to copy pair link. Select and copy it manually.', 'warn');
+      return false;
+    }
   }
 
   private updateRouteHash(view: 'home' | 'thread', options: { threadID?: string | null; projectID?: string }) {
@@ -1296,10 +1408,24 @@ class RemoteClient {
     });
   }
 
+  openQRScanner() {
+    remoteStoreApi.setState({
+      isQRScannerOpen: true,
+      isAccountSheetOpen: false,
+      isProjectSheetOpen: false
+    });
+  }
+
+  closeQRScanner() {
+    remoteStoreApi.setState({ isQRScannerOpen: false });
+    this.releaseFocusTrap();
+  }
+
   openAccountSheet() {
     remoteStoreApi.setState({
       isAccountSheetOpen: true,
-      isProjectSheetOpen: false
+      isProjectSheetOpen: false,
+      isQRScannerOpen: false
     });
   }
 
@@ -1311,7 +1437,8 @@ class RemoteClient {
   openProjectSheet() {
     remoteStoreApi.setState({
       isProjectSheetOpen: true,
-      isAccountSheetOpen: false
+      isAccountSheetOpen: false,
+      isQRScannerOpen: false
     });
   }
 

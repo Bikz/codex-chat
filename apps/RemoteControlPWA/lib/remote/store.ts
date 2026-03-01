@@ -26,6 +26,9 @@ export interface RemoteStoreState {
   installPromptEvent: BeforeInstallPromptEvent | null;
   welcomeDismissed: boolean;
   isPairingInFlight: boolean;
+  isQRScannerOpen: boolean;
+  isStandaloneMode: boolean;
+  pairingLinkURL: string | null;
   lastIncomingSeq: number | null;
   lastSyncedAt: number | null;
   isSyncStale: boolean;
@@ -80,6 +83,9 @@ export function createInitialState(): RemoteStoreState {
     installPromptEvent: null,
     welcomeDismissed: false,
     isPairingInFlight: false,
+    isQRScannerOpen: false,
+    isStandaloneMode: false,
+    pairingLinkURL: null,
     lastIncomingSeq: null,
     lastSyncedAt: null,
     isSyncStale: false,

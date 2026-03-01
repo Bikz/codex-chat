@@ -10,9 +10,11 @@ export function AccountSheet() {
   const client = getRemoteClient();
   const {
     isAccountSheetOpen,
+    isStandaloneMode,
     sessionID,
     joinToken,
     isPairingInFlight,
+    pairingLinkURL,
     reconnectDisabledReason,
     deviceSessionToken,
     wsURL,
@@ -25,9 +27,11 @@ export function AccountSheet() {
   } = useRemoteStore(
     useShallow((state) => ({
       isAccountSheetOpen: state.isAccountSheetOpen,
+      isStandaloneMode: state.isStandaloneMode,
       sessionID: state.sessionID,
       joinToken: state.joinToken,
       isPairingInFlight: state.isPairingInFlight,
+      pairingLinkURL: state.pairingLinkURL,
       reconnectDisabledReason: state.reconnectDisabledReason,
       deviceSessionToken: state.deviceSessionToken,
       wsURL: state.wsURL,
@@ -88,6 +92,12 @@ export function AccountSheet() {
             <button id="pairButton" className="primary" type="button" disabled={pairDisabled} onClick={() => void client.pairDevice()}>
               Pair Device
             </button>
+            <button id="scanQRFromAccountButton" type="button" onClick={() => client.openQRScanner()}>
+              Scan QR
+            </button>
+            <button id="pastePairLinkAccountButton" type="button" onClick={() => void client.pasteJoinLinkFromClipboard()}>
+              Paste Pair Link
+            </button>
             <button id="reconnectButton" type="button" disabled={reconnectDisabled} onClick={() => client.reconnect()}>
               Reconnect
             </button>
@@ -98,6 +108,15 @@ export function AccountSheet() {
               Forget This Device
             </button>
           </div>
+
+          {!isStandaloneMode && pairingLinkURL ? (
+            <p className="pairing-hint">
+              Browser-opened pair link detected. Open installed app and tap Paste Pair Link.
+              <button id="copyPairLinkAccountButton" className="ghost inline-link-button" type="button" onClick={() => void client.copyPairingLinkToClipboard()}>
+                Copy link
+              </button>
+            </p>
+          ) : null}
 
           <p id="statusText" className={`status ${statusLevel}`}>
             {connectionStatusText || (isAuthenticated ? (isSyncStale ? 'Connected but stale.' : 'Connected.') : 'Waiting to pair.')}

@@ -6,6 +6,7 @@ import { ChatView } from '@/components/remote/chat-view';
 import { HomeView } from '@/components/remote/home-view';
 import { PreconnectCard } from '@/components/remote/preconnect-card';
 import { ProjectSheet } from '@/components/remote/project-sheet';
+import { QRScannerSheet } from '@/components/remote/qr-scanner-sheet';
 import { exposeE2EHarness } from '@/lib/e2e/harness';
 import { useVisualViewportSync } from '@/lib/mobile/visual-viewport';
 import { getRemoteClient } from '@/lib/remote/client';
@@ -68,6 +69,7 @@ export function RemoteControlApp() {
 
       <ProjectSheet />
       <AccountSheet />
+      <QRScannerSheet />
     </>
   );
 }
