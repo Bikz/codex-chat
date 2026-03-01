@@ -892,12 +892,18 @@ final class AppModel: ObservableObject {
     @Published var availableSkillsCatalogState: SurfaceState<[CatalogSkillListing]> = .idle
     @Published var modsState: SurfaceState<ModsSurfaceModel> = .idle
 
-    @Published var selectedProjectID: UUID?
+    @Published var selectedProjectID: UUID? {
+        didSet {
+            requestRemoteControlImmediateSync()
+        }
+    }
+
     @Published var selectedThreadID: UUID? {
         didSet {
             clearUnreadMarker(for: selectedThreadID)
             syncApprovalPresentationState()
             syncComposerOverridesForCurrentSelection()
+            requestRemoteControlImmediateSync()
         }
     }
 
@@ -983,8 +989,18 @@ final class AppModel: ObservableObject {
     @Published var pendingApprovalThreadIDs: Set<UUID> = []
     @Published var pendingModReview: PendingModReview?
     @Published var isModReviewDecisionInProgress = false
-    @Published var isTurnInProgress = false
-    @Published var activeTurnThreadIDs: Set<UUID> = []
+    @Published var isTurnInProgress = false {
+        didSet {
+            requestRemoteControlImmediateSync()
+        }
+    }
+
+    @Published var activeTurnThreadIDs: Set<UUID> = [] {
+        didSet {
+            requestRemoteControlImmediateSync()
+        }
+    }
+
     @Published var logs: [LogEntry] = []
     @Published var threadLogsByThreadID: [UUID: [ThreadLogEntry]] = [:]
     @Published var reviewChangesByThreadID: [UUID: [RuntimeFileChange]] = [:]
@@ -1179,6 +1195,13 @@ final class AppModel: ObservableObject {
     var remoteControlLastEventEntryIDsByThreadID: [UUID: Set<UUID>] = [:]
     var remoteControlLastTurnStateByThreadID: [UUID: Bool] = [:]
     var remoteControlLastPendingApprovalRequestIDs: Set<Int> = []
+    var remoteControlImmediateSyncTask: Task<Void, Never>?
+    var remoteControlImmediateSyncRequested = false
+    var remoteControlImmediateSyncForceSnapshot = false
+    var remoteControlSyncFlushInFlight = false
+    var remoteControlSyncFlushPending = false
+    var remoteControlSyncFlushForceSnapshot = false
+    var remoteControlEnvelopeInterceptor: ((RemoteControlEnvelope) async -> Void)?
     var untrustedShellAcknowledgedProjectIDs: Set<UUID> = []
     var didLoadUntrustedShellAcknowledgements = false
     var didPrepareForTeardown = false
@@ -1275,6 +1298,7 @@ final class AppModel: ObservableObject {
         modsDebounceTask?.cancel()
         remoteControlReceiveTask?.cancel()
         remoteControlSnapshotPumpTask?.cancel()
+        remoteControlImmediateSyncTask?.cancel()
         remoteControlReconnectTask?.cancel()
         remoteControlWebSocketTask?.cancel(with: .normalClosure, reason: nil)
         remoteControlWebSocketTask = nil
@@ -1352,6 +1376,7 @@ final class AppModel: ObservableObject {
         modsDebounceTask?.cancel()
         remoteControlReceiveTask?.cancel()
         remoteControlSnapshotPumpTask?.cancel()
+        remoteControlImmediateSyncTask?.cancel()
         remoteControlReconnectTask?.cancel()
         remoteControlWebSocketTask?.cancel(with: .normalClosure, reason: nil)
         remoteControlWebSocketTask = nil
@@ -1823,6 +1848,7 @@ final class AppModel: ObservableObject {
         transcriptStore[threadID, default: []].append(entry)
         bumpTranscriptRevision(for: threadID)
         refreshConversationStateIfSelectedThreadChanged(threadID)
+        requestRemoteControlImmediateSync()
     }
 
     func appendAssistantDelta(
@@ -1856,6 +1882,7 @@ final class AppModel: ObservableObject {
             transcriptStore[threadID] = entries
             bumpTranscriptRevision(for: threadID)
             refreshConversationStateIfSelectedThreadChanged(threadID)
+            requestRemoteControlImmediateSync()
             return
         }
 
@@ -1876,6 +1903,7 @@ final class AppModel: ObservableObject {
         assistantMessageIDsByItemID[threadID] = itemMap
         bumpTranscriptRevision(for: threadID)
         refreshConversationStateIfSelectedThreadChanged(threadID)
+        requestRemoteControlImmediateSync()
     }
 
     private func assistantDeltaRole(for channel: RuntimeAssistantMessageChannel) -> ChatMessageRole {
@@ -2304,5 +2332,7 @@ final class AppModel: ObservableObject {
         } else {
             activeApprovalRequest = unscopedApprovalRequests.first
         }
+
+        requestRemoteControlImmediateSync()
     }
 }

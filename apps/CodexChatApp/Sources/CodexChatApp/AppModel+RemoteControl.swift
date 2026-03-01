@@ -30,6 +30,7 @@ extension AppModel {
     private static let defaultRemoteControlJoinURL = "https://remote.bikz.cc/rc"
     private static let defaultRemoteControlRelayWSURL = "wss://remote.bikz.cc/ws"
     private static let remoteControlSnapshotPumpNanoseconds: UInt64 = 700_000_000
+    private static let remoteControlImmediateSyncDebounceNanoseconds: UInt64 = 80_000_000
     private static let remoteControlSnapshotMessageLimit = 160
     private static let remoteControlSnapshotOtherMessageLimit = 24
     private static let remoteControlSnapshotTextBudgetBytes = 40000
@@ -37,6 +38,8 @@ extension AppModel {
     private static let remoteControlSnapshotMessageCountLimit = 120
     private static let remoteControlSyncThreadLimit = 12
     private static let remoteControlInboundSequenceTrackerLimit = 24
+    private static let remoteControlCommandMutationPollNanoseconds: UInt64 = 10_000_000
+    private static let remoteControlCommandMutationTimeoutNanoseconds: UInt64 = 1_200_000_000
 
     var isRemoteControlSessionActive: Bool {
         remoteControlStatus.phase == .active && remoteControlStatus.session != nil
@@ -188,7 +191,10 @@ extension AppModel {
             return
         }
         await sendRemoteControlHello()
-        await sendRemoteControlSnapshot(reason: .stateChanged, force: true)
+        await queueRemoteControlSyncFlush(
+            reason: .stateChanged,
+            forceSnapshot: true
+        )
     }
 
     private func resolvedRemoteControlURLs() -> (joinURL: URL, relayWebSocketURL: URL)? {
@@ -235,6 +241,8 @@ extension AppModel {
         remoteControlReceiveTask = nil
         remoteControlSnapshotPumpTask?.cancel()
         remoteControlSnapshotPumpTask = nil
+        remoteControlImmediateSyncTask?.cancel()
+        remoteControlImmediateSyncTask = nil
         remoteControlReconnectTask?.cancel()
         remoteControlReconnectTask = nil
         remoteControlWebSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -248,6 +256,11 @@ extension AppModel {
         remoteControlLastEventEntryIDsByThreadID = [:]
         remoteControlLastTurnStateByThreadID = [:]
         remoteControlLastPendingApprovalRequestIDs = []
+        remoteControlImmediateSyncRequested = false
+        remoteControlImmediateSyncForceSnapshot = false
+        remoteControlSyncFlushInFlight = false
+        remoteControlSyncFlushPending = false
+        remoteControlSyncFlushForceSnapshot = false
         appendLog(.debug, "Remote control websocket closed: \(reason)")
     }
 
@@ -361,15 +374,20 @@ extension AppModel {
         case .stale:
             return
         case .gapDetected:
-            await sendRemoteControlSnapshot(reason: .sequenceGap, force: true)
+            await queueRemoteControlSyncFlush(
+                reason: .sequenceGap,
+                forceSnapshot: true
+            )
             return
         }
 
         switch envelope.payload {
         case let .command(commandPayload):
-            applyRemoteControlCommand(commandPayload)
-            await sendRemoteControlSnapshot(reason: .commandApplied, force: true)
-        case .event, .snapshot, .hello, .authOK:
+            _ = await processRemoteControlCommand(
+                commandPayload,
+                inboundCommandSequence: envelope.seq
+            )
+        case .event, .snapshot, .hello, .authOK, .commandAck:
             break
         }
     }
@@ -385,7 +403,10 @@ extension AppModel {
             await refreshRemoteControlStatus()
             remoteControlStatusMessage = "Remote relay authenticated."
             await sendRemoteControlHello()
-            await sendRemoteControlSnapshot(reason: .websocketAuthenticated, force: true)
+            await queueRemoteControlSyncFlush(
+                reason: .websocketAuthenticated,
+                forceSnapshot: true
+            )
             primeRemoteControlEventBaselines()
         case "relay.device_count":
             if let connectedDeviceCount = signal.connectedDeviceCount {
@@ -393,7 +414,10 @@ extension AppModel {
                 await refreshRemoteControlStatus()
             }
         case "relay.snapshot_request":
-            await sendRemoteControlSnapshot(reason: .snapshotRequest, force: true)
+            await queueRemoteControlSyncFlush(
+                reason: .snapshotRequest,
+                forceSnapshot: true
+            )
         case "relay.pair_request":
             handleRemotePairRequestSignal(signal)
         case "relay.pair_result":
@@ -419,8 +443,10 @@ extension AppModel {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.remoteControlSnapshotPumpNanoseconds)
                 guard !Task.isCancelled else { return }
-                await sendRemoteControlDeltaEventsIfNeeded()
-                await sendRemoteControlSnapshot(reason: .stateChanged, force: false)
+                await queueRemoteControlSyncFlush(
+                    reason: .stateChanged,
+                    forceSnapshot: false
+                )
             }
         }
     }
@@ -485,6 +511,11 @@ extension AppModel {
     }
 
     private func sendRemoteControlEnvelope(_ envelope: RemoteControlEnvelope, encoder: JSONEncoder) async throws {
+        if let interceptor = remoteControlEnvelopeInterceptor {
+            await interceptor(envelope)
+            return
+        }
+
         guard let websocketTask = remoteControlWebSocketTask else {
             throw URLError(.networkConnectionLost)
         }
@@ -520,6 +551,76 @@ extension AppModel {
             )
         } catch {
             appendLog(.warning, "Failed to authenticate remote relay websocket: \(error.localizedDescription)")
+        }
+    }
+
+    func requestRemoteControlImmediateSync(forceSnapshot: Bool = false) {
+        guard remoteControlRelayAuthenticated,
+              remoteControlStatus.session != nil
+        else {
+            return
+        }
+
+        remoteControlImmediateSyncRequested = true
+        if forceSnapshot {
+            remoteControlImmediateSyncForceSnapshot = true
+        }
+
+        guard remoteControlImmediateSyncTask == nil else {
+            return
+        }
+
+        remoteControlImmediateSyncTask = Task { [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.remoteControlImmediateSyncDebounceNanoseconds)
+                guard !Task.isCancelled else { return }
+                guard remoteControlImmediateSyncRequested else { break }
+
+                let shouldForceSnapshot = remoteControlImmediateSyncForceSnapshot
+                remoteControlImmediateSyncRequested = false
+                remoteControlImmediateSyncForceSnapshot = false
+
+                await queueRemoteControlSyncFlush(
+                    reason: .stateChanged,
+                    forceSnapshot: shouldForceSnapshot
+                )
+
+                if !remoteControlImmediateSyncRequested {
+                    break
+                }
+            }
+
+            remoteControlImmediateSyncTask = nil
+        }
+    }
+
+    private func queueRemoteControlSyncFlush(
+        reason: RemoteControlSnapshotReason,
+        forceSnapshot: Bool
+    ) async {
+        remoteControlSyncFlushPending = true
+        if forceSnapshot {
+            remoteControlSyncFlushForceSnapshot = true
+        }
+
+        guard !remoteControlSyncFlushInFlight else {
+            return
+        }
+
+        remoteControlSyncFlushInFlight = true
+        defer {
+            remoteControlSyncFlushInFlight = false
+        }
+
+        while remoteControlSyncFlushPending {
+            let shouldForceSnapshot = remoteControlSyncFlushForceSnapshot
+            remoteControlSyncFlushPending = false
+            remoteControlSyncFlushForceSnapshot = false
+
+            await sendRemoteControlDeltaEventsIfNeeded()
+            await sendRemoteControlSnapshot(reason: reason, force: shouldForceSnapshot)
         }
     }
 
@@ -678,6 +779,55 @@ extension AppModel {
         } catch {
             appendLog(.warning, "Failed to send remote event payload: \(error.localizedDescription)")
         }
+    }
+
+    private func sendRemoteControlCommandAck(_ payload: RemoteControlCommandAckPayload) async {
+        guard let session = remoteControlStatus.session else {
+            return
+        }
+
+        let envelope = RemoteControlEnvelope(
+            sessionID: session.sessionID,
+            seq: nextRemoteControlOutboundSequence(),
+            payload: .commandAck(payload)
+        )
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try await sendRemoteControlEnvelope(envelope, encoder: encoder)
+            await remoteControlBroker.bumpActivity()
+        } catch {
+            appendLog(.warning, "Failed to send remote command ack payload: \(error.localizedDescription)")
+        }
+    }
+
+    private func remoteControlTranscriptMutationStamp(for threadID: UUID?) -> UInt64 {
+        if let threadID {
+            return transcriptRevisionsByThreadID[threadID] ?? 0
+        }
+        return transcriptRevisionsByThreadID.values.reduce(0, &+)
+    }
+
+    private func waitForRemoteControlTranscriptMutation(
+        threadID: UUID?,
+        baselineMutationStamp: UInt64
+    ) async -> Bool {
+        let timeoutSeconds = Double(Self.remoteControlCommandMutationTimeoutNanoseconds) / 1_000_000_000
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+
+        while Date() < deadline {
+            let currentMutationStamp = remoteControlTranscriptMutationStamp(for: threadID)
+            if currentMutationStamp > baselineMutationStamp {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: Self.remoteControlCommandMutationPollNanoseconds)
+            if Task.isCancelled {
+                return false
+            }
+        }
+
+        return remoteControlTranscriptMutationStamp(for: threadID) > baselineMutationStamp
     }
 
     private func primeRemoteControlEventBaselines() {
@@ -963,88 +1113,275 @@ extension AppModel {
         return output
     }
 
-    private func applyRemoteControlCommand(_ command: RemoteControlCommandPayload) {
+    private func applyRemoteControlCommand(
+        _ command: RemoteControlCommandPayload,
+        inboundCommandSequence: UInt64
+    ) async -> RemoteControlCommandAckPayload {
         switch command.name {
         case .projectSelect:
-            applyRemoteProjectSelectCommand(command)
+            applyRemoteProjectSelectCommand(command, inboundCommandSequence: inboundCommandSequence)
         case .threadSelect:
-            applyRemoteThreadSelectCommand(command)
+            applyRemoteThreadSelectCommand(command, inboundCommandSequence: inboundCommandSequence)
         case .threadSendMessage:
-            applyRemoteThreadSendCommand(command)
+            await applyRemoteThreadSendCommand(command, inboundCommandSequence: inboundCommandSequence)
         case .approvalRespond:
-            applyRemoteApprovalCommand(command)
+            applyRemoteApprovalCommand(command, inboundCommandSequence: inboundCommandSequence)
         }
     }
 
-    private func applyRemoteProjectSelectCommand(_ command: RemoteControlCommandPayload) {
+    func processRemoteControlCommand(
+        _ command: RemoteControlCommandPayload,
+        inboundCommandSequence: UInt64
+    ) async -> RemoteControlCommandAckPayload {
+        let ack = await applyRemoteControlCommand(
+            command,
+            inboundCommandSequence: inboundCommandSequence
+        )
+        await sendRemoteControlCommandAck(ack)
+        if ack.status == .accepted {
+            await queueRemoteControlSyncFlush(
+                reason: .commandApplied,
+                forceSnapshot: true
+            )
+        }
+        return ack
+    }
+
+    private func applyRemoteProjectSelectCommand(
+        _ command: RemoteControlCommandPayload,
+        inboundCommandSequence: UInt64
+    ) -> RemoteControlCommandAckPayload {
         guard let projectIDString = command.projectID,
-              let projectID = UUID(uuidString: projectIDString),
-              projects.contains(where: { $0.id == projectID })
+              let projectID = UUID(uuidString: projectIDString)
         else {
-            return
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "invalid_project"
+            )
+        }
+
+        guard projects.contains(where: { $0.id == projectID }) else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "unknown_project"
+            )
         }
 
         selectProject(projectID)
+        return remoteControlCommandAck(
+            command: command,
+            commandSequence: inboundCommandSequence,
+            status: .accepted
+        )
     }
 
-    private func applyRemoteThreadSelectCommand(_ command: RemoteControlCommandPayload) {
+    private func applyRemoteThreadSelectCommand(
+        _ command: RemoteControlCommandPayload,
+        inboundCommandSequence: UInt64
+    ) -> RemoteControlCommandAckPayload {
         guard let threadIDString = command.threadID,
               let threadID = UUID(uuidString: threadIDString)
         else {
-            return
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "invalid_thread"
+            )
         }
 
         let isKnownThread = (threads + generalThreads + archivedThreads).contains(where: { $0.id == threadID })
         guard isKnownThread else {
-            return
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "unknown_thread"
+            )
         }
 
         selectThread(threadID)
+        return remoteControlCommandAck(
+            command: command,
+            commandSequence: inboundCommandSequence,
+            status: .accepted,
+            threadID: threadID.uuidString
+        )
     }
 
-    private func applyRemoteThreadSendCommand(_ command: RemoteControlCommandPayload) {
+    private func applyRemoteThreadSendCommand(
+        _ command: RemoteControlCommandPayload,
+        inboundCommandSequence: UInt64
+    ) async -> RemoteControlCommandAckPayload {
         let text = command.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !text.isEmpty else {
-            return
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "empty_message"
+            )
         }
 
-        if let projectIDString = command.projectID,
-           let projectID = UUID(uuidString: projectIDString),
-           selectedProjectID != projectID,
-           projects.contains(where: { $0.id == projectID })
-        {
-            selectProject(projectID)
+        if runtimePool == nil || runtimeStatus != .connected {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "desktop_offline"
+            )
         }
 
-        if let threadIDString = command.threadID,
-           let threadID = UUID(uuidString: threadIDString),
-           selectedThreadID != threadID,
-           (threads + generalThreads + archivedThreads).contains(where: { $0.id == threadID })
-        {
-            selectThread(threadID)
+        if let projectIDString = command.projectID {
+            guard let projectID = UUID(uuidString: projectIDString) else {
+                return remoteControlCommandAck(
+                    command: command,
+                    commandSequence: inboundCommandSequence,
+                    status: .rejected,
+                    reason: "invalid_project"
+                )
+            }
+            guard projects.contains(where: { $0.id == projectID }) else {
+                return remoteControlCommandAck(
+                    command: command,
+                    commandSequence: inboundCommandSequence,
+                    status: .rejected,
+                    reason: "unknown_project"
+                )
+            }
+
+            if selectedProjectID != projectID {
+                selectProject(projectID)
+            }
+        }
+
+        if let threadIDString = command.threadID {
+            guard let threadID = UUID(uuidString: threadIDString) else {
+                return remoteControlCommandAck(
+                    command: command,
+                    commandSequence: inboundCommandSequence,
+                    status: .rejected,
+                    reason: "invalid_thread"
+                )
+            }
+
+            let isKnownThread = (threads + generalThreads + archivedThreads).contains(where: { $0.id == threadID })
+            guard isKnownThread else {
+                return remoteControlCommandAck(
+                    command: command,
+                    commandSequence: inboundCommandSequence,
+                    status: .rejected,
+                    reason: "unknown_thread"
+                )
+            }
+
+            if selectedThreadID != threadID {
+                selectThread(threadID)
+            }
         }
 
         if selectedThreadID == nil, !hasActiveDraftChatForSelectedProject {
             activateDraftChatFromCurrentContext()
         }
 
+        guard selectedThreadID != nil else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "thread_required"
+            )
+        }
+
+        if hasPendingApprovalForSelectedThread || isSelectedThreadApprovalInProgress {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "approval_required",
+                threadID: selectedThreadID?.uuidString
+            )
+        }
+
+        let observedThreadID = selectedThreadID
+        let baselineMutationStamp = remoteControlTranscriptMutationStamp(for: observedThreadID)
         composerText = text
         sendMessage()
+
+        let didObserveMutation = await waitForRemoteControlTranscriptMutation(
+            threadID: observedThreadID,
+            baselineMutationStamp: baselineMutationStamp
+        )
+        guard didObserveMutation else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "desktop_busy",
+                threadID: observedThreadID?.uuidString
+            )
+        }
+
+        return remoteControlCommandAck(
+            command: command,
+            commandSequence: inboundCommandSequence,
+            status: .accepted,
+            threadID: observedThreadID?.uuidString
+        )
     }
 
-    private func applyRemoteApprovalCommand(_ command: RemoteControlCommandPayload) {
+    private func applyRemoteApprovalCommand(
+        _ command: RemoteControlCommandPayload,
+        inboundCommandSequence: UInt64
+    ) -> RemoteControlCommandAckPayload {
         guard allowRemoteApprovals else {
-            return
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "remote_approvals_disabled"
+            )
         }
 
         guard let decisionRaw = command.approvalDecision?.lowercased(),
               let decision = remoteApprovalDecision(from: decisionRaw)
         else {
-            return
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "invalid_approval_decision"
+            )
         }
 
         let requestID = command.approvalRequestID.flatMap(Int.init)
         submitRemoteApprovalDecision(decision, requestID: requestID)
+        return remoteControlCommandAck(
+            command: command,
+            commandSequence: inboundCommandSequence,
+            status: .accepted
+        )
+    }
+
+    private func remoteControlCommandAck(
+        command: RemoteControlCommandPayload,
+        commandSequence: UInt64,
+        status: RemoteControlCommandAckStatus,
+        reason: String? = nil,
+        threadID: String? = nil
+    ) -> RemoteControlCommandAckPayload {
+        RemoteControlCommandAckPayload(
+            commandSeq: commandSequence,
+            commandID: command.commandID,
+            commandName: command.name,
+            status: status,
+            reason: reason,
+            threadID: threadID ?? command.threadID
+        )
     }
 
     private func handleRemotePairRequestSignal(_ signal: RemoteRelayControlSignal) {
