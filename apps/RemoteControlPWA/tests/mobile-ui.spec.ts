@@ -134,6 +134,8 @@ async function seedDemo(page: Parameters<typeof test>[0]["page"]) {
     (window as any).__codexRemotePWAHarness.resetStorage();
     (window as any).__codexRemotePWAHarness.seed(payload, { authenticated: true });
   }, snapshotPayload);
+  await expect(page.locator("#workspacePanel")).toBeVisible();
+  await expect.poll(async () => page.locator("#chatList .chat-row").count()).toBeGreaterThan(0);
 }
 
 async function seedCustom(page: Parameters<typeof test>[0]["page"], payload: unknown) {
@@ -143,6 +145,18 @@ async function seedCustom(page: Parameters<typeof test>[0]["page"], payload: unk
     (window as any).__codexRemotePWAHarness.resetStorage();
     (window as any).__codexRemotePWAHarness.seed(nextPayload, { authenticated: true });
   }, payload);
+  await expect(page.locator("#workspacePanel")).toBeVisible();
+
+  const hasThreads = await page.evaluate((nextPayload) => {
+    if (!nextPayload || typeof nextPayload !== "object") {
+      return false;
+    }
+    const candidate = nextPayload as { threads?: unknown };
+    return Array.isArray(candidate.threads) && candidate.threads.length > 0;
+  }, payload);
+  if (hasThreads) {
+    await expect.poll(async () => page.locator("#chatList .chat-row").count()).toBeGreaterThan(0);
+  }
 }
 
 async function injectEnvelope(page: Parameters<typeof test>[0]["page"], message: unknown) {
@@ -207,7 +221,7 @@ test("mobile-no-horizontal-overflow-thread", async ({ page }) => {
     ],
     pendingApprovals: []
   });
-  await page.getByRole("button", { name: /Open chat/i }).click();
+  await page.locator("#chatList .chat-row").first().click();
 
   const dimensions = await page.evaluate(() => ({
     htmlScrollWidth: document.documentElement.scrollWidth,
@@ -259,7 +273,7 @@ test("mobile-transcript-hides-system", async ({ page }) => {
 
 test("mobile-transcript-default-shows-user-relevant-system-notices", async ({ page }) => {
   await seedCustom(page, createSystemPolicyPayload());
-  await page.getByRole("button", { name: "Open chat Policy thread" }).click();
+  await page.locator("#chatList .chat-row").first().click();
 
   await expect(page.getByText("Approval required: Allow command execution?")).toBeVisible();
   await expect(page.getByText("Turn failed to start")).toBeVisible();

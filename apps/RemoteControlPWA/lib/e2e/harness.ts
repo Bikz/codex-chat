@@ -72,6 +72,7 @@ export function exposeE2EHarness() {
       client.ingestServerMessageForTesting(message);
     },
     resetStorage() {
+      client.resetForE2E();
       if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
         window.localStorage.clear();
       }
