@@ -89,13 +89,24 @@ public struct EmptySkillCatalogProvider: SkillCatalogProvider {
 }
 
 public struct RemoteJSONSkillCatalogProvider: SkillCatalogProvider {
-    public static let defaultIndexURL = URL(string: "https://skills.sh/index.json")!
+    public static let defaultIndexURL = URL(string: "https://skills.sh/api/skills/all-time/0")!
 
     public let indexURL: URL
     public let urlSession: URLSession
 
     private struct WrappedIndex: Codable {
         var skills: [CatalogSkillListing]
+    }
+
+    private struct SkillsAPIPage: Codable {
+        var skills: [SkillsAPIEntry]
+    }
+
+    private struct SkillsAPIEntry: Codable {
+        var source: String
+        var skillId: String
+        var name: String
+        var installs: Double?
     }
 
     public init(indexURL: URL = RemoteJSONSkillCatalogProvider.defaultIndexURL, urlSession: URLSession = .shared) {
@@ -123,14 +134,19 @@ public struct RemoteJSONSkillCatalogProvider: SkillCatalogProvider {
             do {
                 listings = try decoder.decode(WrappedIndex.self, from: data).skills
             } catch {
-                throw NSError(
-                    domain: "CodexSkills.RemoteCatalog",
-                    code: -1,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: "Catalog payload could not be decoded.",
-                        NSUnderlyingErrorKey: error,
-                    ]
-                )
+                do {
+                    let page = try decoder.decode(SkillsAPIPage.self, from: data)
+                    listings = page.skills.map(Self.catalogListing(from:))
+                } catch {
+                    throw NSError(
+                        domain: "CodexSkills.RemoteCatalog",
+                        code: -1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Catalog payload could not be decoded.",
+                            NSUnderlyingErrorKey: error,
+                        ]
+                    )
+                }
             }
         }
 
@@ -142,6 +158,43 @@ public struct RemoteJSONSkillCatalogProvider: SkillCatalogProvider {
             }
             return lhs > rhs
         }
+    }
+
+    private static func catalogListing(from entry: SkillsAPIEntry) -> CatalogSkillListing {
+        let source = entry.source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let skillID = entry.skillId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackID = entry.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let listingID = [source.lowercased(), skillID.lowercased()]
+            .filter { !$0.isEmpty }
+            .joined(separator: "/")
+        let normalizedID = listingID.isEmpty ? fallbackID : listingID
+        let repositoryURL = githubRepositoryURL(from: source)
+        let installSource = repositoryURL.map { "\($0).git" }
+        let summary = source.isEmpty ? nil : "From \(source)"
+
+        return CatalogSkillListing(
+            id: normalizedID,
+            name: entry.name,
+            summary: summary,
+            repositoryURL: repositoryURL,
+            installSource: installSource,
+            rank: entry.installs
+        )
+    }
+
+    private static func githubRepositoryURL(from source: String) -> String? {
+        let parts = source.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count == 2 else {
+            return nil
+        }
+
+        let owner = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let repo = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !owner.isEmpty, !repo.isEmpty else {
+            return nil
+        }
+
+        return "https://github.com/\(owner)/\(repo)"
     }
 }
 

@@ -213,9 +213,7 @@ public enum CodexChatBootstrap {
             codexHomeURL: storagePaths.codexHomeURL,
             agentsHomeURL: storagePaths.agentsHomeURL
         )
-        let skillCatalogProvider = RemoteJSONSkillCatalogProvider(
-            indexURL: URL(string: "https://skills.sh/index.json")!
-        )
+        let skillCatalogProvider = RemoteJSONSkillCatalogProvider()
         let harnessEnvironment = try makeHarnessEnvironment(
             storagePaths: storagePaths,
             environment: environment,

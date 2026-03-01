@@ -387,7 +387,7 @@ final class CodexSkillsTests: XCTestCase {
         XCTAssertNotEqual(URL(fileURLWithPath: result.installedPath).lastPathComponent, ".")
     }
 
-    func testRemoteJSONSkillCatalogProviderParsesDirectAndWrappedPayloads() async throws {
+    func testRemoteJSONSkillCatalogProviderParsesDirectWrappedAndSkillsAPIPayloads() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexskills-catalog-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -423,16 +423,40 @@ final class CodexSkillsTests: XCTestCase {
         }
         """.write(to: wrappedURL, atomically: true, encoding: .utf8)
 
+        let skillsAPIURL = root.appendingPathComponent("skills-api.json", isDirectory: false)
+        try """
+        {
+          "skills": [
+            {
+              "source": "vercel-labs/skills",
+              "skillId": "find-skills",
+              "name": "find-skills",
+              "installs": 12345
+            }
+          ],
+          "total": 1,
+          "hasMore": false,
+          "page": 0
+        }
+        """.write(to: skillsAPIURL, atomically: true, encoding: .utf8)
+
         let directProvider = RemoteJSONSkillCatalogProvider(indexURL: directURL)
         let wrappedProvider = RemoteJSONSkillCatalogProvider(indexURL: wrappedURL)
+        let skillsAPIProvider = RemoteJSONSkillCatalogProvider(indexURL: skillsAPIURL)
 
         let direct = try await directProvider.listAvailableSkills()
         let wrapped = try await wrappedProvider.listAvailableSkills()
+        let skillsAPI = try await skillsAPIProvider.listAvailableSkills()
 
         XCTAssertEqual(direct.count, 1)
         XCTAssertEqual(direct.first?.id, "skill.browser")
         XCTAssertEqual(wrapped.count, 1)
         XCTAssertEqual(wrapped.first?.id, "skill.docs")
+        XCTAssertEqual(skillsAPI.count, 1)
+        XCTAssertEqual(skillsAPI.first?.id, "vercel-labs/skills/find-skills")
+        XCTAssertEqual(skillsAPI.first?.repositoryURL, "https://github.com/vercel-labs/skills")
+        XCTAssertEqual(skillsAPI.first?.installSource, "https://github.com/vercel-labs/skills.git")
+        XCTAssertEqual(skillsAPI.first?.rank, 12345)
     }
 
     func testUpdateCapabilityClassification() {

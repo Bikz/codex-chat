@@ -27,9 +27,16 @@ struct SkillRow: View {
         selectedEnablementTarget != .project || hasSelectedProject
     }
 
+    private var enablementTargetBinding: Binding<SkillEnablementTarget> {
+        Binding(
+            get: { selectedEnablementTarget },
+            set: { onEnablementTargetChanged($0) }
+        )
+    }
+
     var body: some View {
         SkillsModsCard(padding: 12) {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 10) {
                 header
 
                 Text(item.skill.description)
@@ -37,10 +44,14 @@ struct SkillRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
 
-                badgeRow
+                if item.skill.hasScripts {
+                    Label("Includes scripts", systemImage: "terminal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 targetPicker
                 enabledSummary
-                metadata
                 actions
             }
         }
@@ -62,99 +73,37 @@ struct SkillRow: View {
                 Text(item.skill.name)
                     .font(.headline)
                     .lineLimit(1)
+
+                Text("Installed · \(item.skill.scope.rawValue.capitalized)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
-
-            Button(SkillsModsPresentation.updateActionLabel(for: item.updateCapability)) {
-                onUpdate()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(item.updateCapability == .unavailable)
-            .help(SkillsModsPresentation.updateActionHelp(for: item.updateCapability))
-            .accessibilityLabel("\(SkillsModsPresentation.updateActionLabel(for: item.updateCapability)) \(item.skill.name)")
-        }
-    }
-
-    private var badgeRow: some View {
-        HStack(spacing: 6) {
-            Text("Installed")
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06), in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
-
-            Text(item.skill.scope.rawValue.capitalized)
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06), in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
-
-            if item.skill.hasScripts {
-                Label("Scripts", systemImage: "terminal")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10)))
-            }
-
-            Spacer(minLength: 0)
         }
     }
 
     private var targetPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Enable target")
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Enable in")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 6) {
-                targetButton(.global, title: "Global")
-                targetButton(.general, title: "General")
-                targetButton(.project, title: "Project", isDisabled: !hasSelectedProject)
+            Picker("Enable target", selection: enablementTargetBinding) {
+                Text("Global").tag(SkillEnablementTarget.global)
+                Text("General").tag(SkillEnablementTarget.general)
+                Text("Project").tag(SkillEnablementTarget.project)
+                    .disabled(!hasSelectedProject)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if selectedEnablementTarget == .project, !hasSelectedProject {
+                Text("Select a project to enable this skill for Project.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func targetButton(
-        _ target: SkillEnablementTarget,
-        title: String,
-        isDisabled: Bool = false
-    ) -> some View {
-        let isSelected = selectedEnablementTarget == target
-
-        return Button(title) {
-            onEnablementTargetChanged(target)
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    isSelected
-                        ? Color.accentColor.opacity(0.18)
-                        : Color.primary.opacity(0.06)
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(
-                    isSelected
-                        ? Color.accentColor.opacity(0.55)
-                        : Color.primary.opacity(0.12)
-                )
-        )
-        .opacity(isDisabled ? 0.55 : 1)
-        .disabled(isDisabled)
-        .accessibilityLabel(title)
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
     private var enabledSummary: some View {
@@ -163,34 +112,46 @@ struct SkillRow: View {
             .foregroundStyle(.secondary)
     }
 
-    private var metadata: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(item.skill.skillPath)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-        }
-    }
-
     private var actions: some View {
         HStack(spacing: 8) {
+            if isEnabledForSelectedTarget {
+                Button {
+                    onToggle(false)
+                } label: {
+                    Label("Disable", systemImage: "xmark.circle")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canToggleSelectedTarget)
+            } else {
+                Button {
+                    onToggle(true)
+                } label: {
+                    Label("Enable", systemImage: "checkmark.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(!canToggleSelectedTarget)
+            }
+
             Button("Use in next message") {
                 onInsert()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(!item.isEnabledForSelectedProject)
 
-            Button {
-                onToggle(!isEnabledForSelectedTarget)
+            Menu {
+                Button(SkillsModsPresentation.updateActionLabel(for: item.updateCapability)) {
+                    onUpdate()
+                }
+                .disabled(item.updateCapability == .unavailable)
             } label: {
-                Label(isEnabledForSelectedTarget ? "Disable" : "Enable", systemImage: isEnabledForSelectedTarget ? "xmark.circle" : "checkmark.circle")
+                Image(systemName: "ellipsis.circle")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(!canToggleSelectedTarget)
+            .menuStyle(.borderlessButton)
+            .help(SkillsModsPresentation.updateActionHelp(for: item.updateCapability))
+            .accessibilityLabel("More actions for \(item.skill.name)")
 
             Spacer()
         }
