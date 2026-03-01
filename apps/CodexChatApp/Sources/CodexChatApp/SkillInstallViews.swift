@@ -248,7 +248,7 @@ struct InstallSkillSheet: View {
 
     @State private var source = ""
     @State private var pinnedRef = ""
-    @State private var scope: SkillInstallScope = .project
+    @State private var scope: SkillInstallScope = .global
     @State private var installer: SkillInstallerKind = .git
     @State private var trustConfirmed = false
 
@@ -267,7 +267,7 @@ struct InstallSkillSheet: View {
             Text("Install Skill")
                 .font(.title3.weight(.semibold))
 
-            Text("Installing adds skill files. Enabling controls where a skill is active: Global, General, or Project.")
+            Text("Installing adds skill files to the shared library and links them to all projects or selected projects.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
@@ -279,13 +279,13 @@ struct InstallSkillSheet: View {
                 .disabled(installer != .git)
 
             Picker("Scope", selection: $scope) {
-                Text("Project").tag(SkillInstallScope.project)
-                Text("Global").tag(SkillInstallScope.global)
+                Text("All projects").tag(SkillInstallScope.global)
+                Text("Selected project").tag(SkillInstallScope.project)
             }
             .pickerStyle(.segmented)
 
             if scope == .project, model.selectedProject == nil {
-                Text("Select a project to install a project-scoped skill.")
+                Text("Select a project before installing to selected projects.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

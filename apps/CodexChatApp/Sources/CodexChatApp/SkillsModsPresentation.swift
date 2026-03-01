@@ -109,35 +109,6 @@ enum SkillsModsPresentation {
         }
     }
 
-    static func enabledTargetsSummary(for item: AppModel.SkillListItem, hasSelectedProject: Bool) -> String {
-        var labels: [String] = []
-        if item.isEnabledGlobally {
-            labels.append("Global")
-        }
-        if item.isEnabledForGeneral {
-            labels.append("General")
-        }
-        if item.isEnabledForProjectTarget {
-            labels.append(hasSelectedProject ? "Project (this)" : "Project")
-        }
-
-        guard !labels.isEmpty else {
-            return "Enabled in: None"
-        }
-        return "Enabled in: \(labels.joined(separator: ", "))"
-    }
-
-    static func scopeLabel(for target: SkillEnablementTarget) -> String {
-        switch target {
-        case .global:
-            "Global"
-        case .general:
-            "General"
-        case .project:
-            "Project"
-        }
-    }
-
     static func modDirectoryName(_ mod: DiscoveredUIMod) -> String {
         let path = mod.directoryPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else { return "(unknown)" }

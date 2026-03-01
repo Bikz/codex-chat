@@ -169,21 +169,6 @@ final class SkillsModsPresentationTests: XCTestCase {
         XCTAssertEqual(SkillsModsPresentation.updateActionLabel(for: .unavailable), "Unavailable")
     }
 
-    func testEnabledTargetsSummaryIncludesProjectContextSuffix() {
-        var item = makeSkillItem(
-            name: "Atlas",
-            description: "Control Atlas app.",
-            scope: .global,
-            path: "/tmp/skills/atlas"
-        )
-        item.enabledTargets = [.global, .project]
-
-        XCTAssertEqual(
-            SkillsModsPresentation.enabledTargetsSummary(for: item, hasSelectedProject: true),
-            "Enabled in: Global, Project (this)"
-        )
-    }
-
     private func makeSkillItem(
         name: String,
         description: String,

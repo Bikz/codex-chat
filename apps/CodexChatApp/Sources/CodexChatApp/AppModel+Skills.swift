@@ -63,7 +63,7 @@ extension AppModel {
         pinnedRef: String? = nil
     ) {
         if scope == .project, projectIDs?.isEmpty ?? true, selectedProject == nil {
-            skillStatusMessage = "Select a project to install a project-scoped skill."
+            skillStatusMessage = "Select a project before installing to selected projects."
             return
         }
 
