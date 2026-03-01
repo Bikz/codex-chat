@@ -1496,7 +1496,9 @@ class RemoteClient {
     };
 
     const latest = remoteStoreApi.getState();
-    if (!latest.socket || latest.socket.readyState !== WebSocket.OPEN) {
+    const socketIsOpen = Boolean(latest.socket && latest.socket.readyState === WebSocket.OPEN);
+    const canSendImmediately = socketIsOpen && latest.isAuthenticated;
+    if (!canSendImmediately) {
       if (latest.reconnectDisabledReason) {
         this.setStatus(`${this.disconnectMessageForReason(latest.reconnectDisabledReason)} Re-pair before sending new commands.`, 'warn');
         return false;
@@ -1504,7 +1506,11 @@ class RemoteClient {
 
       const queueableCommand = name === 'thread.send_message' || name === 'approval.respond';
       if (!queueableCommand) {
-        this.setStatus('Not connected. Reconnect to sync this action.', 'warn');
+        if (socketIsOpen && !latest.isAuthenticated) {
+          this.setStatus('Connecting to relay. Try again in a moment.', 'warn');
+        } else {
+          this.setStatus('Not connected. Reconnect to sync this action.', 'warn');
+        }
         return false;
       }
 
@@ -1695,7 +1701,7 @@ class RemoteClient {
     }
 
     remoteStoreApi.setState({ isComposerDispatching: true });
-    const wasConnected = state.socket?.readyState === WebSocket.OPEN;
+    const wasConnected = state.socket?.readyState === WebSocket.OPEN && state.isAuthenticated;
     const sent = this.sendCommand('thread.send_message', {
       threadID: state.selectedThreadID,
       text

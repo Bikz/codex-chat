@@ -133,6 +133,38 @@ describe('remote client lifecycle', () => {
     expect(nextState.queuedCommandsBytes).toBe(0);
   });
 
+  it('queues composer message while socket is open but auth is pending', () => {
+    const socket = new FakeWebSocket('wss://relay.example/ws');
+    socket.readyState = FakeWebSocket.OPEN;
+
+    remoteStoreApi.setState({
+      sessionID: 'session-1',
+      selectedThreadID: 'thread-1',
+      wsURL: 'wss://relay.example/ws',
+      deviceSessionToken: 'token-old',
+      socket: socket as unknown as WebSocket,
+      isAuthenticated: false
+    });
+
+    const client = getRemoteClient();
+    expect(client.sendComposerMessage('queued while auth pending')).toBe(true);
+
+    const nextState = remoteStoreApi.getState();
+    expect(nextState.nextOutgoingSeq).toBe(2);
+    expect(nextState.queuedCommands).toHaveLength(1);
+    expect(nextState.queuedCommands[0]?.envelope).toMatchObject({
+      sessionID: 'session-1',
+      payload: {
+        type: 'command',
+        payload: {
+          name: 'thread.send_message',
+          threadID: 'thread-1',
+          text: 'queued while auth pending'
+        }
+      }
+    });
+  });
+
   it('persists rotated device token on auth_ok for durable reconnect', () => {
     remoteStoreApi.setState({
       sessionID: 'session-1',
