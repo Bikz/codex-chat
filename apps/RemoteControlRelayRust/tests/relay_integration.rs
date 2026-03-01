@@ -56,6 +56,27 @@ fn random_token(byte_count: usize) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
+async fn next_matching_json_message(
+    socket: &mut TestSocket,
+    timeout_ms: u64,
+    mut predicate: impl FnMut(&Value) -> bool,
+) -> Value {
+    loop {
+        let message = tokio::time::timeout(Duration::from_millis(timeout_ms), socket.next())
+            .await
+            .expect("expected websocket frame before timeout")
+            .expect("expected websocket frame")
+            .expect("expected websocket message");
+        if let Message::Text(text) = message {
+            let payload: Value =
+                serde_json::from_str(text.as_ref()).expect("expected JSON websocket payload");
+            if predicate(&payload) {
+                return payload;
+            }
+        }
+    }
+}
+
 async fn pair_connected_mobile(
     configure: impl FnOnce(&mut RelayConfig),
 ) -> (String, JoinHandle<()>, TestSocket, TestSocket, String) {
@@ -564,6 +585,12 @@ async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
         desktop_auth_json.get("role").and_then(Value::as_str),
         Some("desktop")
     );
+    assert_eq!(
+        desktop_auth_json
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
 
     let join_future = tokio::spawn({
         let client = client.clone();
@@ -659,12 +686,71 @@ async fn pairing_requires_desktop_approval_and_rotates_mobile_token() {
         mobile_auth_json.get("role").and_then(Value::as_str),
         Some("mobile")
     );
+    assert_eq!(
+        mobile_auth_json
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
 
     let next_token = mobile_auth_json
         .get("nextDeviceSessionToken")
         .and_then(Value::as_str)
         .expect("rotated token");
     assert_ne!(next_token, "");
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn mobile_receives_desktop_offline_status_and_command_rejection() {
+    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+        pair_connected_mobile(|_| {}).await;
+
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop websocket close");
+
+    let desktop_status = next_matching_json_message(&mut mobile_socket, 1_500, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.desktop_status")
+    })
+    .await;
+    assert_eq!(
+        desktop_status
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(false)
+    );
+
+    mobile_socket
+        .send(Message::Text(
+            json!({
+                "schemaVersion": 1,
+                "sessionID": session_id,
+                "seq": 11,
+                "payload": {
+                    "type": "command",
+                    "payload": {
+                        "name": "thread.select",
+                        "threadID": "thread-offline"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send command while desktop offline");
+
+    let relay_error = next_matching_json_message(&mut mobile_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.error")
+    })
+    .await;
+    assert_eq!(
+        relay_error.get("error").and_then(Value::as_str),
+        Some("desktop_offline")
+    );
 
     task.abort();
 }
@@ -1304,16 +1390,17 @@ async fn snapshot_request_accepts_numeric_string_last_seq_for_backward_compatibi
         .expect("forwarded frame")
         .expect("forwarded message");
     let forwarded_json: Value =
-        serde_json::from_str(forwarded.to_text().expect("forwarded text"))
-            .expect("forwarded json");
+        serde_json::from_str(forwarded.to_text().expect("forwarded text")).expect("forwarded json");
     assert_eq!(
         forwarded_json.get("type").and_then(Value::as_str),
         Some("relay.snapshot_request")
     );
 
-    let relay_error =
-        tokio::time::timeout(Duration::from_millis(250), mobile_socket.next()).await;
-    assert!(relay_error.is_err(), "mobile unexpectedly received relay.error");
+    let relay_error = tokio::time::timeout(Duration::from_millis(250), mobile_socket.next()).await;
+    assert!(
+        relay_error.is_err(),
+        "mobile unexpectedly received relay.error"
+    );
 
     task.abort();
 }
@@ -1748,6 +1835,10 @@ async fn redis_persistence_restores_session_after_restart_when_configured() {
     assert_eq!(
         auth_json.get("role").and_then(Value::as_str),
         Some("desktop")
+    );
+    assert_eq!(
+        auth_json.get("desktopConnected").and_then(Value::as_bool),
+        Some(true)
     );
     assert_eq!(
         auth_json.get("sessionID").and_then(Value::as_str),

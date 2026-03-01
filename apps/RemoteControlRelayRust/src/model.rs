@@ -219,6 +219,8 @@ pub struct RelayAuthOk {
     pub next_device_session_token: Option<String>,
     #[serde(rename = "connectedDeviceCount")]
     pub connected_device_count: usize,
+    #[serde(rename = "desktopConnected")]
+    pub desktop_connected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -259,4 +261,14 @@ pub struct RelayDeviceCount {
     pub session_id: String,
     #[serde(rename = "connectedDeviceCount")]
     pub connected_device_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RelayDesktopStatus {
+    #[serde(rename = "type")]
+    pub message_type: String,
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "desktopConnected")]
+    pub desktop_connected: bool,
 }

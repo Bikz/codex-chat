@@ -28,8 +28,8 @@ use crate::model::{
     DeviceRevokeRequest, DeviceRevokeResponse, DeviceSummary, DevicesListRequest,
     DevicesListResponse, ErrorResponse, HealthResponse, PairJoinRequest, PairJoinResponse,
     PairRefreshRequest, PairRefreshResponse, PairStartRequest, PairStartResponse, PairStopRequest,
-    PairStopResponse, RelayAuthMessage, RelayAuthOk, RelayDeviceCount, RelayMetricsResponse,
-    RelayPairDecision, RelayPairRequest, RelayPairResult,
+    PairStopResponse, RelayAuthMessage, RelayAuthOk, RelayDesktopStatus, RelayDeviceCount,
+    RelayMetricsResponse, RelayPairDecision, RelayPairRequest, RelayPairResult,
 };
 
 #[derive(Clone)]
@@ -72,6 +72,7 @@ struct SessionRecord {
     created_at_ms: i64,
     last_activity_at_ms: i64,
     desktop_socket: Option<SocketHandle>,
+    desktop_connected: bool,
     mobile_sockets: HashMap<String, SocketHandle>,
     devices: HashMap<String, DeviceRecord>,
     command_rate_buckets: HashMap<String, RateBucket>,
@@ -158,6 +159,8 @@ struct PersistedSessionRecord {
     idle_timeout_seconds: u64,
     created_at_ms: i64,
     last_activity_at_ms: i64,
+    #[serde(default)]
+    desktop_connected: bool,
     devices: HashMap<String, DeviceRecord>,
 }
 
@@ -184,6 +187,7 @@ impl PersistedSessionRecord {
             idle_timeout_seconds: session.idle_timeout_seconds,
             created_at_ms: session.created_at_ms,
             last_activity_at_ms: session.last_activity_at_ms,
+            desktop_connected: desktop_connected(session),
             devices: session.devices.clone(),
         }
     }
@@ -203,6 +207,7 @@ impl PersistedSessionRecord {
             created_at_ms: self.created_at_ms,
             last_activity_at_ms: self.last_activity_at_ms,
             desktop_socket: None,
+            desktop_connected: self.desktop_connected,
             mobile_sockets: HashMap::new(),
             devices: self.devices,
             command_rate_buckets: HashMap::new(),
@@ -688,6 +693,17 @@ async fn handle_session_envelope(
                 }
             }
             "mobile" => {
+                if let Some(desktop_connected) = serde_json::from_str::<Value>(&envelope.payload)
+                    .ok()
+                    .and_then(|value| {
+                        (value.get("type").and_then(Value::as_str) == Some("relay.desktop_status"))
+                            .then(|| value.get("desktopConnected").and_then(Value::as_bool))
+                            .flatten()
+                    })
+                {
+                    session.desktop_connected = desktop_connected;
+                }
+
                 if let Some(target_device_id) = envelope.target_device_id.as_deref() {
                     close_existing_mobile_socket_for_device(
                         session,
@@ -939,17 +955,22 @@ async fn sweep_sessions(state: &SharedRelayState) {
 
     let mut close_ids = Vec::new();
     for (session_id, session) in &relay.sessions {
+        let has_connected_sockets =
+            session.desktop_socket.is_some() || !session.mobile_sockets.is_empty();
+        let has_trusted_devices = !session.devices.is_empty();
         let idle_limit_ms = session.idle_timeout_seconds.max(60) as i64 * 1_000;
-        if now - session.last_activity_at_ms >= idle_limit_ms {
+        if !has_connected_sockets
+            && !has_trusted_devices
+            && now - session.last_activity_at_ms >= idle_limit_ms
+        {
             close_ids.push((session_id.clone(), "idle_timeout".to_string()));
             continue;
         }
 
         let is_past_retention =
             now - session.created_at_ms >= state.config.session_retention_ms as i64;
-        let has_no_connections =
-            session.desktop_socket.is_none() && session.mobile_sockets.is_empty();
-        if is_past_retention && has_no_connections {
+        let has_no_connections = !has_connected_sockets;
+        if is_past_retention && has_no_connections && !has_trusted_devices {
             close_ids.push((session_id.clone(), "retention_expired".to_string()));
         }
     }
@@ -1238,6 +1259,7 @@ async fn pair_start(
             created_at_ms: now_ms(),
             last_activity_at_ms: now_ms(),
             desktop_socket: None,
+            desktop_connected: false,
             mobile_sockets: HashMap::new(),
             devices: HashMap::new(),
             command_rate_buckets: HashMap::new(),
@@ -2158,11 +2180,13 @@ async fn handle_socket(
                     }
                     Ok(Message::Pong(_)) => {
                         last_heartbeat_at_ms = now_ms();
+                        touch_session_activity(&state, auth.session_id()).await;
                         continue;
                     }
                     Ok(Message::Ping(payload)) => {
                         last_heartbeat_at_ms = now_ms();
                         let _ = try_send_message(&tx, Message::Pong(payload));
+                        touch_session_activity(&state, auth.session_id()).await;
                         continue;
                     }
                     Ok(Message::Close(_)) | Err(_) => break,
@@ -2252,6 +2276,23 @@ async fn handle_socket(
                             device_id,
                             connection_id,
                         } => {
+                            let is_command_or_snapshot = parsed.as_ref().is_some_and(|payload| {
+                                payload
+                                    .pointer("/payload/type")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|value| value == "command")
+                                    || payload.get("type").and_then(Value::as_str)
+                                        == Some("relay.snapshot_request")
+                            });
+                            if is_command_or_snapshot && !desktop_connected(session) {
+                                send_relay_error(
+                                    &tx,
+                                    "desktop_offline",
+                                    "Mac is offline. Reconnect desktop and try again.",
+                                );
+                                continue;
+                            }
+
                             match validate_mobile_payload(
                                 session,
                                 parsed.as_ref(),
@@ -2959,37 +3000,60 @@ async fn authenticate_socket(
 
     match auth_context {
         AuthContext::Desktop { session_id } => {
-            let Some(session) = relay.sessions.get_mut(&session_id) else {
-                warn!("[relay-rs] ws_auth_failure reason=desktop_session_missing");
-                return None;
-            };
-            session.last_activity_at_ms = now_ms();
+            let (
+                auth_payload,
+                desktop_status_event,
+                desktop_status_send_failures,
+                desktop_status_slow_consumer_disconnects,
+            ) = {
+                let Some(session) = relay.sessions.get_mut(&session_id) else {
+                    warn!("[relay-rs] ws_auth_failure reason=desktop_session_missing");
+                    return None;
+                };
+                session.last_activity_at_ms = now_ms();
 
-            if let Some(existing) = session.desktop_socket.take() {
-                request_socket_disconnect(&existing, "desktop_reconnected");
-            }
+                if let Some(existing) = session.desktop_socket.take() {
+                    request_socket_disconnect(&existing, "desktop_reconnected");
+                }
 
-            session.desktop_socket = Some(SocketHandle {
-                tx: tx.clone(),
-                shutdown: shutdown_tx.clone(),
-                device_id: None,
-            });
+                session.desktop_socket = Some(SocketHandle {
+                    tx: tx.clone(),
+                    shutdown: shutdown_tx.clone(),
+                    device_id: None,
+                });
+                session.desktop_connected = true;
 
-            let payload = RelayAuthOk {
-                message_type: "auth_ok".to_string(),
-                role: "desktop".to_string(),
-                session_id: session_id.clone(),
-                device_id: None,
-                next_device_session_token: None,
-                connected_device_count: session.mobile_sockets.len(),
+                let payload = RelayAuthOk {
+                    message_type: "auth_ok".to_string(),
+                    role: "desktop".to_string(),
+                    session_id: session_id.clone(),
+                    device_id: None,
+                    next_device_session_token: None,
+                    connected_device_count: session.mobile_sockets.len(),
+                    desktop_connected: desktop_connected(session),
+                };
+                let (desktop_status_event, send_failures, slow_consumer_disconnects) =
+                    send_desktop_status(session);
+                (
+                    payload,
+                    desktop_status_event,
+                    send_failures,
+                    slow_consumer_disconnects,
+                )
             };
             if !try_send_payload(
                 tx,
-                serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
+                serde_json::to_string(&auth_payload).unwrap_or_else(|_| "{}".to_string()),
             ) {
                 relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
                 return None;
             }
+            relay.outbound_send_failures = relay
+                .outbound_send_failures
+                .saturating_add(desktop_status_send_failures);
+            relay.slow_consumer_disconnects = relay
+                .slow_consumer_disconnects
+                .saturating_add(desktop_status_slow_consumer_disconnects);
             relay.ws_auth_successes = relay.ws_auth_successes.saturating_add(1);
 
             info!(
@@ -2997,6 +3061,14 @@ async fn authenticate_socket(
                 session_log_id(&session_id)
             );
             drop(relay);
+            publish_cross_instance_session(
+                state,
+                &session_id,
+                "mobile",
+                None,
+                desktop_status_event,
+            );
+            persist_session_if_needed(state, &session_id).await;
             sync_session_bus_subscription(state, &session_id).await;
             Some(AuthenticatedSocket {
                 session_id,
@@ -3016,7 +3088,7 @@ async fn authenticate_socket(
             let now = now_ms();
             let next_token = random_token(32);
 
-            let (old_token, connected_device_count, device_count_event) = {
+            let (old_token, connected_device_count, device_count_event, desktop_connected) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
                     warn!("[relay-rs] ws_auth_failure reason=mobile_session_missing");
                     return None;
@@ -3058,6 +3130,7 @@ async fn authenticate_socket(
                     old_token,
                     connected_device_count,
                     device_count_payload(session),
+                    desktop_connected(session),
                 )
             };
 
@@ -3090,6 +3163,7 @@ async fn authenticate_socket(
                 device_id: Some(device_id.clone()),
                 next_device_session_token: Some(next_token),
                 connected_device_count,
+                desktop_connected,
             };
             if !try_send_payload(
                 tx,
@@ -3156,16 +3230,25 @@ async fn disconnect_socket(state: &SharedRelayState, auth: &AuthenticatedSocket)
 
     session.last_activity_at_ms = now_ms();
     let mut device_count_event: Option<String> = None;
+    let mut desktop_status_event: Option<String> = None;
+    let mut outbound_send_failures = 0_u64;
+    let mut slow_consumer_disconnects = 0_u64;
 
     match &auth.auth {
         SocketAuth::Desktop => {
             session.desktop_socket = None;
+            session.desktop_connected = false;
             if let Some(pending) = session.pending_join_request.take() {
                 let _ = pending.decision_tx.send(JoinDecision {
                     approved: false,
                     reason: "desktop_disconnected".to_string(),
                 });
             }
+            let (event, send_failures, consumer_disconnects) = send_desktop_status(session);
+            desktop_status_event = Some(event);
+            outbound_send_failures = outbound_send_failures.saturating_add(send_failures);
+            slow_consumer_disconnects =
+                slow_consumer_disconnects.saturating_add(consumer_disconnects);
             info!(
                 "[relay-rs] desktop_disconnected session={}",
                 session_log_id(auth.session_id())
@@ -3188,11 +3271,21 @@ async fn disconnect_socket(state: &SharedRelayState, auth: &AuthenticatedSocket)
             );
         }
     }
+    relay.outbound_send_failures = relay
+        .outbound_send_failures
+        .saturating_add(outbound_send_failures);
+    relay.slow_consumer_disconnects = relay
+        .slow_consumer_disconnects
+        .saturating_add(slow_consumer_disconnects);
 
     drop(relay);
 
     if let Some(event) = device_count_event {
         publish_cross_instance_session(state, auth.session_id(), "desktop", None, event);
+    }
+    if let Some(event) = desktop_status_event {
+        publish_cross_instance_session(state, auth.session_id(), "mobile", None, event);
+        persist_session_if_needed(state, auth.session_id()).await;
     }
     sync_session_bus_subscription(state, auth.session_id()).await;
 }
@@ -3214,6 +3307,35 @@ fn close_existing_mobile_socket_for_device(
             request_socket_disconnect(&handle, reason);
         }
     }
+}
+
+fn desktop_connected(session: &SessionRecord) -> bool {
+    session.desktop_connected || session.desktop_socket.is_some()
+}
+
+fn desktop_status_payload(session: &SessionRecord) -> String {
+    let payload = RelayDesktopStatus {
+        message_type: "relay.desktop_status".to_string(),
+        session_id: session.session_id.clone(),
+        desktop_connected: desktop_connected(session),
+    };
+    serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
+}
+
+fn send_desktop_status(session: &SessionRecord) -> (String, u64, u64) {
+    let payload = desktop_status_payload(session);
+    let mut outbound_send_failures = 0_u64;
+    let mut slow_consumer_disconnects = 0_u64;
+
+    for mobile in session.mobile_sockets.values() {
+        if !try_send_payload(&mobile.tx, payload.clone()) {
+            outbound_send_failures = outbound_send_failures.saturating_add(1);
+            slow_consumer_disconnects = slow_consumer_disconnects.saturating_add(1);
+            request_socket_disconnect(mobile, "slow_consumer");
+        }
+    }
+
+    (payload, outbound_send_failures, slow_consumer_disconnects)
 }
 
 fn send_device_count(session: &SessionRecord) {
@@ -3242,6 +3364,13 @@ fn origin_allowed(config: &RelayConfig, headers: &HeaderMap) -> bool {
         return true;
     }
     is_allowed_origin(&config.allowed_origins, origin)
+}
+
+async fn touch_session_activity(state: &SharedRelayState, session_id: &str) {
+    let mut relay = state.inner.lock().await;
+    if let Some(session) = relay.sessions.get_mut(session_id) {
+        session.last_activity_at_ms = now_ms();
+    }
 }
 
 async fn is_rate_limited(state: &SharedRelayState, ip: &str) -> bool {
@@ -3485,6 +3614,7 @@ mod tests {
             created_at_ms: now_ms(),
             last_activity_at_ms: now_ms(),
             desktop_socket: None,
+            desktop_connected: false,
             mobile_sockets: HashMap::new(),
             devices: HashMap::from([(
                 device_id.to_string(),
@@ -3519,6 +3649,7 @@ mod tests {
                 created_at_ms: 100,
                 last_activity_at_ms: 200,
                 desktop_socket: None,
+                desktop_connected: false,
                 mobile_sockets: HashMap::new(),
                 devices: HashMap::from([(
                     "device-1".to_string(),
