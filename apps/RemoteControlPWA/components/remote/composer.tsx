@@ -14,14 +14,16 @@ export function Composer() {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState('');
 
-  const { selectedThreadID, isComposerDispatching } = useRemoteStore(
+  const { selectedThreadID, isComposerDispatching, isAuthenticated, desktopConnected } = useRemoteStore(
     useShallow((state) => ({
       selectedThreadID: state.selectedThreadID,
-      isComposerDispatching: state.isComposerDispatching
+      isComposerDispatching: state.isComposerDispatching,
+      isAuthenticated: state.isAuthenticated,
+      desktopConnected: state.desktopConnected
     }))
   );
-
-  const canSend = value.trim().length > 0 && Boolean(selectedThreadID) && !isComposerDispatching;
+  const isDesktopOffline = isAuthenticated && desktopConnected === false;
+  const canSend = value.trim().length > 0 && Boolean(selectedThreadID) && !isComposerDispatching && !isDesktopOffline;
 
   const syncTextAreaHeight = () => {
     const textArea = textAreaRef.current;
@@ -42,7 +44,7 @@ export function Composer() {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = value.trim();
-    if (!text || !selectedThreadID || isComposerDispatching) {
+    if (!text || !selectedThreadID || isComposerDispatching || isDesktopOffline) {
       return;
     }
 
@@ -108,7 +110,16 @@ export function Composer() {
           )}
         </button>
       </div>
-      <p className="composer-hint">Enter for newline. Cmd/Ctrl+Enter sends.</p>
+      <div className="composer-meta">
+        <p className="composer-hint">
+          {isDesktopOffline ? 'Mac offline. Reconnect desktop to send commands.' : 'Enter for newline. Cmd/Ctrl+Enter sends.'}
+        </p>
+        {isDesktopOffline ? (
+          <button id="composerReconnectButton" type="button" className="ghost" onClick={() => client.reconnect()}>
+            Try reconnect
+          </button>
+        ) : null}
+      </div>
     </form>
   );
 }

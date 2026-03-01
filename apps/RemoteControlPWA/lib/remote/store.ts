@@ -19,6 +19,7 @@ export interface RemoteStoreState {
   wsURL: string | null;
   socket: WebSocket | null;
   isAuthenticated: boolean;
+  desktopConnected: boolean | null;
   arrivedFromQRCode: boolean;
   reconnectAttempts: number;
   reconnectTimer: number | null;
@@ -79,6 +80,7 @@ export function createInitialState(): RemoteStoreState {
     wsURL: null,
     socket: null,
     isAuthenticated: false,
+    desktopConnected: null,
     arrivedFromQRCode: false,
     reconnectAttempts: 0,
     reconnectTimer: null,

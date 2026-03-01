@@ -19,6 +19,7 @@ export function AccountSheet() {
     statusLevel,
     connectionStatusText,
     isAuthenticated,
+    desktopConnected,
     isSyncStale,
     lastSyncedAt,
     showAllSystemMessages
@@ -34,6 +35,7 @@ export function AccountSheet() {
       statusLevel: state.statusLevel,
       connectionStatusText: state.connectionStatusText,
       isAuthenticated: state.isAuthenticated,
+      desktopConnected: state.desktopConnected,
       isSyncStale: state.isSyncStale,
       lastSyncedAt: state.lastSyncedAt,
       showAllSystemMessages: state.showAllSystemMessages
@@ -87,6 +89,10 @@ export function AccountSheet() {
             <dd id="seqValue">{typeof lastIncomingSeq === 'number' ? String(lastIncomingSeq) : '-'}</dd>
             <dt>Last synced</dt>
             <dd id="lastSyncedValue">{lastSyncedLabel}</dd>
+            <dt>Mac</dt>
+            <dd id="desktopStatusValue">
+              {isAuthenticated ? (desktopConnected === false ? 'Offline' : 'Online') : '-'}
+            </dd>
           </dl>
 
           <div className="actions">

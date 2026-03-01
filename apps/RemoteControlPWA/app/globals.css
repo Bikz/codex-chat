@@ -241,6 +241,12 @@ textarea:focus-visible,
   border-color: var(--warning);
 }
 
+.badge.offline {
+  color: var(--warning);
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface-alt));
+}
+
 .app-main {
   max-width: 760px;
   width: 100%;
@@ -261,6 +267,27 @@ textarea:focus-visible,
   gap: 0.75rem;
   min-width: 0;
   max-width: 100%;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  padding: 0.55rem 0.65rem;
+}
+
+.status-banner p {
+  margin: 0;
+  color: var(--warning);
+  font-size: 0.8rem;
+}
+
+.status-banner button {
+  white-space: nowrap;
 }
 
 .chat-view {
@@ -896,6 +923,17 @@ textarea:focus-visible,
 .composer-hint {
   color: var(--muted);
   font-size: 0.74rem;
+}
+
+.composer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.composer-meta > * {
+  min-width: 0;
 }
 
 .sheet-backdrop {

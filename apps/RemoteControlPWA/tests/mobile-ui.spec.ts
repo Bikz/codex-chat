@@ -463,6 +463,49 @@ test("mobile-event-injection-updates-transcript-immediately", async ({ page }) =
   expect(elapsed).toBeLessThan(350);
 });
 
+test("mobile-mac-offline-state-disables-composer-send", async ({ page }) => {
+  await seedCustom(page, snapshotPayload);
+  await page.getByRole("button", { name: "Open chat Daily sync" }).click();
+
+  await injectEnvelope(page, {
+    type: "relay.desktop_status",
+    sessionID: "e2e-session",
+    desktopConnected: false
+  });
+
+  await expect(page.locator("#connectionBadge")).toContainText("Mac offline");
+  await expect(page.locator("#desktopOfflineBanner")).toBeVisible();
+  await expect(page.locator("#composerReconnectButton")).toBeVisible();
+
+  await page.locator("#composerInput").fill("offline attempt");
+  await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
+  await page.evaluate(() => {
+    const form = document.querySelector<HTMLFormElement>("#composerForm");
+    form?.requestSubmit();
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().queuedCommandsCount)).toBe(0);
+});
+
+test("mobile-mac-reconnect-event-clears-offline-indicator", async ({ page }) => {
+  await seedCustom(page, snapshotPayload);
+  await page.getByRole("button", { name: "Open chat Daily sync" }).click();
+
+  await injectEnvelope(page, {
+    type: "relay.desktop_status",
+    sessionID: "e2e-session",
+    desktopConnected: false
+  });
+  await expect(page.locator("#desktopOfflineBanner")).toBeVisible();
+
+  await injectEnvelope(page, {
+    type: "relay.desktop_status",
+    sessionID: "e2e-session",
+    desktopConnected: true
+  });
+  await expect(page.locator("#desktopOfflineBanner")).toBeHidden();
+  await expect(page.locator("#connectionBadge")).toContainText("Connected");
+});
+
 test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
   await seedCustom(page, {
     projects: [{ id: "p1", name: "General" }],

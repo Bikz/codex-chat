@@ -16,6 +16,7 @@ declare global {
       setStandaloneMode: (enabled: boolean) => void;
       setApprovalsExpanded: (expanded: boolean) => void;
       setChatDetached: (detached: boolean) => void;
+      setDesktopConnected: (connected: boolean | null) => void;
       importJoinLink: (raw: string) => boolean;
       injectMessage: (message: Record<string, unknown>) => void;
       resetStorage: () => void;
@@ -29,6 +30,7 @@ declare global {
         showJumpToLatest: boolean;
         queuedCommandsCount: number;
         joinToken: string | null;
+        desktopConnected: boolean | null;
       };
     };
   }
@@ -41,6 +43,7 @@ export function exposeE2EHarness() {
       if (options.authenticated !== false) {
         remoteStoreApi.setState((state) => ({
           isAuthenticated: true,
+          desktopConnected: true,
           sessionID: state.sessionID || 'e2e-session'
         }));
       }
@@ -77,6 +80,9 @@ export function exposeE2EHarness() {
         userDetachedFromBottomAt: detached ? Date.now() : null
       });
     },
+    setDesktopConnected(connected: boolean | null) {
+      remoteStoreApi.setState({ desktopConnected: connected });
+    },
     importJoinLink(raw: string) {
       return client.importJoinLink(raw);
     },
@@ -100,7 +106,8 @@ export function exposeE2EHarness() {
         isChatAtBottom: state.isChatAtBottom,
         showJumpToLatest: state.showJumpToLatest,
         queuedCommandsCount: state.queuedCommands.length,
-        joinToken: state.joinToken
+        joinToken: state.joinToken,
+        desktopConnected: state.desktopConnected
       };
     }
   };

@@ -19,9 +19,10 @@ export function RemoteControlApp() {
   useVisualViewportSync();
   useThemeColorMeta();
 
-  const { isAuthenticated, isSyncStale, currentView, selectedThreadID } = useRemoteStore(
+  const { isAuthenticated, desktopConnected, isSyncStale, currentView, selectedThreadID } = useRemoteStore(
     useShallow((state) => ({
       isAuthenticated: state.isAuthenticated,
+      desktopConnected: state.desktopConnected,
       isSyncStale: state.isSyncStale,
       currentView: state.currentView,
       selectedThreadID: state.selectedThreadID
@@ -35,7 +36,8 @@ export function RemoteControlApp() {
   }, [client]);
 
   const showConnected = isAuthenticated;
-  const badgeText = showConnected ? (isSyncStale ? 'Stale' : 'Connected') : 'Disconnected';
+  const isDesktopOffline = isAuthenticated && desktopConnected === false;
+  const badgeText = showConnected ? (isDesktopOffline ? 'Mac offline' : isSyncStale ? 'Stale' : 'Connected') : 'Disconnected';
   const showChatView = currentView === 'thread' && Boolean(selectedThreadID);
 
   return (
@@ -52,7 +54,10 @@ export function RemoteControlApp() {
           aria-label="Open account and connection controls"
           onClick={() => client.openAccountSheet()}
         >
-          <span id="connectionBadge" className={`badge ${showConnected ? 'connected' : ''} ${showConnected && isSyncStale ? 'stale' : ''}`}>
+          <span
+            id="connectionBadge"
+            className={`badge ${showConnected ? 'connected' : ''} ${showConnected && isSyncStale ? 'stale' : ''} ${isDesktopOffline ? 'offline' : ''}`}
+          >
             {badgeText}
           </span>
         </button>
@@ -62,6 +67,12 @@ export function RemoteControlApp() {
         <PreconnectCard />
 
         <section id="workspacePanel" className="workspace" hidden={!isAuthenticated}>
+          <section id="desktopOfflineBanner" className="status-banner" hidden={!isDesktopOffline}>
+            <p>Mac offline. Commands are paused until desktop reconnects.</p>
+            <button id="desktopOfflineReconnectButton" type="button" onClick={() => client.reconnect()}>
+              Try reconnect
+            </button>
+          </section>
           <HomeView hidden={showChatView} />
           <ChatView hidden={!showChatView} />
         </section>

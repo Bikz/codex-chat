@@ -257,6 +257,7 @@ class RemoteClient {
       deviceSessionToken: parsed?.deviceSessionToken as string,
       wsURL: parsed?.wsURL as string,
       deviceID: typeof parsed?.deviceID === 'string' && parsed.deviceID.length > 0 ? parsed.deviceID : null,
+      desktopConnected: null,
       relayBaseURL:
         typeof parsed?.relayBaseURL === 'string' && parsed.relayBaseURL.length > 0
           ? this.normalizeRelayBaseURL(parsed.relayBaseURL)
@@ -381,6 +382,7 @@ class RemoteClient {
             deviceSessionToken: null,
             wsURL: null,
             deviceID: null,
+            desktopConnected: null,
             isAuthenticated: false,
             queuedCommands: [],
             queuedCommandsBytes: 0,
@@ -1018,10 +1020,13 @@ class RemoteClient {
       const payload = message as {
         nextDeviceSessionToken?: string;
         deviceID?: string;
+        desktopConnected?: boolean;
       };
       remoteStoreApi.setState((state) => ({
         ...state,
         isAuthenticated: true,
+        desktopConnected:
+          typeof payload.desktopConnected === 'boolean' ? payload.desktopConnected : state.desktopConnected,
         reconnectDisabledReason: null,
         deviceSessionToken:
           typeof payload.nextDeviceSessionToken === 'string' && payload.nextDeviceSessionToken.length > 0
@@ -1034,9 +1039,13 @@ class RemoteClient {
       this.updateWorkspaceVisibility();
       this.markSynced();
       this.persistPairedDeviceState();
-      this.setStatus('WebSocket authenticated.');
-      this.flushQueuedCommands();
       const state = remoteStoreApi.getState();
+      if (state.desktopConnected === false) {
+        this.setStatus('Connected to relay. Mac offline. Waiting for desktop reconnect...', 'warn');
+      } else {
+        this.setStatus('WebSocket authenticated.');
+      }
+      this.flushQueuedCommands();
       this.requestSnapshot(state.pendingSnapshotReason || 'initial_sync');
       return;
     }
@@ -1049,6 +1058,7 @@ class RemoteClient {
         return {
           ...state,
           isAuthenticated: false,
+          desktopConnected: null,
           reconnectDisabledReason: shouldDisable ? reason : state.reconnectDisabledReason,
           deviceSessionToken: shouldDisable ? null : state.deviceSessionToken,
           wsURL: shouldDisable ? null : state.wsURL,
@@ -1073,6 +1083,11 @@ class RemoteClient {
       const errorCode = typeof message.error === 'string' ? message.error : 'relay_error';
       const errorMessage = typeof message.message === 'string' ? message.message : 'Relay rejected the latest request.';
 
+      if (errorCode === 'desktop_offline') {
+        remoteStoreApi.setState({ desktopConnected: false });
+        this.setStatus('Mac is offline. Reconnect desktop and try again.', 'warn');
+        return;
+      }
       if (errorCode === 'command_rate_limited') {
         this.setStatus('Too many commands too quickly. Wait a moment and try again.', 'warn');
         return;
@@ -1088,6 +1103,24 @@ class RemoteClient {
       }
 
       this.setStatus(errorMessage, 'warn');
+      return;
+    }
+
+    if (message.type === 'relay.desktop_status') {
+      const state = remoteStoreApi.getState();
+      if (typeof message.sessionID === 'string' && state.sessionID && message.sessionID !== state.sessionID) {
+        return;
+      }
+
+      const isDesktopConnected = message.desktopConnected === true;
+      const wasDesktopConnected = state.desktopConnected;
+      remoteStoreApi.setState({ desktopConnected: isDesktopConnected });
+
+      if (!isDesktopConnected) {
+        this.setStatus('Mac offline. Commands are paused until desktop reconnects.', 'warn');
+      } else if (wasDesktopConnected === false) {
+        this.setStatus('Mac reconnected. Live control resumed.');
+      }
       return;
     }
 
@@ -1268,7 +1301,7 @@ class RemoteClient {
     this.clearReconnectTimer();
 
     const state = remoteStoreApi.getState();
-    remoteStoreApi.setState({ isAuthenticated: false });
+    remoteStoreApi.setState({ isAuthenticated: false, desktopConnected: null });
     if (state.socket) {
       state.socket.onopen = null;
       state.socket.onclose = null;
@@ -1315,6 +1348,7 @@ class RemoteClient {
       const latest = remoteStoreApi.getState();
       remoteStoreApi.setState({
         isAuthenticated: false,
+        desktopConnected: null,
         isSyncStale: false
       });
 
@@ -1426,6 +1460,10 @@ class RemoteClient {
     if (!state.sessionID) {
       return false;
     }
+    if (state.isAuthenticated && state.desktopConnected === false) {
+      this.setStatus('Mac is offline. Reconnect desktop and try again.', 'warn');
+      return false;
+    }
 
     const commandSeq = state.nextOutgoingSeq;
     const commandID = `cmd-${commandSeq}`;
@@ -1501,6 +1539,10 @@ class RemoteClient {
   requestSnapshot(reason: string) {
     const state = remoteStoreApi.getState();
     if (!state.sessionID) {
+      return;
+    }
+    if (state.isAuthenticated && state.desktopConnected === false) {
+      this.setStatus('Mac is offline. Snapshot sync resumes after desktop reconnects.', 'warn');
       return;
     }
 
@@ -1586,6 +1628,7 @@ class RemoteClient {
         ...current,
         deviceSessionToken: payload.deviceSessionToken as string,
         deviceID: (payload.deviceID as string) || current.deviceID,
+        desktopConnected: null,
         wsURL: payload.wsURL as string,
         sessionID: payload.sessionID as string,
         isAuthenticated: false,
@@ -1622,6 +1665,7 @@ class RemoteClient {
       deviceSessionToken: null,
       wsURL: null,
       deviceID: null,
+      desktopConnected: null,
       reconnectDisabledReason: null,
       pendingSnapshotReason: null,
       queuedCommands: [],
