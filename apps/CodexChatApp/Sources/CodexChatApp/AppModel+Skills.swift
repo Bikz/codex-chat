@@ -456,7 +456,11 @@ extension AppModel {
                     candidate.skill = skill
                 }
 
-                if skill.scope == .global {
+                let isSharedStoreSkill = CodexChatStoragePaths.isPath(
+                    resolvedPath,
+                    insideRoot: storagePaths.sharedSkillsStoreURL.path
+                )
+                if skill.scope == .global, !isSharedStoreSkill {
                     candidate.discoveredGlobally = true
                 }
                 if skill.scope == .project, let projectID {
