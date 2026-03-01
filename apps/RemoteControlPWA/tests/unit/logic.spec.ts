@@ -60,6 +60,9 @@ describe('remote client lifecycle', () => {
     vi.useFakeTimers();
     remoteStoreApi.setState(createInitialState());
     (globalThis as { WebSocket: typeof WebSocket }).WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.clear();
+    }
   });
 
   afterEach(() => {
@@ -68,6 +71,9 @@ describe('remote client lifecycle', () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
     (globalThis as { WebSocket: typeof WebSocket }).WebSocket = OriginalWebSocket;
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.clear();
+    }
   });
 
   it('does not fire a scheduled reconnect after resetForE2E teardown', () => {
@@ -125,5 +131,35 @@ describe('remote client lifecycle', () => {
     expect(nextState.nextOutgoingSeq).toBe(1);
     expect(nextState.queuedCommands).toHaveLength(0);
     expect(nextState.queuedCommandsBytes).toBe(0);
+  });
+
+  it('persists rotated device token on auth_ok for durable reconnect', () => {
+    remoteStoreApi.setState({
+      sessionID: 'session-1',
+      deviceID: 'device-1',
+      deviceName: 'Test iPhone',
+      relayBaseURL: 'https://relay.example',
+      wsURL: 'wss://relay.example/ws',
+      deviceSessionToken: 'token-old'
+    });
+
+    const client = getRemoteClient();
+    client.ingestServerMessageForTesting({
+      type: 'auth_ok',
+      role: 'mobile',
+      sessionID: 'session-1',
+      deviceID: 'device-1',
+      nextDeviceSessionToken: 'token-new',
+      desktopConnected: false
+    });
+
+    const nextState = remoteStoreApi.getState();
+    expect(nextState.deviceSessionToken).toBe('token-new');
+    expect(nextState.desktopConnected).toBe(false);
+
+    const raw = window.localStorage.getItem('codexchat.remote.pairedDevice.v1');
+    expect(raw).not.toBeNull();
+    const persisted = JSON.parse(raw || '{}') as { deviceSessionToken?: string };
+    expect(persisted.deviceSessionToken).toBe('token-new');
   });
 });
