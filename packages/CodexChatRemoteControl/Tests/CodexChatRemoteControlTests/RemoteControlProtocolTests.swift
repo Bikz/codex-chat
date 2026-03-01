@@ -11,6 +11,7 @@ final class RemoteControlProtocolTests: XCTestCase {
             payload: .command(
                 RemoteControlCommandPayload(
                     name: .threadSendMessage,
+                    commandID: "cmd-42",
                     threadID: "thread-1",
                     projectID: "project-1",
                     text: "Run tests"
@@ -112,5 +113,28 @@ final class RemoteControlProtocolTests: XCTestCase {
         XCTAssertNil(payload.messageID)
         XCTAssertNil(payload.role)
         XCTAssertNil(payload.createdAt)
+    }
+
+    func testEnvelopeRoundTripForCommandAckPayload() throws {
+        let original = RemoteControlEnvelope(
+            sessionID: "session-1",
+            seq: 11,
+            timestamp: Date(timeIntervalSince1970: 1_700_000_320),
+            payload: .commandAck(
+                RemoteControlCommandAckPayload(
+                    commandSeq: 9,
+                    commandID: "cmd-9",
+                    commandName: .threadSendMessage,
+                    status: .accepted,
+                    reason: nil,
+                    threadID: "thread-1"
+                )
+            )
+        )
+
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(RemoteControlEnvelope.self, from: encoded)
+
+        XCTAssertEqual(decoded, original)
     }
 }

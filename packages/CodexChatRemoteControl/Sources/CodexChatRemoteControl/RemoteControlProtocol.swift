@@ -16,6 +16,11 @@ public enum RemoteControlCommandName: String, Codable, Sendable {
     case approvalRespond = "approval.respond"
 }
 
+public enum RemoteControlCommandAckStatus: String, Codable, Sendable {
+    case accepted
+    case rejected
+}
+
 public struct RemoteControlEnvelope: Codable, Sendable, Equatable {
     public var schemaVersion: Int
     public var sessionID: String
@@ -181,6 +186,7 @@ public struct RemoteControlEventPayload: Codable, Sendable, Equatable {
 
 public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
     public var name: RemoteControlCommandName
+    public var commandID: String?
     public var threadID: String?
     public var projectID: String?
     public var text: String?
@@ -189,6 +195,7 @@ public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
 
     public init(
         name: RemoteControlCommandName,
+        commandID: String? = nil,
         threadID: String? = nil,
         projectID: String? = nil,
         text: String? = nil,
@@ -196,11 +203,37 @@ public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
         approvalDecision: String? = nil
     ) {
         self.name = name
+        self.commandID = commandID
         self.threadID = threadID
         self.projectID = projectID
         self.text = text
         self.approvalRequestID = approvalRequestID
         self.approvalDecision = approvalDecision
+    }
+}
+
+public struct RemoteControlCommandAckPayload: Codable, Sendable, Equatable {
+    public var commandSeq: UInt64
+    public var commandID: String?
+    public var commandName: RemoteControlCommandName
+    public var status: RemoteControlCommandAckStatus
+    public var reason: String?
+    public var threadID: String?
+
+    public init(
+        commandSeq: UInt64,
+        commandID: String? = nil,
+        commandName: RemoteControlCommandName,
+        status: RemoteControlCommandAckStatus,
+        reason: String? = nil,
+        threadID: String? = nil
+    ) {
+        self.commandSeq = commandSeq
+        self.commandID = commandID
+        self.commandName = commandName
+        self.status = status
+        self.reason = reason
+        self.threadID = threadID
     }
 }
 
@@ -210,6 +243,7 @@ public enum RemoteControlPayload: Sendable, Equatable {
     case snapshot(RemoteControlSnapshotPayload)
     case event(RemoteControlEventPayload)
     case command(RemoteControlCommandPayload)
+    case commandAck(RemoteControlCommandAckPayload)
 }
 
 extension RemoteControlPayload: Codable {
@@ -224,6 +258,7 @@ extension RemoteControlPayload: Codable {
         case snapshot
         case event
         case command
+        case commandAck = "command_ack"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -241,6 +276,8 @@ extension RemoteControlPayload: Codable {
             self = try .event(container.decode(RemoteControlEventPayload.self, forKey: .payload))
         case .command:
             self = try .command(container.decode(RemoteControlCommandPayload.self, forKey: .payload))
+        case .commandAck:
+            self = try .commandAck(container.decode(RemoteControlCommandAckPayload.self, forKey: .payload))
         }
     }
 
@@ -262,6 +299,9 @@ extension RemoteControlPayload: Codable {
             try container.encode(payload, forKey: .payload)
         case let .command(payload):
             try container.encode(PayloadType.command, forKey: .type)
+            try container.encode(payload, forKey: .payload)
+        case let .commandAck(payload):
+            try container.encode(PayloadType.commandAck, forKey: .type)
             try container.encode(payload, forKey: .payload)
         }
     }
