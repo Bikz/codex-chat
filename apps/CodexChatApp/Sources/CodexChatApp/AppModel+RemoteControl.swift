@@ -1441,6 +1441,16 @@ extension AppModel {
         }
 
         let observedThreadID = selectedThreadID
+        guard canDispatchSelectedThreadImmediatelyForRemoteSend else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "desktop_busy",
+                threadID: observedThreadID?.uuidString
+            )
+        }
+
         let baselineMutationStamp = remoteControlTranscriptMutationStamp(for: observedThreadID)
         composerText = text
         sendMessage()

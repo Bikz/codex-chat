@@ -222,6 +222,81 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertLessThan(snapshotTimestamp.timeIntervalSince(start), 0.45)
     }
 
+    func testRemoteThreadSendCommandRejectsBusyWhenSelectedThreadAlreadyWorkingWithoutComposerMutation() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-busy-selected-thread-working")
+        let model = fixture.model
+        let thread = fixture.thread
+        let project = fixture.project
+
+        model.composerText = "preserve local draft"
+        model.activeTurnThreadIDs = [thread.id]
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .threadSendMessage,
+                commandID: "cmd-busy-selected-thread",
+                threadID: thread.id.uuidString,
+                projectID: project.id.uuidString,
+                text: "Should reject while thread is working"
+            ),
+            inboundCommandSequence: 77
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "desktop_busy")
+        XCTAssertEqual(ack.threadID, thread.id.uuidString)
+        XCTAssertEqual(model.composerText, "preserve local draft")
+        XCTAssertEqual(
+            countUserMessages(
+                in: model.transcriptStore[thread.id, default: []],
+                text: "Should reject while thread is working"
+            ),
+            0
+        )
+    }
+
+    func testRemoteThreadSendCommandRejectsBusyWhenGlobalCapacityWouldQueueWithoutComposerMutationOrQueueEnqueue() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-busy-global-capacity")
+        let model = fixture.model
+        let thread = fixture.thread
+        let project = fixture.project
+
+        model.composerText = "preserve local draft"
+        let saturatedThreadIDs = Set((0 ..< AppModel.defaultMaxConcurrentTurns).map { _ in UUID() })
+        XCTAssertFalse(saturatedThreadIDs.contains(thread.id))
+        model.activeTurnThreadIDs = saturatedThreadIDs
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .threadSendMessage,
+                commandID: "cmd-busy-global-capacity",
+                threadID: thread.id.uuidString,
+                projectID: project.id.uuidString,
+                text: "Should reject while global capacity is saturated"
+            ),
+            inboundCommandSequence: 78
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "desktop_busy")
+        XCTAssertEqual(ack.threadID, thread.id.uuidString)
+        XCTAssertEqual(model.composerText, "preserve local draft")
+        XCTAssertEqual(
+            countUserMessages(
+                in: model.transcriptStore[thread.id, default: []],
+                text: "Should reject while global capacity is saturated"
+            ),
+            0
+        )
+
+        let didQueueFollowUp = await waitUntil(timeoutSeconds: 0.35) {
+            await MainActor.run {
+                !model.followUpQueueByThreadID[thread.id, default: []].isEmpty
+            }
+        }
+        XCTAssertFalse(didQueueFollowUp, "Busy rejection should not enqueue follow-ups.")
+    }
+
     func testDuplicateCommandAcrossRelayConnectionsReplaysAckWithoutReapplying() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-dup-ack-replay")
         let model = fixture.model

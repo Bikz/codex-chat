@@ -268,6 +268,10 @@ extension AppModel {
         }
     }
 
+    var canDispatchSelectedThreadImmediatelyForRemoteSend: Bool {
+        canDispatchSelectedThreadImmediately
+    }
+
     private var composerDispatchPolicy: ComposerDispatchPolicy {
         guard canSubmitComposer else {
             return .disabled(composerDisabledReason())
