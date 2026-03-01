@@ -25,6 +25,8 @@ type ApprovalDecision = 'approve_once' | 'approve_for_session' | 'decline';
 class RemoteClient {
   private initialized = false;
 
+  private readonly commandThreadIDBySeq = new Map<number, string | null>();
+
   private refreshInterval: number | null = null;
 
   private hashChangeListener: (() => void) | null = null;
@@ -138,6 +140,7 @@ class RemoteClient {
   }
 
   resetForE2E() {
+    this.clearTrackedCommandThreadIDs();
     remoteStoreApi.setState(createInitialState());
   }
 
@@ -682,6 +685,38 @@ class RemoteClient {
     return Array.from(dedupedByID.values()).slice(-240);
   }
 
+  private rememberCommandThreadID(commandSeq: number, threadID: string | null) {
+    const normalizedThreadID = typeof threadID === 'string' && threadID.length > 0 ? threadID : null;
+    this.commandThreadIDBySeq.set(commandSeq, normalizedThreadID);
+
+    const maxTrackedCommands = 256;
+    if (this.commandThreadIDBySeq.size <= maxTrackedCommands) {
+      return;
+    }
+
+    const overflow = this.commandThreadIDBySeq.size - maxTrackedCommands;
+    const iterator = this.commandThreadIDBySeq.keys();
+    for (let index = 0; index < overflow; index += 1) {
+      const next = iterator.next();
+      if (next.done) {
+        break;
+      }
+      this.commandThreadIDBySeq.delete(next.value);
+    }
+  }
+
+  private threadIDForCommandSeq(commandSeq: number | null): string | null {
+    if (commandSeq === null) {
+      return null;
+    }
+    const trackedThreadID = this.commandThreadIDBySeq.get(commandSeq);
+    return typeof trackedThreadID === 'string' && trackedThreadID.length > 0 ? trackedThreadID : null;
+  }
+
+  private clearTrackedCommandThreadIDs() {
+    this.commandThreadIDBySeq.clear();
+  }
+
   applySnapshot(snapshot: RemoteSnapshot) {
     const state = remoteStoreApi.getState();
     const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
@@ -866,7 +901,14 @@ class RemoteClient {
     });
   }
 
-  private appendLocalSystemMessage(threadID: string, messageID: string, text: string) {
+  private appendLocalSystemMessage(
+    threadID: string,
+    messageID: string,
+    text: string,
+    options: {
+      metadata?: Record<string, unknown>;
+    } = {}
+  ) {
     if (!threadID || !messageID || !text) {
       return;
     }
@@ -882,13 +924,18 @@ class RemoteClient {
       return;
     }
 
-    bucket.push({
+    const localMessage: RemoteMessage = {
       id: messageID,
       threadID,
       role: 'system',
       text,
       createdAt: new Date().toISOString()
-    });
+    };
+    if (options.metadata && Object.keys(options.metadata).length > 0) {
+      (localMessage as RemoteMessage & { metadata?: Record<string, unknown> }).metadata = options.metadata;
+    }
+
+    bucket.push(localMessage);
 
     if (bucket.length > 240) {
       bucket.splice(0, bucket.length - 240);
@@ -1078,10 +1125,9 @@ class RemoteClient {
       const commandName = typeof ackPayload.commandName === 'string' ? ackPayload.commandName : null;
       const commandID = typeof ackPayload.commandID === 'string' ? ackPayload.commandID : null;
       const commandSeq = typeof ackPayload.commandSeq === 'number' && Number.isSafeInteger(ackPayload.commandSeq) ? ackPayload.commandSeq : null;
-      const ackThreadID =
-        typeof ackPayload.threadID === 'string' && ackPayload.threadID.length > 0
-          ? ackPayload.threadID
-          : remoteStoreApi.getState().selectedThreadID;
+      const ackThreadIDFromPayload =
+        typeof ackPayload.threadID === 'string' && ackPayload.threadID.length > 0 ? ackPayload.threadID : null;
+      const ackThreadID = ackThreadIDFromPayload || this.threadIDForCommandSeq(commandSeq) || remoteStoreApi.getState().selectedThreadID;
       if (status === 'rejected') {
         const rejectionMessage = this.commandRejectionMessage(reason, commandName);
         this.setStatus(rejectionMessage, 'warn');
@@ -1089,7 +1135,12 @@ class RemoteClient {
         if (ackThreadID) {
           const fallbackKey = commandSeq !== null ? String(commandSeq) : String(Date.now());
           const syntheticMessageID = `local-command-ack-reject-${commandID || fallbackKey}`;
-          this.appendLocalSystemMessage(ackThreadID, syntheticMessageID, rejectionMessage);
+          this.appendLocalSystemMessage(ackThreadID, syntheticMessageID, rejectionMessage, {
+            metadata: {
+              userVisible: true,
+              source: 'command_ack_rejection'
+            }
+          });
         }
       }
       return;
@@ -1339,6 +1390,7 @@ class RemoteClient {
 
     const commandSeq = state.nextOutgoingSeq;
     const commandID = `cmd-${commandSeq}`;
+    const commandThreadID = typeof options.threadID === 'string' && options.threadID.length > 0 ? options.threadID : null;
 
     const envelope = {
       schemaVersion: 1,
@@ -1350,7 +1402,7 @@ class RemoteClient {
         payload: {
           name,
           commandID,
-          threadID: options.threadID || null,
+          threadID: commandThreadID,
           projectID: options.projectID || null,
           text: options.text || null,
           approvalRequestID: options.approvalRequestID || null,
@@ -1359,6 +1411,7 @@ class RemoteClient {
       }
     };
 
+    this.rememberCommandThreadID(commandSeq, commandThreadID);
     remoteStoreApi.setState({ nextOutgoingSeq: state.nextOutgoingSeq + 1 });
 
     const latest = remoteStoreApi.getState();
@@ -1510,6 +1563,7 @@ class RemoteClient {
   }
 
   forgetRememberedDevice() {
+    this.clearTrackedCommandThreadIDs();
     this.clearPersistedPairedDeviceState();
     this.closeSocket();
 

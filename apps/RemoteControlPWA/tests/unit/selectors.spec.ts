@@ -9,6 +9,7 @@ import {
   messageIsCollapsible,
   sortedProjectsByActivity
 } from '@/lib/remote/selectors';
+import type { RemoteMessage } from '@/lib/remote/types';
 
 describe('selectors', () => {
   it('filters visible threads by selected project', () => {
@@ -92,6 +93,23 @@ describe('selectors', () => {
     ];
 
     expect(getVisibleTranscriptMessages(messages, { showAllSystemMessages: true }).map((message) => message.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('shows system messages with explicit user-visible metadata even when text looks technical', () => {
+    const messages: Array<RemoteMessage & { metadata?: { userVisible?: boolean } }> = [
+      {
+        id: 'm1',
+        threadID: 't1',
+        role: 'system',
+        text: 'Started reasoning: {}',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        metadata: { userVisible: true }
+      },
+      { id: 'm2', threadID: 't1', role: 'system', text: 'Started userMessage: {"id":"m1"}', createdAt: '2026-01-01T00:00:01.000Z' },
+      { id: 'm3', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:02.000Z' }
+    ];
+
+    expect(getVisibleTranscriptMessages(messages).map((message) => message.id)).toEqual(['m1', 'm3']);
   });
 
   it('classifies technical vs user-relevant system text', () => {

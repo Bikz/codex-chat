@@ -92,6 +92,16 @@ export function isUserRelevantSystemMessageText(rawText: string): boolean {
   return USER_RELEVANT_SYSTEM_MARKERS.test(collapsed);
 }
 
+function hasExplicitUserVisibleMetadata(message: RemoteMessage): boolean {
+  const metadataCandidate = (message as RemoteMessage & { metadata?: unknown }).metadata;
+  if (!metadataCandidate || typeof metadataCandidate !== 'object') {
+    return false;
+  }
+
+  const userVisible = (metadataCandidate as { userVisible?: unknown }).userVisible;
+  return userVisible === true;
+}
+
 export function getVisibleTranscriptMessages(
   messages: RemoteMessage[],
   options: { showAllSystemMessages?: boolean } = {}
@@ -103,6 +113,9 @@ export function getVisibleTranscriptMessages(
       return true;
     }
     if (showAllSystemMessages) {
+      return true;
+    }
+    if (hasExplicitUserVisibleMetadata(message)) {
       return true;
     }
     return isUserRelevantSystemMessageText(message.text || '');

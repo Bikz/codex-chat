@@ -420,16 +420,73 @@ test("mobile-command-ack-rejection-surfaces-status-immediately", async ({ page }
         commandID: "cmd-4",
         commandName: "thread.send_message",
         status: "rejected",
-        reason: "approval_required"
+        reason: "desktop_busy"
       }
     }
   });
 
-  await expect(transcript.getByText("Desktop is waiting for approval. Resolve approval first.")).toBeVisible({ timeout: 350 });
+  await expect(transcript.getByText("Desktop is busy and could not apply this command yet.")).toBeVisible({ timeout: 350 });
 
   await page.getByRole("button", { name: "Open account and connection controls" }).click();
   await expect(page.locator("#statusText")).toBeVisible();
-  await expect(page.locator("#statusText")).toContainText(/waiting for approval/i, { timeout: 350 });
+  await expect(page.locator("#statusText")).toContainText(/desktop is busy/i, { timeout: 350 });
+});
+
+test("mobile-command-ack-rejection-without-threadid-stays-on-origin-thread", async ({ page }) => {
+  await seedCustom(page, {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [
+      { id: "t1", projectID: "p1", title: "Origin thread", isPinned: false },
+      { id: "t2", projectID: "p1", title: "Other thread", isPinned: false }
+    ],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [],
+    pendingApprovals: []
+  });
+
+  await page.evaluate(() => {
+    window.location.hash = "#view=thread&tid=t1&pid=all";
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().selectedThreadID)).toBe("t1");
+
+  await page.locator("#composerInput").fill("queued command from origin thread");
+  await page.evaluate(() => {
+    const form = document.querySelector<HTMLFormElement>("#composerForm");
+    form?.requestSubmit();
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().queuedCommandsCount)).toBe(1);
+
+  await page.evaluate(() => {
+    window.location.hash = "#view=thread&tid=t2&pid=all";
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().selectedThreadID)).toBe("t2");
+
+  await injectEnvelope(page, {
+    schemaVersion: 1,
+    sessionID: "e2e-session",
+    seq: 10,
+    timestamp: new Date().toISOString(),
+    payload: {
+      type: "command_ack",
+      payload: {
+        commandSeq: 1,
+        commandID: "cmd-1",
+        commandName: "thread.send_message",
+        status: "rejected",
+        reason: "unknown_thread"
+      }
+    }
+  });
+
+  const rejectionText = "Desktop could not resolve the target thread for this command.";
+  await expect(page.getByLabel("Transcript").getByText(rejectionText)).toHaveCount(0);
+
+  await page.evaluate(() => {
+    window.location.hash = "#view=thread&tid=t1&pid=all";
+  });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().selectedThreadID)).toBe("t1");
+  await expect(page.getByLabel("Transcript").getByText(rejectionText)).toBeVisible({ timeout: 350 });
 });
 
 test("mobile-reasoning-rail", async ({ page }) => {
