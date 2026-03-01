@@ -951,7 +951,6 @@ final class AppModel: ObservableObject {
     @Published var composerAttachments: [ComposerAttachment] = []
     @Published var searchQuery = ""
     @Published var selectedSkillIDForComposer: String?
-    @Published var skillEnablementTargetSelectionBySkillID: [String: SkillEnablementTarget] = [:]
     @Published var defaultModel = ""
     @Published var defaultReasoning: ReasoningLevel = .medium
     @Published var defaultWebSearch: ProjectWebSearchMode = .cached
@@ -2124,12 +2123,6 @@ final class AppModel: ObservableObject {
         }
 
         skillsState = .loaded(items)
-
-        let activeSkillIDs = Set(items.map(\.id))
-        skillEnablementTargetSelectionBySkillID = skillEnablementTargetSelectionBySkillID.filter { activeSkillIDs.contains($0.key) }
-        for item in items where skillEnablementTargetSelectionBySkillID[item.id] == nil {
-            skillEnablementTargetSelectionBySkillID[item.id] = selectedProjectID == nil ? .global : .project
-        }
 
         if let selectedSkillIDForComposer,
            !items.contains(where: { $0.id == selectedSkillIDForComposer && $0.isEnabledForSelectedProject })

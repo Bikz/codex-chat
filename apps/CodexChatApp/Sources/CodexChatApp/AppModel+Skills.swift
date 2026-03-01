@@ -13,7 +13,8 @@ extension AppModel {
             return []
         }
 
-        let sortedSkills = sortedComposerSkillSuggestions(skills)
+        let availableSkills = skills.filter(\.isEnabledForSelectedProject)
+        let sortedSkills = sortedComposerSkillSuggestions(availableSkills)
         guard !tokenMatch.query.isEmpty else {
             return sortedSkills
         }
@@ -235,56 +236,9 @@ extension AppModel {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    func setSkillEnablementTarget(_ target: SkillEnablementTarget, for skillID: String) {
-        if target == .project, selectedProjectID == nil {
-            skillStatusMessage = "Select a project to enable project-target skills."
-            return
-        }
-        skillEnablementTargetSelectionBySkillID[skillID] = target
-    }
-
-    func selectedSkillEnablementTarget(for item: SkillListItem) -> SkillEnablementTarget {
-        if let selected = skillEnablementTargetSelectionBySkillID[item.id] {
-            if selected == .project, selectedProjectID == nil {
-                return .global
-            }
-            return selected
-        }
-        return selectedProjectID == nil ? .global : .project
-    }
-
-    func setSkillEnabled(_ item: SkillListItem, enabled: Bool) {
-        guard let projectSkillEnablementRepository else {
-            skillStatusMessage = "Skill enablement repository unavailable."
-            return
-        }
-
-        guard let request = skillEnablementRequest(for: item) else {
-            return
-        }
-
-        Task {
-            do {
-                try await projectSkillEnablementRepository.setSkillEnabled(
-                    target: request.target,
-                    projectID: request.projectID,
-                    skillPath: item.skill.skillPath,
-                    enabled: enabled
-                )
-                try await refreshSkills()
-                if !enabled, selectedSkillIDForComposer == item.id {
-                    selectedSkillIDForComposer = nil
-                }
-            } catch {
-                skillStatusMessage = "Failed to update skill enablement: \(error.localizedDescription)"
-                appendLog(.error, "Skill enablement update failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
     func selectSkillForComposer(_ item: SkillListItem) {
         guard item.isEnabledForSelectedProject else {
-            skillStatusMessage = "Enable the skill for this context first."
+            skillStatusMessage = "Install this skill for the selected project first."
             return
         }
 
@@ -301,6 +255,11 @@ extension AppModel {
     }
 
     func applyComposerSkillAutocompleteSuggestion(_ item: SkillListItem) {
+        guard item.isEnabledForSelectedProject else {
+            skillStatusMessage = "Install this skill for the selected project before using it."
+            return
+        }
+
         let trigger = "$\(item.skill.name)"
         if let tokenMatch = composerSkillTokenMatch(in: composerText) {
             composerText.replaceSubrange(tokenMatch.range, with: "\(trigger) ")
@@ -309,70 +268,8 @@ extension AppModel {
             composerText += needsSeparator ? " \(trigger) " : "\(trigger) "
         }
 
-        var enablementRequest: SkillEnablementRequest?
-        if !item.isEnabledForSelectedProject {
-            guard let request = skillEnablementRequest(for: item) else {
-                selectedSkillIDForComposer = nil
-                return
-            }
-            enablementRequest = request
-            optimisticallyEnableSkillForSelectedContext(skillID: item.id, target: request.target)
-        }
-
         selectedSkillIDForComposer = item.id
         skillStatusMessage = nil
-
-        guard let enablementRequest,
-              let projectSkillEnablementRepository
-        else {
-            return
-        }
-
-        Task {
-            do {
-                try await projectSkillEnablementRepository.setSkillEnabled(
-                    target: enablementRequest.target,
-                    projectID: enablementRequest.projectID,
-                    skillPath: item.skill.skillPath,
-                    enabled: true
-                )
-                try await refreshSkills()
-            } catch {
-                skillStatusMessage = "Failed to auto-enable skill \(item.skill.name): \(error.localizedDescription)"
-                appendLog(.error, "Skill auto-enable failed for \(item.skill.name): \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func optimisticallyEnableSkillForSelectedContext(skillID: String, target: SkillEnablementTarget) {
-        guard case var .loaded(items) = skillsState,
-              let index = items.firstIndex(where: { $0.id == skillID })
-        else {
-            return
-        }
-
-        items[index].enabledTargets.insert(target)
-        items[index].isEnabledForSelectedProject = true
-        skillsState = .loaded(items)
-    }
-
-    private struct SkillEnablementRequest {
-        let target: SkillEnablementTarget
-        let projectID: UUID?
-    }
-
-    private func skillEnablementRequest(for item: SkillListItem) -> SkillEnablementRequest? {
-        let target = selectedSkillEnablementTarget(for: item)
-        switch target {
-        case .global, .general:
-            return SkillEnablementRequest(target: target, projectID: nil)
-        case .project:
-            guard let selectedProjectID else {
-                skillStatusMessage = "Select a project before enabling project-target skills."
-                return nil
-            }
-            return SkillEnablementRequest(target: .project, projectID: selectedProjectID)
-        }
     }
 
     func applyAllProjectsSkillLinksIfNeeded(to project: ProjectRecord) async throws {

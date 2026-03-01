@@ -21,7 +21,7 @@ final class ComposerSkillAutocompleteTests: XCTestCase {
         model.composerText = "$"
 
         XCTAssertTrue(model.isComposerSkillAutocompleteActive)
-        XCTAssertEqual(model.composerSkillAutocompleteSuggestions.map(\.id), [enabled.id, disabled.id])
+        XCTAssertEqual(model.composerSkillAutocompleteSuggestions.map(\.id), [enabled.id])
     }
 
     func testComposerSkillAutocompleteNarrowsAsQueryGrows() {
@@ -58,7 +58,7 @@ final class ComposerSkillAutocompleteTests: XCTestCase {
         XCTAssertEqual(model.selectedSkillIDForComposer, desktop.id)
     }
 
-    func testApplyComposerSkillAutocompleteSuggestionDisabledSkillAutoEnablesAndSelects() {
+    func testApplyComposerSkillAutocompleteSuggestionUnavailableSkillDoesNotSelect() {
         let model = makeReadyModel()
         let enabled = makeSkillItem(
             name: "macos-calendar-assistant",
@@ -76,10 +76,13 @@ final class ComposerSkillAutocompleteTests: XCTestCase {
 
         model.applyComposerSkillAutocompleteSuggestion(disabled)
 
-        XCTAssertEqual(model.composerText, "$macos-send-message ")
-        XCTAssertEqual(model.selectedSkillIDForComposer, disabled.id)
-        XCTAssertNil(model.skillStatusMessage)
-        XCTAssertEqual(model.selectedSkillForComposer?.id, disabled.id)
+        XCTAssertEqual(model.composerText, "$msg")
+        XCTAssertEqual(model.selectedSkillIDForComposer, enabled.id)
+        XCTAssertEqual(
+            model.skillStatusMessage,
+            "Install this skill for the selected project before using it."
+        )
+        XCTAssertEqual(model.selectedSkillForComposer?.id, enabled.id)
     }
 
     func testComposerSkillAutocompleteInactiveWithoutTrailingToken() {
