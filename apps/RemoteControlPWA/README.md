@@ -76,14 +76,16 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 
 - Single-page conversation-first layout (home list + focused chat detail + back navigation).
 - Disconnected mode uses a single pairing surface (`Pair this phone`) with `Scan QR`, `Paste Pair Link`, and `Pair Device`.
-- Project circles on home (`All` + top projects + `View all`) with per-project chat filtering.
+- Project selector on home uses a fixed 2-row mobile grid (`All` + top projects + `View all`) with per-project chat filtering and no horizontal swipe dependency.
 - Account sheet is diagnostics/maintenance only (session metadata, reconnect/snapshot/forget).
 - Inline approval indicators on chat rows and in-chat approval tray actions.
+- User-facing transcript hides system transport events by default.
 - Message wrapping and long-message collapse/expand in transcript view.
 - Smart transcript anchoring: auto-follow only when already near the bottom.
 - Floating `Jump to latest` button when new messages arrive while reading older content.
 - Progressive transcript rendering (`Show older messages`) for very long threads.
-- Specialized transcript cards for command execution, diffs, and reasoning summaries with safe plain-text fallback.
+- Specialized transcript cards for command execution and diffs with safe plain-text fallback.
+- Reasoning progress is surfaced as ambient status rail (not transcript bubbles).
 - Composer auto-resize with `Cmd/Ctrl+Enter` send shortcut and dispatching state indicator.
 
 ## Mobile hardening guarantees
@@ -93,6 +95,7 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 - fallback sticky behavior when `visualViewport` is unavailable
 - touch-target minimum sizing on primary actions
 - in-app QR scanner sheet (camera + manual/clipboard fallback)
+- page-level horizontal overflow is blocked as a release requirement (`scrollWidth <= clientWidth` in home and thread views)
 
 ## Reliability guarantees (unchanged protocol behavior)
 

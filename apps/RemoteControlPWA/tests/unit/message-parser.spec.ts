@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMessageText } from '@/lib/remote/message-parser';
+import { parseMessageText, reasoningStatusFromText } from '@/lib/remote/message-parser';
 
 describe('message parser', () => {
   it('classifies command execution payloads', () => {
@@ -32,5 +32,11 @@ describe('message parser', () => {
   it('falls back to plain for unknown text', () => {
     const parsed = parseMessageText('A normal assistant reply.');
     expect(parsed.mode).toBe('plain');
+  });
+
+  it('extracts reasoning status helper state', () => {
+    expect(reasoningStatusFromText('Started reasoning:\n{"summary":[]}')).toBe('started');
+    expect(reasoningStatusFromText('Completed reasoning:\n{"summary":[]}')).toBe('completed');
+    expect(reasoningStatusFromText('Normal assistant text')).toBeNull();
   });
 });

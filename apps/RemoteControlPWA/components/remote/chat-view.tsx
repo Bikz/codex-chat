@@ -5,10 +5,9 @@ import { ApprovalsTray } from '@/components/remote/approvals-tray';
 import { Composer } from '@/components/remote/composer';
 import { CommandCard } from '@/components/remote/message-cards/command-card';
 import { DiffCard } from '@/components/remote/message-cards/diff-card';
-import { ReasoningCard } from '@/components/remote/message-cards/reasoning-card';
 import { getRemoteClient } from '@/lib/remote/client';
 import { parseMessageText } from '@/lib/remote/message-parser';
-import { getVisibleMessageWindow, messageIsCollapsible } from '@/lib/remote/selectors';
+import { getVisibleMessageWindow, getVisibleTranscriptMessages, messageIsCollapsible } from '@/lib/remote/selectors';
 import { remoteStoreApi, useRemoteStore } from '@/lib/remote/store';
 import { isNearBottom } from '@/lib/remote/scroll-anchor';
 import { useShallow } from 'zustand/react/shallow';
@@ -17,7 +16,6 @@ const REVEAL_CHUNK_SIZE = 80;
 
 function roleClass(role: string | undefined) {
   if (role === 'user') return 'role-user';
-  if (role === 'system') return 'role-system';
   return 'role-assistant';
 }
 
@@ -39,7 +37,9 @@ export function ChatView({ hidden }: { hidden: boolean }) {
     visibleMessageLimit,
     isChatAtBottom,
     showJumpToLatest,
-    userDetachedFromBottomAt
+    userDetachedFromBottomAt,
+    reasoningStateByThreadID,
+    reasoningUpdatedAtByThreadID
   } = useRemoteStore(
     useShallow((state) => ({
       selectedThreadID: state.selectedThreadID,
@@ -52,7 +52,9 @@ export function ChatView({ hidden }: { hidden: boolean }) {
       visibleMessageLimit: state.visibleMessageLimit,
       isChatAtBottom: state.isChatAtBottom,
       showJumpToLatest: state.showJumpToLatest,
-      userDetachedFromBottomAt: state.userDetachedFromBottomAt
+      userDetachedFromBottomAt: state.userDetachedFromBottomAt,
+      reasoningStateByThreadID: state.reasoningStateByThreadID,
+      reasoningUpdatedAtByThreadID: state.reasoningUpdatedAtByThreadID
     }))
   );
 
@@ -67,8 +69,11 @@ export function ChatView({ hidden }: { hidden: boolean }) {
   }, [isChatAtBottom, showJumpToLatest, userDetachedFromBottomAt]);
 
   const thread = useMemo(() => threads.find((item) => item.id === selectedThreadID) || null, [threads, selectedThreadID]);
-  const messages = useMemo(() => (selectedThreadID ? messagesByThreadID.get(selectedThreadID) || [] : []), [messagesByThreadID, selectedThreadID]);
+  const rawMessages = useMemo(() => (selectedThreadID ? messagesByThreadID.get(selectedThreadID) || [] : []), [messagesByThreadID, selectedThreadID]);
+  const messages = useMemo(() => getVisibleTranscriptMessages(rawMessages), [rawMessages]);
   const visibleWindow = useMemo(() => getVisibleMessageWindow(messages, visibleMessageLimit), [messages, visibleMessageLimit]);
+  const reasoningState = thread ? reasoningStateByThreadID.get(thread.id) || 'idle' : 'idle';
+  const reasoningUpdatedAt = thread ? reasoningUpdatedAtByThreadID.get(thread.id) || null : null;
 
   const scrollToLatest = useCallback((behavior: ScrollBehavior = 'auto') => {
     const list = messageListRef.current;
@@ -183,6 +188,31 @@ export function ChatView({ hidden }: { hidden: boolean }) {
     });
   }, [expandedMessageIDs, isChatAtBottom, scrollToLatest]);
 
+  useEffect(() => {
+    if (!thread || reasoningState !== 'completed') {
+      return;
+    }
+
+    const completedAt = reasoningUpdatedAt || Date.now();
+    const elapsed = Date.now() - completedAt;
+    const timeoutMs = Math.max(0, 2_500 - elapsed);
+    const timer = window.setTimeout(() => {
+      const latest = remoteStoreApi.getState();
+      const nextStateByThread = new Map(latest.reasoningStateByThreadID);
+      const nextUpdatedAtByThread = new Map(latest.reasoningUpdatedAtByThreadID);
+      if (nextStateByThread.get(thread.id) === 'completed') {
+        nextStateByThread.set(thread.id, 'idle');
+        nextUpdatedAtByThread.delete(thread.id);
+        remoteStoreApi.setState({
+          reasoningStateByThreadID: nextStateByThread,
+          reasoningUpdatedAtByThreadID: nextUpdatedAtByThread
+        });
+      }
+    }, timeoutMs);
+
+    return () => window.clearTimeout(timer);
+  }, [reasoningState, reasoningUpdatedAt, thread]);
+
   const isRunning = thread ? turnStateByThreadID.get(thread.id) === true : false;
 
   return (
@@ -195,6 +225,15 @@ export function ChatView({ hidden }: { hidden: boolean }) {
         <span id="threadStatusChip" className="thread-status" hidden={!thread || (!isRunning && !isSyncStale)}>
           {isRunning ? 'Running' : 'Sync stale'}
         </span>
+      </div>
+      <div
+        id="reasoningRail"
+        className={`reasoning-rail ${reasoningState}`}
+        hidden={!thread || reasoningState === 'idle'}
+        aria-live="polite"
+        aria-label={reasoningState === 'started' ? 'Reasoning in progress' : 'Reasoning completed'}
+      >
+        {reasoningState === 'started' ? 'Reasoning in progress…' : 'Reasoning complete'}
       </div>
 
       <section className="panel approvals-panel" aria-labelledby="approvalsHeading">
@@ -241,22 +280,23 @@ export function ChatView({ hidden }: { hidden: boolean }) {
           ) : null}
 
           {!selectedThreadID ? <div className="empty-state">Select a chat to view conversation updates.</div> : null}
-          {selectedThreadID && messages.length === 0 ? <div className="empty-state">No messages yet.</div> : null}
+          {selectedThreadID && messages.length === 0 ? <div className="empty-state">No user-visible messages yet.</div> : null}
 
           {visibleWindow.items.map((message) => {
             const messageID = message.id || `${message.threadID}-${message.createdAt}-${message.role}`;
             const parsedMessage = parseMessageText(message.text || '');
             const longTextCollapsible = messageIsCollapsible(message.text || '');
-            const cardCollapsible = parsedMessage.mode !== 'plain';
+            if (parsedMessage.mode === 'reasoning_summary') {
+              return null;
+            }
+            const cardCollapsible = parsedMessage.mode === 'command_execution' || parsedMessage.mode === 'diff_patch';
             const shouldShowToggle = cardCollapsible || longTextCollapsible;
             const expanded = expandedMessageIDs.has(messageID);
             const collapsed = shouldShowToggle && !expanded;
 
             return (
               <article key={messageID} className={`message ${roleClass(message.role)}`}>
-                <div className="message-meta">
-                  {(message.role || 'assistant').toLowerCase()} · {new Date(message.createdAt || Date.now()).toLocaleTimeString()}
-                </div>
+                <div className="message-meta">{new Date(message.createdAt || Date.now()).toLocaleTimeString()}</div>
 
                 {parsedMessage.mode === 'plain' ? (
                   <>
@@ -285,15 +325,6 @@ export function ChatView({ hidden }: { hidden: boolean }) {
                   <DiffCard
                     title={parsedMessage.title || 'Code diff'}
                     diff={parsedMessage.diff}
-                    collapsed={collapsed}
-                    onToggle={() => client.toggleMessageExpanded(messageID)}
-                  />
-                ) : null}
-
-                {parsedMessage.mode === 'reasoning_summary' ? (
-                  <ReasoningCard
-                    status={parsedMessage.status}
-                    summary={parsedMessage.summary}
                     collapsed={collapsed}
                     onToggle={() => client.toggleMessageExpanded(messageID)}
                   />

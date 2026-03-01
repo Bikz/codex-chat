@@ -57,6 +57,8 @@ This MVP delivers:
   - Next.js App Router + TypeScript UI shell with shadcn/Radix primitives
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)
   - Single-page conversation-first shell (home list + focused chat detail)
+  - Mobile-first bounded project grid with `View all` affordance (no page-level horizontal overflow)
+  - User-facing transcript/list rendering excludes system transport events by default; reasoning is shown as ambient thread state
   - Hash navigation (`#view=home` and `#view=thread&tid=...&pid=...`) for browser back continuity
   - Mobile-safe layout hardening (`safe-area-inset` support + visual-viewport keyboard offset handling)
   - Reconnect with backoff and snapshot re-request

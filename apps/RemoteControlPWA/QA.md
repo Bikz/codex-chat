@@ -16,6 +16,7 @@ Use this checklist before cutting a release for the mobile web client.
 ## Navigation and layout
 
 - Confirm home route (`#view=home...`) shows project strip and chat list.
+- Confirm project selector renders as a bounded 2-row grid and does not require horizontal swipe.
 - Tap a chat row and confirm detail route updates to `#view=thread&tid=...` and back button returns to home.
 - Use browser/hardware back from detail and confirm it returns to home view without exiting pairing state.
 - Tap `View all` and confirm project sheet opens, focus stays inside sheet, and `Esc`/close button dismisses.
@@ -44,6 +45,7 @@ Use this checklist before cutting a release for the mobile web client.
 - While composer is focused with keyboard open, confirm the composer and send button remain visible above keyboard.
 - Confirm transcript remains scrollable with keyboard open and no content is trapped below the composer.
 - Confirm top and bottom controls respect safe-area spacing on notched/home-indicator devices.
+- Confirm no page-level horizontal scroll in home or thread views (`scrollWidth` must match viewport width).
 
 ## Rotation and replay defenses
 
@@ -61,11 +63,14 @@ Use this checklist before cutting a release for the mobile web client.
   - revoked/stopped session
 - Confirm `Request Snapshot` recovers stale state without full re-pair.
 - Confirm chat rows show `Running` / `New` / approval badges when corresponding state exists.
+- Confirm chat row previews use user-visible content only (no raw IDs or transport payload text).
+- Confirm transcript hides system transport events by default.
 - Confirm long transcript messages (>8 lines or >480 chars) collapse by default and can be expanded/collapsed.
 - Scroll up in a long thread, receive new message updates, and confirm transcript is not force-scrolled.
 - Confirm `Jump to latest` appears when detached from bottom and returns to bottom when tapped.
 - For long threads, confirm `Show older messages` reveals older transcript chunks without losing current reading position.
-- Confirm command/diff/reasoning-style messages render as collapsible cards and ambiguous text still renders as normal bubbles.
+- Confirm command/diff-style messages render as collapsible cards and ambiguous text still renders as normal bubbles.
+- Confirm reasoning state appears in top ambient status rail and is not rendered as transcript bubbles.
 - Confirm composer auto-resizes while typing (up to cap) and `Cmd/Ctrl+Enter` sends while plain `Enter` adds a newline.
 
 ## Theme and readability

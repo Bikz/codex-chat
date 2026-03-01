@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { getVisibleMessageWindow, getVisibleThreads, messageIsCollapsible, sortedProjectsByActivity } from '@/lib/remote/selectors';
+import {
+  getUserVisibleThreadPreview,
+  getVisibleMessageWindow,
+  getVisibleThreads,
+  getVisibleTranscriptMessages,
+  messageIsCollapsible,
+  sortedProjectsByActivity
+} from '@/lib/remote/selectors';
 
 describe('selectors', () => {
   it('filters visible threads by selected project', () => {
@@ -39,5 +46,32 @@ describe('selectors', () => {
 
     expect(windowed.items).toEqual(['m3', 'm4', 'm5']);
     expect(windowed.hiddenCount).toBe(2);
+  });
+
+  it('returns latest non-system, non-technical preview text', () => {
+    const messages = [
+      { id: 'm1', threadID: 't1', role: 'system', text: 'Started userMessage: {"id":"123"}', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'm2', threadID: 't1', role: 'assistant', text: 'Completed commandExecution: {"command":"echo hi"}', createdAt: '2026-01-01T00:00:01.000Z' },
+      { id: 'm3', threadID: 't1', role: 'assistant', text: 'Visible summary for users', createdAt: '2026-01-01T00:00:02.000Z' }
+    ];
+
+    expect(getUserVisibleThreadPreview(messages)).toBe('Visible summary for users');
+  });
+
+  it('falls back when no user-visible messages exist', () => {
+    const messages = [
+      { id: 'm1', threadID: 't1', role: 'system', text: 'Completed reasoning: {"summary":[]}', createdAt: '2026-01-01T00:00:00.000Z' }
+    ];
+    expect(getUserVisibleThreadPreview(messages)).toBe('No user-visible messages yet');
+  });
+
+  it('filters system messages from transcript', () => {
+    const messages = [
+      { id: 'm1', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'm2', threadID: 't1', role: 'system', text: 'Started reasoning: {}', createdAt: '2026-01-01T00:00:01.000Z' },
+      { id: 'm3', threadID: 't1', role: 'user', text: 'hey', createdAt: '2026-01-01T00:00:02.000Z' }
+    ];
+
+    expect(getVisibleTranscriptMessages(messages).map((message) => message.id)).toEqual(['m1', 'm3']);
   });
 });

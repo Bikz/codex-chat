@@ -3,7 +3,8 @@
 import { buildRouteHash, normalizeProjectID, parseRouteHash, type HashRoute } from '@/lib/navigation/hash-route';
 import { buildJoinLink, parseJoinLink, type ParsedJoinLink } from '@/lib/remote/join-link';
 import { processIncomingSequence, queueEnvelopeWithLimits } from '@/lib/remote/logic';
-import { messageIsCollapsible } from '@/lib/remote/selectors';
+import { reasoningStatusFromText } from '@/lib/remote/message-parser';
+import { getUserVisibleThreadPreview, messageIsCollapsible } from '@/lib/remote/selectors';
 import { createInitialState, remoteStoreApi } from '@/lib/remote/store';
 import type { BeforeInstallPromptEvent, RemoteMessage, RemoteSnapshot, StatusLevel } from '@/lib/remote/types';
 
@@ -603,42 +604,7 @@ class RemoteClient {
   threadPreview(threadID: string) {
     const state = remoteStoreApi.getState();
     const messages = state.messagesByThreadID.get(threadID) || [];
-    if (!messages.length) {
-      return 'No messages yet';
-    }
-    const latest = messages[messages.length - 1];
-    return this.compactPreviewText(latest.text || '');
-  }
-
-  private compactPreviewText(rawText: string) {
-    const collapsed = rawText.replace(/\s+/g, ' ').trim();
-    if (!collapsed) {
-      return 'No messages yet';
-    }
-
-    const jsonStart = collapsed.indexOf('{');
-    if (jsonStart >= 0 && collapsed.includes('"text"')) {
-      try {
-        const parsed = JSON.parse(collapsed.slice(jsonStart)) as { text?: string };
-        if (typeof parsed?.text === 'string' && parsed.text.trim().length > 0) {
-          return parsed.text.trim();
-        }
-      } catch {
-        // Ignore parse failures and fall back to plain text cleanup.
-      }
-    }
-
-    const clean = collapsed
-      .replace(/^Completed\s+agentMessage:\s*/i, '')
-      .replace(/^Started\s+reasoning:\s*/i, '')
-      .replace(/^Completed\s+reasoning:\s*/i, '')
-      .replace(/^Completed\s+commandExecution:\s*/i, '');
-
-    if (clean.length <= 160) {
-      return clean;
-    }
-
-    return `${clean.slice(0, 157)}...`;
+    return getUserVisibleThreadPreview(messages);
   }
 
   private updateWorkspaceVisibility() {
@@ -738,6 +704,8 @@ class RemoteClient {
     }
 
     const nextMessagesByThread = new Map(state.messagesByThreadID);
+    const nextReasoningStateByThread = new Map(state.reasoningStateByThreadID);
+    const nextReasoningUpdatedAtByThread = new Map(state.reasoningUpdatedAtByThreadID);
     for (const [threadID, bucket] of nextByThread.entries()) {
       const previousBucket = state.messagesByThreadID.get(threadID) || [];
       const normalizedBucket = bucket.slice(-240);
@@ -746,6 +714,29 @@ class RemoteClient {
         unread.set(threadID, true);
       }
       nextMessagesByThread.set(threadID, normalizedBucket);
+
+      let latestReasoningStatus: 'started' | 'completed' | null = null;
+      let latestReasoningAt: number | null = null;
+      for (const message of normalizedBucket) {
+        if (message.role !== 'system') {
+          continue;
+        }
+        const status = reasoningStatusFromText(message.text || '');
+        if (!status) {
+          continue;
+        }
+        latestReasoningStatus = status;
+        const createdAtMs = Date.parse(message.createdAt || '');
+        latestReasoningAt = Number.isFinite(createdAtMs) ? createdAtMs : Date.now();
+      }
+
+      if (latestReasoningStatus) {
+        nextReasoningStateByThread.set(threadID, latestReasoningStatus);
+        nextReasoningUpdatedAtByThread.set(threadID, latestReasoningAt || Date.now());
+      } else {
+        nextReasoningStateByThread.set(threadID, 'idle');
+        nextReasoningUpdatedAtByThread.delete(threadID);
+      }
     }
 
     const knownThreadIDs = new Set(threads.map((thread) => thread.id));
@@ -761,6 +752,18 @@ class RemoteClient {
       }
     }
 
+    for (const threadID of nextReasoningStateByThread.keys()) {
+      if (!knownThreadIDs.has(threadID)) {
+        nextReasoningStateByThread.delete(threadID);
+      }
+    }
+
+    for (const threadID of nextReasoningUpdatedAtByThread.keys()) {
+      if (!knownThreadIDs.has(threadID)) {
+        nextReasoningUpdatedAtByThread.delete(threadID);
+      }
+    }
+
     remoteStoreApi.setState({
       projects,
       threads,
@@ -770,7 +773,9 @@ class RemoteClient {
       selectedThreadID,
       turnStateByThreadID: nextTurnState,
       unreadByThreadID: unread,
-      messagesByThreadID: nextMessagesByThread
+      messagesByThreadID: nextMessagesByThread,
+      reasoningStateByThreadID: nextReasoningStateByThread,
+      reasoningUpdatedAtByThreadID: nextReasoningUpdatedAtByThread
     });
 
     this.ensureCurrentRouteIsValid();
@@ -785,6 +790,8 @@ class RemoteClient {
     const state = remoteStoreApi.getState();
     const nextMessagesByThread = new Map(state.messagesByThreadID);
     const bucket = (nextMessagesByThread.get(threadID) || []).slice();
+    const nextReasoningStateByThread = new Map(state.reasoningStateByThreadID);
+    const nextReasoningUpdatedAtByThread = new Map(state.reasoningUpdatedAtByThreadID);
 
     const messageID =
       typeof eventPayload.messageID === 'string'
@@ -814,6 +821,15 @@ class RemoteClient {
 
     nextMessagesByThread.set(threadID, bucket);
 
+    if (role === 'system') {
+      const reasoningStatus = reasoningStatusFromText(text);
+      if (reasoningStatus) {
+        nextReasoningStateByThread.set(threadID, reasoningStatus);
+        const createdAtMs = Date.parse(createdAt);
+        nextReasoningUpdatedAtByThread.set(threadID, Number.isFinite(createdAtMs) ? createdAtMs : Date.now());
+      }
+    }
+
     const unread = new Map(state.unreadByThreadID);
     let selectedThreadID = state.selectedThreadID;
     if (!selectedThreadID) {
@@ -829,7 +845,9 @@ class RemoteClient {
     remoteStoreApi.setState({
       messagesByThreadID: nextMessagesByThread,
       unreadByThreadID: unread,
-      selectedThreadID
+      selectedThreadID,
+      reasoningStateByThreadID: nextReasoningStateByThread,
+      reasoningUpdatedAtByThreadID: nextReasoningUpdatedAtByThread
     });
   }
 

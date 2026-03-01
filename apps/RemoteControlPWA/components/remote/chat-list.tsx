@@ -1,13 +1,13 @@
 'use client';
 
 import { getRemoteClient } from '@/lib/remote/client';
-import { getVisibleThreads, pendingApprovalsByThread } from '@/lib/remote/selectors';
+import { getUserVisibleThreadPreview, getVisibleThreads, pendingApprovalsByThread } from '@/lib/remote/selectors';
 import { useRemoteStore } from '@/lib/remote/store';
 import { useShallow } from 'zustand/react/shallow';
 
 export function ChatList() {
   const client = getRemoteClient();
-  const { threads, projects, selectedProjectFilterID, selectedThreadID, pendingApprovals, turnStateByThreadID, unreadByThreadID } =
+  const { threads, projects, selectedProjectFilterID, selectedThreadID, pendingApprovals, turnStateByThreadID, unreadByThreadID, messagesByThreadID } =
     useRemoteStore(
       useShallow((state) => ({
         threads: state.threads,
@@ -16,7 +16,8 @@ export function ChatList() {
         selectedThreadID: state.selectedThreadID,
         pendingApprovals: state.pendingApprovals,
         turnStateByThreadID: state.turnStateByThreadID,
-        unreadByThreadID: state.unreadByThreadID
+        unreadByThreadID: state.unreadByThreadID,
+        messagesByThreadID: state.messagesByThreadID
       }))
     );
 
@@ -42,6 +43,7 @@ export function ChatList() {
           const running = turnStateByThreadID.get(thread.id) === true;
           const approvals = approvalsByThread.get(thread.id) || 0;
           const hasUnread = unreadByThreadID.get(thread.id) === true && thread.id !== selectedThreadID;
+          const previewText = getUserVisibleThreadPreview(messagesByThreadID.get(thread.id) || []);
 
           return (
             <li key={thread.id}>
@@ -59,7 +61,7 @@ export function ChatList() {
                     {hasUnread ? <span className="mini-badge unread">New</span> : null}
                   </span>
                 </div>
-                <div className="chat-preview">{client.threadPreview(thread.id)}</div>
+                <div className="chat-preview">{previewText}</div>
               </button>
             </li>
           );

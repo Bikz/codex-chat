@@ -1,4 +1,5 @@
 export type ParsedMessageMode = 'plain' | 'command_execution' | 'diff_patch' | 'reasoning_summary';
+export type ParsedReasoningState = 'started' | 'completed' | null;
 
 interface ParsedBase {
   mode: ParsedMessageMode;
@@ -168,6 +169,17 @@ function parseReasoningSummary(text: string): ParsedReasoningSummaryMessage | nu
     status,
     summary
   };
+}
+
+export function reasoningStatusFromText(rawText: string): ParsedReasoningState {
+  const parsed = parseReasoningSummary(typeof rawText === 'string' ? rawText : '');
+  if (!parsed) {
+    return null;
+  }
+  if (parsed.status === 'started' || parsed.status === 'completed') {
+    return parsed.status;
+  }
+  return null;
 }
 
 export function parseMessageText(rawText: string): ParsedMessage {

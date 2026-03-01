@@ -52,6 +52,8 @@ export interface RemoteStoreState {
   turnStateByThreadID: Map<string, boolean>;
   unreadByThreadID: Map<string, boolean>;
   expandedMessageIDs: Set<string>;
+  reasoningStateByThreadID: Map<string, 'idle' | 'started' | 'completed'>;
+  reasoningUpdatedAtByThreadID: Map<string, number>;
   isChatAtBottom: boolean;
   showJumpToLatest: boolean;
   userDetachedFromBottomAt: number | null;
@@ -109,6 +111,8 @@ export function createInitialState(): RemoteStoreState {
     turnStateByThreadID: new Map(),
     unreadByThreadID: new Map(),
     expandedMessageIDs: new Set(),
+    reasoningStateByThreadID: new Map(),
+    reasoningUpdatedAtByThreadID: new Map(),
     isChatAtBottom: true,
     showJumpToLatest: false,
     userDetachedFromBottomAt: null,

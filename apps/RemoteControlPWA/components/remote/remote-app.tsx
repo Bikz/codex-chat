@@ -58,7 +58,7 @@ export function RemoteControlApp() {
         </button>
       </header>
 
-      <main className="app-main">
+      <main className="app-main" data-testid="app-shell">
         <PreconnectCard />
 
         <section id="workspacePanel" className="workspace" hidden={!isAuthenticated}>

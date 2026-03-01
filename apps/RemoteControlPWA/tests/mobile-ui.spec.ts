@@ -25,6 +25,75 @@ const snapshotPayload = {
   ]
 };
 
+function createLargeProjectPayload() {
+  const projects = Array.from({ length: 12 }, (_, index) => ({
+    id: `p${index + 1}`,
+    name: `Project-${index + 1}-Very-Long-Name-${index + 1}`
+  }));
+  return {
+    projects,
+    threads: projects.map((project, index) => ({
+      id: `t${index + 1}`,
+      projectID: project.id,
+      title: `Thread ${index + 1}`,
+      isPinned: false
+    })),
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [
+      {
+        id: "m1",
+        threadID: "t1",
+        role: "assistant",
+        text: "User-visible message",
+        createdAt: "2026-02-28T15:00:00.000Z"
+      }
+    ],
+    pendingApprovals: []
+  };
+}
+
+function createSystemHeavyPayload(reasoningStatus: "started" | "completed" = "started") {
+  const reasoningPrefix = reasoningStatus === "started" ? "Started" : "Completed";
+  return {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Simple greeting", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [
+      {
+        id: "m1",
+        threadID: "t1",
+        role: "system",
+        text: 'Started userMessage: {"id":"msg_123","type":"userMessage"}',
+        createdAt: "2026-02-28T15:00:00.000Z"
+      },
+      {
+        id: "m2",
+        threadID: "t1",
+        role: "assistant",
+        text: "Hey! What can I help you with today?",
+        createdAt: "2026-02-28T15:00:01.000Z"
+      },
+      {
+        id: "m3",
+        threadID: "t1",
+        role: "system",
+        text: `${reasoningPrefix} reasoning:\n{"summary":["thinking"]}`,
+        createdAt: "2026-02-28T15:00:02.000Z"
+      },
+      {
+        id: "m4",
+        threadID: "t1",
+        role: "system",
+        text: 'Completed userMessage: {"id":"msg_123","type":"userMessage"}',
+        createdAt: "2026-02-28T15:00:03.000Z"
+      }
+    ],
+    pendingApprovals: []
+  };
+}
+
 async function seedDemo(page: Parameters<typeof test>[0]["page"]) {
   await page.goto("/?e2e=1#view=home&pid=all");
   await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
@@ -68,6 +137,66 @@ test("mobile-home-view-renders", async ({ page }) => {
   await expect(page.locator("#chatList .chat-row")).toHaveCount(2);
 });
 
+test("mobile-no-horizontal-overflow-home", async ({ page }) => {
+  await seedCustom(page, createLargeProjectPayload());
+
+  const dimensions = await page.evaluate(() => ({
+    htmlScrollWidth: document.documentElement.scrollWidth,
+    htmlClientWidth: document.documentElement.clientWidth,
+    bodyScrollWidth: document.body.scrollWidth,
+    bodyClientWidth: document.body.clientWidth
+  }));
+
+  expect(dimensions.htmlScrollWidth).toBeLessThanOrEqual(dimensions.htmlClientWidth + 1);
+  expect(dimensions.bodyScrollWidth).toBeLessThanOrEqual(dimensions.bodyClientWidth + 1);
+});
+
+test("mobile-no-horizontal-overflow-thread", async ({ page }) => {
+  await seedCustom(page, {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Very Long Thread Name Very Long Thread Name", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [
+      {
+        id: "m1",
+        threadID: "t1",
+        role: "assistant",
+        text: "A".repeat(1800),
+        createdAt: "2026-02-28T15:00:00.000Z"
+      }
+    ],
+    pendingApprovals: []
+  });
+  await page.getByRole("button", { name: /Open chat/i }).click();
+
+  const dimensions = await page.evaluate(() => ({
+    htmlScrollWidth: document.documentElement.scrollWidth,
+    htmlClientWidth: document.documentElement.clientWidth
+  }));
+
+  expect(dimensions.htmlScrollWidth).toBeLessThanOrEqual(dimensions.htmlClientWidth + 1);
+});
+
+test("mobile-project-grid-two-rows", async ({ page }) => {
+  await seedCustom(page, createLargeProjectPayload());
+
+  await expect(page.locator("#projectCircleStrip .project-circle")).toHaveCount(8);
+  await expect(page.locator("#projectStripViewAllButton")).toBeVisible();
+
+  const rowCount = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll<HTMLElement>("#projectCircleStrip .project-circle"));
+    const rowTops = new Set(circles.map((circle) => Math.round(circle.getBoundingClientRect().top)));
+    return rowTops.size;
+  });
+  expect(rowCount).toBeGreaterThanOrEqual(2);
+});
+
+test("mobile-chat-preview-hides-technical", async ({ page }) => {
+  await seedCustom(page, createSystemHeavyPayload("started"));
+  await expect(page.locator("#chatList .chat-preview").first()).toHaveText("Hey! What can I help you with today?");
+});
+
 test("mobile-thread-navigation-back", async ({ page }) => {
   await seedDemo(page);
 
@@ -78,6 +207,27 @@ test("mobile-thread-navigation-back", async ({ page }) => {
   await page.goBack();
   await expect(page).toHaveURL(/view=home/);
   await expect(page.locator("#homeView")).toBeVisible();
+});
+
+test("mobile-transcript-hides-system", async ({ page }) => {
+  await seedCustom(page, createSystemHeavyPayload("started"));
+  await page.getByRole("button", { name: "Open chat Simple greeting" }).click();
+
+  await expect(page.locator(".message")).toHaveCount(1);
+  await expect(page.getByText("Started userMessage")).toHaveCount(0);
+  await expect(page.getByText("Completed userMessage")).toHaveCount(0);
+});
+
+test("mobile-reasoning-rail", async ({ page }) => {
+  await seedCustom(page, createSystemHeavyPayload("started"));
+  await page.getByRole("button", { name: "Open chat Simple greeting" }).click();
+  await expect(page.locator("#reasoningRail")).toBeVisible();
+  await expect(page.locator("#reasoningRail")).toContainText("Reasoning in progress");
+
+  await page.evaluate((payload) => {
+    (window as any).__codexRemotePWAHarness.seed(payload, { authenticated: true });
+  }, createSystemHeavyPayload("completed"));
+  await expect(page.locator("#reasoningRail")).toContainText("Reasoning complete");
 });
 
 test("mobile-account-sheet-focus-trap", async ({ page }) => {
