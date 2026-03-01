@@ -140,6 +140,7 @@ class RemoteClient {
   }
 
   resetForE2E() {
+    this.clearReconnectTimer();
     this.clearTrackedCommandThreadIDs();
     remoteStoreApi.setState(createInitialState());
   }
@@ -1220,7 +1221,19 @@ class RemoteClient {
     }
   }
 
+  private clearReconnectTimer() {
+    const { reconnectTimer } = remoteStoreApi.getState();
+    if (reconnectTimer === null) {
+      return;
+    }
+
+    clearTimeout(reconnectTimer);
+    remoteStoreApi.setState({ reconnectTimer: null });
+  }
+
   closeSocket() {
+    this.clearReconnectTimer();
+
     const state = remoteStoreApi.getState();
     remoteStoreApi.setState({ isAuthenticated: false });
     if (state.socket) {
@@ -1242,11 +1255,6 @@ class RemoteClient {
 
     if (!force && state.socket && (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)) {
       return;
-    }
-
-    if (state.reconnectTimer) {
-      window.clearTimeout(state.reconnectTimer);
-      remoteStoreApi.setState({ reconnectTimer: null });
     }
 
     this.closeSocket();
@@ -1293,11 +1301,9 @@ class RemoteClient {
   }
 
   private scheduleReconnect() {
-    const state = remoteStoreApi.getState();
-    if (state.reconnectTimer) {
-      window.clearTimeout(state.reconnectTimer);
-    }
+    this.clearReconnectTimer();
 
+    const state = remoteStoreApi.getState();
     const delayMs = Math.min(15_000, 1_000 * 2 ** state.reconnectAttempts);
     const timer = window.setTimeout(() => {
       this.connectSocket();

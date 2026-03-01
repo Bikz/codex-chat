@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getRemoteClient } from '@/lib/remote/client';
 import { processIncomingSequence, queueEnvelopeWithLimits } from '@/lib/remote/logic';
+import { createInitialState, remoteStoreApi } from '@/lib/remote/store';
 
 describe('remote logic', () => {
   it('processes incoming sequence transitions', () => {
@@ -24,5 +26,70 @@ describe('remote logic', () => {
     const result = queueEnvelopeWithLimits([], 0, { huge: 'x'.repeat(1000) }, 10, 100);
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('too_large');
+  });
+});
+
+describe('remote client lifecycle', () => {
+  const OriginalWebSocket = globalThis.WebSocket;
+
+  class FakeWebSocket {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
+
+    readonly url: string;
+    readyState = FakeWebSocket.CONNECTING;
+    onopen: ((this: WebSocket, event: Event) => unknown) | null = null;
+    onclose: ((this: WebSocket, event: CloseEvent) => unknown) | null = null;
+    onmessage: ((this: WebSocket, event: MessageEvent<string>) => unknown) | null = null;
+    onerror: ((this: WebSocket, event: Event) => unknown) | null = null;
+
+    constructor(url: string) {
+      this.url = url;
+    }
+
+    send(_payload: string) {}
+
+    close() {
+      this.readyState = FakeWebSocket.CLOSED;
+    }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    remoteStoreApi.setState(createInitialState());
+    (globalThis as { WebSocket: typeof WebSocket }).WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  });
+
+  afterEach(() => {
+    getRemoteClient().closeSocket();
+    remoteStoreApi.setState(createInitialState());
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    (globalThis as { WebSocket: typeof WebSocket }).WebSocket = OriginalWebSocket;
+  });
+
+  it('does not fire a scheduled reconnect after resetForE2E teardown', () => {
+    remoteStoreApi.setState({
+      sessionID: 'session-1',
+      deviceSessionToken: 'device-token',
+      wsURL: 'wss://relay.example/ws'
+    });
+
+    const client = getRemoteClient();
+    const connectSpy = vi.spyOn(client, 'connectSocket');
+    client.connectSocket();
+
+    const socket = remoteStoreApi.getState().socket;
+    expect(socket).not.toBeNull();
+    socket?.onclose?.(new CloseEvent('close'));
+    expect(remoteStoreApi.getState().reconnectTimer).not.toBeNull();
+
+    client.resetForE2E();
+    expect(remoteStoreApi.getState().reconnectTimer).toBeNull();
+
+    vi.advanceTimersByTime(1_100);
+    expect(connectSpy).toHaveBeenCalledTimes(1);
   });
 });
