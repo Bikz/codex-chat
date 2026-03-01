@@ -13,6 +13,12 @@ declare global {
       closeAccountSheet: () => void;
       setSessionID: (sessionID: string | null) => void;
       setDeviceName: (deviceName: string | null) => void;
+      setPairedCredentials: (payload: {
+        sessionID: string;
+        wsURL: string;
+        deviceSessionToken: string;
+        deviceID?: string | null;
+      }) => void;
       setStandaloneMode: (enabled: boolean) => void;
       setApprovalsExpanded: (expanded: boolean) => void;
       setChatDetached: (detached: boolean) => void;
@@ -66,6 +72,15 @@ export function exposeE2EHarness() {
     },
     setDeviceName(deviceName: string | null) {
       remoteStoreApi.setState({ deviceName });
+    },
+    setPairedCredentials(payload: { sessionID: string; wsURL: string; deviceSessionToken: string; deviceID?: string | null }) {
+      remoteStoreApi.setState((state) => ({
+        ...state,
+        sessionID: payload.sessionID,
+        wsURL: payload.wsURL,
+        deviceSessionToken: payload.deviceSessionToken,
+        deviceID: payload.deviceID ?? state.deviceID
+      }));
     },
     setStandaloneMode(enabled: boolean) {
       remoteStoreApi.setState({ isStandaloneMode: Boolean(enabled) });

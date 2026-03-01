@@ -506,6 +506,65 @@ test("mobile-mac-reconnect-event-clears-offline-indicator", async ({ page }) => 
   await expect(page.locator("#connectionBadge")).toContainText("Connected");
 });
 
+test("mobile-auth-ok-token-rotation-persists-latest-device-token", async ({ page }) => {
+  await seedCustom(page, snapshotPayload);
+
+  await page.evaluate(() => {
+    (window as any).__codexRemotePWAHarness.setPairedCredentials({
+      sessionID: "e2e-session",
+      wsURL: "wss://remote.bikz.cc/ws",
+      deviceSessionToken: "device-token-seed",
+      deviceID: "device-1"
+    });
+  });
+
+  await injectEnvelope(page, {
+    type: "auth_ok",
+    role: "mobile",
+    sessionID: "e2e-session",
+    deviceID: "device-1",
+    nextDeviceSessionToken: "device-token-1",
+    desktopConnected: false
+  });
+
+  await expect.poll(async () => {
+    return page.evaluate(() => {
+      const raw = window.localStorage.getItem("codexchat.remote.pairedDevice.v1");
+      if (!raw) {
+        return null;
+      }
+      try {
+        return JSON.parse(raw).deviceSessionToken ?? null;
+      } catch {
+        return "invalid";
+      }
+    });
+  }).toBe("device-token-1");
+
+  await injectEnvelope(page, {
+    type: "auth_ok",
+    role: "mobile",
+    sessionID: "e2e-session",
+    deviceID: "device-1",
+    nextDeviceSessionToken: "device-token-2",
+    desktopConnected: false
+  });
+
+  await expect.poll(async () => {
+    return page.evaluate(() => {
+      const raw = window.localStorage.getItem("codexchat.remote.pairedDevice.v1");
+      if (!raw) {
+        return null;
+      }
+      try {
+        return JSON.parse(raw).deviceSessionToken ?? null;
+      } catch {
+        return "invalid";
+      }
+    });
+  }).toBe("device-token-2");
+});
+
 test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
   await seedCustom(page, {
     projects: [{ id: "p1", name: "General" }],
