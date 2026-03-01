@@ -10,6 +10,9 @@ const MAX_JSON_BYTES = Number(process.env.MAX_JSON_BYTES || "65536");
 const MAX_PAIR_REQUESTS_PER_MINUTE = Number(process.env.MAX_PAIR_REQUESTS_PER_MINUTE || "60");
 const MAX_DEVICES_PER_SESSION = Number(process.env.MAX_DEVICES_PER_SESSION || "2");
 const SESSION_RETENTION_MS = Number(process.env.SESSION_RETENTION_MS || "600000");
+const SESSION_SWEEP_INTERVAL_MS = Number(process.env.SESSION_SWEEP_INTERVAL_MS || "30000");
+const WS_HEARTBEAT_INTERVAL_MS = Number(process.env.WS_HEARTBEAT_INTERVAL_MS || "30000");
+const TRUSTED_DEVICE_IDLE_TIMEOUT_SECONDS = Number(process.env.TRUSTED_DEVICE_IDLE_TIMEOUT_SECONDS || "604800");
 const PAIR_APPROVAL_TIMEOUT_MS = Number(process.env.PAIR_APPROVAL_TIMEOUT_MS || "45000");
 const WS_AUTH_TIMEOUT_MS = Number(process.env.WS_AUTH_TIMEOUT_MS || "10000");
 const TOKEN_ROTATION_GRACE_MS = Number(process.env.TOKEN_ROTATION_GRACE_MS || "15000");
@@ -283,15 +286,23 @@ function startPendingJoinRequest(session, requesterIP) {
 function scheduleSessionSweep() {
   const now = nowMs();
   for (const [sessionId, session] of sessions) {
-    const idleLimitMs = Math.max(60, session.idleTimeoutSeconds) * 1000;
-    if (now - session.lastActivityAt >= idleLimitMs) {
-      closeSession(sessionId, "idle_timeout");
-      continue;
+    const hasConnectedSockets = desktopConnected(session) || session.mobileSockets.size > 0;
+    const hasTrustedDevices = session.devices.size > 0;
+
+    if (!hasConnectedSockets) {
+      const baseIdleLimitMs = Math.max(60, session.idleTimeoutSeconds) * 1000;
+      const trustedIdleLimitMs = Math.max(baseIdleLimitMs, Math.max(60, TRUSTED_DEVICE_IDLE_TIMEOUT_SECONDS) * 1000);
+      const effectiveIdleLimitMs = hasTrustedDevices ? trustedIdleLimitMs : baseIdleLimitMs;
+
+      if (now - session.lastActivityAt >= effectiveIdleLimitMs) {
+        closeSession(sessionId, "idle_timeout");
+        continue;
+      }
     }
 
     const isPastRetention = now - session.createdAt > SESSION_RETENTION_MS;
-    const hasNoConnections = !session.desktopSocket && session.mobileSockets.size === 0;
-    if (isPastRetention && hasNoConnections) {
+    const hasNoConnections = !hasConnectedSockets;
+    if (isPastRetention && hasNoConnections && !hasTrustedDevices) {
       closeSession(sessionId, "retention_expired");
       continue;
     }
@@ -314,8 +325,16 @@ function sendJSON(socket, payload) {
   socket.send(JSON.stringify(payload));
 }
 
+function isSocketConnected(socket) {
+  return Boolean(socket && socket.readyState === 1);
+}
+
+function desktopConnected(session) {
+  return isSocketConnected(session.desktopSocket);
+}
+
 function relayDeviceCount(session) {
-  if (!session.desktopSocket || session.desktopSocket.readyState !== 1) {
+  if (!isSocketConnected(session.desktopSocket)) {
     return;
   }
   sendJSON(session.desktopSocket, {
@@ -323,6 +342,38 @@ function relayDeviceCount(session) {
     sessionID: session.sessionID,
     connectedDeviceCount: session.mobileSockets.size
   });
+}
+
+function relayDesktopStatus(session) {
+  const statusPayload = {
+    type: "relay.desktop_status",
+    sessionID: session.sessionID,
+    desktopConnected: desktopConnected(session)
+  };
+
+  for (const [, mobileSocket] of session.mobileSockets) {
+    sendJSON(mobileSocket, statusPayload);
+  }
+}
+
+function pingSocket(socket) {
+  if (!isSocketConnected(socket)) {
+    return;
+  }
+  try {
+    socket.ping();
+  } catch {
+    // Ignore ping failures; websocket close handlers will reconcile state.
+  }
+}
+
+function heartbeatSessions() {
+  for (const [, session] of sessions) {
+    pingSocket(session.desktopSocket);
+    for (const [, mobileSocket] of session.mobileSockets) {
+      pingSocket(mobileSocket);
+    }
+  }
 }
 
 function closeExistingMobileSocketForDevice(session, deviceID, reason) {
@@ -705,6 +756,12 @@ wss.on("connection", (socket, request) => {
     socket.close(1008, "auth_timeout");
   }, WS_AUTH_TIMEOUT_MS);
 
+  socket.on("pong", () => {
+    if (session) {
+      session.lastActivityAt = nowMs();
+    }
+  });
+
   function authenticateSocket(token) {
     const authContext = resolveWebSocketAuth(token);
     if (!authContext) {
@@ -733,7 +790,7 @@ wss.on("connection", (socket, request) => {
     authTimeout = null;
 
     if (authContext.role === "desktop") {
-      if (session.desktopSocket && session.desktopSocket.readyState === 1) {
+      if (isSocketConnected(session.desktopSocket)) {
         session.desktopSocket.close(1000, "desktop_reconnected");
       }
       session.desktopSocket = socket;
@@ -741,8 +798,10 @@ wss.on("connection", (socket, request) => {
         type: "auth_ok",
         role: authState.role,
         sessionID: authState.sessionID,
-        connectedDeviceCount: session.mobileSockets.size
+        connectedDeviceCount: session.mobileSockets.size,
+        desktopConnected: true
       });
+      relayDesktopStatus(session);
       console.info(`[relay] desktop_connected session=${sessionLogID(authState.sessionID)}`);
       return true;
     }
@@ -772,7 +831,8 @@ wss.on("connection", (socket, request) => {
       sessionID: authState.sessionID,
       deviceID: authState.deviceID,
       nextDeviceSessionToken: rotatedToken,
-      connectedDeviceCount: session.mobileSockets.size
+      connectedDeviceCount: session.mobileSockets.size,
+      desktopConnected: desktopConnected(session)
     });
     relayDeviceCount(session);
     console.info(`[relay] mobile_connected session=${sessionLogID(authState.sessionID)} devices=${session.mobileSockets.size}`);
@@ -863,7 +923,7 @@ wss.on("connection", (socket, request) => {
       return;
     }
 
-    if (session.desktopSocket && session.desktopSocket.readyState === 1) {
+    if (isSocketConnected(session.desktopSocket)) {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         sendJSON(session.desktopSocket, {
           ...parsed,
@@ -873,6 +933,18 @@ wss.on("connection", (socket, request) => {
       } else {
         sendJSON(session.desktopSocket, parsed);
       }
+      return;
+    }
+
+    const isCommandEnvelope = parsed?.payload?.type === "command";
+    const isSnapshotRequest = parsed?.type === "relay.snapshot_request";
+    if (isCommandEnvelope || isSnapshotRequest) {
+      sendJSON(socket, {
+        type: "relay.error",
+        sessionID: authState.sessionID,
+        error: "desktop_offline",
+        message: "Mac is offline. Reconnect desktop and try again."
+      });
     }
   });
 
@@ -900,6 +972,7 @@ wss.on("connection", (socket, request) => {
         approved: false,
         reason: "desktop_disconnected"
       });
+      relayDesktopStatus(liveSession);
       console.info(`[relay] desktop_disconnected session=${sessionLogID(authState.sessionID)}`);
       return;
     }
@@ -924,7 +997,10 @@ server.on("upgrade", (request, socket, head) => {
   });
 });
 
-setInterval(scheduleSessionSweep, 30_000).unref();
+setInterval(scheduleSessionSweep, Math.max(1_000, SESSION_SWEEP_INTERVAL_MS)).unref();
+if (WS_HEARTBEAT_INTERVAL_MS > 0) {
+  setInterval(heartbeatSessions, Math.max(1_000, WS_HEARTBEAT_INTERVAL_MS)).unref();
+}
 
 server.listen(PORT, HOST, () => {
   console.info(`[relay] listening on ${HOST}:${PORT}`);

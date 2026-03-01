@@ -204,6 +204,7 @@ test("pair join requires desktop approval and rotates device session tokens", as
     const desktopAuth = await nextJSONMessage(desktopSocket);
     assert.equal(desktopAuth.type, "auth_ok");
     assert.equal(desktopAuth.role, "desktop");
+    assert.equal(desktopAuth.desktopConnected, true);
 
     const joinPromise = fetch(`${baseURL}/pair/join`, {
       method: "POST",
@@ -251,6 +252,7 @@ test("pair join requires desktop approval and rotates device session tokens", as
     assert.equal(mobileAuth.deviceID, joinPayload.deviceID);
     assert.equal(typeof mobileAuth.nextDeviceSessionToken, "string");
     assert.notEqual(mobileAuth.nextDeviceSessionToken, firstToken);
+    assert.equal(mobileAuth.desktopConnected, true);
     const rotatedToken = mobileAuth.nextDeviceSessionToken;
 
     mobileSocket.send(
@@ -307,6 +309,296 @@ test("pair join requires desktop approval and rotates device session tokens", as
     secondMobileSocket.close();
     desktopSocket.close();
   } finally {
+    relayProcess.kill("SIGTERM");
+    await wait(150);
+    if (relayProcess.exitCode === null) {
+      relayProcess.kill("SIGKILL");
+    }
+  }
+});
+
+test("mobile receives desktop status updates and offline commands are rejected", async () => {
+  const port = await reservePort();
+  const host = "127.0.0.1";
+  const baseURL = `http://${host}:${port}`;
+  const wsURL = `ws://${host}:${port}/ws`;
+
+  const relayProcess = spawn("node", ["src/server.mjs"], {
+    cwd: relayRoot,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: host,
+      PUBLIC_BASE_URL: baseURL,
+      ALLOWED_ORIGINS: "http://localhost:4173"
+    }
+  });
+
+  let desktopSocket = null;
+  let mobileSocket = null;
+  let desktopReconnectSocket = null;
+
+  try {
+    await waitForRelay(baseURL);
+
+    const sessionID = randomToken(16);
+    const joinToken = randomToken(32);
+    const desktopSessionToken = randomToken(32);
+    const joinTokenExpiresAt = new Date(Date.now() + 120_000).toISOString();
+
+    const pairStartResponse = await fetch(`${baseURL}/pair/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken,
+        desktopSessionToken,
+        joinTokenExpiresAt,
+        relayWebSocketURL: wsURL,
+        idleTimeoutSeconds: 1800
+      })
+    });
+    assert.equal(pairStartResponse.status, 200);
+
+    desktopSocket = await openWebSocket(wsURL);
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: desktopSessionToken
+      })
+    );
+    const desktopAuth = await nextJSONMessage(desktopSocket);
+    assert.equal(desktopAuth.type, "auth_ok");
+    assert.equal(desktopAuth.desktopConnected, true);
+
+    const joinPromise = fetch(`${baseURL}/pair/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken
+      })
+    });
+
+    const pairRequest = await nextJSONMessage(desktopSocket);
+    assert.equal(pairRequest.type, "relay.pair_request");
+
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.pair_decision",
+        sessionID,
+        requestID: pairRequest.requestID,
+        approved: true
+      })
+    );
+
+    const joinResponse = await joinPromise;
+    assert.equal(joinResponse.status, 200);
+    const joinPayload = await joinResponse.json();
+
+    mobileSocket = await openWebSocket(wsURL, {
+      origin: "http://localhost:4173"
+    });
+    mobileSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: joinPayload.deviceSessionToken
+      })
+    );
+    const mobileAuth = await nextJSONMessage(mobileSocket);
+    assert.equal(mobileAuth.type, "auth_ok");
+    assert.equal(mobileAuth.desktopConnected, true);
+
+    desktopSocket.close();
+
+    const desktopOfflineSignal = await nextMatchingJSONMessage(
+      mobileSocket,
+      (message) => message?.type === "relay.desktop_status"
+    );
+    assert.equal(desktopOfflineSignal.desktopConnected, false);
+
+    mobileSocket.send(
+      JSON.stringify({
+        schemaVersion: 1,
+        sessionID,
+        seq: 11,
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: "command",
+          payload: {
+            name: "thread.select",
+            threadID: "thread-offline"
+          }
+        }
+      })
+    );
+
+    const desktopOfflineError = await nextMatchingJSONMessage(
+      mobileSocket,
+      (message) => message?.type === "relay.error"
+    );
+    assert.equal(desktopOfflineError.error, "desktop_offline");
+
+    desktopReconnectSocket = await openWebSocket(wsURL);
+    desktopReconnectSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: desktopSessionToken
+      })
+    );
+    const reconnectAuth = await nextJSONMessage(desktopReconnectSocket);
+    assert.equal(reconnectAuth.type, "auth_ok");
+    assert.equal(reconnectAuth.desktopConnected, true);
+
+    const desktopOnlineSignal = await nextMatchingJSONMessage(
+      mobileSocket,
+      (message) => message?.type === "relay.desktop_status"
+    );
+    assert.equal(desktopOnlineSignal.desktopConnected, true);
+
+    mobileSocket.send(
+      JSON.stringify({
+        schemaVersion: 1,
+        sessionID,
+        seq: 12,
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: "command",
+          payload: {
+            name: "thread.select",
+            threadID: "thread-online"
+          }
+        }
+      })
+    );
+
+    const forwarded = await nextMatchingJSONMessage(
+      desktopReconnectSocket,
+      (message) => message?.payload?.type === "command"
+    );
+    assert.equal(forwarded.payload.payload.threadID, "thread-online");
+  } finally {
+    mobileSocket?.close();
+    desktopReconnectSocket?.close();
+    desktopSocket?.close();
+    relayProcess.kill("SIGTERM");
+    await wait(150);
+    if (relayProcess.exitCode === null) {
+      relayProcess.kill("SIGKILL");
+    }
+  }
+});
+
+test("trusted sessions survive retention sweeps while desktop is offline", async () => {
+  const port = await reservePort();
+  const host = "127.0.0.1";
+  const baseURL = `http://${host}:${port}`;
+  const wsURL = `ws://${host}:${port}/ws`;
+
+  const relayProcess = spawn("node", ["src/server.mjs"], {
+    cwd: relayRoot,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: host,
+      PUBLIC_BASE_URL: baseURL,
+      ALLOWED_ORIGINS: "http://localhost:4173",
+      SESSION_RETENTION_MS: "120",
+      SESSION_SWEEP_INTERVAL_MS: "50",
+      WS_HEARTBEAT_INTERVAL_MS: "50"
+    }
+  });
+
+  let desktopSocket = null;
+  let mobileSocket = null;
+
+  try {
+    await waitForRelay(baseURL);
+
+    const sessionID = randomToken(16);
+    const joinToken = randomToken(32);
+    const desktopSessionToken = randomToken(32);
+    const joinTokenExpiresAt = new Date(Date.now() + 120_000).toISOString();
+
+    const pairStartResponse = await fetch(`${baseURL}/pair/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken,
+        desktopSessionToken,
+        joinTokenExpiresAt,
+        relayWebSocketURL: wsURL,
+        idleTimeoutSeconds: 1800
+      })
+    });
+    assert.equal(pairStartResponse.status, 200);
+
+    desktopSocket = await openWebSocket(wsURL);
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: desktopSessionToken
+      })
+    );
+    const desktopAuth = await nextJSONMessage(desktopSocket);
+    assert.equal(desktopAuth.type, "auth_ok");
+
+    const joinPromise = fetch(`${baseURL}/pair/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken
+      })
+    });
+
+    const pairRequest = await nextJSONMessage(desktopSocket);
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.pair_decision",
+        sessionID,
+        requestID: pairRequest.requestID,
+        approved: true
+      })
+    );
+
+    const joinResponse = await joinPromise;
+    assert.equal(joinResponse.status, 200);
+    const joinPayload = await joinResponse.json();
+
+    mobileSocket = await openWebSocket(wsURL, {
+      origin: "http://localhost:4173"
+    });
+    mobileSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: joinPayload.deviceSessionToken
+      })
+    );
+    const mobileAuth = await nextJSONMessage(mobileSocket);
+    assert.equal(mobileAuth.type, "auth_ok");
+
+    mobileSocket.close();
+    desktopSocket.close();
+    await wait(320);
+
+    const desktopReconnectSocket = await openWebSocket(wsURL);
+    desktopReconnectSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: desktopSessionToken
+      })
+    );
+    const reconnectAuth = await nextJSONMessage(desktopReconnectSocket);
+    assert.equal(reconnectAuth.type, "auth_ok");
+
+    desktopReconnectSocket.close();
+  } finally {
+    mobileSocket?.close();
+    desktopSocket?.close();
     relayProcess.kill("SIGTERM");
     await wait(150);
     if (relayProcess.exitCode === null) {
