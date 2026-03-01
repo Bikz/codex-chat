@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pwa
-          image: us-central1-docker.pkg.dev/codexchat-rc-ga-260226/remote-control/remote-control-pwa:ga-20260228-184435-e75b3ea-next
+          image: us-central1-docker.pkg.dev/codexchat-rc-ga-260226/remote-control/remote-control-pwa:ga-20260228-205402-cc32902-next
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
