@@ -1335,14 +1335,12 @@ final class AppModel: ObservableObject {
             }
         }
 
-        let remoteControlBroker = remoteControlBroker
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
         let turnScheduler = turnConcurrencyScheduler
         let persistenceScheduler = turnPersistenceScheduler
         let persistenceBatcher = persistenceBatcher
         let eventBridge = runtimeEventDispatchBridge
         Task {
-            await remoteControlBroker.stopSession(reason: "App teardown")
             await threadResolutionCoordinator.cancelAll()
             await persistenceBatcher.shutdown()
             await turnScheduler.cancelAll()
@@ -1408,11 +1406,9 @@ final class AppModel: ObservableObject {
             }
         }
 
-        let remoteControlBroker = remoteControlBroker
         let threadResolutionCoordinator = runtimeThreadResolutionCoordinator
         let turnScheduler = turnConcurrencyScheduler
         Task {
-            await remoteControlBroker.stopSession(reason: "App deinit")
             await threadResolutionCoordinator.cancelAll()
             await turnScheduler.cancelAll()
         }
