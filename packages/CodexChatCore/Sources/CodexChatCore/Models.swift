@@ -114,6 +114,51 @@ public enum SkillUpdateCapability: String, CaseIterable, Hashable, Sendable, Cod
     case unavailable
 }
 
+public enum SkillInstallMode: String, CaseIterable, Hashable, Sendable, Codable {
+    case all = "all-projects"
+    case selected = "selected-projects"
+}
+
+public enum SkillInstallMethod: String, CaseIterable, Hashable, Sendable, Codable {
+    case git
+    case npx
+}
+
+public struct SkillInstallRecord: Identifiable, Hashable, Sendable, Codable {
+    public let skillID: String
+    public var source: String
+    public var installer: SkillInstallMethod
+    public var sharedPath: String
+    public var mode: SkillInstallMode
+    public var projectIDs: [UUID]
+    public let createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        skillID: String,
+        source: String,
+        installer: SkillInstallMethod,
+        sharedPath: String,
+        mode: SkillInstallMode,
+        projectIDs: [UUID] = [],
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.skillID = skillID
+        self.source = source
+        self.installer = installer
+        self.sharedPath = sharedPath
+        self.mode = mode
+        self.projectIDs = projectIDs
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    public var id: String {
+        skillID
+    }
+}
+
 public struct ProjectSkillEnablementRecord: Hashable, Sendable, Codable {
     public let projectID: UUID
     public let skillPath: String

@@ -9,6 +9,7 @@ public struct MetadataRepositories: Sendable {
     public let followUpQueueRepository: any FollowUpQueueRepository
     public let projectSecretRepository: any ProjectSecretRepository
     public let projectSkillEnablementRepository: any ProjectSkillEnablementRepository
+    public let skillInstallRegistryRepository: any SkillInstallRegistryRepository
     public let chatSearchRepository: any ChatSearchRepository
     public let extensionInstallRepository: any ExtensionInstallRepository
     public let extensionPermissionRepository: any ExtensionPermissionRepository
@@ -27,6 +28,7 @@ public struct MetadataRepositories: Sendable {
         followUpQueueRepository = SQLiteFollowUpQueueRepository(dbQueue: database.dbQueue)
         projectSecretRepository = SQLiteProjectSecretRepository(dbQueue: database.dbQueue)
         projectSkillEnablementRepository = SQLiteProjectSkillEnablementRepository(dbQueue: database.dbQueue)
+        skillInstallRegistryRepository = SQLiteSkillInstallRegistryRepository(dbQueue: database.dbQueue)
         chatSearchRepository = SQLiteChatSearchRepository(dbQueue: database.dbQueue)
         extensionInstallRepository = SQLiteExtensionInstallRepository(dbQueue: database.dbQueue)
         extensionPermissionRepository = SQLiteExtensionPermissionRepository(dbQueue: database.dbQueue)

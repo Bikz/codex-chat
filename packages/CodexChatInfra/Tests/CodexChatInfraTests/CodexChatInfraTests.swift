@@ -21,6 +21,7 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertTrue(tableNames.contains("project_secrets"))
         XCTAssertTrue(tableNames.contains("project_skill_enablements"))
         XCTAssertTrue(tableNames.contains("skill_enablements"))
+        XCTAssertTrue(tableNames.contains("skill_installs"))
         XCTAssertTrue(tableNames.contains("chat_search_index"))
         XCTAssertTrue(tableNames.contains("follow_up_queue"))
         XCTAssertTrue(tableNames.contains("extension_installs"))
@@ -655,6 +656,60 @@ final class CodexChatInfraTests: XCTestCase {
                 "/tmp/scoped/projects/skills/.agents/skills/c",
             ])
         )
+    }
+
+    func testSkillInstallRegistryRoundTripsAndResolvesProjectVisibility() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let projectA = try await repositories.projectRepository.createProject(
+            named: "Project A",
+            path: "/tmp/project-a",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let projectB = try await repositories.projectRepository.createProject(
+            named: "Project B",
+            path: "/tmp/project-b",
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+
+        _ = try await repositories.skillInstallRegistryRepository.upsert(
+            SkillInstallRecord(
+                skillID: "atlas",
+                source: "https://github.com/openai/atlas",
+                installer: .git,
+                sharedPath: "/tmp/shared/atlas",
+                mode: .all
+            )
+        )
+        _ = try await repositories.skillInstallRegistryRepository.upsert(
+            SkillInstallRecord(
+                skillID: "agent-browser",
+                source: "https://github.com/openai/agent-browser",
+                installer: .git,
+                sharedPath: "/tmp/shared/agent-browser",
+                mode: .selected,
+                projectIDs: [projectA.id]
+            )
+        )
+
+        let listed = try await repositories.skillInstallRegistryRepository.list()
+        XCTAssertEqual(Set(listed.map(\.skillID)), Set(["atlas", "agent-browser"]))
+
+        let projectAIDs = try await repositories.skillInstallRegistryRepository.listInstalledSkillIDs(forProjectID: projectA.id)
+        XCTAssertEqual(projectAIDs, Set(["atlas", "agent-browser"]))
+
+        let projectBIDs = try await repositories.skillInstallRegistryRepository.listInstalledSkillIDs(forProjectID: projectB.id)
+        XCTAssertEqual(projectBIDs, Set(["atlas"]))
+
+        let atlas = try await repositories.skillInstallRegistryRepository.get(skillID: "ATLAS")
+        XCTAssertEqual(atlas?.skillID, "atlas")
+
+        try await repositories.skillInstallRegistryRepository.delete(skillID: "agent-browser")
+        let afterDelete = try await repositories.skillInstallRegistryRepository.list()
+        XCTAssertEqual(afterDelete.map(\.skillID), ["atlas"])
     }
 
     private func temporaryDatabaseURL() -> URL {

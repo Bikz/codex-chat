@@ -125,6 +125,14 @@ public protocol ProjectSkillEnablementRepository: Sendable {
     func rewriteSkillPaths(projectID: UUID, fromRootPath: String, toRootPath: String) async throws
 }
 
+public protocol SkillInstallRegistryRepository: Sendable {
+    func list() async throws -> [SkillInstallRecord]
+    func get(skillID: String) async throws -> SkillInstallRecord?
+    func upsert(_ record: SkillInstallRecord) async throws -> SkillInstallRecord
+    func delete(skillID: String) async throws
+    func listInstalledSkillIDs(forProjectID projectID: UUID) async throws -> Set<String>
+}
+
 public protocol ChatSearchRepository: Sendable {
     func indexThreadTitle(threadID: UUID, projectID: UUID, title: String) async throws
     func indexMessageExcerpt(threadID: UUID, projectID: UUID, text: String) async throws

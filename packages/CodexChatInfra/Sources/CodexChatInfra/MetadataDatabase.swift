@@ -372,6 +372,24 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v17_add_skill_installs") { db in
+            try db.create(table: "skill_installs") { table in
+                table.column("skillID", .text).notNull().primaryKey()
+                table.column("source", .text).notNull()
+                table.column("installer", .text).notNull()
+                table.column("sharedPath", .text).notNull()
+                table.column("mode", .text).notNull()
+                table.column("projectIDs", .text)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_skill_installs_mode_updated",
+                on: "skill_installs",
+                columns: ["mode", "updatedAt"]
+            )
+        }
+
         return migrator
     }
 }
