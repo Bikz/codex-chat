@@ -742,6 +742,24 @@ test("mobile-import-join-link-enables-pair", async ({ page }) => {
   await expect(page.locator("#preconnectPairButton")).toBeEnabled();
 });
 
+test("mobile-standalone-mode-hides-install-and-handoff-cards", async ({ page }) => {
+  await page.goto("/?e2e=1");
+  await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
+
+  await page.evaluate(() => {
+    (window as any).__codexRemotePWAHarness.importJoinLink("https://remote.bikz.cc/#sid=test-session&jt=test-join&relay=https://remote.bikz.cc");
+  });
+  await expect(page.getByRole("heading", { name: "Install to Home Screen" })).toBeVisible();
+  await expect(page.locator("#copyPairLinkButton")).toBeVisible();
+
+  await page.evaluate(() => {
+    (window as any).__codexRemotePWAHarness.setStandaloneMode(true);
+  });
+  await expect(page.getByRole("heading", { name: "Install to Home Screen" })).toBeHidden();
+  await expect(page.locator("#copyPairLinkButton")).toBeHidden();
+  await expect(page.locator("#preconnectPairButton")).toBeVisible();
+});
+
 test("mobile-smart-scroll-jump-to-latest", async ({ page }) => {
   await seedCustom(page, createLongThreadPayload(140));
 

@@ -13,6 +13,7 @@ declare global {
       closeAccountSheet: () => void;
       setSessionID: (sessionID: string | null) => void;
       setDeviceName: (deviceName: string | null) => void;
+      setStandaloneMode: (enabled: boolean) => void;
       setApprovalsExpanded: (expanded: boolean) => void;
       setChatDetached: (detached: boolean) => void;
       importJoinLink: (raw: string) => boolean;
@@ -62,6 +63,9 @@ export function exposeE2EHarness() {
     },
     setDeviceName(deviceName: string | null) {
       remoteStoreApi.setState({ deviceName });
+    },
+    setStandaloneMode(enabled: boolean) {
+      remoteStoreApi.setState({ isStandaloneMode: Boolean(enabled) });
     },
     setApprovalsExpanded(expanded: boolean) {
       remoteStoreApi.setState({ approvalsExpanded: Boolean(expanded) });
