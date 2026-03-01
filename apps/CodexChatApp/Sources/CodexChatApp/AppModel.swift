@@ -1077,6 +1077,7 @@ final class AppModel: ObservableObject {
     let modDiscoveryService: UIModDiscoveryService
     let modCatalogProvider: any ModCatalogProvider
     let keychainStore: APIKeychainStore
+    let remoteControlSessionCredentialStore: any RemoteControlSessionCredentialStoring
     let storagePaths: CodexChatStoragePaths
     let voiceCaptureService: any VoiceCaptureService
     let codexConfigFileStore: CodexConfigFileStore
@@ -1202,6 +1203,8 @@ final class AppModel: ObservableObject {
     var remoteControlSyncFlushPending = false
     var remoteControlSyncFlushForceSnapshot = false
     var remoteControlEnvelopeInterceptor: ((RemoteControlEnvelope) async -> Void)?
+    var remoteControlWebSocketConnector: ((RemoteControlSessionDescriptor) -> Void)?
+    var didAttemptRemoteControlSessionRestore = false
     var untrustedShellAcknowledgedProjectIDs: Set<UUID> = []
     var didLoadUntrustedShellAcknowledgements = false
     var didPrepareForTeardown = false
@@ -1218,7 +1221,9 @@ final class AppModel: ObservableObject {
         modCatalogProvider: any ModCatalogProvider = EmptyModCatalogProvider(),
         voiceCaptureService: (any VoiceCaptureService)? = nil,
         storagePaths: CodexChatStoragePaths = .current(),
-        harnessEnvironment: ComputerActionHarnessEnvironment? = nil
+        harnessEnvironment: ComputerActionHarnessEnvironment? = nil,
+        remoteControlBroker: RemoteControlBroker? = nil,
+        remoteControlSessionCredentialStore: (any RemoteControlSessionCredentialStoring)? = nil
     ) {
         projectRepository = repositories?.projectRepository
         threadRepository = repositories?.threadRepository
@@ -1248,6 +1253,8 @@ final class AppModel: ObservableObject {
         self.voiceCaptureService = voiceCaptureService ?? AppleSpeechVoiceCaptureService()
         storageRootPath = storagePaths.rootURL.path
         keychainStore = APIKeychainStore()
+        self.remoteControlSessionCredentialStore =
+            remoteControlSessionCredentialStore ?? RemoteControlSessionCredentialStore(secrets: keychainStore)
         isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
         codexConfigFileStore = CodexConfigFileStore(fileURL: storagePaths.codexConfigURL)
         let bundledSchemaURL = Bundle.module.url(forResource: "codex-config-schema", withExtension: "json")
@@ -1260,7 +1267,7 @@ final class AppModel: ObservableObject {
             cacheURL: storagePaths.systemURL.appendingPathComponent("codex-config-schema.json", isDirectory: false),
             bundledSchemaURL: bundledSchemaURL
         )
-        remoteControlBroker = RemoteControlBroker(relayRegistrar: RemoteControlHTTPRelayRegistrar())
+        self.remoteControlBroker = remoteControlBroker ?? RemoteControlBroker(relayRegistrar: RemoteControlHTTPRelayRegistrar())
 
         if let bootError {
             projectsState = .failed(bootError)

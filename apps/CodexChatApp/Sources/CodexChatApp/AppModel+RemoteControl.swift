@@ -95,6 +95,7 @@ extension AppModel {
     private static let remoteControlCommandAckReplayCacheLimit = 256
     private static let remoteControlCommandMutationPollNanoseconds: UInt64 = 10_000_000
     private static let remoteControlCommandMutationTimeoutNanoseconds: UInt64 = 1_200_000_000
+    private static let remoteControlSessionEndedMessage = "Session ended; start new session."
 
     var isRemoteControlSessionActive: Bool {
         remoteControlStatus.phase == .active && remoteControlStatus.session != nil
@@ -125,6 +126,51 @@ extension AppModel {
         isRemoteControlSheetVisible = false
     }
 
+    func restorePersistedRemoteControlSessionIfNeeded() async {
+        guard !didAttemptRemoteControlSessionRestore else {
+            return
+        }
+        didAttemptRemoteControlSessionRestore = true
+
+        guard !isRemoteControlSessionActive else {
+            return
+        }
+
+        let descriptor: RemoteControlSessionDescriptor
+        do {
+            guard let persistedDescriptor = try remoteControlSessionCredentialStore.loadSessionDescriptor() else {
+                return
+            }
+            descriptor = persistedDescriptor
+        } catch {
+            appendLog(.warning, "Failed to read persisted remote control session: \(error.localizedDescription)")
+            return
+        }
+
+        remoteControlStatusMessage = "Restoring remote session..."
+        closeRemoteControlWebSocket(reason: "Restoring remote session")
+        resetRemoteControlCommandAckReplayCache()
+
+        await remoteControlBroker.restoreSession(descriptor)
+        remoteControlStatus = await remoteControlBroker.currentStatus()
+
+        do {
+            _ = try await remoteControlBroker.refreshTrustedDevices()
+            remoteControlStatus = await remoteControlBroker.currentStatus()
+        } catch {
+            if await handleRemoteControlStatusRefreshFailure(error) {
+                return
+            }
+            appendLog(.warning, "Failed to refresh remote trusted devices: \(error.localizedDescription)")
+        }
+
+        remoteControlReconnectAttempt = 0
+        resetRemoteControlSyncState()
+        connectRemoteControlWebSocket(using: descriptor)
+        remoteControlStatusMessage = "Remote session restored. Reconnecting..."
+        appendLog(.info, "Restored persisted remote control session: \(descriptor.sessionID)")
+    }
+
     func startRemoteControlSession() {
         guard let urls = resolvedRemoteControlURLs() else {
             return
@@ -141,18 +187,12 @@ extension AppModel {
                     relayWebSocketURL: urls.relayWebSocketURL
                 )
 
+                savePersistedRemoteControlSessionDescriptor(descriptor)
                 await refreshRemoteControlStatus()
                 remoteControlReconnectAttempt = 0
-                remoteControlInboundSequenceTracker.reset()
-                remoteControlInboundSequenceTrackersByConnectionID = [:]
-                remoteControlInboundSequenceTrackerConnectionOrder = []
-                remoteControlOutboundSequence = 0
-                remoteControlLastSnapshotSignature = nil
-                remoteControlLastEventEntryIDsByThreadID = [:]
-                remoteControlLastTurnStateByThreadID = [:]
-                remoteControlLastPendingApprovalRequestIDs = []
+                resetRemoteControlSyncState()
 
-                startRemoteControlWebSocket(using: descriptor)
+                connectRemoteControlWebSocket(using: descriptor)
                 remoteControlStatusMessage = "Remote session started. Join token expires at \(Self.remoteTimestamp(descriptor.joinTokenLease.expiresAt))."
                 appendLog(.info, "Remote control session started: \(descriptor.sessionID)")
             } catch {
@@ -168,6 +208,7 @@ extension AppModel {
             guard let self else { return }
             closeRemoteControlWebSocket(reason: "Stopped by user")
             resetRemoteControlCommandAckReplayCache()
+            clearPersistedRemoteControlSessionDescriptor()
             await remoteControlBroker.stopSession(reason: "Stopped by user")
             await refreshRemoteControlStatus()
             remoteControlStatusMessage = "Remote session stopped."
@@ -195,6 +236,7 @@ extension AppModel {
             guard let self else { return }
             do {
                 let descriptor = try await remoteControlBroker.refreshJoinToken(joinBaseURL: urls.joinURL)
+                savePersistedRemoteControlSessionDescriptor(descriptor)
                 await refreshRemoteControlStatus()
                 remoteControlStatusMessage = "New join token ready. It expires at \(Self.remoteTimestamp(descriptor.joinTokenLease.expiresAt))."
             } catch {
@@ -215,6 +257,9 @@ extension AppModel {
             _ = try await remoteControlBroker.refreshTrustedDevices()
             remoteControlStatus = await remoteControlBroker.currentStatus()
         } catch {
+            if await handleRemoteControlStatusRefreshFailure(error) {
+                return
+            }
             appendLog(.warning, "Failed to refresh remote trusted devices: \(error.localizedDescription)")
         }
     }
@@ -271,6 +316,25 @@ extension AppModel {
         return (joinURL, relayWebSocketURL)
     }
 
+    private func connectRemoteControlWebSocket(using descriptor: RemoteControlSessionDescriptor) {
+        if let connector = remoteControlWebSocketConnector {
+            connector(descriptor)
+            return
+        }
+        startRemoteControlWebSocket(using: descriptor)
+    }
+
+    private func resetRemoteControlSyncState() {
+        remoteControlInboundSequenceTracker.reset()
+        remoteControlInboundSequenceTrackersByConnectionID = [:]
+        remoteControlInboundSequenceTrackerConnectionOrder = []
+        remoteControlOutboundSequence = 0
+        remoteControlLastSnapshotSignature = nil
+        remoteControlLastEventEntryIDsByThreadID = [:]
+        remoteControlLastTurnStateByThreadID = [:]
+        remoteControlLastPendingApprovalRequestIDs = []
+    }
+
     private func startRemoteControlWebSocket(using descriptor: RemoteControlSessionDescriptor) {
         guard let socketURL = remoteControlDesktopSocketURL(from: descriptor) else {
             remoteControlStatusMessage = "Unable to build relay websocket URL."
@@ -321,6 +385,67 @@ extension AppModel {
         appendLog(.debug, "Remote control websocket closed: \(reason)")
     }
 
+    private func savePersistedRemoteControlSessionDescriptor(
+        _ descriptor: RemoteControlSessionDescriptor
+    ) {
+        do {
+            try remoteControlSessionCredentialStore.saveSessionDescriptor(descriptor)
+        } catch {
+            appendLog(.warning, "Failed to persist remote control session descriptor: \(error.localizedDescription)")
+        }
+    }
+
+    private func clearPersistedRemoteControlSessionDescriptor() {
+        do {
+            try remoteControlSessionCredentialStore.clearSessionDescriptor()
+        } catch {
+            appendLog(.warning, "Failed to clear persisted remote control session descriptor: \(error.localizedDescription)")
+        }
+    }
+
+    private func shouldInvalidatePersistedRemoteControlSession(for error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == "CodexChat.RemoteControlRelay" {
+            if [401, 403, 404, 410].contains(nsError.code) {
+                return true
+            }
+
+            if nsError.code == 409,
+               nsError.localizedDescription.localizedCaseInsensitiveContains("session")
+            {
+                return true
+            }
+        }
+
+        let lowercasedDescription = nsError.localizedDescription.lowercased()
+        return lowercasedDescription.contains("session_not_found")
+            || lowercasedDescription.contains("session expired")
+            || lowercasedDescription.contains("session ended")
+            || lowercasedDescription.contains("session stale")
+    }
+
+    private func invalidatePersistedRemoteControlSession(
+        relayReason: String
+    ) async {
+        closeRemoteControlWebSocket(reason: relayReason)
+        clearPersistedRemoteControlSessionDescriptor()
+        await remoteControlBroker.stopSession(reason: relayReason)
+        remoteControlStatus = await remoteControlBroker.currentStatus()
+        remoteControlStatusMessage = Self.remoteControlSessionEndedMessage
+        appendLog(.info, "Remote control session ended: \(relayReason)")
+    }
+
+    private func handleRemoteControlStatusRefreshFailure(_ error: Error) async -> Bool {
+        guard shouldInvalidatePersistedRemoteControlSession(for: error) else {
+            return false
+        }
+
+        await invalidatePersistedRemoteControlSession(
+            relayReason: "relay_rejected_session_refresh"
+        )
+        return true
+    }
+
     private func remoteControlDesktopSocketURL(from descriptor: RemoteControlSessionDescriptor) -> URL? {
         guard var components = URLComponents(url: descriptor.relayWebSocketURL, resolvingAgainstBaseURL: false) else {
             return nil
@@ -360,6 +485,17 @@ extension AppModel {
             return
         }
 
+        let closeCode = remoteControlWebSocketTask?.closeCode
+        if closeCode == .policyViolation {
+            Task { [weak self] in
+                guard let self else { return }
+                await invalidatePersistedRemoteControlSession(
+                    relayReason: "relay_auth_rejected_session_resume"
+                )
+            }
+            return
+        }
+
         guard isRemoteControlSessionActive else {
             remoteControlStatusMessage = "Remote session disconnected."
             return
@@ -389,7 +525,7 @@ extension AppModel {
             guard let session = remoteControlStatus.session else {
                 return
             }
-            startRemoteControlWebSocket(using: session)
+            connectRemoteControlWebSocket(using: session)
         }
     }
 

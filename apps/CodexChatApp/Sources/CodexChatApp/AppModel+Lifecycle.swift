@@ -5,6 +5,9 @@ extension AppModel {
         startRuntimePoolMetricsLoopIfNeeded()
         startComputerActionHarnessIfNeeded()
         Task {
+            await restorePersistedRemoteControlSessionIfNeeded()
+        }
+        Task {
             await loadInitialData()
         }
     }

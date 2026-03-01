@@ -24,6 +24,67 @@ private actor RemoteEnvelopeRecorder {
     }
 }
 
+private actor RestoreSessionRelayRegistrar: RemoteControlRelayRegistering {
+    private(set) var startRequests: [RemoteControlPairStartRequest] = []
+    private(set) var refreshRequests: [RemoteControlPairRefreshRequest] = []
+    private(set) var stopRequests: [RemoteControlPairStopRequest] = []
+    private(set) var listRequests: [RemoteControlDevicesListRequest] = []
+    private(set) var revokeRequests: [RemoteControlDeviceRevokeRequest] = []
+    private let listDevicesError: Error?
+
+    init(listDevicesError: Error? = nil) {
+        self.listDevicesError = listDevicesError
+    }
+
+    func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse {
+        startRequests.append(request)
+        return RemoteControlPairStartResponse(accepted: true, relayWebSocketURL: request.relayWebSocketURL)
+    }
+
+    func refreshPairing(_ request: RemoteControlPairRefreshRequest) async throws -> RemoteControlPairRefreshResponse {
+        refreshRequests.append(request)
+        return RemoteControlPairRefreshResponse(accepted: true, relayWebSocketURL: request.relayWebSocketURL)
+    }
+
+    func stopPairing(_ request: RemoteControlPairStopRequest) async throws -> RemoteControlPairStopResponse {
+        stopRequests.append(request)
+        return RemoteControlPairStopResponse(accepted: true)
+    }
+
+    func listDevices(_ request: RemoteControlDevicesListRequest) async throws -> RemoteControlDevicesListResponse {
+        listRequests.append(request)
+        if let listDevicesError {
+            throw listDevicesError
+        }
+        return RemoteControlDevicesListResponse(accepted: true, devices: [])
+    }
+
+    func revokeDevice(_ request: RemoteControlDeviceRevokeRequest) async throws -> RemoteControlDeviceRevokeResponse {
+        revokeRequests.append(request)
+        return RemoteControlDeviceRevokeResponse(accepted: true)
+    }
+}
+
+private final class InMemoryRemoteControlSessionCredentialStore: RemoteControlSessionCredentialStoring, @unchecked Sendable {
+    private var descriptor: RemoteControlSessionDescriptor?
+
+    init(descriptor: RemoteControlSessionDescriptor? = nil) {
+        self.descriptor = descriptor
+    }
+
+    func loadSessionDescriptor() throws -> RemoteControlSessionDescriptor? {
+        descriptor
+    }
+
+    func saveSessionDescriptor(_ descriptor: RemoteControlSessionDescriptor) throws {
+        self.descriptor = descriptor
+    }
+
+    func clearSessionDescriptor() throws {
+        descriptor = nil
+    }
+}
+
 @MainActor
 final class RemoteControlSyncTests: XCTestCase {
     func testRemoteThreadSendCommandWaitsForTranscriptBeforeSnapshotFlush() async throws {
@@ -410,6 +471,97 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertFalse(snapshotIndices.isEmpty)
         XCTAssertLessThan(ackPairs[0].index, snapshotIndices[0], "Initial accepted ack should precede snapshot.")
         XCTAssertGreaterThan(ackPairs[1].index, snapshotIndices[0], "Stale replay ack should be emitted when duplicate arrives.")
+    }
+
+    func testRestorePersistedRemoteControlSessionReconnectsWithoutPairRestart() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let joinURL = try XCTUnwrap(URL(string: "https://remote.example/rc#sid=session-resume&jt=join-token-resume"))
+        let relayWebSocketURL = try XCTUnwrap(URL(string: "wss://remote.example/ws"))
+        let descriptor = RemoteControlSessionDescriptor(
+            sessionID: "session-resume",
+            joinTokenLease: RemoteControlJoinTokenLease(
+                token: "join-token-resume",
+                issuedAt: now,
+                expiresAt: now.addingTimeInterval(120)
+            ),
+            joinURL: joinURL,
+            relayWebSocketURL: relayWebSocketURL,
+            desktopSessionToken: "desktop-token-resume",
+            createdAt: now,
+            idleTimeout: 1800
+        )
+        let credentialStore = InMemoryRemoteControlSessionCredentialStore(descriptor: descriptor)
+        let registrar = RestoreSessionRelayRegistrar()
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            remoteControlBroker: broker,
+            remoteControlSessionCredentialStore: credentialStore
+        )
+
+        var connectedSessionIDs: [String] = []
+        model.remoteControlWebSocketConnector = { sessionDescriptor in
+            connectedSessionIDs.append(sessionDescriptor.sessionID)
+        }
+
+        await model.restorePersistedRemoteControlSessionIfNeeded()
+        await model.restorePersistedRemoteControlSessionIfNeeded()
+
+        XCTAssertEqual(model.remoteControlStatus.phase, .active)
+        XCTAssertEqual(model.remoteControlStatus.session?.sessionID, descriptor.sessionID)
+        XCTAssertEqual(connectedSessionIDs, [descriptor.sessionID], "Persisted restore should reconnect exactly once.")
+
+        let pairStartRequests = await registrar.startRequests
+        XCTAssertEqual(pairStartRequests.count, 0, "Restore should not call pair/start again.")
+    }
+
+    func testRestorePersistedRemoteControlSessionClearsExpiredCredentials() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_100)
+        let joinURL = try XCTUnwrap(URL(string: "https://remote.example/rc#sid=session-expired&jt=join-token-expired"))
+        let relayWebSocketURL = try XCTUnwrap(URL(string: "wss://remote.example/ws"))
+        let descriptor = RemoteControlSessionDescriptor(
+            sessionID: "session-expired",
+            joinTokenLease: RemoteControlJoinTokenLease(
+                token: "join-token-expired",
+                issuedAt: now,
+                expiresAt: now.addingTimeInterval(120)
+            ),
+            joinURL: joinURL,
+            relayWebSocketURL: relayWebSocketURL,
+            desktopSessionToken: "desktop-token-expired",
+            createdAt: now,
+            idleTimeout: 1800
+        )
+        let credentialStore = InMemoryRemoteControlSessionCredentialStore(descriptor: descriptor)
+        let invalidSessionError = NSError(
+            domain: "CodexChat.RemoteControlRelay",
+            code: 404,
+            userInfo: [NSLocalizedDescriptionKey: "session_not_found"]
+        )
+        let registrar = RestoreSessionRelayRegistrar(listDevicesError: invalidSessionError)
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            remoteControlBroker: broker,
+            remoteControlSessionCredentialStore: credentialStore
+        )
+
+        var didAttemptConnect = false
+        model.remoteControlWebSocketConnector = { _ in
+            didAttemptConnect = true
+        }
+
+        await model.restorePersistedRemoteControlSessionIfNeeded()
+
+        XCTAssertFalse(didAttemptConnect, "Restore should not connect websocket when relay rejects session refresh.")
+        XCTAssertEqual(model.remoteControlStatus.phase, .disconnected)
+        XCTAssertEqual(model.remoteControlStatusMessage, "Session ended; start new session.")
+        let clearedDescriptor = try credentialStore.loadSessionDescriptor()
+        XCTAssertNil(clearedDescriptor, "Invalid persisted session should be cleared.")
     }
 
     private func waitUntil(
