@@ -157,6 +157,82 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         XCTAssertEqual(migrationMarker, "1")
     }
 
+    func testRefreshSkillsKeepsMigrationMarkerUnsetWhenCandidateMigrationFails() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-skill-legacy-migration-failure-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+
+        let projectPath = root.appendingPathComponent("project-delta", isDirectory: true)
+        let legacySkillPath = projectPath
+            .appendingPathComponent(".agents/skills/legacy-failing-skill", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacySkillPath, withIntermediateDirectories: true)
+        try """
+        # Legacy Failing Skill
+
+        This migration should fail.
+        """.write(
+            to: legacySkillPath.appendingPathComponent("SKILL.md", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Delta",
+            path: projectPath.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        try await repositories.projectSkillEnablementRepository.setSkillEnabled(
+            projectID: project.id,
+            skillPath: legacySkillPath.path,
+            enabled: true
+        )
+
+        // Remove write permissions from the destination root so moving into shared store fails.
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o555],
+            ofItemAtPath: paths.sharedSkillsStoreURL.path
+        )
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: paths.sharedSkillsStoreURL.path
+            )
+        }
+
+        let catalogService = SkillCatalogService(
+            codexHomeURL: paths.codexHomeURL,
+            agentsHomeURL: paths.agentsHomeURL,
+            sharedSkillsStoreURL: paths.sharedSkillsStoreURL
+        )
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            skillCatalogService: catalogService,
+            storagePaths: paths
+        )
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        try await model.refreshSkills()
+
+        let installs = try await repositories.skillInstallRegistryRepository.list()
+        XCTAssertTrue(installs.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacySkillPath.path))
+
+        let migrationMarker = try await repositories.preferenceRepository.getPreference(key: .skillsInstallMigrationV1)
+        XCTAssertNil(migrationMarker)
+    }
+
     func testUninstallRefusesToDeleteSharedStoreRootPath() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-skill-uninstall-root-guard-\(UUID().uuidString)", isDirectory: true)
@@ -220,7 +296,9 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         model.uninstallSkill(item)
 
         try await waitUntil(timeout: 3) {
-            !model.isSkillOperationInProgress && (model.skillStatusMessage?.contains("Refusing to remove a shared skill path outside the managed store.") ?? false)
+            let hasRefusalStatus = model.skillStatusMessage?
+                .contains("Refusing to remove a shared skill path outside the managed store.") ?? false
+            return !model.isSkillOperationInProgress && hasRefusalStatus
         }
 
         let installs = try await repositories.skillInstallRegistryRepository.list()

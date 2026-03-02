@@ -335,6 +335,7 @@ extension AppModel {
             let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
             let fileManager = FileManager.default
             var migratedCount = 0
+            var hadCandidateFailures = false
 
             for candidate in candidates {
                 do {
@@ -370,6 +371,7 @@ extension AppModel {
                     let sharedSkillPath = sharedSkillURL.standardizedFileURL.path
                     guard isStrictlyInsideSharedSkillsStore(sharedSkillPath) else {
                         appendLog(.warning, "Skipping skill migration outside shared store root: \(sharedSkillPath)")
+                        hadCandidateFailures = true
                         continue
                     }
 
@@ -401,10 +403,12 @@ extension AppModel {
 
                     if !fileManager.fileExists(atPath: sharedSkillPath) {
                         appendLog(.warning, "Shared skill path missing after migration: \(sharedSkillPath)")
+                        hadCandidateFailures = true
                         continue
                     }
                     migratedCount += 1
                 } catch {
+                    hadCandidateFailures = true
                     appendLog(
                         .warning,
                         "Legacy skill migration skipped for \(candidate.skill.name): \(error.localizedDescription)"
@@ -412,6 +416,10 @@ extension AppModel {
                 }
             }
 
+            guard !hadCandidateFailures else {
+                appendLog(.warning, "Legacy skill migration incomplete; retrying on next refresh.")
+                return
+            }
             try await preferenceRepository.setPreference(key: .skillsInstallMigrationV1, value: "1")
             if migratedCount > 0 {
                 appendLog(.info, "Migrated \(migratedCount) legacy skill install(s) into shared store.")
