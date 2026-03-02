@@ -42,6 +42,24 @@ final class SkillLinkManagerTests: XCTestCase {
         }
     }
 
+    func testEnsureProjectSkillLinkRejectsSharedStoreRootAsSkillDirectory() throws {
+        let fixture = try makeFixture()
+        defer { try? fixture.cleanup() }
+
+        let manager = SkillLinkManager(sharedStoreRootURL: fixture.sharedStoreRoot)
+        XCTAssertThrowsError(
+            try manager.ensureProjectSkillLink(
+                folderName: "shared-store",
+                sharedSkillDirectoryURL: fixture.sharedStoreRoot,
+                projectRootURL: fixture.projectRoot
+            )
+        ) { error in
+            guard case SkillLinkManagerError.sharedSkillOutsideStore = error else {
+                return XCTFail("Expected sharedSkillOutsideStore, got \(error)")
+            }
+        }
+    }
+
     func testReconcileProjectSkillLinkRepairsBrokenSymlink() throws {
         let fixture = try makeFixture()
         defer { try? fixture.cleanup() }

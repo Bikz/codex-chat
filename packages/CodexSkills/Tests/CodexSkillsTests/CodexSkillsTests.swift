@@ -616,6 +616,54 @@ final class CodexSkillsTests: XCTestCase {
         )
     }
 
+    func testNpxInstallDoesNotTreatStoreRootAsInstalledSkillPath() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-npx-root-install-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let sharedStore = root.appendingPathComponent("skills-store", isDirectory: true)
+        let source = "https://github.com/example/root-skill.git"
+
+        let service = SkillCatalogService(
+            codexHomeURL: codexHome,
+            agentsHomeURL: root.appendingPathComponent(".agents", isDirectory: true),
+            sharedSkillsStoreURL: sharedStore,
+            processRunner: { argv, cwd in
+                if argv == ["npx", "--version"] {
+                    return "10.0.0"
+                }
+                if argv == ["npx", "skills", "add", source], let cwd {
+                    let installRootURL = URL(fileURLWithPath: cwd, isDirectory: true)
+                    try "# Root Skill".write(
+                        to: installRootURL.appendingPathComponent("SKILL.md", isDirectory: false),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    return "installed"
+                }
+                return ""
+            }
+        )
+
+        XCTAssertThrowsError(
+            try service.installSkill(
+                SkillInstallRequest(
+                    source: source,
+                    scope: .global,
+                    projectPath: nil,
+                    installer: .npx
+                )
+            )
+        ) { error in
+            guard case let SkillCatalogError.installPathUnresolved(path) = error else {
+                return XCTFail("Expected installPathUnresolved, got \(error)")
+            }
+            XCTAssertEqual(path, sharedStore.path)
+        }
+    }
+
     func testReinstallRollsBackWhenAtomicReplaceFailsMidSwap() throws {
         final class FailingSecondMoveFileManager: FileManager, @unchecked Sendable {
             private let lock = NSLock()

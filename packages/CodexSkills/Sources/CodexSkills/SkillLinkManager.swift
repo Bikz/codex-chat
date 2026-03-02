@@ -272,10 +272,6 @@ public final class SkillLinkManager: @unchecked Sendable {
         let normalizedRoot = URL(fileURLWithPath: root, isDirectory: true).standardizedFileURL.path
         let normalizedPath = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
 
-        if normalizedPath == normalizedRoot {
-            return true
-        }
-
         return normalizedPath.hasPrefix(normalizedRoot + "/")
     }
 

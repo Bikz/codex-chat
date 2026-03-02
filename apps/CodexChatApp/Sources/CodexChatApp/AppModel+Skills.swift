@@ -368,10 +368,7 @@ extension AppModel {
                         projects: allProjects
                     )
                     let sharedSkillPath = sharedSkillURL.standardizedFileURL.path
-                    guard CodexChatStoragePaths.isPath(
-                        sharedSkillPath,
-                        insideRoot: storagePaths.sharedSkillsStoreURL.path
-                    ) else {
+                    guard isStrictlyInsideSharedSkillsStore(sharedSkillPath) else {
                         appendLog(.warning, "Skipping skill migration outside shared store root: \(sharedSkillPath)")
                         continue
                     }
@@ -595,8 +592,45 @@ extension AppModel {
             .path
     }
 
+    private func isStrictlyInsideSharedSkillsStore(_ path: String) -> Bool {
+        let normalizedRoot = storagePaths.sharedSkillsStoreURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        let normalizedPath = URL(fileURLWithPath: path, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        return normalizedPath.hasPrefix(normalizedRoot + "/")
+    }
+
     private func resolveSkillPaths(_ paths: Set<String>) -> Set<String> {
         Set(paths.map { resolvedSkillPath($0) })
+    }
+
+    private func removeSharedSkillDirectoryIfNeeded(
+        at sharedSkillURL: URL,
+        uninstallSharedSkill: Bool
+    ) throws {
+        guard uninstallSharedSkill else {
+            return
+        }
+
+        let resolvedSharedSkillURL = sharedSkillURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        guard FileManager.default.fileExists(atPath: resolvedSharedSkillURL.path) else {
+            return
+        }
+        guard isStrictlyInsideSharedSkillsStore(resolvedSharedSkillURL.path) else {
+            throw NSError(
+                domain: "CodexChatApp.SkillInstall",
+                code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "Refusing to remove a shared skill path outside the managed store."]
+            )
+        }
+
+        try FileManager.default.removeItem(at: resolvedSharedSkillURL)
     }
 
     private func registerInstalledSkill(
@@ -610,6 +644,13 @@ extension AppModel {
             .resolvingSymlinksInPath()
             .standardizedFileURL
         let sharedPath = sharedSkillURL.path
+        guard isStrictlyInsideSharedSkillsStore(sharedPath) else {
+            throw NSError(
+                domain: "CodexChatApp.SkillInstall",
+                code: 6,
+                userInfo: [NSLocalizedDescriptionKey: "Installed skill path is outside the shared skills store."]
+            )
+        }
         let folderName = sharedSkillURL.lastPathComponent
         let skillID = SkillStoreKeyBuilder.makeKey(source: source, fallbackName: folderName)
 
@@ -724,10 +765,8 @@ extension AppModel {
                     .map(\.id)
                     .filter { $0 != limitToProjectID }
                 if remainingProjectIDs.isEmpty {
+                    try removeSharedSkillDirectoryIfNeeded(at: sharedSkillURL, uninstallSharedSkill: uninstallSharedSkill)
                     try await skillInstallRegistryRepository.delete(skillID: record.skillID)
-                    if uninstallSharedSkill, FileManager.default.fileExists(atPath: sharedSkillURL.path) {
-                        try FileManager.default.removeItem(at: sharedSkillURL)
-                    }
                     return
                 }
                 record = SkillInstallRecord(
@@ -744,10 +783,8 @@ extension AppModel {
             case .selected:
                 let remainingProjectIDs = record.projectIDs.filter { $0 != limitToProjectID }
                 if remainingProjectIDs.isEmpty {
+                    try removeSharedSkillDirectoryIfNeeded(at: sharedSkillURL, uninstallSharedSkill: uninstallSharedSkill)
                     try await skillInstallRegistryRepository.delete(skillID: record.skillID)
-                    if uninstallSharedSkill, FileManager.default.fileExists(atPath: sharedSkillURL.path) {
-                        try FileManager.default.removeItem(at: sharedSkillURL)
-                    }
                     return
                 }
                 record = SkillInstallRecord(
@@ -779,10 +816,8 @@ extension AppModel {
             )
         }
 
+        try removeSharedSkillDirectoryIfNeeded(at: sharedSkillURL, uninstallSharedSkill: uninstallSharedSkill)
         try await skillInstallRegistryRepository.delete(skillID: record.skillID)
-        if uninstallSharedSkill, FileManager.default.fileExists(atPath: sharedSkillURL.path) {
-            try FileManager.default.removeItem(at: sharedSkillURL)
-        }
     }
 
     private func installRecord(for item: SkillListItem) async throws -> SkillInstallRecord? {

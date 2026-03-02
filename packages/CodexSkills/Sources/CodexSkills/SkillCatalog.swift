@@ -510,6 +510,9 @@ public final class SkillCatalogService: @unchecked Sendable {
             ) else {
                 throw SkillCatalogError.installPathUnresolved(root.path)
             }
+            guard path(installedPath, isStrictDescendantOf: root.path) else {
+                throw SkillCatalogError.installPathUnresolved(root.path)
+            }
             try? writeInstallMetadata(
                 at: URL(fileURLWithPath: installedPath, isDirectory: true),
                 metadata: SkillInstallMetadata(
@@ -984,12 +987,13 @@ public final class SkillCatalogService: @unchecked Sendable {
             return root.appendingPathComponent(fallbackName, isDirectory: true).path
         }
 
-        let rootSkillDefinitionURL = root.appendingPathComponent("SKILL.md", isDirectory: false)
-        if fileManager.fileExists(atPath: rootSkillDefinitionURL.path) {
-            return root.path
-        }
-
         return nil
+    }
+
+    private func path(_ path: String, isStrictDescendantOf root: String) -> Bool {
+        let normalizedRoot = URL(fileURLWithPath: root, isDirectory: true).standardizedFileURL.path
+        let normalizedPath = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+        return normalizedPath.hasPrefix(normalizedRoot + "/")
     }
 
     private func installMetadataURL(for skillDirectory: URL) -> URL {

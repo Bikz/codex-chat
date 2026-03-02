@@ -157,6 +157,78 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         XCTAssertEqual(migrationMarker, "1")
     }
 
+    func testUninstallRefusesToDeleteSharedStoreRootPath() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-skill-uninstall-root-guard-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+        let projectPath = root.appendingPathComponent("project-gamma", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
+
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Gamma",
+            path: projectPath.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        _ = try await repositories.skillInstallRegistryRepository.upsert(
+            SkillInstallRecord(
+                skillID: "dangerous-root-record",
+                source: "local:dangerous-root",
+                installer: .git,
+                sharedPath: paths.sharedSkillsStoreURL.path,
+                mode: .selected,
+                projectIDs: [project.id]
+            )
+        )
+
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            storagePaths: paths
+        )
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        let dangerousSkill = DiscoveredSkill(
+            name: "Dangerous Root Skill",
+            description: "Synthetic skill for uninstall safety test.",
+            scope: .global,
+            skillPath: paths.sharedSkillsStoreURL.path,
+            skillDefinitionPath: paths.sharedSkillsStoreURL.appendingPathComponent("SKILL.md", isDirectory: false).path,
+            hasScripts: false,
+            sourceURL: nil,
+            optionalMetadata: [:],
+            installMetadata: nil,
+            isGitRepository: false
+        )
+        let item = AppModel.SkillListItem(
+            skill: dangerousSkill,
+            enabledTargets: [.project],
+            isEnabledForSelectedProject: true,
+            selectedProjectCount: 1,
+            updateCapability: .unavailable,
+            updateSource: nil,
+            updateInstaller: nil
+        )
+
+        model.uninstallSkill(item)
+
+        try await waitUntil(timeout: 3) {
+            !model.isSkillOperationInProgress && (model.skillStatusMessage?.contains("Refusing to remove a shared skill path outside the managed store.") ?? false)
+        }
+
+        let installs = try await repositories.skillInstallRegistryRepository.list()
+        XCTAssertEqual(installs.count, 1)
+        XCTAssertEqual(installs.first?.skillID, "dangerous-root-record")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.sharedSkillsStoreURL.path))
+    }
+
     private func waitUntil(
         timeout: TimeInterval,
         condition: @escaping @MainActor () -> Bool
