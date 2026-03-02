@@ -70,7 +70,8 @@ extension AppModel {
         let blockedCapabilities = blockedCapabilitiesForSkillInstall(
             source: source,
             scope: scope,
-            installer: installer
+            installer: installer,
+            projectIDs: projectIDs
         )
         if !blockedCapabilities.isEmpty {
             let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
@@ -804,19 +805,41 @@ extension AppModel {
     func blockedCapabilitiesForSkillInstall(
         source: String,
         scope: SkillInstallScope,
-        installer: SkillInstallerKind
+        installer: SkillInstallerKind,
+        projectIDs: [UUID]? = nil
     ) -> Set<ExtensibilityCapability> {
         guard scope == .project else {
             return []
         }
 
-        return blockedExtensibilityCapabilities(
-            for: requiredExtensibilityCapabilitiesForSkillInstall(
-                source: source,
-                installer: installer
-            ),
-            projectID: selectedProjectID
+        let requiredCapabilities = requiredExtensibilityCapabilitiesForSkillInstall(
+            source: source,
+            installer: installer
         )
+        guard !requiredCapabilities.isEmpty else {
+            return []
+        }
+
+        let targetProjectIDs: [UUID] = if let projectIDs, !projectIDs.isEmpty {
+            Array(Set(projectIDs))
+        } else if let selectedProjectID {
+            [selectedProjectID]
+        } else {
+            []
+        }
+
+        guard !targetProjectIDs.isEmpty else {
+            return blockedExtensibilityCapabilities(for: requiredCapabilities, projectID: selectedProjectID)
+        }
+
+        return targetProjectIDs.reduce(into: Set<ExtensibilityCapability>()) { blocked, projectID in
+            blocked.formUnion(
+                blockedExtensibilityCapabilities(
+                    for: requiredCapabilities,
+                    projectID: projectID
+                )
+            )
+        }
     }
 
     func requiredExtensibilityCapabilitiesForSkillInstall(
