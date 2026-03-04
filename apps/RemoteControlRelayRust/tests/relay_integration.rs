@@ -113,9 +113,7 @@ async fn pair_connected_mobile(
 
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .expect("desktop auth send");
@@ -168,8 +166,7 @@ async fn pair_connected_mobile(
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("desktop pair decision send");
@@ -198,9 +195,7 @@ async fn pair_connected_mobile(
 
     mobile_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": device_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": device_token }).to_string(),
         ))
         .await
         .expect("mobile auth send");
@@ -212,12 +207,9 @@ async fn pair_connected_mobile(
         .expect("mobile auth message");
 
     // Drain any relay bookkeeping events before assertions.
-    loop {
-        match tokio::time::timeout(Duration::from_millis(50), desktop_socket.next()).await {
-            Ok(Some(Ok(_))) => continue,
-            Ok(Some(Err(_))) | Ok(None) | Err(_) => break,
-        }
-    }
+    while let Ok(Some(Ok(_))) =
+        tokio::time::timeout(Duration::from_millis(50), desktop_socket.next()).await
+    {}
 
     (base, task, desktop_socket, mobile_socket, session_id)
 }
@@ -409,9 +401,7 @@ async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
         .expect("desktop websocket");
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .expect("desktop auth send");
@@ -462,8 +452,7 @@ async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("desktop pair decision send");
@@ -490,9 +479,7 @@ async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
         .expect("mobile websocket");
     mobile_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": device_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": device_token }).to_string(),
         ))
         .await
         .expect("mobile auth send");
@@ -568,9 +555,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
 
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token.clone() })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token.clone() }).to_string(),
         ))
         .await
         .expect("desktop auth send");
@@ -641,8 +626,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("desktop pair decision send");
@@ -672,9 +656,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
 
     mobile_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": device_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": device_token }).to_string(),
         ))
         .await
         .expect("mobile auth send");
@@ -738,8 +720,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
                     }
                 }
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send command while desktop offline");
@@ -757,9 +738,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
         .expect("desktop websocket reconnect");
     desktop_reconnect_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .expect("desktop reconnect auth send");
@@ -800,8 +779,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
                     }
                 }
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send command after desktop reconnect");
@@ -857,8 +835,7 @@ async fn mobile_receives_desktop_offline_status_and_command_rejection() {
                     }
                 }
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send command while desktop offline");
@@ -909,9 +886,7 @@ async fn trusted_mobile_reauths_while_desktop_offline_without_repairing() {
         .expect("desktop websocket");
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .expect("desktop auth send");
@@ -953,8 +928,7 @@ async fn trusted_mobile_reauths_while_desktop_offline_without_repairing() {
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("pair decision send");
@@ -981,9 +955,7 @@ async fn trusted_mobile_reauths_while_desktop_offline_without_repairing() {
         .expect("mobile websocket");
     mobile_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": device_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": device_token }).to_string(),
         ))
         .await
         .expect("mobile auth send");
@@ -1023,9 +995,7 @@ async fn trusted_mobile_reauths_while_desktop_offline_without_repairing() {
             .expect("mobile reconnect websocket");
     mobile_reconnect_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": rotated_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": rotated_token }).to_string(),
         ))
         .await
         .expect("mobile reconnect auth send");
@@ -1044,13 +1014,10 @@ async fn trusted_mobile_reauths_while_desktop_offline_without_repairing() {
             .and_then(Value::as_bool),
         Some(false)
     );
-    assert_eq!(
-        reconnect_auth
-            .get("nextDeviceSessionToken")
-            .and_then(Value::as_str)
-            .is_some(),
-        true
-    );
+    assert!(reconnect_auth
+        .get("nextDeviceSessionToken")
+        .and_then(Value::as_str)
+        .is_some());
 
     mobile_reconnect_socket
         .close(None)
@@ -1142,9 +1109,7 @@ async fn pair_stop_forces_repair_by_rejecting_trusted_device_reauth() {
         .expect("desktop websocket");
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .expect("desktop auth send");
@@ -1186,8 +1151,7 @@ async fn pair_stop_forces_repair_by_rejecting_trusted_device_reauth() {
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("pair decision send");
@@ -1214,9 +1178,7 @@ async fn pair_stop_forces_repair_by_rejecting_trusted_device_reauth() {
         .expect("mobile websocket");
     mobile_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": device_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": device_token }).to_string(),
         ))
         .await
         .expect("mobile auth send");
@@ -1263,9 +1225,7 @@ async fn pair_stop_forces_repair_by_rejecting_trusted_device_reauth() {
             .expect("mobile reconnect websocket");
     mobile_reconnect_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": rotated_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": rotated_token }).to_string(),
         ))
         .await
         .expect("mobile reconnect auth send");
@@ -1333,9 +1293,7 @@ async fn pair_refresh_rotates_join_token_without_stopping_session() {
         .expect("desktop websocket");
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .expect("desktop auth send");
@@ -1411,8 +1369,7 @@ async fn pair_refresh_rotates_join_token_without_stopping_session() {
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("desktop pair decision send");
@@ -1482,9 +1439,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .expect("desktop websocket");
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .expect("desktop auth send");
@@ -1536,8 +1491,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("desktop pair decision send");
@@ -1569,9 +1523,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .expect("mobile websocket");
     mobile_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": device_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": device_session_token }).to_string(),
         ))
         .await
         .expect("mobile auth send");
@@ -1703,9 +1655,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .expect("mobile reconnect websocket");
     mobile_reconnect_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": rotated_device_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": rotated_device_token }).to_string(),
         ))
         .await
         .expect("mobile reconnect auth send");
@@ -1758,8 +1708,7 @@ async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
                     }
                 }
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send invalid command");
@@ -1811,8 +1760,7 @@ async fn mobile_command_with_unexpected_field_is_rejected_and_not_forwarded() {
                     }
                 }
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send invalid command with unexpected field");
@@ -1866,8 +1814,7 @@ async fn mobile_command_ignores_spoofed_relay_metadata_and_forwards() {
                     }
                 }
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send command with spoofed metadata");
@@ -1912,8 +1859,7 @@ async fn invalid_snapshot_request_with_negative_last_seq_is_rejected() {
                 "lastSeq": -1,
                 "reason": "integration-test"
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send invalid snapshot request");
@@ -1958,8 +1904,7 @@ async fn snapshot_request_accepts_numeric_string_last_seq_for_backward_compatibi
                 "lastSeq": "42",
                 "reason": "integration-test"
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send snapshot request with string lastSeq");
@@ -2008,8 +1953,7 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
                         }
                     }
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send thread.select command");
@@ -2083,8 +2027,7 @@ async fn per_session_command_rate_limit_blocks_excess_mobile_commands() {
                         }
                     }
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send thread.select command");
@@ -2151,8 +2094,7 @@ async fn per_device_snapshot_request_rate_limit_blocks_excess_requests() {
                     "lastSeq": request_number,
                     "reason": "integration-test"
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send snapshot request");
@@ -2220,7 +2162,7 @@ async fn replayed_mobile_command_sequence_is_rejected() {
     .to_string();
 
     mobile_socket
-        .send(Message::Text(command_payload.clone().into()))
+        .send(Message::Text(command_payload.clone()))
         .await
         .expect("send first command");
 
@@ -2239,7 +2181,7 @@ async fn replayed_mobile_command_sequence_is_rejected() {
     );
 
     mobile_socket
-        .send(Message::Text(command_payload.into()))
+        .send(Message::Text(command_payload))
         .await
         .expect("send replayed command");
 
@@ -2295,8 +2237,7 @@ async fn per_socket_websocket_message_rate_limit_disconnects_abusive_client() {
                         }
                     }
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send command");
@@ -2395,8 +2336,7 @@ async fn redis_persistence_restores_session_after_restart_when_configured() {
                 "type": "relay.auth",
                 "token": desktop_session_token
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("desktop auth send");

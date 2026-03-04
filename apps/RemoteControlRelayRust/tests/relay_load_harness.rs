@@ -206,9 +206,7 @@ async fn pair_connected_mobile(
 
     desktop_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": desktop_session_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
         ))
         .await
         .map_err(|error| format!("desktop auth send failed: {error}"))?;
@@ -268,8 +266,7 @@ async fn pair_connected_mobile(
                 "requestID": request_id,
                 "approved": true,
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .map_err(|error| format!("desktop pair decision send failed: {error}"))?;
@@ -311,9 +308,7 @@ async fn pair_connected_mobile(
 
     mobile_socket
         .send(Message::Text(
-            json!({ "type": "relay.auth", "token": device_token })
-                .to_string()
-                .into(),
+            json!({ "type": "relay.auth", "token": device_token }).to_string(),
         ))
         .await
         .map_err(|error| format!("mobile auth send failed: {error}"))?;
@@ -388,7 +383,7 @@ fn micros_to_millis_ceil(value: u128) -> u128 {
     if value == 0 {
         return 0;
     }
-    (value + 999) / 1_000
+    value.div_ceil(1_000)
 }
 
 #[tokio::test]
@@ -444,7 +439,7 @@ async fn relay_parallel_sessions_load_harness() {
                 let start = Instant::now();
                 handles
                     .mobile_socket
-                    .send(Message::Text(payload.into()))
+                    .send(Message::Text(payload))
                     .await
                     .map_err(|error| format!("mobile send failed: {error}"))?;
 
