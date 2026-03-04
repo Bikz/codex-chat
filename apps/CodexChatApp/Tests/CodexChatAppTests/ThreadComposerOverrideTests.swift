@@ -1,6 +1,7 @@
 import CodexChatCore
 import CodexChatInfra
 @testable import CodexChatShared
+import Combine
 import XCTest
 
 @MainActor
@@ -15,6 +16,31 @@ final class ThreadComposerOverrideTests: XCTestCase {
         XCTAssertEqual(target?.section, .projects)
         XCTAssertEqual(target?.projectID, projectID)
         XCTAssertNil(model.consumeSettingsNavigationTarget())
+    }
+
+    func testConsumeSettingsNavigationTargetWhenEmptyDoesNotRepublishNil() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let projectID = UUID()
+        var emissions: [AppModel.SettingsNavigationTarget?] = []
+        let cancellable = model.$settingsNavigationTarget
+            .dropFirst()
+            .sink { emissions.append($0) }
+
+        model.requestSettingsNavigationToProjects(projectID: projectID)
+        _ = model.consumeSettingsNavigationTarget()
+        let emissionCountAfterFirstConsume = emissions.count
+
+        XCTAssertNil(model.consumeSettingsNavigationTarget())
+        XCTAssertEqual(emissions.count, emissionCountAfterFirstConsume)
+        XCTAssertEqual(emissions.count, 2)
+        XCTAssertEqual(emissions.first??.projectID, projectID)
+        guard case let .some(lastEmission) = emissions.last else {
+            XCTFail("Expected settings navigation emission")
+            return
+        }
+        XCTAssertNil(lastEmission)
+
+        withExtendedLifetime(cancellable) {}
     }
 
     func testThreadOverridesSwitchWithThreadSelection() {

@@ -11,10 +11,11 @@ extension AppModel {
     }
 
     func consumeSettingsNavigationTarget() -> SettingsNavigationTarget? {
-        defer {
-            settingsNavigationTarget = nil
+        guard let target = settingsNavigationTarget else {
+            return nil
         }
-        return settingsNavigationTarget
+        settingsNavigationTarget = nil
+        return target
     }
 
     func setComposerWebSearchOverrideForCurrentContext(_ mode: ProjectWebSearchMode) {
