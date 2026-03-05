@@ -43,6 +43,7 @@ use self::metrics::*;
 use self::session::*;
 use self::state::*;
 
+pub use self::session::drain_sessions_for_shutdown;
 pub use self::state::new_state;
 pub use self::transport::build_router;
 
@@ -770,6 +771,7 @@ mod tests {
                 ws_auth_attempts: 0,
                 ws_auth_successes: 0,
                 last_persistence_refresh_at_ms: 0,
+                persistence_versions: HashMap::new(),
                 bus_subscribed_sessions: HashSet::new(),
                 bus_subscription_tasks: HashMap::new(),
             })),
@@ -940,6 +942,7 @@ mod tests {
                 "reason": "device_revoked"
             })
             .to_string(),
+            signature: None,
         };
         let payload = serde_json::to_vec(&envelope).expect("encode envelope");
         handle_session_envelope(&state, "local-instance", &payload).await;
@@ -970,6 +973,7 @@ mod tests {
                 "reason": "stopped_by_desktop"
             })
             .to_string(),
+            signature: None,
         };
         let payload = serde_json::to_vec(&envelope).expect("encode envelope");
         handle_session_envelope(&state, "local-instance", &payload).await;
@@ -977,6 +981,39 @@ mod tests {
         let relay = state.inner.lock().await;
         assert!(!relay.sessions.contains_key(session_id));
         assert!(relay.device_token_index.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cross_instance_envelope_without_required_signature_is_ignored() {
+        let session_id = "session-1";
+        let mut state = make_test_state_with_session(make_test_session(
+            session_id,
+            "device-1",
+            "device-token-1",
+        ));
+        state.config.nats_hmac_secret = Some("01234567890123456789012345678901".to_string());
+
+        let envelope = CrossInstanceEnvelope {
+            schema_version: 1,
+            session_id: session_id.to_string(),
+            source_instance_id: "remote-instance".to_string(),
+            target: "mobile".to_string(),
+            target_device_id: None,
+            payload: json!({
+                "type": "disconnect",
+                "reason": "stopped_by_desktop"
+            })
+            .to_string(),
+            signature: None,
+        };
+        let payload = serde_json::to_vec(&envelope).expect("encode envelope");
+        handle_session_envelope(&state, "local-instance", &payload).await;
+
+        let relay = state.inner.lock().await;
+        assert!(
+            relay.sessions.contains_key(session_id),
+            "session should remain when signature verification fails"
+        );
     }
 
     #[test]
@@ -1061,6 +1098,23 @@ mod tests {
             relay.device_token_index.contains_key("other-session-token"),
             "other sessions should remain untouched"
         );
+    }
+
+    #[tokio::test]
+    async fn drain_sessions_for_shutdown_closes_active_sessions() {
+        let session_id = "session-1";
+        let state = make_test_state_with_session(make_test_session(
+            session_id,
+            "device-1",
+            "device-token-1",
+        ));
+
+        drain_sessions_for_shutdown(&state).await;
+
+        let relay = state.inner.lock().await;
+        assert!(relay.sessions.is_empty());
+        assert!(relay.device_token_index.is_empty());
+        assert!(relay.desktop_token_index.is_empty());
     }
 
     fn make_protocol_validation_config() -> RelayConfig {

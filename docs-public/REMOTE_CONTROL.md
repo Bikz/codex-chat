@@ -52,7 +52,7 @@ This MVP delivers:
   - Per-device snapshot request throttling for reconnect abuse control
   - Runtime pressure and throughput counters on `/metricsz` (`outboundSendFailures`, `slowConsumerDisconnects`, plus `pairStart*` / `pairJoin*` / `pairRefresh*` / `wsAuth*`)
   - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
-  - Optional NATS cross-instance routing (`NATS_URL`, `NATS_SUBJECT_PREFIX`) for stateless relay fanout
+  - Optional NATS cross-instance routing (`NATS_URL`, `NATS_SUBJECT_PREFIX`, `NATS_HMAC_SECRET`) for stateless relay fanout with signed envelopes
 - `apps/RemoteControlPWA`
   - Next.js App Router + TypeScript UI shell with shadcn/Radix primitives
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)

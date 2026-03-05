@@ -30,6 +30,7 @@ pub struct RelayConfig {
     pub redis_key_prefix: String,
     pub nats_url: Option<String>,
     pub nats_subject_prefix: String,
+    pub nats_hmac_secret: Option<String>,
     pub trust_proxy: bool,
     pub allow_legacy_query_token_auth: bool,
     pub allowed_origins: HashSet<String>,
@@ -79,6 +80,10 @@ impl RelayConfig {
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| "codexchat.remote.relay".to_string());
+        let nats_hmac_secret = env::var("NATS_HMAC_SECRET")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         let trust_proxy = parse_bool_env("TRUST_PROXY");
         let allow_legacy_query_token_auth = parse_bool_env("ALLOW_LEGACY_QUERY_TOKEN_AUTH");
 
@@ -121,6 +126,7 @@ impl RelayConfig {
             redis_key_prefix,
             nats_url,
             nats_subject_prefix,
+            nats_hmac_secret,
             trust_proxy,
             allow_legacy_query_token_auth,
             allowed_origins,
@@ -218,6 +224,14 @@ impl RelayConfig {
         if self.allowed_origins.is_empty() {
             return Err("ALLOWED_ORIGINS must contain at least one origin.".to_string());
         }
+        if self.nats_url.is_some() {
+            let Some(secret) = self.nats_hmac_secret.as_ref() else {
+                return Err("NATS_HMAC_SECRET must be set when NATS_URL is configured.".to_string());
+            };
+            if secret.len() < 32 {
+                return Err("NATS_HMAC_SECRET must be at least 32 characters.".to_string());
+            }
+        }
 
         Ok(())
     }
@@ -310,5 +324,27 @@ mod tests {
         config.max_pair_requests_per_minute = 0;
         let error = config.validate().expect_err("zero limit");
         assert!(error.contains("MAX_PAIR_REQUESTS_PER_MINUTE"));
+    }
+
+    #[test]
+    fn validate_rejects_missing_nats_hmac_secret_when_nats_enabled() {
+        let mut config = RelayConfig::from_env();
+        config.nats_url = Some("nats://localhost:4222".to_string());
+        config.nats_hmac_secret = None;
+        let error = config
+            .validate()
+            .expect_err("missing NATS_HMAC_SECRET should fail");
+        assert!(error.contains("NATS_HMAC_SECRET"));
+    }
+
+    #[test]
+    fn validate_rejects_short_nats_hmac_secret() {
+        let mut config = RelayConfig::from_env();
+        config.nats_url = Some("nats://localhost:4222".to_string());
+        config.nats_hmac_secret = Some("short".to_string());
+        let error = config
+            .validate()
+            .expect_err("short NATS_HMAC_SECRET should fail");
+        assert!(error.contains("at least 32"));
     }
 }

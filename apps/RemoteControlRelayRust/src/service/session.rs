@@ -204,3 +204,29 @@ pub(super) fn close_session(relay: &mut RelayState, session_id: &str, reason: &s
         session_log_id(session_id)
     );
 }
+
+pub async fn drain_sessions_for_shutdown(state: &SharedRelayState) {
+    let session_ids = {
+        let mut relay = state.inner.lock().await;
+        let ids = relay.sessions.keys().cloned().collect::<Vec<_>>();
+        for session_id in &ids {
+            close_session(&mut relay, session_id, "server_shutdown");
+        }
+        ids
+    };
+
+    for session_id in session_ids {
+        let disconnect_payload =
+            json!({ "type": "disconnect", "reason": "server_shutdown" }).to_string();
+        publish_cross_instance_session(
+            state,
+            &session_id,
+            "desktop",
+            None,
+            disconnect_payload.clone(),
+        );
+        publish_cross_instance_session(state, &session_id, "mobile", None, disconnect_payload);
+        persist_session_if_needed(state, &session_id).await;
+        sync_session_bus_subscription(state, &session_id).await;
+    }
+}

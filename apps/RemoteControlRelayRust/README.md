@@ -65,7 +65,7 @@ make remote-control-compat
 - `thread.send_message` command text is bounded by `MAX_REMOTE_COMMAND_TEXT_BYTES` (default `16384`).
 - Relay enforces strict allowlisted JSON fields for command and snapshot payloads; unexpected fields are rejected with `relay.error`.
 - Optional Redis durability can be enabled with `REDIS_URL` and `REDIS_KEY_PREFIX` (persisted per session key for restart recovery).
-- Optional cross-instance fanout can be enabled with `NATS_URL` and `NATS_SUBJECT_PREFIX`.
+- Optional cross-instance fanout can be enabled with `NATS_URL`, `NATS_SUBJECT_PREFIX`, and `NATS_HMAC_SECRET` (minimum 32 chars).
 - With Redis + NATS configured, relay instances can restore session metadata and route desktop/mobile websocket traffic across instances without exposing inbound desktop ports.
 - `GET /metricsz` exposes live runtime counters for sessions, active websocket connections, token index size, pairing/auth throughput (`pairStart*`, `pairJoin*`, `pairRefresh*`, `wsAuth*`), and relay pressure indicators (including command/snapshot limiter buckets plus outbound send failures and slow-consumer disconnect counts).
 

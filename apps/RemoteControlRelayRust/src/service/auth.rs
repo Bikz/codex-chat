@@ -34,7 +34,7 @@ pub(super) async fn authenticate_socket(
     let auth_context = if let Some(auth_context) = auth_context {
         auth_context
     } else {
-        refresh_sessions_from_persistence(state, true).await;
+        refresh_sessions_from_persistence(state, false).await;
         let relay = state.inner.lock().await;
         let refreshed = resolve_auth_context(&relay, token);
         if refreshed.is_none() {

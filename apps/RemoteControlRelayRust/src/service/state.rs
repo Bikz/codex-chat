@@ -1,4 +1,6 @@
 use super::*;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 const BUS_SUBSCRIBE_RETRY_DELAY: Duration = Duration::from_secs(1);
 
@@ -27,6 +29,7 @@ pub struct RelayState {
     pub(super) ws_auth_attempts: u64,
     pub(super) ws_auth_successes: u64,
     pub(super) last_persistence_refresh_at_ms: i64,
+    pub(super) persistence_versions: HashMap<String, u64>,
     pub(super) bus_subscribed_sessions: HashSet<String>,
     pub(super) bus_subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
 }
@@ -98,6 +101,7 @@ pub(super) struct RelayStatePersistence {
     pub(super) redis_client: redis::Client,
     pub(super) session_index_key: String,
     pub(super) session_key_prefix: String,
+    pub(super) session_version_key_prefix: String,
 }
 
 #[derive(Clone)]
@@ -115,6 +119,8 @@ pub(super) struct CrossInstanceEnvelope {
     pub(super) target: String,
     pub(super) target_device_id: Option<String>,
     pub(super) payload: String,
+    #[serde(default)]
+    pub(super) signature: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -191,7 +197,13 @@ impl RelayStatePersistence {
         format!("{}:{session_id}", self.session_key_prefix)
     }
 
-    async fn load_sessions(&self) -> Result<HashMap<String, SessionRecord>, String> {
+    fn session_version_key(&self, session_id: &str) -> String {
+        format!("{}:{session_id}", self.session_version_key_prefix)
+    }
+
+    async fn load_sessions(
+        &self,
+    ) -> Result<(HashMap<String, SessionRecord>, HashMap<String, u64>), String> {
         let mut connection = self
             .redis_client
             .get_multiplexed_async_connection()
@@ -204,8 +216,14 @@ impl RelayStatePersistence {
             .map_err(|error| format!("redis smembers failed: {error}"))?;
 
         let mut sessions = HashMap::new();
+        let mut persistence_versions = HashMap::new();
         for session_id in session_ids {
             let key = self.session_key(&session_id);
+            let version_key = self.session_version_key(&session_id);
+            let persisted_version: Option<u64> = connection
+                .get(&version_key)
+                .await
+                .map_err(|error| format!("redis get version failed: {error}"))?;
             let payload: Option<String> = connection
                 .get(&key)
                 .await
@@ -225,16 +243,19 @@ impl RelayStatePersistence {
                 warn!("[relay-rs] skipping unsupported persisted session {session_id}");
                 continue;
             };
-            sessions.insert(runtime.session_id.clone(), runtime);
+            let runtime_session_id = runtime.session_id.clone();
+            sessions.insert(runtime_session_id.clone(), runtime);
+            persistence_versions.insert(runtime_session_id, persisted_version.unwrap_or(0));
         }
 
-        Ok(sessions)
+        Ok((sessions, persistence_versions))
     }
 
-    async fn save_session(&self, session: &SessionRecord) -> Result<(), String> {
+    async fn save_session(&self, session: &SessionRecord, version: u64) -> Result<(), String> {
         let payload = serde_json::to_string(&PersistedSessionRecord::from_session(session))
             .map_err(|error| format!("persisted session encode failed: {error}"))?;
         let key = self.session_key(&session.session_id);
+        let version_key = self.session_version_key(&session.session_id);
 
         let mut connection = self
             .redis_client
@@ -242,39 +263,62 @@ impl RelayStatePersistence {
             .await
             .map_err(|error| format!("redis connection failed: {error}"))?;
 
-        let mut pipeline = redis::pipe();
-        pipeline
-            .atomic()
-            .set(&key, payload)
-            .ignore()
-            .sadd(&self.session_index_key, &session.session_id)
-            .ignore();
-        pipeline
-            .query_async::<()>(&mut connection)
+        let script = redis::Script::new(
+            r#"
+            local current_version = redis.call("GET", KEYS[2])
+            if (not current_version) or (tonumber(current_version) <= tonumber(ARGV[1])) then
+                redis.call("SET", KEYS[1], ARGV[2])
+                redis.call("SADD", KEYS[3], ARGV[3])
+                redis.call("SET", KEYS[2], ARGV[1])
+                return 1
+            end
+            return 0
+            "#,
+        );
+
+        script
+            .key(&key)
+            .key(&version_key)
+            .key(&self.session_index_key)
+            .arg(version)
+            .arg(payload)
+            .arg(&session.session_id)
+            .invoke_async::<i32>(&mut connection)
             .await
-            .map_err(|error| format!("redis save session pipeline failed: {error}"))?;
+            .map_err(|error| format!("redis save session script failed: {error}"))?;
 
         Ok(())
     }
 
-    async fn delete_session(&self, session_id: &str) -> Result<(), String> {
+    async fn delete_session(&self, session_id: &str, version: u64) -> Result<(), String> {
         let key = self.session_key(session_id);
+        let version_key = self.session_version_key(session_id);
         let mut connection = self
             .redis_client
             .get_multiplexed_async_connection()
             .await
             .map_err(|error| format!("redis connection failed: {error}"))?;
-        let mut pipeline = redis::pipe();
-        pipeline
-            .atomic()
-            .del(&key)
-            .ignore()
-            .srem(&self.session_index_key, session_id)
-            .ignore();
-        pipeline
-            .query_async::<()>(&mut connection)
+        let script = redis::Script::new(
+            r#"
+            local current_version = redis.call("GET", KEYS[2])
+            if (not current_version) or (tonumber(current_version) <= tonumber(ARGV[1])) then
+                redis.call("DEL", KEYS[1])
+                redis.call("SREM", KEYS[3], ARGV[2])
+                redis.call("SET", KEYS[2], ARGV[1])
+                return 1
+            end
+            return 0
+            "#,
+        );
+        script
+            .key(&key)
+            .key(&version_key)
+            .key(&self.session_index_key)
+            .arg(version)
+            .arg(session_id)
+            .invoke_async::<i32>(&mut connection)
             .await
-            .map_err(|error| format!("redis delete session pipeline failed: {error}"))?;
+            .map_err(|error| format!("redis delete session script failed: {error}"))?;
 
         Ok(())
     }
@@ -285,7 +329,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
     let persistence = build_persistence(&config);
     let runtime = if let Some(persistence) = &persistence {
         match persistence.load_sessions().await {
-            Ok(sessions) => {
+            Ok((sessions, persistence_versions)) => {
                 let token_count = sessions
                     .values()
                     .map(|session| session.devices.len())
@@ -312,6 +356,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     ws_auth_attempts: 0,
                     ws_auth_successes: 0,
                     last_persistence_refresh_at_ms: now_ms(),
+                    persistence_versions,
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
                 }
@@ -335,6 +380,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     ws_auth_attempts: 0,
                     ws_auth_successes: 0,
                     last_persistence_refresh_at_ms: 0,
+                    persistence_versions: HashMap::new(),
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
                 }
@@ -358,6 +404,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
             ws_auth_attempts: 0,
             ws_auth_successes: 0,
             last_persistence_refresh_at_ms: 0,
+            persistence_versions: HashMap::new(),
             bus_subscribed_sessions: HashSet::new(),
             bus_subscription_tasks: HashMap::new(),
         }
@@ -389,6 +436,7 @@ pub(super) fn build_persistence(config: &RelayConfig) -> Option<RelayStatePersis
         redis_client,
         session_index_key: format!("{}:sessions:index:v1", config.redis_key_prefix),
         session_key_prefix: format!("{}:session:v1", config.redis_key_prefix),
+        session_version_key_prefix: format!("{}:session:version:v1", config.redis_key_prefix),
     })
 }
 
@@ -426,6 +474,57 @@ pub(super) fn nats_control_subject(bus: &RelayCrossInstanceBus) -> String {
     format!("{}.control", bus.subject_prefix)
 }
 
+fn envelope_signature_material(envelope: &CrossInstanceEnvelope) -> Option<Vec<u8>> {
+    #[derive(Serialize)]
+    struct SignaturePayload<'a> {
+        schema_version: u8,
+        session_id: &'a str,
+        source_instance_id: &'a str,
+        target: &'a str,
+        target_device_id: Option<&'a str>,
+        payload: &'a str,
+    }
+
+    serde_json::to_vec(&SignaturePayload {
+        schema_version: envelope.schema_version,
+        session_id: &envelope.session_id,
+        source_instance_id: &envelope.source_instance_id,
+        target: &envelope.target,
+        target_device_id: envelope.target_device_id.as_deref(),
+        payload: &envelope.payload,
+    })
+    .ok()
+}
+
+fn envelope_signature(secret: &str, envelope: &CrossInstanceEnvelope) -> Option<String> {
+    let material = envelope_signature_material(envelope)?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
+    mac.update(&material);
+    Some(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
+}
+
+fn envelope_signature_valid(state: &SharedRelayState, envelope: &CrossInstanceEnvelope) -> bool {
+    let Some(secret) = state.config.nats_hmac_secret.as_ref() else {
+        return true;
+    };
+    let Some(encoded_signature) = envelope.signature.as_deref() else {
+        return false;
+    };
+    let Ok(signature_bytes) =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded_signature)
+    else {
+        return false;
+    };
+    let Some(material) = envelope_signature_material(envelope) else {
+        return false;
+    };
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(secret.as_bytes()) else {
+        return false;
+    };
+    mac.update(&material);
+    mac.verify_slice(&signature_bytes).is_ok()
+}
+
 pub(super) fn start_control_subscription(state: SharedRelayState) {
     let Some(bus) = state.cross_instance_bus.clone() else {
         return;
@@ -450,6 +549,9 @@ pub(super) fn start_control_subscription(state: SharedRelayState) {
                     continue;
                 };
                 if envelope.schema_version != 1 {
+                    continue;
+                }
+                if !envelope_signature_valid(&state, &envelope) {
                     continue;
                 }
                 if envelope.source_instance_id == bus.instance_id {
@@ -519,11 +621,18 @@ pub(super) fn publish_cross_instance_envelope(
         target: target.to_string(),
         target_device_id,
         payload,
+        signature: None,
     };
+    let mut signed_envelope = envelope;
+    signed_envelope.signature = state
+        .config
+        .nats_hmac_secret
+        .as_ref()
+        .and_then(|secret| envelope_signature(secret, &signed_envelope));
     let subject = subject_builder(&bus, session_id);
 
     tokio::spawn(async move {
-        let encoded = match serde_json::to_vec(&envelope) {
+        let encoded = match serde_json::to_vec(&signed_envelope) {
             Ok(encoded) => encoded,
             Err(error) => {
                 warn!("[relay-rs] failed to encode cross-instance payload: {error}");
@@ -606,6 +715,9 @@ pub(super) async fn handle_session_envelope(
         return;
     };
     if envelope.schema_version != 1 {
+        return;
+    }
+    if !envelope_signature_valid(state, &envelope) {
         return;
     }
     if envelope.source_instance_id == local_instance_id {
@@ -759,12 +871,24 @@ pub(super) async fn persist_session_if_needed(state: &SharedRelayState, session_
         return;
     };
 
-    let session = {
-        let relay = state.inner.lock().await;
-        relay
-            .sessions
-            .get(session_id)
-            .map(PersistedSessionRecord::from_session)
+    let (session, persistence_version) = {
+        let mut relay = state.inner.lock().await;
+        let persistence_version = {
+            let next_version = relay
+                .persistence_versions
+                .entry(session_id.to_string())
+                .or_insert(0);
+            *next_version = next_version.saturating_add(1);
+            *next_version
+        };
+
+        (
+            relay
+                .sessions
+                .get(session_id)
+                .map(PersistedSessionRecord::from_session),
+            persistence_version,
+        )
     };
 
     if let Some(session) = session {
@@ -772,13 +896,19 @@ pub(super) async fn persist_session_if_needed(state: &SharedRelayState, session_
             Some(value) => value,
             None => return,
         };
-        if let Err(error) = persistence.save_session(&runtime_session).await {
+        if let Err(error) = persistence
+            .save_session(&runtime_session, persistence_version)
+            .await
+        {
             warn!(
                 "[relay-rs] failed to persist relay session {}: {error}",
                 session_log_id(session_id)
             );
         }
-    } else if let Err(error) = persistence.delete_session(session_id).await {
+    } else if let Err(error) = persistence
+        .delete_session(session_id, persistence_version)
+        .await
+    {
         warn!(
             "[relay-rs] failed to remove relay session {} from persistence: {error}",
             session_log_id(session_id)
@@ -799,7 +929,7 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
         }
     }
 
-    let loaded_sessions = match persistence.load_sessions().await {
+    let (loaded_sessions, loaded_versions) = match persistence.load_sessions().await {
         Ok(sessions) => sessions,
         Err(error) => {
             warn!("[relay-rs] failed to refresh sessions from persistence: {error}");
@@ -812,6 +942,7 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
     relay.last_persistence_refresh_at_ms = now;
 
     for (session_id, loaded_session) in loaded_sessions {
+        let loaded_version = loaded_versions.get(&session_id).copied().unwrap_or(0);
         let mut replaced_desktop_token: Option<String> = None;
         match relay.sessions.get_mut(&session_id) {
             Some(existing) => {
@@ -870,6 +1001,11 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
                 .desktop_token_index
                 .insert(desktop_token, session_id.clone());
         }
+        relay
+            .persistence_versions
+            .entry(session_id.clone())
+            .and_modify(|existing| *existing = (*existing).max(loaded_version))
+            .or_insert(loaded_version);
     }
 
     if force {
