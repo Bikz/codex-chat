@@ -3,6 +3,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 const BUS_SUBSCRIBE_RETRY_DELAY: Duration = Duration::from_secs(1);
+const MIN_CROSS_INSTANCE_NONCE_CHARS: usize = 8;
 
 #[derive(Clone)]
 pub struct SharedRelayState {
@@ -30,6 +31,7 @@ pub struct RelayState {
     pub(super) ws_auth_successes: u64,
     pub(super) last_persistence_refresh_at_ms: i64,
     pub(super) persistence_versions: HashMap<String, u64>,
+    pub(super) seen_cross_instance_nonces: HashMap<String, i64>,
     pub(super) bus_subscribed_sessions: HashSet<String>,
     pub(super) bus_subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
 }
@@ -119,6 +121,10 @@ pub(super) struct CrossInstanceEnvelope {
     pub(super) target: String,
     pub(super) target_device_id: Option<String>,
     pub(super) payload: String,
+    #[serde(default)]
+    pub(super) issued_at_ms: i64,
+    #[serde(default)]
+    pub(super) nonce: String,
     #[serde(default)]
     pub(super) signature: Option<String>,
 }
@@ -357,6 +363,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     ws_auth_successes: 0,
                     last_persistence_refresh_at_ms: now_ms(),
                     persistence_versions,
+                    seen_cross_instance_nonces: HashMap::new(),
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
                 }
@@ -381,6 +388,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
                     ws_auth_successes: 0,
                     last_persistence_refresh_at_ms: 0,
                     persistence_versions: HashMap::new(),
+                    seen_cross_instance_nonces: HashMap::new(),
                     bus_subscribed_sessions: HashSet::new(),
                     bus_subscription_tasks: HashMap::new(),
                 }
@@ -405,6 +413,7 @@ pub async fn new_state(config: RelayConfig) -> SharedRelayState {
             ws_auth_successes: 0,
             last_persistence_refresh_at_ms: 0,
             persistence_versions: HashMap::new(),
+            seen_cross_instance_nonces: HashMap::new(),
             bus_subscribed_sessions: HashSet::new(),
             bus_subscription_tasks: HashMap::new(),
         }
@@ -483,6 +492,8 @@ fn envelope_signature_material(envelope: &CrossInstanceEnvelope) -> Option<Vec<u
         target: &'a str,
         target_device_id: Option<&'a str>,
         payload: &'a str,
+        issued_at_ms: i64,
+        nonce: &'a str,
     }
 
     serde_json::to_vec(&SignaturePayload {
@@ -492,6 +503,8 @@ fn envelope_signature_material(envelope: &CrossInstanceEnvelope) -> Option<Vec<u
         target: &envelope.target,
         target_device_id: envelope.target_device_id.as_deref(),
         payload: &envelope.payload,
+        issued_at_ms: envelope.issued_at_ms,
+        nonce: &envelope.nonce,
     })
     .ok()
 }
@@ -525,6 +538,88 @@ fn envelope_signature_valid(state: &SharedRelayState, envelope: &CrossInstanceEn
     mac.verify_slice(&signature_bytes).is_ok()
 }
 
+fn cross_instance_nonce_key(envelope: &CrossInstanceEnvelope) -> Option<String> {
+    if !is_opaque_token(&envelope.nonce, MIN_CROSS_INSTANCE_NONCE_CHARS) {
+        return None;
+    }
+    Some(format!(
+        "{}:{}",
+        envelope.source_instance_id, envelope.nonce
+    ))
+}
+
+pub(super) fn register_cross_instance_nonce(
+    relay: &mut RelayState,
+    envelope: &CrossInstanceEnvelope,
+    now: i64,
+    replay_window_ms: u64,
+    max_clock_skew_ms: u64,
+) -> bool {
+    let replay_window_ms_i64 = i64::try_from(replay_window_ms).unwrap_or(i64::MAX);
+    let max_clock_skew_ms_i64 = i64::try_from(max_clock_skew_ms).unwrap_or(i64::MAX);
+
+    if envelope.issued_at_ms <= 0 {
+        return false;
+    }
+    if envelope.issued_at_ms > now.saturating_add(max_clock_skew_ms_i64) {
+        return false;
+    }
+    if now.saturating_sub(envelope.issued_at_ms) > replay_window_ms_i64 {
+        return false;
+    }
+
+    let Some(nonce_key) = cross_instance_nonce_key(envelope) else {
+        return false;
+    };
+
+    relay
+        .seen_cross_instance_nonces
+        .retain(|_, expires_at| *expires_at > now);
+
+    if relay.seen_cross_instance_nonces.contains_key(&nonce_key) {
+        return false;
+    }
+
+    let expires_at = envelope
+        .issued_at_ms
+        .saturating_add(replay_window_ms_i64)
+        .saturating_add(max_clock_skew_ms_i64);
+    relay
+        .seen_cross_instance_nonces
+        .insert(nonce_key, expires_at);
+    true
+}
+
+async fn envelope_is_valid_for_processing(
+    state: &SharedRelayState,
+    envelope: &CrossInstanceEnvelope,
+    local_instance_id: &str,
+) -> bool {
+    if envelope.schema_version != 1 {
+        return false;
+    }
+    if !envelope_signature_valid(state, envelope) {
+        return false;
+    }
+    if envelope.source_instance_id == local_instance_id {
+        return false;
+    }
+
+    if state.config.nats_hmac_secret.is_some() {
+        let now = now_ms();
+        let mut relay = state.inner.lock().await;
+        register_cross_instance_nonce(
+            &mut relay,
+            envelope,
+            now,
+            state.config.nats_replay_window_ms,
+            state.config.nats_max_clock_skew_ms,
+        )
+    } else {
+        true
+    }
+}
+
 pub(super) fn start_control_subscription(state: SharedRelayState) {
     let Some(bus) = state.cross_instance_bus.clone() else {
         return;
@@ -548,13 +643,7 @@ pub(super) fn start_control_subscription(state: SharedRelayState) {
                 else {
                     continue;
                 };
-                if envelope.schema_version != 1 {
-                    continue;
-                }
-                if !envelope_signature_valid(&state, &envelope) {
-                    continue;
-                }
-                if envelope.source_instance_id == bus.instance_id {
+                if !envelope_is_valid_for_processing(&state, &envelope, &bus.instance_id).await {
                     continue;
                 }
                 if envelope.target != "pair_decision" {
@@ -621,6 +710,8 @@ pub(super) fn publish_cross_instance_envelope(
         target: target.to_string(),
         target_device_id,
         payload,
+        issued_at_ms: now_ms(),
+        nonce: random_token(10),
         signature: None,
     };
     let mut signed_envelope = envelope;
@@ -714,13 +805,7 @@ pub(super) async fn handle_session_envelope(
     let Ok(envelope) = serde_json::from_slice::<CrossInstanceEnvelope>(payload) else {
         return;
     };
-    if envelope.schema_version != 1 {
-        return;
-    }
-    if !envelope_signature_valid(state, &envelope) {
-        return;
-    }
-    if envelope.source_instance_id == local_instance_id {
+    if !envelope_is_valid_for_processing(state, &envelope, local_instance_id).await {
         return;
     }
 

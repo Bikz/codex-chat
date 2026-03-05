@@ -772,6 +772,7 @@ mod tests {
                 ws_auth_successes: 0,
                 last_persistence_refresh_at_ms: 0,
                 persistence_versions: HashMap::new(),
+                seen_cross_instance_nonces: HashMap::new(),
                 bus_subscribed_sessions: HashSet::new(),
                 bus_subscription_tasks: HashMap::new(),
             })),
@@ -942,6 +943,8 @@ mod tests {
                 "reason": "device_revoked"
             })
             .to_string(),
+            issued_at_ms: now_ms(),
+            nonce: "nonce-token-1".to_string(),
             signature: None,
         };
         let payload = serde_json::to_vec(&envelope).expect("encode envelope");
@@ -973,6 +976,8 @@ mod tests {
                 "reason": "stopped_by_desktop"
             })
             .to_string(),
+            issued_at_ms: now_ms(),
+            nonce: "nonce-token-2".to_string(),
             signature: None,
         };
         let payload = serde_json::to_vec(&envelope).expect("encode envelope");
@@ -1004,6 +1009,8 @@ mod tests {
                 "reason": "stopped_by_desktop"
             })
             .to_string(),
+            issued_at_ms: now_ms(),
+            nonce: "nonce-token-3".to_string(),
             signature: None,
         };
         let payload = serde_json::to_vec(&envelope).expect("encode envelope");
@@ -1115,6 +1122,52 @@ mod tests {
         assert!(relay.sessions.is_empty());
         assert!(relay.device_token_index.is_empty());
         assert!(relay.desktop_token_index.is_empty());
+    }
+
+    #[test]
+    fn replay_invariant_rejects_duplicate_cross_instance_nonce() {
+        let mut relay = RelayState {
+            sessions: HashMap::new(),
+            desktop_token_index: HashMap::new(),
+            device_token_index: HashMap::new(),
+            rate_buckets: HashMap::new(),
+            pending_join_waiters: 0,
+            outbound_send_failures: 0,
+            slow_consumer_disconnects: 0,
+            pair_start_requests: 0,
+            pair_start_successes: 0,
+            pair_join_requests: 0,
+            pair_join_successes: 0,
+            pair_refresh_requests: 0,
+            pair_refresh_successes: 0,
+            ws_auth_attempts: 0,
+            ws_auth_successes: 0,
+            last_persistence_refresh_at_ms: 0,
+            persistence_versions: HashMap::new(),
+            seen_cross_instance_nonces: HashMap::new(),
+            bus_subscribed_sessions: HashSet::new(),
+            bus_subscription_tasks: HashMap::new(),
+        };
+        let now = now_ms();
+        let envelope = CrossInstanceEnvelope {
+            schema_version: 1,
+            session_id: "session-1".to_string(),
+            source_instance_id: "remote-instance".to_string(),
+            target: "desktop".to_string(),
+            target_device_id: None,
+            payload: "{}".to_string(),
+            issued_at_ms: now,
+            nonce: "nonce-token-4".to_string(),
+            signature: None,
+        };
+
+        assert!(register_cross_instance_nonce(
+            &mut relay, &envelope, now, 120_000, 30_000
+        ));
+        assert!(
+            !register_cross_instance_nonce(&mut relay, &envelope, now, 120_000, 30_000),
+            "duplicate nonce should be rejected as replay"
+        );
     }
 
     fn make_protocol_validation_config() -> RelayConfig {

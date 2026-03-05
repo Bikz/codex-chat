@@ -66,6 +66,7 @@ make remote-control-compat
 - Relay enforces strict allowlisted JSON fields for command and snapshot payloads; unexpected fields are rejected with `relay.error`.
 - Optional Redis durability can be enabled with `REDIS_URL` and `REDIS_KEY_PREFIX` (persisted per session key for restart recovery).
 - Optional cross-instance fanout can be enabled with `NATS_URL`, `NATS_SUBJECT_PREFIX`, and `NATS_HMAC_SECRET` (minimum 32 chars).
+- Signed cross-instance envelopes enforce replay protection with `NATS_REPLAY_WINDOW_MS` (default `120000`) and `NATS_MAX_CLOCK_SKEW_MS` (default `30000`).
 - With Redis + NATS configured, relay instances can restore session metadata and route desktop/mobile websocket traffic across instances without exposing inbound desktop ports.
 - `cargo audit` policy lives at `.cargo/audit.toml`; currently it tracks an upstream transitive `rustls-pemfile` maintenance advisory via allowlist until dependency ecosystem remediation lands.
 - `GET /metricsz` exposes live runtime counters for sessions, active websocket connections, token index size, pairing/auth throughput (`pairStart*`, `pairJoin*`, `pairRefresh*`, `wsAuth*`), and relay pressure indicators (including command/snapshot limiter buckets plus outbound send failures and slow-consumer disconnect counts).

@@ -31,6 +31,8 @@ pub struct RelayConfig {
     pub nats_url: Option<String>,
     pub nats_subject_prefix: String,
     pub nats_hmac_secret: Option<String>,
+    pub nats_replay_window_ms: u64,
+    pub nats_max_clock_skew_ms: u64,
     pub trust_proxy: bool,
     pub allow_legacy_query_token_auth: bool,
     pub allowed_origins: HashSet<String>,
@@ -84,6 +86,8 @@ impl RelayConfig {
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let nats_replay_window_ms = parse_u64("NATS_REPLAY_WINDOW_MS", 120_000);
+        let nats_max_clock_skew_ms = parse_u64("NATS_MAX_CLOCK_SKEW_MS", 30_000);
         let trust_proxy = parse_bool_env("TRUST_PROXY");
         let allow_legacy_query_token_auth = parse_bool_env("ALLOW_LEGACY_QUERY_TOKEN_AUTH");
 
@@ -127,6 +131,8 @@ impl RelayConfig {
             nats_url,
             nats_subject_prefix,
             nats_hmac_secret,
+            nats_replay_window_ms,
+            nats_max_clock_skew_ms,
             trust_proxy,
             allow_legacy_query_token_auth,
             allowed_origins,
@@ -230,6 +236,12 @@ impl RelayConfig {
             };
             if secret.len() < 32 {
                 return Err("NATS_HMAC_SECRET must be at least 32 characters.".to_string());
+            }
+            if self.nats_replay_window_ms == 0 {
+                return Err("NATS_REPLAY_WINDOW_MS must be greater than 0.".to_string());
+            }
+            if self.nats_max_clock_skew_ms == 0 {
+                return Err("NATS_MAX_CLOCK_SKEW_MS must be greater than 0.".to_string());
             }
         }
 
@@ -346,5 +358,29 @@ mod tests {
             .validate()
             .expect_err("short NATS_HMAC_SECRET should fail");
         assert!(error.contains("at least 32"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_nats_replay_window() {
+        let mut config = RelayConfig::from_env();
+        config.nats_url = Some("nats://localhost:4222".to_string());
+        config.nats_hmac_secret = Some("01234567890123456789012345678901".to_string());
+        config.nats_replay_window_ms = 0;
+        let error = config
+            .validate()
+            .expect_err("zero NATS_REPLAY_WINDOW_MS should fail");
+        assert!(error.contains("NATS_REPLAY_WINDOW_MS"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_nats_clock_skew() {
+        let mut config = RelayConfig::from_env();
+        config.nats_url = Some("nats://localhost:4222".to_string());
+        config.nats_hmac_secret = Some("01234567890123456789012345678901".to_string());
+        config.nats_max_clock_skew_ms = 0;
+        let error = config
+            .validate()
+            .expect_err("zero NATS_MAX_CLOCK_SKEW_MS should fail");
+        assert!(error.contains("NATS_MAX_CLOCK_SKEW_MS"));
     }
 }
