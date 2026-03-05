@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: relay
-          image: us-central1-docker.pkg.dev/codexchat-rc-ga-260226/remote-control/remote-control-relay-rust:ga-20260226-091150
+          image: us-central1-docker.pkg.dev/codexchat-rc-ga-260226/remote-control/remote-control-relay-rust:ga-20260304-231213-2a8c1ab-cb
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
