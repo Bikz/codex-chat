@@ -23,5 +23,6 @@ hmac = "0.12"
 sha2 = "0.10"
 
 [dev-dependencies]
+proptest = "1.6"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }

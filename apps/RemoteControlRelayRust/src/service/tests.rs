@@ -1,4 +1,6 @@
 use super::*;
+use proptest::collection::hash_map;
+use proptest::prelude::*;
 
 fn make_test_state_with_session(session: SessionRecord) -> SharedRelayState {
     let mut sessions = HashMap::new();
@@ -516,4 +518,81 @@ fn protocol_invariant_overwrites_spoofed_mobile_metadata() {
         parsed.get("relayDeviceID").and_then(Value::as_str),
         Some("device-actual")
     );
+}
+
+proptest! {
+    #[test]
+    fn property_snapshot_last_seq_accepts_numeric_strings(last_seq in "[0-9]{1,20}") {
+        let config = make_protocol_validation_config();
+        let mut session = make_test_session("session-1", "device-1", "token-1");
+        let payload = json!({
+            "type": "relay.snapshot_request",
+            "sessionID": "session-1",
+            "lastSeq": last_seq,
+            "reason": "property"
+        });
+
+        let result = validate_mobile_payload(
+            &mut session,
+            Some(&payload),
+            "session-1",
+            "conn-1",
+            "device-1",
+            &config,
+        );
+
+        prop_assert!(result.is_ok());
+    }
+
+    #[test]
+    fn property_snapshot_last_seq_rejects_non_numeric_strings(last_seq in "[A-Za-z_][A-Za-z0-9_]{0,19}") {
+        let config = make_protocol_validation_config();
+        let mut session = make_test_session("session-1", "device-1", "token-1");
+        let payload = json!({
+            "type": "relay.snapshot_request",
+            "sessionID": "session-1",
+            "lastSeq": last_seq,
+            "reason": "property"
+        });
+
+        let result = validate_mobile_payload(
+            &mut session,
+            Some(&payload),
+            "session-1",
+            "conn-1",
+            "device-1",
+            &config,
+        );
+
+        prop_assert_eq!(
+            result.err().map(|error| error.code),
+            Some("invalid_snapshot_request")
+        );
+    }
+
+    #[test]
+    fn property_inject_mobile_metadata_overwrites_spoofed_values(
+        mut fields in hash_map("[a-z]{1,8}", any::<i32>(), 0..12)
+    ) {
+        fields.insert("relayConnectionID".to_string(), 7);
+        fields.insert("relayDeviceID".to_string(), 9);
+
+        let mut payload = serde_json::Map::new();
+        for (key, value) in fields {
+            payload.insert(key, Value::Number(value.into()));
+        }
+
+        let raw = Value::Object(payload).to_string();
+        let injected = inject_mobile_metadata(&raw, "conn-prop", "device-prop");
+        let parsed: Value = serde_json::from_str(&injected).expect("valid injected json");
+
+        prop_assert_eq!(
+            parsed.get("relayConnectionID").and_then(Value::as_str),
+            Some("conn-prop")
+        );
+        prop_assert_eq!(
+            parsed.get("relayDeviceID").and_then(Value::as_str),
+            Some("device-prop")
+        );
+    }
 }
