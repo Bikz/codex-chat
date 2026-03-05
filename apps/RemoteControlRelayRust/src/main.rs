@@ -16,6 +16,9 @@ async fn main() {
         .init();
 
     let config = RelayConfig::from_env();
+    if let Err(error) = config.validate() {
+        panic!("[relay-rs] invalid configuration: {error}");
+    }
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
         .expect("invalid host/port configuration");

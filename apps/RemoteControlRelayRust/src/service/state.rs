@@ -1,5 +1,7 @@
 use super::*;
 
+const BUS_SUBSCRIBE_RETRY_DELAY: Duration = Duration::from_secs(1);
+
 #[derive(Clone)]
 pub struct SharedRelayState {
     pub config: RelayConfig,
@@ -212,9 +214,15 @@ impl RelayStatePersistence {
                 continue;
             };
 
-            let parsed: PersistedSessionRecord = serde_json::from_str(&payload)
-                .map_err(|error| format!("persisted session parse failed: {error}"))?;
+            let parsed = match serde_json::from_str::<PersistedSessionRecord>(&payload) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    warn!("[relay-rs] skipping malformed persisted session {session_id}: {error}");
+                    continue;
+                }
+            };
             let Some(runtime) = parsed.into_runtime() else {
+                warn!("[relay-rs] skipping unsupported persisted session {session_id}");
                 continue;
             };
             sessions.insert(runtime.session_id.clone(), runtime);
@@ -234,14 +242,17 @@ impl RelayStatePersistence {
             .await
             .map_err(|error| format!("redis connection failed: {error}"))?;
 
-        connection
-            .set::<_, _, ()>(&key, payload)
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .set(&key, payload)
+            .ignore()
+            .sadd(&self.session_index_key, &session.session_id)
+            .ignore();
+        pipeline
+            .query_async::<()>(&mut connection)
             .await
-            .map_err(|error| format!("redis set failed: {error}"))?;
-        connection
-            .sadd::<_, _, ()>(&self.session_index_key, &session.session_id)
-            .await
-            .map_err(|error| format!("redis sadd failed: {error}"))?;
+            .map_err(|error| format!("redis save session pipeline failed: {error}"))?;
 
         Ok(())
     }
@@ -253,14 +264,17 @@ impl RelayStatePersistence {
             .get_multiplexed_async_connection()
             .await
             .map_err(|error| format!("redis connection failed: {error}"))?;
-        connection
-            .del::<_, ()>(&key)
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .del(&key)
+            .ignore()
+            .srem(&self.session_index_key, session_id)
+            .ignore();
+        pipeline
+            .query_async::<()>(&mut connection)
             .await
-            .map_err(|error| format!("redis del failed: {error}"))?;
-        connection
-            .srem::<_, _, ()>(&self.session_index_key, session_id)
-            .await
-            .map_err(|error| format!("redis srem failed: {error}"))?;
+            .map_err(|error| format!("redis delete session pipeline failed: {error}"))?;
 
         Ok(())
     }
@@ -419,30 +433,37 @@ pub(super) fn start_control_subscription(state: SharedRelayState) {
 
     tokio::spawn(async move {
         let subject = nats_control_subject(&bus);
-        let mut subscription = match bus.client.subscribe(subject.clone()).await {
-            Ok(subscription) => subscription,
-            Err(error) => {
-                warn!("[relay-rs] failed to subscribe control subject {subject}: {error}");
-                return;
-            }
-        };
-
-        while let Some(message) = subscription.next().await {
-            let Ok(envelope) = serde_json::from_slice::<CrossInstanceEnvelope>(&message.payload)
-            else {
-                continue;
+        loop {
+            let mut subscription = match bus.client.subscribe(subject.clone()).await {
+                Ok(subscription) => subscription,
+                Err(error) => {
+                    warn!("[relay-rs] failed to subscribe control subject {subject}: {error}");
+                    sleep(BUS_SUBSCRIBE_RETRY_DELAY).await;
+                    continue;
+                }
             };
-            if envelope.schema_version != 1 {
-                continue;
-            }
-            if envelope.source_instance_id == bus.instance_id {
-                continue;
-            }
-            if envelope.target != "pair_decision" {
-                continue;
+
+            while let Some(message) = subscription.next().await {
+                let Ok(envelope) =
+                    serde_json::from_slice::<CrossInstanceEnvelope>(&message.payload)
+                else {
+                    continue;
+                };
+                if envelope.schema_version != 1 {
+                    continue;
+                }
+                if envelope.source_instance_id == bus.instance_id {
+                    continue;
+                }
+                if envelope.target != "pair_decision" {
+                    continue;
+                }
+
+                apply_pair_decision_from_envelope(&state, &envelope).await;
             }
 
-            apply_pair_decision_from_envelope(&state, &envelope).await;
+            warn!("[relay-rs] control subscription ended; retrying");
+            sleep(BUS_SUBSCRIBE_RETRY_DELAY).await;
         }
     });
 }
@@ -535,16 +556,23 @@ pub(super) async fn sync_session_bus_subscription(state: &SharedRelayState, sess
         let bus_clone = bus.clone();
         let local_instance_id = bus.instance_id.clone();
         let handle = tokio::spawn(async move {
-            let mut subscription = match bus_clone.client.subscribe(subject.clone()).await {
-                Ok(subscription) => subscription,
-                Err(error) => {
-                    warn!("[relay-rs] failed to subscribe session subject {subject}: {error}");
-                    return;
-                }
-            };
+            loop {
+                let mut subscription = match bus_clone.client.subscribe(subject.clone()).await {
+                    Ok(subscription) => subscription,
+                    Err(error) => {
+                        warn!("[relay-rs] failed to subscribe session subject {subject}: {error}");
+                        sleep(BUS_SUBSCRIBE_RETRY_DELAY).await;
+                        continue;
+                    }
+                };
 
-            while let Some(message) = subscription.next().await {
-                handle_session_envelope(&state_clone, &local_instance_id, &message.payload).await;
+                while let Some(message) = subscription.next().await {
+                    handle_session_envelope(&state_clone, &local_instance_id, &message.payload)
+                        .await;
+                }
+
+                warn!("[relay-rs] session subscription ended subject={subject}; retrying");
+                sleep(BUS_SUBSCRIBE_RETRY_DELAY).await;
             }
         });
         relay
@@ -778,7 +806,6 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
             return;
         }
     };
-
     let persisted_session_ids = loaded_sessions.keys().cloned().collect::<HashSet<_>>();
 
     let mut relay = state.inner.lock().await;
@@ -801,6 +828,10 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
         if let Some(token) = replaced_desktop_token {
             relay.desktop_token_index.remove(&token);
         }
+
+        relay.device_token_index.retain(|_, context| {
+            !(context.session_id == session_id && context.expires_at_ms.is_none())
+        });
 
         let device_tokens = relay
             .sessions
@@ -827,6 +858,9 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
                 });
         }
 
+        relay
+            .desktop_token_index
+            .retain(|_, indexed_session_id| *indexed_session_id != session_id);
         if let Some(desktop_token) = relay
             .sessions
             .get(&session_id)
@@ -834,23 +868,24 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
         {
             relay
                 .desktop_token_index
-                .entry(desktop_token)
-                .or_insert(session_id.clone());
+                .insert(desktop_token, session_id.clone());
         }
     }
 
-    let stale_session_ids = relay
-        .sessions
-        .iter()
-        .filter(|(session_id, session)| {
-            !persisted_session_ids.contains(*session_id)
-                && session.desktop_socket.is_none()
-                && session.mobile_sockets.is_empty()
-        })
-        .map(|(session_id, _)| session_id.clone())
-        .collect::<Vec<_>>();
-    for session_id in stale_session_ids {
-        close_session(&mut relay, &session_id, "removed_from_persistence");
+    if force {
+        let stale_session_ids = relay
+            .sessions
+            .iter()
+            .filter(|(session_id, session)| {
+                !persisted_session_ids.contains(*session_id)
+                    && session.desktop_socket.is_none()
+                    && session.mobile_sockets.is_empty()
+            })
+            .map(|(session_id, _)| session_id.clone())
+            .collect::<Vec<_>>();
+        for session_id in stale_session_ids {
+            close_session(&mut relay, &session_id, "removed_from_persistence");
+        }
     }
 }
 

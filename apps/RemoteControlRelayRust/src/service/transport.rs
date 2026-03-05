@@ -117,6 +117,27 @@ pub(super) async fn pair_start(
 
     let mut relay = state.inner.lock().await;
     let replaced_existing_session = relay.sessions.contains_key(&request.session_id);
+    let has_conflicting_live_session =
+        relay
+            .sessions
+            .get(&request.session_id)
+            .is_some_and(|existing| {
+                let has_active_participants = existing.desktop_socket.is_some()
+                    || !existing.mobile_sockets.is_empty()
+                    || !existing.devices.is_empty();
+                has_active_participants
+                    && !safe_token_equals(
+                        &existing.desktop_session_token,
+                        &request.desktop_session_token,
+                    )
+            });
+    if has_conflicting_live_session {
+        return error_response(
+            StatusCode::CONFLICT,
+            "session_already_active",
+            "sessionID is already active for another desktopSessionToken. Stop the active session or use a new sessionID.",
+        );
+    }
     if replaced_existing_session {
         close_session(
             &mut relay,
@@ -243,6 +264,7 @@ pub(super) async fn pair_join(
         pair_request_payload,
         outbound_send_failures,
         slow_consumer_disconnects,
+        pair_approval_timeout_ms,
     ) = {
         let mut relay = state.inner.lock().await;
         if relay.pending_join_waiters >= state.config.max_pending_join_waiters {
@@ -261,6 +283,7 @@ pub(super) async fn pair_join(
             pair_request_payload,
             pair_request_outbound_send_failures,
             pair_request_slow_consumer_disconnects,
+            pair_request_timeout_ms,
         ) = {
             let Some(session) = relay.sessions.get_mut(&request.session_id) else {
                 return pair_join_failure_response(
@@ -388,6 +411,7 @@ pub(super) async fn pair_join(
                 publish_remote_payload,
                 outbound_send_failures,
                 slow_consumer_disconnects,
+                timeout_ms,
             )
         };
 
@@ -398,6 +422,7 @@ pub(super) async fn pair_join(
             pair_request_payload,
             pair_request_outbound_send_failures,
             pair_request_slow_consumer_disconnects,
+            pair_request_timeout_ms,
         )
     };
 
@@ -415,8 +440,8 @@ pub(super) async fn pair_join(
         publish_cross_instance_session(&state, &request.session_id, "desktop", None, payload);
     }
 
-    let timeout_ms = state.config.pair_approval_timeout_ms;
-    let decision = match timeout(Duration::from_millis(timeout_ms), decision_rx).await {
+    let decision = match timeout(Duration::from_millis(pair_approval_timeout_ms), decision_rx).await
+    {
         Ok(Ok(result)) => result,
         Ok(Err(_)) => JoinDecision {
             approved: false,
@@ -1024,7 +1049,7 @@ pub(super) async fn handle_socket(
     heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
     heartbeat.tick().await;
 
-    loop {
+    'socket_loop: loop {
         tokio::select! {
             changed = shutdown_rx.changed() => {
                 if changed.is_err() || *shutdown_rx.borrow() {
@@ -1108,6 +1133,9 @@ pub(super) async fn handle_socket(
                 let mut outbound_send_failures = 0_u64;
                 let mut slow_consumer_disconnects = 0_u64;
                 if let Some(session) = relay.sessions.get_mut(auth.session_id()) {
+                    if !socket_matches_active_registration(session, &auth, &shutdown_tx) {
+                        break 'socket_loop;
+                    }
                     session.last_activity_at_ms = now_ms();
 
                     if let Some(parsed) = parsed.as_ref() {
@@ -1242,4 +1270,27 @@ pub(super) fn origin_allowed(config: &RelayConfig, headers: &HeaderMap) -> bool 
         return true;
     }
     is_allowed_origin(&config.allowed_origins, origin)
+}
+
+fn socket_matches_active_registration(
+    session: &SessionRecord,
+    auth: &AuthenticatedSocket,
+    shutdown_tx: &watch::Sender<bool>,
+) -> bool {
+    match &auth.auth {
+        SocketAuth::Desktop => session
+            .desktop_socket
+            .as_ref()
+            .is_some_and(|socket| socket.shutdown.same_channel(shutdown_tx)),
+        SocketAuth::Mobile {
+            device_id,
+            connection_id,
+        } => session
+            .mobile_sockets
+            .get(connection_id)
+            .is_some_and(|socket| {
+                socket.shutdown.same_channel(shutdown_tx)
+                    && socket.device_id.as_deref() == Some(device_id.as_str())
+            }),
+    }
 }

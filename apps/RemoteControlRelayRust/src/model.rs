@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PairStartRequest {
     #[serde(rename = "sessionID")]
     pub session_id: String,
@@ -26,6 +27,7 @@ pub struct PairStartResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PairRefreshRequest {
     #[serde(rename = "sessionID")]
     pub session_id: String,
@@ -47,6 +49,7 @@ pub struct PairRefreshResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PairJoinRequest {
     #[serde(rename = "sessionID")]
     pub session_id: String,
@@ -70,6 +73,7 @@ pub struct PairJoinResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PairStopRequest {
     #[serde(rename = "sessionID")]
     pub session_id: String,
@@ -85,6 +89,7 @@ pub struct PairStopResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DevicesListRequest {
     #[serde(rename = "sessionID")]
     pub session_id: String,
@@ -114,6 +119,7 @@ pub struct DevicesListResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeviceRevokeRequest {
     #[serde(rename = "sessionID")]
     pub session_id: String,

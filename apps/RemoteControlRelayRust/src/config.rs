@@ -140,6 +140,87 @@ impl RelayConfig {
 
         format!("ws://localhost:{}/ws", self.port)
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.host.trim().is_empty() {
+            return Err("HOST must not be empty.".to_string());
+        }
+        if self.port == 0 {
+            return Err("PORT must be greater than 0.".to_string());
+        }
+        let public_base_url = Url::parse(&self.public_base_url)
+            .map_err(|error| format!("PUBLIC_BASE_URL is invalid: {error}"))?;
+        if !matches!(public_base_url.scheme(), "http" | "https") {
+            return Err("PUBLIC_BASE_URL must use http or https.".to_string());
+        }
+
+        let zero_invalidations = [
+            ("MAX_JSON_BYTES", self.max_json_bytes == 0),
+            (
+                "MAX_PAIR_REQUESTS_PER_MINUTE",
+                self.max_pair_requests_per_minute == 0,
+            ),
+            ("MAX_DEVICES_PER_SESSION", self.max_devices_per_session == 0),
+            ("SESSION_RETENTION_MS", self.session_retention_ms == 0),
+            (
+                "PAIR_APPROVAL_TIMEOUT_MS",
+                self.pair_approval_timeout_ms == 0,
+            ),
+            ("WS_AUTH_TIMEOUT_MS", self.ws_auth_timeout_ms == 0),
+            (
+                "WS_HEARTBEAT_INTERVAL_MS",
+                self.ws_heartbeat_interval_ms == 0,
+            ),
+            ("WS_HEARTBEAT_TIMEOUT_MS", self.ws_heartbeat_timeout_ms == 0),
+            (
+                "MAX_PENDING_JOIN_WAITERS",
+                self.max_pending_join_waiters == 0,
+            ),
+            ("MAX_WS_MESSAGE_BYTES", self.max_ws_message_bytes == 0),
+            (
+                "MAX_SOCKET_OUTBOUND_QUEUE",
+                self.max_socket_outbound_queue == 0,
+            ),
+            (
+                "MAX_ACTIVE_WEBSOCKET_CONNECTIONS",
+                self.max_active_websocket_connections == 0,
+            ),
+            (
+                "MAX_REMOTE_COMMANDS_PER_MINUTE",
+                self.max_remote_commands_per_minute == 0,
+            ),
+            (
+                "MAX_REMOTE_SESSION_COMMANDS_PER_MINUTE",
+                self.max_remote_session_commands_per_minute == 0,
+            ),
+            (
+                "MAX_SNAPSHOT_REQUESTS_PER_MINUTE",
+                self.max_snapshot_requests_per_minute == 0,
+            ),
+            (
+                "MAX_WS_MESSAGES_PER_MINUTE",
+                self.max_ws_messages_per_minute == 0,
+            ),
+            (
+                "MAX_REMOTE_COMMAND_TEXT_BYTES",
+                self.max_remote_command_text_bytes == 0,
+            ),
+        ];
+        if let Some((name, _)) = zero_invalidations.into_iter().find(|(_, invalid)| *invalid) {
+            return Err(format!("{name} must be greater than 0."));
+        }
+        if self.ws_heartbeat_timeout_ms < self.ws_heartbeat_interval_ms {
+            return Err(
+                "WS_HEARTBEAT_TIMEOUT_MS must be greater than or equal to WS_HEARTBEAT_INTERVAL_MS."
+                    .to_string(),
+            );
+        }
+        if self.allowed_origins.is_empty() {
+            return Err("ALLOWED_ORIGINS must contain at least one origin.".to_string());
+        }
+
+        Ok(())
+    }
 }
 
 fn parse_u16(name: &str, default: u16) -> u16 {
@@ -209,4 +290,25 @@ pub fn is_allowed_origin(allowed: &HashSet<String>, origin: Option<&str>) -> boo
     };
 
     allowed.contains(&normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_rejects_invalid_public_base_url() {
+        let mut config = RelayConfig::from_env();
+        config.public_base_url = "not-a-url".to_string();
+        let error = config.validate().expect_err("invalid public base URL");
+        assert!(error.contains("PUBLIC_BASE_URL"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_limits() {
+        let mut config = RelayConfig::from_env();
+        config.max_pair_requests_per_minute = 0;
+        let error = config.validate().expect_err("zero limit");
+        assert!(error.contains("MAX_PAIR_REQUESTS_PER_MINUTE"));
+    }
 }

@@ -184,13 +184,9 @@ pub(super) fn close_session(relay: &mut RelayState, session_id: &str, reason: &s
         });
     }
 
-    for token in session
-        .devices
-        .values()
-        .map(|device| device.current_session_token.clone())
-    {
-        relay.device_token_index.remove(&token);
-    }
+    relay
+        .device_token_index
+        .retain(|_, context| context.session_id != session.session_id);
     relay
         .desktop_token_index
         .remove(&session.desktop_session_token);

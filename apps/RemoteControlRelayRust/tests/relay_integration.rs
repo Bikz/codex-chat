@@ -365,6 +365,101 @@ async fn pair_join_requires_desktop_connection() {
 }
 
 #[tokio::test]
+async fn pair_start_rejects_replacing_live_session_with_different_desktop_token() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let first_join_token = random_token(32);
+    let first_desktop_session_token = random_token(32);
+
+    let first_start = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": first_join_token,
+            "desktopSessionToken": first_desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("first pair start");
+    assert_eq!(first_start.status(), StatusCode::OK);
+
+    let first_start_payload: Value = first_start.json().await.expect("first pair start payload");
+    let ws_url = first_start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+    desktop_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": first_desktop_session_token }).to_string(),
+        ))
+        .await
+        .expect("desktop auth send");
+    let _auth_ok = desktop_socket
+        .next()
+        .await
+        .expect("desktop auth frame")
+        .expect("desktop auth message");
+
+    let second_start = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": random_token(32),
+            "desktopSessionToken": random_token(32),
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("second pair start");
+
+    assert_eq!(second_start.status(), StatusCode::CONFLICT);
+    let second_start_body: Value = second_start.json().await.expect("second pair start body");
+    assert_eq!(
+        second_start_body.get("error").and_then(Value::as_str),
+        Some("session_already_active")
+    );
+
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop socket close");
+    task.abort();
+}
+
+#[tokio::test]
+async fn pair_start_rejects_unknown_fields() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "sessionID": random_token(16),
+            "joinToken": random_token(32),
+            "desktopSessionToken": random_token(32),
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+            "unexpected": "field"
+        }))
+        .send()
+        .await
+        .expect("pair start with unexpected field");
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    task.abort();
+}
+
+#[tokio::test]
 async fn websocket_auth_rejects_new_connections_when_capacity_reached() {
     let (base, task) = spawn_test_server_with_config(|config| {
         config.max_active_websocket_connections = 1;

@@ -684,11 +684,12 @@ fn client_ip(config: &RelayConfig, headers: &HeaderMap, addr: SocketAddr) -> Str
             .get("x-forwarded-for")
             .and_then(|value| value.to_str().ok())
         {
-            if let Some(ip) = forwarded.split(',').next() {
-                let trimmed = ip.trim();
-                if !trimmed.is_empty() {
-                    return trimmed.to_string();
-                }
+            if let Some(ip) = forwarded
+                .split(',')
+                .map(str::trim)
+                .find_map(|candidate| candidate.parse::<std::net::IpAddr>().ok())
+            {
+                return ip.to_string();
             }
         }
     }
@@ -1016,6 +1017,50 @@ mod tests {
 
         shutdown_rx.changed().await.expect("shutdown change");
         assert!(*shutdown_rx.borrow());
+    }
+
+    #[tokio::test]
+    async fn close_session_removes_all_device_tokens_for_closed_session() {
+        let session_id = "session-1";
+        let state = make_test_state_with_session(make_test_session(
+            session_id,
+            "device-1",
+            "device-token-1",
+        ));
+
+        let mut relay = state.inner.lock().await;
+        relay.device_token_index.insert(
+            "grace-token".to_string(),
+            DeviceTokenContext {
+                session_id: session_id.to_string(),
+                device_id: "device-1".to_string(),
+                expires_at_ms: Some(now_ms() + 30_000),
+            },
+        );
+        relay.device_token_index.insert(
+            "other-session-token".to_string(),
+            DeviceTokenContext {
+                session_id: "session-2".to_string(),
+                device_id: "device-9".to_string(),
+                expires_at_ms: None,
+            },
+        );
+
+        close_session(&mut relay, session_id, "test_close");
+
+        assert!(!relay.sessions.contains_key(session_id));
+        assert!(
+            !relay.device_token_index.contains_key("device-token-1"),
+            "current device token should be removed"
+        );
+        assert!(
+            !relay.device_token_index.contains_key("grace-token"),
+            "grace token should also be removed"
+        );
+        assert!(
+            relay.device_token_index.contains_key("other-session-token"),
+            "other sessions should remain untouched"
+        );
     }
 
     fn make_protocol_validation_config() -> RelayConfig {
