@@ -1124,123 +1124,175 @@ pub(super) async fn handle_socket(
                 }
 
                 let parsed = serde_json::from_str::<Value>(&raw).ok();
+                let mut publish_target: Option<(&'static str, String)> = None;
+                let mut publish_pair_decision = false;
+                let mut outbound_send_failures = 0_u64;
+                let mut slow_consumer_disconnects = 0_u64;
+                let mut mobile_targets: Vec<SocketHandle> = Vec::new();
+                let mut desktop_target: Option<SocketHandle> = None;
+                let mut relay_error: Option<(String, String)> = None;
+                let mut should_continue = false;
+                let mut should_break = false;
 
-                let mut relay = state.inner.lock().await;
-                if !relay.sessions.contains_key(auth.session_id()) {
+                {
+                    let mut relay = state.inner.lock().await;
+                    if !relay.sessions.contains_key(auth.session_id()) {
+                        continue;
+                    }
+
+                    if let Some(session) = relay.sessions.get_mut(auth.session_id()) {
+                        if !socket_matches_active_registration(session, &auth, &shutdown_tx) {
+                            should_break = true;
+                        } else {
+                            session.last_activity_at_ms = now_ms();
+
+                            if let Some(parsed) = parsed.as_ref() {
+                                if parsed
+                                    .get("sessionID")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|id| id != auth.session_id())
+                                {
+                                    should_continue = true;
+                                }
+                            }
+
+                            if !should_continue {
+                                match &auth.auth {
+                                    SocketAuth::Desktop => {
+                                        if let Ok(pair_decision) =
+                                            serde_json::from_str::<RelayPairDecision>(&raw)
+                                        {
+                                            if pair_decision.message_type == "relay.pair_decision" {
+                                                apply_pair_decision(
+                                                    session,
+                                                    &pair_decision,
+                                                    Some(&tx),
+                                                );
+                                                publish_pair_decision = true;
+                                                should_continue = true;
+                                            }
+                                        }
+
+                                        if !should_continue {
+                                            mobile_targets =
+                                                session.mobile_sockets.values().cloned().collect();
+                                            publish_target = Some(("mobile", raw.to_string()));
+                                        }
+                                    }
+                                    SocketAuth::Mobile {
+                                        device_id,
+                                        connection_id,
+                                    } => {
+                                        let is_command_or_snapshot =
+                                            parsed.as_ref().is_some_and(|payload| {
+                                                payload
+                                                    .pointer("/payload/type")
+                                                    .and_then(Value::as_str)
+                                                    .is_some_and(|value| value == "command")
+                                                    || payload.get("type").and_then(Value::as_str)
+                                                        == Some("relay.snapshot_request")
+                                            });
+                                        if is_command_or_snapshot && !desktop_connected(session) {
+                                            relay_error = Some((
+                                                "desktop_offline".to_string(),
+                                                "Mac is offline. Reconnect desktop and try again."
+                                                    .to_string(),
+                                            ));
+                                            should_continue = true;
+                                        }
+
+                                        if !should_continue {
+                                            match validate_mobile_payload(
+                                                session,
+                                                parsed.as_ref(),
+                                                auth.session_id(),
+                                                connection_id,
+                                                device_id,
+                                                &state.config,
+                                            ) {
+                                                Ok(()) => {}
+                                                Err(error) => {
+                                                    relay_error = Some((
+                                                        error.code.to_string(),
+                                                        error.message,
+                                                    ));
+                                                    should_continue = true;
+                                                }
+                                            }
+                                        }
+
+                                        if !should_continue {
+                                            let forwarded = inject_mobile_metadata(
+                                                &raw,
+                                                connection_id,
+                                                device_id,
+                                            );
+                                            desktop_target = session.desktop_socket.clone();
+                                            publish_target = Some(("desktop", forwarded));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if should_break {
+                    break 'socket_loop;
+                }
+                if let Some((error_code, error_message)) = relay_error {
+                    send_relay_error(&tx, &error_code, &error_message);
+                    continue;
+                }
+                if publish_pair_decision {
+                    publish_cross_instance_control_pair_decision(
+                        &state,
+                        auth.session_id(),
+                        raw.to_string(),
+                    );
+                    continue;
+                }
+                if should_continue {
                     continue;
                 }
 
-                let mut outbound_send_failures = 0_u64;
-                let mut slow_consumer_disconnects = 0_u64;
-                if let Some(session) = relay.sessions.get_mut(auth.session_id()) {
-                    if !socket_matches_active_registration(session, &auth, &shutdown_tx) {
-                        break 'socket_loop;
+                for mobile in &mobile_targets {
+                    if !try_send_payload(&mobile.tx, raw.to_string()) {
+                        outbound_send_failures = outbound_send_failures.saturating_add(1);
+                        slow_consumer_disconnects = slow_consumer_disconnects.saturating_add(1);
+                        request_socket_disconnect(mobile, "slow_consumer");
                     }
-                    session.last_activity_at_ms = now_ms();
+                }
 
-                    if let Some(parsed) = parsed.as_ref() {
-                        if parsed
-                            .get("sessionID")
-                            .and_then(Value::as_str)
-                            .is_some_and(|id| id != auth.session_id())
-                        {
-                            continue;
-                        }
-                    }
-
-                    match &auth.auth {
-                        SocketAuth::Desktop => {
-                            if let Ok(pair_decision) = serde_json::from_str::<RelayPairDecision>(&raw) {
-                                if pair_decision.message_type == "relay.pair_decision" {
-                                    apply_pair_decision(session, &pair_decision, Some(&tx));
-                                    publish_cross_instance_control_pair_decision(
-                                        &state,
-                                        auth.session_id(),
-                                        raw.to_string(),
-                                    );
-                                    continue;
-                                }
-                            }
-
-                            for mobile in session.mobile_sockets.values() {
-                                if !try_send_payload(&mobile.tx, raw.to_string()) {
-                                    outbound_send_failures =
-                                        outbound_send_failures.saturating_add(1);
-                                    slow_consumer_disconnects =
-                                        slow_consumer_disconnects.saturating_add(1);
-                                    request_socket_disconnect(mobile, "slow_consumer");
-                                }
-                            }
-                            publish_cross_instance_session(
-                                &state,
-                                auth.session_id(),
-                                "mobile",
-                                None,
-                                raw.to_string(),
-                            );
-                        }
-                        SocketAuth::Mobile {
-                            device_id,
-                            connection_id,
-                        } => {
-                            let is_command_or_snapshot = parsed.as_ref().is_some_and(|payload| {
-                                payload
-                                    .pointer("/payload/type")
-                                    .and_then(Value::as_str)
-                                    .is_some_and(|value| value == "command")
-                                    || payload.get("type").and_then(Value::as_str)
-                                        == Some("relay.snapshot_request")
-                            });
-                            if is_command_or_snapshot && !desktop_connected(session) {
-                                send_relay_error(
-                                    &tx,
-                                    "desktop_offline",
-                                    "Mac is offline. Reconnect desktop and try again.",
-                                );
-                                continue;
-                            }
-
-                            match validate_mobile_payload(
-                                session,
-                                parsed.as_ref(),
-                                auth.session_id(),
-                                connection_id,
-                                device_id,
-                                &state.config,
-                            ) {
-                                Ok(()) => {}
-                                Err(error) => {
-                                    send_relay_error(&tx, error.code, &error.message);
-                                    continue;
-                                }
-                            }
-
-                            let forwarded = inject_mobile_metadata(&raw, connection_id, device_id);
-                            if let Some(desktop) = &session.desktop_socket {
-                                if !try_send_payload(&desktop.tx, forwarded.clone()) {
-                                    outbound_send_failures =
-                                        outbound_send_failures.saturating_add(1);
-                                    slow_consumer_disconnects =
-                                        slow_consumer_disconnects.saturating_add(1);
-                                    request_socket_disconnect(desktop, "slow_consumer");
-                                }
-                            }
-                            publish_cross_instance_session(
-                                &state,
-                                auth.session_id(),
-                                "desktop",
-                                None,
-                                forwarded,
-                            );
+                if let Some(desktop) = &desktop_target {
+                    if let Some((_, payload)) = publish_target.as_ref() {
+                        if !try_send_payload(&desktop.tx, payload.clone()) {
+                            outbound_send_failures = outbound_send_failures.saturating_add(1);
+                            slow_consumer_disconnects = slow_consumer_disconnects.saturating_add(1);
+                            request_socket_disconnect(desktop, "slow_consumer");
                         }
                     }
                 }
-                relay.outbound_send_failures = relay
-                    .outbound_send_failures
-                    .saturating_add(outbound_send_failures);
-                relay.slow_consumer_disconnects = relay
-                    .slow_consumer_disconnects
-                    .saturating_add(slow_consumer_disconnects);
+
+                if let Some((target, payload)) = publish_target {
+                    publish_cross_instance_session(
+                        &state,
+                        auth.session_id(),
+                        target,
+                        None,
+                        payload,
+                    );
+                }
+
+                if outbound_send_failures > 0 || slow_consumer_disconnects > 0 {
+                    let mut relay = state.inner.lock().await;
+                    relay.outbound_send_failures = relay
+                        .outbound_send_failures
+                        .saturating_add(outbound_send_failures);
+                    relay.slow_consumer_disconnects = relay
+                        .slow_consumer_disconnects
+                        .saturating_add(slow_consumer_disconnects);
+                }
             }
         }
     }
