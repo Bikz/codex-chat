@@ -130,6 +130,9 @@ async fn spawn_test_server() -> (String, JoinHandle<()>) {
     config.port = addr.port();
     config.public_base_url = format!("http://{}:{}", addr.ip(), addr.port());
     config.allowed_origins = ["http://localhost:4173".to_string()].into_iter().collect();
+    // Load harness drives many local pair/start + pair/join requests from one source IP.
+    // Use a high request budget so transport/perf behavior is measured rather than IP throttling.
+    config.max_pair_requests_per_minute = 20_000;
 
     let state = new_state(config).await;
     let app = build_router(state);
@@ -159,6 +162,36 @@ struct SessionHandles {
     desktop_session_token: String,
     desktop_socket: TestSocket,
     mobile_socket: TestSocket,
+}
+
+async fn await_pair_request(
+    desktop_socket: &mut TestSocket,
+    timeout: Duration,
+) -> Result<Value, String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| "timed out waiting for desktop pair request".to_string())?;
+        let frame = tokio::time::timeout(remaining, desktop_socket.next())
+            .await
+            .map_err(|_| "timed out waiting for desktop pair request".to_string())?
+            .ok_or_else(|| "desktop socket closed while waiting for pair request".to_string())
+            .and_then(|value| {
+                value.map_err(|error| format!("desktop pair request ws error: {error}"))
+            })?;
+
+        let Message::Text(text) = frame else {
+            continue;
+        };
+        let Ok(parsed) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+
+        if parsed.get("type").and_then(Value::as_str) == Some("relay.pair_request") {
+            return Ok(parsed);
+        }
+    }
 }
 
 async fn pair_connected_mobile(
@@ -240,18 +273,8 @@ async fn pair_connected_mobile(
         })
     };
 
-    let pair_request = desktop_socket
-        .next()
-        .await
-        .ok_or_else(|| "desktop pair request frame missing".to_string())
-        .and_then(|value| {
-            value.map_err(|error| format!("desktop pair request ws error: {error}"))
-        })?;
-    let pair_request_text = pair_request
-        .to_text()
-        .map_err(|error| format!("pair request is not text: {error}"))?;
-    let pair_request_json: Value = serde_json::from_str(pair_request_text)
-        .map_err(|error| format!("pair request decode failed: {error}"))?;
+    let pair_request_json =
+        await_pair_request(&mut desktop_socket, Duration::from_secs(30)).await?;
     let request_id = pair_request_json
         .get("requestID")
         .and_then(Value::as_str)
