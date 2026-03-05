@@ -1,4 +1,1 @@
 [advisories]
-# async-nats currently depends on rustls-native-certs -> rustls-pemfile.
-# Track upstream replacement and remove this allow as soon as a maintained path is available.
-ignore = ["RUSTSEC-2025-0134"]
