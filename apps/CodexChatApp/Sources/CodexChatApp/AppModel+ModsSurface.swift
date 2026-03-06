@@ -184,6 +184,11 @@ extension AppModel {
             return
         }
 
+        if enabled, let blockedReason = executableModBlockedReason(for: mod) {
+            modStatusMessage = blockedReason
+            return
+        }
+
         Task {
             do {
                 let projectID = installProjectID(for: scope)
@@ -494,12 +499,28 @@ extension AppModel {
                     existingInstallURL: URL(fileURLWithPath: record.installedPath, isDirectory: true)
                 )
 
+                let updatedMod = DiscoveredUIMod(
+                    scope: mod.scope,
+                    directoryPath: result.installedDirectoryPath,
+                    definitionPath: URL(fileURLWithPath: result.installedDirectoryPath, isDirectory: true)
+                        .appendingPathComponent("ui.mod.json", isDirectory: false)
+                        .path,
+                    definition: result.definition,
+                    computedChecksum: nil
+                )
+                let blockedReason = executableModBlockedReason(for: updatedMod)
                 var updatedRecord = record
                 updatedRecord.installedPath = result.installedDirectoryPath
-                updatedRecord.enabled = true
+                updatedRecord.enabled = record.enabled && blockedReason == nil
                 _ = try await extensionInstallRepository.upsert(updatedRecord)
 
-                modStatusMessage = "Updated mod: \(result.definition.manifest.name)."
+                if let blockedReason {
+                    modStatusMessage = "Updated \(result.definition.manifest.name), but it is disabled. \(blockedReason)"
+                } else if record.enabled {
+                    modStatusMessage = "Updated mod: \(result.definition.manifest.name)."
+                } else {
+                    modStatusMessage = "Updated mod: \(result.definition.manifest.name). Runtime remains disabled."
+                }
                 refreshModsSurface()
             } catch {
                 if let details = Self.extensibilityProcessFailureDetails(from: error) {

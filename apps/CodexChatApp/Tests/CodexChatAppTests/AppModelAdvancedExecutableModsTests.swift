@@ -115,9 +115,138 @@ final class AppModelAdvancedExecutableModsTests: XCTestCase {
         XCTAssertTrue(model.modStatusMessage?.contains("disabled") == true)
     }
 
-    private func makeExecutableMod(id: String, name: String, directoryPath: String) -> DiscoveredUIMod {
+    func testSetInstalledModEnabledDoesNotEnableThirdPartyExecutableModWhenLocked() async throws {
+        let repositories = try makeRepositories(prefix: "advanced-mods-toggle-lock")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        model.areAdvancedExecutableModsUnlocked = false
+
+        let mod = makeExecutableMod(
+            id: "acme.third-party",
+            name: "Third Party",
+            directoryPath: "/tmp/acme-third-party-\(UUID().uuidString)",
+            scope: .global
+        )
+
+        _ = try await repositories.extensionInstallRepository.upsert(
+            ExtensionInstallRecord(
+                id: "global:\(mod.definition.manifest.id)",
+                modID: mod.definition.manifest.id,
+                scope: .global,
+                sourceURL: mod.directoryPath,
+                installedPath: mod.directoryPath,
+                enabled: false
+            )
+        )
+
+        model.setInstalledModEnabled(mod, scope: .global, enabled: true)
+
+        XCTAssertEqual(model.modStatusMessage, model.executableModBlockedReason(for: mod))
+
+        let installs = try await repositories.extensionInstallRepository.list()
+        let record = try XCTUnwrap(installs.first(where: { $0.modID == mod.definition.manifest.id }))
+        XCTAssertFalse(record.enabled)
+    }
+
+    func testUpdateInstalledModKeepsThirdPartyExecutableModDisabledWhenLocked() async throws {
+        let repositories = try makeRepositories(prefix: "advanced-mods-update-lock")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        model.areAdvancedExecutableModsUnlocked = false
+
+        let sourceRoot = try makeTempDirectory(prefix: "advanced-mods-update-source")
+        let definitionURL = try UIModDiscoveryService().writeSampleMod(
+            to: sourceRoot.path,
+            name: "acme-third-party"
+        )
+        let sourceModURL = definitionURL.deletingLastPathComponent()
+        let installedRoot = try makeTempDirectory(prefix: "advanced-mods-update-installed")
+        let installedModURL = installedRoot.appendingPathComponent("acme-third-party", isDirectory: true)
+        try FileManager.default.copyItem(at: sourceModURL, to: installedModURL)
+
+        _ = try await repositories.extensionInstallRepository.upsert(
+            ExtensionInstallRecord(
+                id: "global:acme-third-party",
+                modID: "acme-third-party",
+                scope: .global,
+                sourceURL: sourceModURL.path,
+                installedPath: installedModURL.path,
+                enabled: true
+            )
+        )
+
+        model.updateInstalledMod(
+            makeExecutableMod(
+                id: "acme-third-party",
+                name: "Third Party",
+                directoryPath: installedModURL.path,
+                scope: .global
+            ),
+            scope: .global
+        )
+
+        try await eventually(timeoutSeconds: 10) {
+            model.isModOperationInProgress == false
+                && model.modStatusMessage?.contains("but it is disabled") == true
+        }
+
+        let installs = try await repositories.extensionInstallRepository.list()
+        let record = try XCTUnwrap(installs.first(where: { $0.modID == "acme-third-party" }))
+        XCTAssertFalse(record.enabled)
+    }
+
+    func testUpdateInstalledModPreservesDisabledStateWhenRuntimeWasAlreadyOff() async throws {
+        let repositories = try makeRepositories(prefix: "advanced-mods-update-disabled")
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+        model.areAdvancedExecutableModsUnlocked = true
+
+        let sourceRoot = try makeTempDirectory(prefix: "advanced-mods-update-disabled-source")
+        let definitionURL = try UIModDiscoveryService().writeSampleMod(
+            to: sourceRoot.path,
+            name: "acme-disabled"
+        )
+        let sourceModURL = definitionURL.deletingLastPathComponent()
+        let installedRoot = try makeTempDirectory(prefix: "advanced-mods-update-disabled-installed")
+        let installedModURL = installedRoot.appendingPathComponent("acme-disabled", isDirectory: true)
+        try FileManager.default.copyItem(at: sourceModURL, to: installedModURL)
+
+        _ = try await repositories.extensionInstallRepository.upsert(
+            ExtensionInstallRecord(
+                id: "global:acme-disabled",
+                modID: "acme-disabled",
+                scope: .global,
+                sourceURL: sourceModURL.path,
+                installedPath: installedModURL.path,
+                enabled: false
+            )
+        )
+
+        model.updateInstalledMod(
+            makeExecutableMod(
+                id: "acme-disabled",
+                name: "Disabled",
+                directoryPath: installedModURL.path,
+                scope: .global
+            ),
+            scope: .global
+        )
+
+        try await eventually(timeoutSeconds: 10) {
+            model.isModOperationInProgress == false
+                && model.modStatusMessage == "Updated mod: acme-disabled. Runtime remains disabled."
+        }
+
+        let installs = try await repositories.extensionInstallRepository.list()
+        let record = try XCTUnwrap(installs.first(where: { $0.modID == "acme-disabled" }))
+        XCTAssertFalse(record.enabled)
+    }
+
+    private func makeExecutableMod(
+        id: String,
+        name: String,
+        directoryPath: String,
+        scope: ModScope = .project
+    ) -> DiscoveredUIMod {
         DiscoveredUIMod(
-            scope: .project,
+            scope: scope,
             directoryPath: directoryPath,
             definitionPath: "\(directoryPath)/ui.mod.json",
             definition: UIModDefinition(
