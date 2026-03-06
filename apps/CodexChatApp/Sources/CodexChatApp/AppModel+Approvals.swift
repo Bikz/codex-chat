@@ -53,6 +53,10 @@ extension AppModel {
         guard let request = resolvedRequest else { return }
         guard let runtimePool else { return }
 
+        approvalDecisionInFlightRequestIDs.insert(request.id)
+        isApprovalDecisionInProgress = true
+        approvalStatusMessage = nil
+
         Task {
             do {
                 try await performApprovalDecision(decision, request: request, runtimePool: runtimePool)
