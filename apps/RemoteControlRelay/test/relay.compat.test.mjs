@@ -336,6 +336,7 @@ async function runScenario(relayKind) {
           type: "command",
           payload: {
             name: "thread.select",
+            commandID: "cmd-1",
             threadID: "thread-compat"
           }
         }

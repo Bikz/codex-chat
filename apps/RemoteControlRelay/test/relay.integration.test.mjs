@@ -267,6 +267,7 @@ test("pair join requires desktop approval and rotates device session tokens", as
           type: "command",
           payload: {
             name: "thread.select",
+            commandID: "cmd-1",
             threadID: "thread-1"
           }
         }
@@ -428,6 +429,7 @@ test("mobile receives desktop status updates and offline commands are rejected",
           type: "command",
           payload: {
             name: "thread.select",
+            commandID: "cmd-11",
             threadID: "thread-offline"
           }
         }
@@ -467,6 +469,7 @@ test("mobile receives desktop status updates and offline commands are rejected",
           type: "command",
           payload: {
             name: "thread.select",
+            commandID: "cmd-12",
             threadID: "thread-online"
           }
         }
