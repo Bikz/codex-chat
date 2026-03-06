@@ -66,7 +66,7 @@ struct RemoteControlSheet: View {
                     Text("Session active")
                         .font(.headline)
 
-                    LabeledContent("Status", value: "Connected")
+                    LabeledContent("Status", value: model.remoteControlSessionConnectionLabel)
                     LabeledContent("Devices", value: model.remoteControlConnectedDeviceLabel)
                     LabeledContent("Token expires", value: remoteTimestamp(session.joinTokenLease.expiresAt))
                 }

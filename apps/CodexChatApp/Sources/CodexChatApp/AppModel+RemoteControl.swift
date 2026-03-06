@@ -109,6 +109,19 @@ extension AppModel {
         Self.remoteControlConnectedDeviceLabel(count: remoteControlStatus.connectedDeviceCount)
     }
 
+    var remoteControlSessionConnectionLabel: String {
+        guard remoteControlStatus.session != nil else {
+            return "Inactive"
+        }
+        if remoteControlRelayAuthenticated {
+            return "Connected"
+        }
+        if remoteControlReconnectTask != nil || remoteControlReconnectAttempt > 0 {
+            return "Reconnecting"
+        }
+        return "Connecting"
+    }
+
     static func remoteControlConnectedDeviceLabel(count: Int) -> String {
         let sanitizedCount = max(0, count)
         let suffix = sanitizedCount == 1 ? "device" : "devices"

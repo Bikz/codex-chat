@@ -744,6 +744,29 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertNil(clearedDescriptor, "Invalid persisted session should be cleared.")
     }
 
+    func testRemoteControlSessionConnectionLabelReflectsRelayState() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-connection-label")
+        let model = fixture.model
+
+        model.remoteControlRelayAuthenticated = true
+        model.remoteControlReconnectAttempt = 0
+        XCTAssertEqual(model.remoteControlSessionConnectionLabel, "Connected")
+
+        model.remoteControlRelayAuthenticated = false
+        XCTAssertEqual(model.remoteControlSessionConnectionLabel, "Connecting")
+
+        model.remoteControlReconnectAttempt = 1
+        XCTAssertEqual(model.remoteControlSessionConnectionLabel, "Reconnecting")
+
+        model.remoteControlStatus = RemoteControlBrokerStatus(
+            phase: .disconnected,
+            session: nil,
+            connectedDeviceCount: 0,
+            disconnectReason: "Stopped"
+        )
+        XCTAssertEqual(model.remoteControlSessionConnectionLabel, "Inactive")
+    }
+
     func testPrepareForTeardownKeepsPersistedRemoteSessionAndDoesNotStopRelaySession() async throws {
         let now = Date(timeIntervalSince1970: 1_700_000_200)
         let joinURL = try XCTUnwrap(URL(string: "https://remote.example/rc#sid=session-teardown&jt=join-token-teardown"))
