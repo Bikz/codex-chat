@@ -205,6 +205,61 @@ function sessionLogID(sessionId) {
   return `${sessionId.slice(0, 6)}...${sessionId.slice(-4)}`;
 }
 
+function isCompactIdentifier(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 128 && /^[A-Za-z0-9:_-]+$/.test(value);
+}
+
+function validateMobileRelayPayload(parsed, expectedSessionID) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { error: "invalid_payload", message: "Payload must be a JSON object." };
+  }
+
+  if (parsed.type === "relay.snapshot_request") {
+    if (parsed.sessionID !== expectedSessionID) {
+      return {
+        error: "invalid_session",
+        message: "Snapshot request sessionID does not match authenticated session."
+      };
+    }
+    return null;
+  }
+
+  if (parsed?.payload?.type !== "command") {
+    return null;
+  }
+
+  if (parsed.sessionID !== expectedSessionID) {
+    return {
+      error: "invalid_session",
+      message: "Command envelope sessionID does not match authenticated session."
+    };
+  }
+
+  if (parsed.schemaVersion !== 1) {
+    return {
+      error: "unsupported_schema",
+      message: "Only schemaVersion 1 is supported."
+    };
+  }
+
+  const commandPayload = parsed?.payload?.payload;
+  if (!commandPayload || typeof commandPayload !== "object" || Array.isArray(commandPayload)) {
+    return {
+      error: "invalid_command",
+      message: "Command payload object is required."
+    };
+  }
+
+  if (!isCompactIdentifier(commandPayload.commandID)) {
+    return {
+      error: "invalid_command",
+      message: "commandID must be a compact identifier."
+    };
+  }
+
+  return null;
+}
+
 function closeSession(sessionId, reason) {
   const session = sessions.get(sessionId);
   if (!session) {
@@ -892,6 +947,19 @@ wss.on("connection", (socket, request) => {
 
     if (parsed.type === "relay.auth") {
       return;
+    }
+
+    if (authState.role === "mobile") {
+      const validationError = validateMobileRelayPayload(parsed, authState.sessionID);
+      if (validationError) {
+        sendJSON(socket, {
+          type: "relay.error",
+          sessionID: authState.sessionID,
+          error: validationError.error,
+          message: validationError.message
+        });
+        return;
+      }
     }
 
     if (authState.role === "desktop") {

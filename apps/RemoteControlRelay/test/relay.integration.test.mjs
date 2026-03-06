@@ -493,6 +493,149 @@ test("mobile receives desktop status updates and offline commands are rejected",
   }
 });
 
+test("mobile commands without commandID are rejected and not forwarded", async () => {
+  const port = await reservePort();
+  const host = "127.0.0.1";
+  const baseURL = `http://${host}:${port}`;
+  const wsURL = `ws://${host}:${port}/ws`;
+
+  const relayProcess = spawn("node", ["src/server.mjs"], {
+    cwd: relayRoot,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: host,
+      PUBLIC_BASE_URL: baseURL,
+      ALLOWED_ORIGINS: "http://localhost:4173"
+    }
+  });
+
+  let desktopSocket = null;
+  let mobileSocket = null;
+
+  try {
+    await waitForRelay(baseURL);
+
+    const sessionID = randomToken(16);
+    const joinToken = randomToken(32);
+    const desktopSessionToken = randomToken(32);
+    const joinTokenExpiresAt = new Date(Date.now() + 120_000).toISOString();
+
+    const pairStartResponse = await fetch(`${baseURL}/pair/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken,
+        desktopSessionToken,
+        joinTokenExpiresAt,
+        relayWebSocketURL: wsURL,
+        idleTimeoutSeconds: 1800
+      })
+    });
+    assert.equal(pairStartResponse.status, 200);
+
+    desktopSocket = await openWebSocket(wsURL);
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: desktopSessionToken
+      })
+    );
+    const desktopAuth = await nextJSONMessage(desktopSocket);
+    assert.equal(desktopAuth.type, "auth_ok");
+    assert.equal(desktopAuth.desktopConnected, true);
+
+    const joinPromise = fetch(`${baseURL}/pair/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID,
+        joinToken
+      })
+    });
+
+    const pairRequest = await nextJSONMessage(desktopSocket);
+    assert.equal(pairRequest.type, "relay.pair_request");
+
+    desktopSocket.send(
+      JSON.stringify({
+        type: "relay.pair_decision",
+        sessionID,
+        requestID: pairRequest.requestID,
+        approved: true
+      })
+    );
+
+    const joinResponse = await joinPromise;
+    assert.equal(joinResponse.status, 200);
+    const joinPayload = await joinResponse.json();
+
+    mobileSocket = await openWebSocket(wsURL, {
+      origin: "http://localhost:4173"
+    });
+    mobileSocket.send(
+      JSON.stringify({
+        type: "relay.auth",
+        token: joinPayload.deviceSessionToken
+      })
+    );
+    const mobileAuth = await nextJSONMessage(mobileSocket);
+    assert.equal(mobileAuth.type, "auth_ok");
+    assert.equal(mobileAuth.desktopConnected, true);
+
+    const relayErrorPromise = nextMatchingJSONMessage(
+      mobileSocket,
+      (message) => message?.type === "relay.error"
+    );
+    mobileSocket.send(
+      JSON.stringify({
+        schemaVersion: 1,
+        sessionID,
+        seq: 7,
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: "command",
+          payload: {
+            name: "thread.select",
+            threadID: "thread-missing-command-id"
+          }
+        }
+      })
+    );
+
+    const relayError = await relayErrorPromise;
+    assert.equal(relayError.error, "invalid_command");
+    assert.match(relayError.message, /commandID/i);
+
+    const forwardedResult = await Promise.race([
+      nextMatchingJSONMessage(
+        desktopSocket,
+        (message) => message?.payload?.type === "command",
+        250
+      )
+        .then(() => "forwarded")
+        .catch((error) => {
+          if (error instanceof Error && /Timed out waiting for websocket message/.test(error.message)) {
+            return "timeout";
+          }
+          throw error;
+        }),
+      wait(300).then(() => "timeout")
+    ]);
+    assert.equal(forwardedResult, "timeout");
+  } finally {
+    mobileSocket?.close();
+    desktopSocket?.close();
+    relayProcess.kill("SIGTERM");
+    await wait(150);
+    if (relayProcess.exitCode === null) {
+      relayProcess.kill("SIGKILL");
+    }
+  }
+});
+
 test("trusted mobile reauths while desktop is offline without re-pairing", async () => {
   const port = await reservePort();
   const host = "127.0.0.1";
