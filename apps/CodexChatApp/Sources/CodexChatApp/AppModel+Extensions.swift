@@ -5,6 +5,16 @@ import CodexMods
 import Darwin
 import Foundation
 
+struct BackgroundAutomationLaunchPayload: Codable, Equatable, Sendable {
+    let modDirectoryPath: String
+    let projectPath: String
+    let workingDirectory: String
+    let handlerCommand: [String]
+    let timeoutMs: Int
+    let maxOutputBytes: Int
+    let input: ExtensionWorkerInput
+}
+
 extension AppModel {
     private struct PersistedModsBarUIState: Codable, Sendable {
         var isVisible: Bool
@@ -973,15 +983,13 @@ extension AppModel {
 
     func executeAutomation(runtimeAutomationID: String) async -> Bool {
         guard let resolved = activeExtensionAutomations.first(where: { $0.runtimeAutomationID == runtimeAutomationID }),
-              let projectID = resolved.executionProjectID,
-              let projectPath = resolved.executionProjectPath,
-              let threadID = resolved.executionThreadID
+              let envelope = automationExecutionEnvelope(for: resolved),
+              let input = automationWorkerInput(for: resolved)
         else {
             return false
         }
 
-        let project = ExtensionProjectContext(id: projectID.uuidString, path: projectPath)
-        let thread = ExtensionThreadContext(id: threadID.uuidString)
+        let projectID = UUID(uuidString: envelope.project.id)
 
         let permissionOK = await ensurePermissions(
             installID: resolved.installID,
@@ -1003,18 +1011,6 @@ extension AppModel {
             return false
         }
 
-        var input = ExtensionWorkerInput(
-            envelope: ExtensionEventEnvelope(
-                event: .transcriptPersisted,
-                timestamp: Date(),
-                project: project,
-                thread: thread,
-                turn: nil,
-                payload: ["automationId": resolved.definition.id]
-            )
-        )
-        input.event = "automation.scheduled"
-
         do {
             let runResult = try await extensionWorkerRunner.run(
                 handler: ExtensionHandlerDefinition(
@@ -1028,13 +1024,7 @@ extension AppModel {
 
             await applyWorkerOutput(
                 runResult.output,
-                envelope: ExtensionEventEnvelope(
-                    event: .transcriptPersisted,
-                    timestamp: Date(),
-                    project: project,
-                    thread: thread,
-                    payload: ["automationId": resolved.definition.id]
-                ),
+                envelope: envelope,
                 modDirectoryPath: resolved.modDirectoryPath,
                 sourceHookID: nil
             )
@@ -1072,6 +1062,33 @@ extension AppModel {
             }
             return false
         }
+    }
+
+    func automationExecutionEnvelope(for resolved: ResolvedExtensionAutomation) -> ExtensionEventEnvelope? {
+        guard let projectID = resolved.executionProjectID,
+              let projectPath = resolved.executionProjectPath,
+              let threadID = resolved.executionThreadID
+        else {
+            return nil
+        }
+
+        return ExtensionEventEnvelope(
+            event: .transcriptPersisted,
+            timestamp: Date(),
+            project: ExtensionProjectContext(id: projectID.uuidString, path: projectPath),
+            thread: ExtensionThreadContext(id: threadID.uuidString),
+            payload: ["automationId": resolved.definition.id]
+        )
+    }
+
+    func automationWorkerInput(for resolved: ResolvedExtensionAutomation) -> ExtensionWorkerInput? {
+        guard let envelope = automationExecutionEnvelope(for: resolved) else {
+            return nil
+        }
+
+        var input = ExtensionWorkerInput(envelope: envelope)
+        input.event = "automation.scheduled"
+        return input
     }
 
     private func mapPermissions(_ permissions: ModExtensionPermissions) -> ExtensionPermissionSet {
@@ -1647,6 +1664,29 @@ extension AppModel {
             return
         }
 
+        let automationWrapperPath: String
+        do {
+            automationWrapperPath = try ensureBackgroundAutomationWrapperCommand()
+        } catch {
+            let errorMessage = sanitizeExtensionLog(error.localizedDescription)
+            for automation in automationsRequiringBackground {
+                await markAutomationState(
+                    resolved: automation,
+                    status: ExtensionAutomationStatus.launchdFailed,
+                    error: errorMessage,
+                    nextRunAt: nil
+                )
+            }
+            reconcileBackgroundAutomationJobs(
+                keepingLabels: [],
+                launchdDirectory: launchdDirectory,
+                launchdManager: launchdManager,
+                uid: uid
+            )
+            appendLog(.warning, "Failed preparing background automation runner: \(errorMessage)")
+            return
+        }
+
         var configuredLabels: Set<String> = []
 
         for automation in automationsRequiringBackground {
@@ -1672,36 +1712,37 @@ extension AppModel {
             }
 
             let label = launchdLabel(for: automation)
-            let command = automation.definition.handler.command
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            guard !command.isEmpty else {
+            guard let payload = backgroundAutomationLaunchPayload(for: automation) else {
                 await markAutomationState(
                     resolved: automation,
                     status: ExtensionAutomationStatus.launchdFailed,
-                    error: "Automation command is empty",
+                    error: "Automation execution context is incomplete",
                     nextRunAt: nil
                 )
                 continue
             }
 
-            let programArguments: [String] = if command[0].hasPrefix("/") {
-                command
-            } else {
-                ["/usr/bin/env"] + command
-            }
             let startInterval = launchdStartIntervalSeconds(for: automation.definition.schedule)
-            let workingDirectory = launchdWorkingDirectoryPath(for: automation)
-            let spec = LaunchdJobSpec(
-                label: label,
-                programArguments: programArguments,
-                workingDirectory: workingDirectory,
-                standardOutPath: launchdDirectory.appendingPathComponent("\(label).log").path,
-                standardErrorPath: launchdDirectory.appendingPathComponent("\(label).err.log").path,
-                startIntervalSeconds: startInterval
-            )
 
             do {
+                let payloadURL = try writeBackgroundAutomationLaunchPayload(
+                    payload,
+                    label: label,
+                    launchdDirectory: launchdDirectory
+                )
+                let spec = LaunchdJobSpec(
+                    label: label,
+                    programArguments: [
+                        automationWrapperPath,
+                        "run",
+                        "--payload",
+                        payloadURL.path,
+                    ],
+                    workingDirectory: payload.workingDirectory,
+                    standardOutPath: launchdDirectory.appendingPathComponent("\(label).log").path,
+                    standardErrorPath: launchdDirectory.appendingPathComponent("\(label).err.log").path,
+                    startIntervalSeconds: startInterval
+                )
                 let plistURL = try launchdManager.writePlist(spec: spec, directoryURL: launchdDirectory)
                 try? launchdManager.bootout(label: label, uid: uid)
                 try launchdManager.bootstrap(plistURL: plistURL, uid: uid)
@@ -1797,6 +1838,10 @@ extension AppModel {
 
             try? launchdManager.bootout(label: label, uid: uid)
             try fileManager.removeItem(at: plistURL)
+            let payloadURL = launchdDirectory.appendingPathComponent("\(label).payload.json", isDirectory: false)
+            if fileManager.fileExists(atPath: payloadURL.path) {
+                try? fileManager.removeItem(at: payloadURL)
+            }
             removedLabels.append(label)
         }
 
@@ -1823,6 +1868,242 @@ extension AppModel {
         }
         let delta = Int(second.timeIntervalSince(first))
         return min(max(60, delta), 86400)
+    }
+
+    func backgroundAutomationLaunchPayload(for automation: ResolvedExtensionAutomation) -> BackgroundAutomationLaunchPayload? {
+        guard let input = automationWorkerInput(for: automation),
+              let projectPath = automation.executionProjectPath
+        else {
+            return nil
+        }
+
+        let handlerCommand = automation.definition.handler.command
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !handlerCommand.isEmpty else {
+            return nil
+        }
+
+        return BackgroundAutomationLaunchPayload(
+            modDirectoryPath: automation.modDirectoryPath,
+            projectPath: projectPath,
+            workingDirectory: launchdWorkingDirectoryPath(for: automation),
+            handlerCommand: handlerCommand,
+            timeoutMs: automation.definition.timeoutMs,
+            maxOutputBytes: 256 * 1024,
+            input: input
+        )
+    }
+
+    func writeBackgroundAutomationLaunchPayload(
+        _ payload: BackgroundAutomationLaunchPayload,
+        label: String,
+        launchdDirectory: URL
+    ) throws -> URL {
+        try FileManager.default.createDirectory(at: launchdDirectory, withIntermediateDirectories: true)
+        let payloadURL = launchdDirectory.appendingPathComponent("\(label).payload.json", isDirectory: false)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(payload)
+        try data.write(to: payloadURL, options: [.atomic])
+        return payloadURL
+    }
+
+    func ensureBackgroundAutomationWrapperCommand(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) throws -> String {
+        let wrapperDirectory = storagePaths.systemURL
+            .appendingPathComponent("bin", isDirectory: true)
+        try fileManager.createDirectory(at: wrapperDirectory, withIntermediateDirectories: true)
+
+        let wrapperURL = wrapperDirectory.appendingPathComponent("codexchat-automation", isDirectory: false)
+        let script = Self.backgroundAutomationWrapperScriptContent(environment: environment)
+        if let existing = try? String(contentsOf: wrapperURL, encoding: .utf8),
+           existing == script
+        {
+            try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: wrapperURL.path)
+            return wrapperURL.path
+        }
+
+        try script.write(to: wrapperURL, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: wrapperURL.path)
+        return wrapperURL.path
+    }
+
+    private static func backgroundAutomationWrapperScriptContent(environment: [String: String]) -> String {
+        let pythonPath = backgroundAutomationPythonPath(environment: environment)
+        return """
+        #!/bin/sh
+        exec "\(pythonPath)" - <<'PYTHON' "$@"
+        import argparse
+        import json
+        import subprocess
+        import sys
+        from pathlib import Path
+
+
+        def fail(message, code=1):
+            sys.stderr.write(message.rstrip() + "\\n")
+            sys.exit(code)
+
+
+        def safe_destination(relative_path, project_path):
+            trimmed = (relative_path or "").strip()
+            if not trimmed:
+                return None
+
+            root = Path(project_path).resolve()
+            destination = (root / trimmed).resolve()
+            try:
+                destination.relative_to(root)
+            except ValueError:
+                return None
+            return destination
+
+
+        def mods_bar_output_path(mod_directory, scope, thread_id, project_id):
+            state_directory = Path(mod_directory) / ".codexchat" / "state"
+            if scope == "global":
+                return state_directory / "modsBar-global.json"
+            if scope == "project":
+                resolved_project_id = project_id or "00000000-0000-0000-0000-000000000000"
+                return state_directory / f"modsBar-project-{resolved_project_id}.json"
+            resolved_thread_id = thread_id or "00000000-0000-0000-0000-000000000000"
+            return state_directory / f"modsBar-{resolved_thread_id}.json"
+
+
+        parser = argparse.ArgumentParser(prog="codexchat-automation")
+        subparsers = parser.add_subparsers(dest="command")
+        run_parser = subparsers.add_parser("run")
+        run_parser.add_argument("--payload", required=True)
+        arguments = parser.parse_args()
+
+        if arguments.command != "run":
+            fail("Use: codexchat-automation run --payload <path>", 2)
+
+        payload_path = Path(arguments.payload)
+        try:
+            payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            fail(f"Failed to load background automation payload: {exc}", 2)
+
+        command = [
+            str(part).strip()
+            for part in payload.get("handlerCommand", [])
+            if str(part).strip()
+        ]
+        if not command:
+            fail("Extension handler command is empty.", 2)
+
+        executable = command[0]
+        process_arguments = command if executable.startswith("/") else ["/usr/bin/env"] + command
+        working_directory = payload.get("workingDirectory") or payload.get("modDirectoryPath")
+        stdin_input = json.dumps(payload.get("input", {}), separators=(",", ":")) + "\\n"
+
+        try:
+            completed = subprocess.run(
+                process_arguments,
+                input=stdin_input.encode("utf-8"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=working_directory,
+                timeout=max(1, int(payload.get("timeoutMs", 60000))) / 1000.0,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            fail(f"Extension worker timed out after {payload.get('timeoutMs', 60000)}ms.", 1)
+        except Exception as exc:
+            fail(f"Failed to launch extension worker: {exc}", 1)
+
+        stdout_bytes = completed.stdout or b""
+        stderr_bytes = completed.stderr or b""
+        observed_bytes = len(stdout_bytes) + len(stderr_bytes)
+        max_output_bytes = max(1, int(payload.get("maxOutputBytes", 262144)))
+        if observed_bytes > max_output_bytes:
+            fail(f"Extension worker output exceeded limit ({max_output_bytes} bytes).", 1)
+
+        stdout_text = stdout_bytes.decode("utf-8", errors="replace")
+        stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+        if completed.returncode != 0:
+            fail(
+                f"Extension worker exited with status {completed.returncode}: {stderr_text}",
+                1,
+            )
+
+        first_line = ""
+        for candidate in stdout_text.splitlines():
+            stripped = candidate.strip()
+            if stripped:
+                first_line = stripped
+                break
+
+        if not first_line:
+            fail("Extension worker returned malformed output: Missing JSON line output", 1)
+
+        try:
+            output = json.loads(first_line)
+        except Exception as exc:
+            fail(f"Extension worker returned malformed output: {exc}", 1)
+
+        log_line = str(output.get("log", "") or "").strip()
+        if log_line:
+            sys.stdout.write(f"[extension] {log_line}\\n")
+
+        input_payload = payload.get("input", {})
+        project_context = input_payload.get("project", {})
+        thread_context = input_payload.get("thread", {})
+
+        mods_bar = output.get("modsBar")
+        if isinstance(mods_bar, dict):
+            scope = str(mods_bar.get("scope") or "thread")
+            output_path = mods_bar_output_path(
+                payload.get("modDirectoryPath"),
+                scope,
+                thread_context.get("id"),
+                project_context.get("id"),
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
+                json.dumps(mods_bar, separators=(",", ":"), sort_keys=True),
+                encoding="utf-8",
+            )
+
+        artifacts = output.get("artifacts")
+        if isinstance(artifacts, list):
+            for artifact in artifacts:
+                if not isinstance(artifact, dict):
+                    continue
+                if artifact.get("op") != "upsert":
+                    continue
+
+                destination = safe_destination(artifact.get("path", ""), payload.get("projectPath", ""))
+                if destination is None:
+                    sys.stderr.write(
+                        f"Skipped extension artifact outside project root: {artifact.get('path', '')}\\n"
+                    )
+                    continue
+
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(str(artifact.get("content", "")), encoding="utf-8")
+
+        if stderr_text:
+            sys.stderr.write(stderr_text + "\\n")
+        PYTHON
+        """
+    }
+
+    private static func backgroundAutomationPythonPath(environment: [String: String]) -> String {
+        let configuredPath = environment["PATH"] ?? ""
+        for pathEntry in configuredPath.split(separator: ":").map(String.init) {
+            let candidate = URL(fileURLWithPath: pathEntry, isDirectory: true)
+                .appendingPathComponent("python3", isDirectory: false)
+                .path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return "/usr/bin/python3"
     }
 
     private func promptBookStateFileURL() -> URL? {

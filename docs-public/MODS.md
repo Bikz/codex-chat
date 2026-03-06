@@ -86,6 +86,7 @@ In `Skills & Mods -> Mods`, runtime enablement is now separate from active selec
 - Runtime scheduler entries are keyed per install, so project/global installs of the same mod automation do not collide.
 - Enabled project installs are scheduled across all projects, not just the project currently selected in the sidebar.
 - Open-app scheduled automations run against the execution context captured for that active install instead of following the current sidebar selection.
+- Closed-app scheduled automations execute through the same JSON worker envelope as the open-app scheduler, with launchd invoking a generated background runner instead of calling handlers directly.
 
 ## Hook Events
 
