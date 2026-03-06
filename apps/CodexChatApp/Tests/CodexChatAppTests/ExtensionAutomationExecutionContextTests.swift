@@ -8,6 +8,81 @@ import XCTest
 
 @MainActor
 final class ExtensionAutomationExecutionContextTests: XCTestCase {
+    func testSyncActiveExtensionsSchedulesEnabledProjectInstallOutsideSelectedProject() async throws {
+        let rootURL = try makeTempDirectory(prefix: "extension-automation-scheduling")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let database = try MetadataDatabase(
+            databaseURL: rootURL.appendingPathComponent("metadata.sqlite", isDirectory: false)
+        )
+        let repositories = MetadataRepositories(database: database)
+        let model = AppModel(repositories: repositories, runtime: nil, bootError: nil)
+
+        let targetProjectURL = rootURL.appendingPathComponent("target-project", isDirectory: true)
+        let selectedProjectURL = rootURL.appendingPathComponent("selected-project", isDirectory: true)
+        let modDirectoryURL = rootURL.appendingPathComponent("scheduled-mod", isDirectory: true)
+        try FileManager.default.createDirectory(at: targetProjectURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: selectedProjectURL, withIntermediateDirectories: true)
+        try writeAutomationMod(
+            to: modDirectoryURL,
+            modID: "acme.scheduled",
+            automationID: "daily-sync"
+        )
+
+        let targetProject = try await repositories.projectRepository.createProject(
+            named: "Target",
+            path: targetProjectURL.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let selectedProject = try await repositories.projectRepository.createProject(
+            named: "Selected",
+            path: selectedProjectURL.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        let targetThread = try await repositories.threadRepository.createThread(
+            projectID: targetProject.id,
+            title: "Automation target"
+        )
+        let selectedThread = try await repositories.threadRepository.createThread(
+            projectID: selectedProject.id,
+            title: "Selected thread"
+        )
+
+        model.projectsState = .loaded([targetProject, selectedProject])
+        model.selectedProjectID = selectedProject.id
+        model.selectedThreadID = selectedThread.id
+
+        let installID = "project:\(targetProject.id.uuidString.lowercased()):acme.scheduled"
+        await model.syncActiveExtensions(
+            globalMods: [],
+            projectMods: [],
+            selectedGlobalPath: nil,
+            selectedProjectPath: nil,
+            installRecords: [
+                ExtensionInstallRecord(
+                    id: installID,
+                    modID: "acme.scheduled",
+                    scope: .project,
+                    projectID: targetProject.id,
+                    installedPath: modDirectoryURL.path,
+                    enabled: true
+                ),
+            ]
+        )
+
+        let resolved = try XCTUnwrap(model.activeExtensionAutomations.first)
+        XCTAssertEqual(model.activeExtensionAutomations.count, 1)
+        XCTAssertEqual(resolved.installID, installID)
+        XCTAssertEqual(resolved.installProjectID, targetProject.id)
+        XCTAssertEqual(resolved.executionProjectID, targetProject.id)
+        XCTAssertEqual(resolved.executionProjectPath, targetProject.path)
+        XCTAssertEqual(resolved.executionThreadID, targetThread.id)
+        XCTAssertNotEqual(resolved.executionProjectID, selectedProject.id)
+        XCTAssertNotEqual(resolved.executionThreadID, selectedThread.id)
+    }
+
     func testExecuteAutomationUsesStoredExecutionContext() async throws {
         let rootURL = try makeTempDirectory(prefix: "extension-automation-context")
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -99,5 +174,25 @@ final class ExtensionAutomationExecutionContextTests: XCTestCase {
         try Data(script.utf8).write(to: scriptURL, options: [.atomic])
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
         return scriptURL
+    }
+
+    private func writeAutomationMod(to directory: URL, modID: String, automationID: String) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let definition = UIModDefinition(
+            manifest: UIModManifest(id: modID, name: "Scheduled Mod", version: "1.0.0"),
+            theme: .init(),
+            automations: [
+                ModAutomationDefinition(
+                    id: automationID,
+                    schedule: "0 * * * *",
+                    handler: ModExtensionHandler(command: ["sh", "automation.sh"])
+                ),
+            ]
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let definitionURL = directory.appendingPathComponent("ui.mod.json", isDirectory: false)
+        try encoder.encode(definition).write(to: definitionURL, options: [.atomic])
     }
 }

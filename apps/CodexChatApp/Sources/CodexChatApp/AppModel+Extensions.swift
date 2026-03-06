@@ -176,7 +176,7 @@ extension AppModel {
         selectedGlobalPath: String?,
         selectedProjectPath: String?,
         installRecords: [ExtensionInstallRecord]
-    ) {
+    ) async {
         let vettedFirstPartyPaths = Self.vettedFirstPartyInstalledPaths(from: installRecords)
         let selectedGlobalMod = globalMods.first(where: { $0.directoryPath == selectedGlobalPath })
         let selectedProjectMod = projectMods.first(where: { $0.directoryPath == selectedProjectPath })
@@ -203,7 +203,6 @@ extension AppModel {
         }
 
         var hooks: [ResolvedExtensionHook] = []
-        var automations: [ResolvedExtensionAutomation] = []
 
         for globalMod in activeGlobalMods {
             let installContext = resolvedExtensionInstallContext(
@@ -211,10 +210,6 @@ extension AppModel {
                 scope: .global,
                 projectID: nil,
                 installRecords: installRecords
-            )
-            let automationExecutionContext = resolvedAutomationExecutionContext(
-                scope: .global,
-                projectID: nil
             )
             hooks.append(contentsOf: globalMod.definition.hooks.map {
                 ResolvedExtensionHook(
@@ -226,21 +221,6 @@ extension AppModel {
                     installSourceURL: installContext.sourceURL
                 )
             })
-            if let automationExecutionContext {
-                automations.append(contentsOf: globalMod.definition.automations.map {
-                    ResolvedExtensionAutomation(
-                        modID: globalMod.definition.manifest.id,
-                        modDirectoryPath: globalMod.directoryPath,
-                        definition: $0,
-                        installID: installContext.installID,
-                        installScope: .global,
-                        installSourceURL: installContext.sourceURL,
-                        executionProjectID: automationExecutionContext.projectID,
-                        executionProjectPath: automationExecutionContext.projectPath,
-                        executionThreadID: automationExecutionContext.threadID
-                    )
-                })
-            }
         }
 
         for projectMod in activeProjectMods {
@@ -249,10 +229,6 @@ extension AppModel {
                 scope: .project,
                 projectID: selectedProjectID,
                 installRecords: installRecords
-            )
-            let automationExecutionContext = resolvedAutomationExecutionContext(
-                scope: .project,
-                projectID: selectedProjectID
             )
             hooks.append(contentsOf: projectMod.definition.hooks.map {
                 ResolvedExtensionHook(
@@ -265,23 +241,14 @@ extension AppModel {
                     installSourceURL: installContext.sourceURL
                 )
             })
-            if let automationExecutionContext {
-                automations.append(contentsOf: projectMod.definition.automations.map {
-                    ResolvedExtensionAutomation(
-                        modID: projectMod.definition.manifest.id,
-                        modDirectoryPath: projectMod.directoryPath,
-                        definition: $0,
-                        installID: installContext.installID,
-                        installScope: .project,
-                        installProjectID: selectedProjectID,
-                        installSourceURL: installContext.sourceURL,
-                        executionProjectID: automationExecutionContext.projectID,
-                        executionProjectPath: automationExecutionContext.projectPath,
-                        executionThreadID: automationExecutionContext.threadID
-                    )
-                })
-            }
         }
+
+        let automations = await resolveScheduledExtensionAutomations(
+            activeGlobalMods: activeGlobalMods,
+            activeProjectMods: activeProjectMods,
+            installRecords: installRecords,
+            vettedFirstPartyPaths: vettedFirstPartyPaths
+        )
 
         activeExtensionHooks = hooks
         activeExtensionAutomations = automations
@@ -309,10 +276,8 @@ extension AppModel {
             extensionGlobalModsBarState = nil
         }
 
-        Task {
-            await refreshAutomationScheduler()
-            await loadModsBarCacheForSelectedThread()
-        }
+        await refreshAutomationScheduler()
+        await loadModsBarCacheForSelectedThread()
     }
 
     private func resolvedExtensionInstallContext(
@@ -337,33 +302,179 @@ extension AppModel {
         )
     }
 
+    private func resolveScheduledExtensionAutomations(
+        activeGlobalMods: [DiscoveredUIMod],
+        activeProjectMods: [DiscoveredUIMod],
+        installRecords: [ExtensionInstallRecord],
+        vettedFirstPartyPaths: Set<String>
+    ) async -> [ResolvedExtensionAutomation] {
+        var automationsByRuntimeID: [String: ResolvedExtensionAutomation] = [:]
+        var resolvedInstallIDs: Set<String> = []
+
+        func addAutomations(
+            for mod: DiscoveredUIMod,
+            scope: ExtensionInstallScope,
+            projectID: UUID?,
+            installContext: (installID: String, sourceURL: String?)
+        ) async {
+            resolvedInstallIDs.insert(installContext.installID)
+            let resolvedAutomations = await resolveScheduledExtensionAutomations(
+                for: mod,
+                scope: scope,
+                projectID: projectID,
+                installContext: installContext
+            )
+            for automation in resolvedAutomations {
+                automationsByRuntimeID[automation.runtimeAutomationID] = automation
+            }
+        }
+
+        for globalMod in activeGlobalMods {
+            let installContext = resolvedExtensionInstallContext(
+                for: globalMod,
+                scope: .global,
+                projectID: nil,
+                installRecords: installRecords
+            )
+            await addAutomations(
+                for: globalMod,
+                scope: .global,
+                projectID: nil,
+                installContext: installContext
+            )
+        }
+
+        for projectMod in activeProjectMods {
+            let installContext = resolvedExtensionInstallContext(
+                for: projectMod,
+                scope: .project,
+                projectID: selectedProjectID,
+                installRecords: installRecords
+            )
+            await addAutomations(
+                for: projectMod,
+                scope: .project,
+                projectID: selectedProjectID,
+                installContext: installContext
+            )
+        }
+
+        for record in installRecords where record.enabled {
+            guard !resolvedInstallIDs.contains(record.id) else {
+                continue
+            }
+
+            if record.scope == .project, record.projectID == nil {
+                continue
+            }
+
+            let scope: ModScope = switch record.scope {
+            case .global:
+                .global
+            case .project:
+                .project
+            }
+
+            do {
+                let mod = try modDiscoveryService.discoverMod(at: record.installedPath, scope: scope)
+                guard mod.definition.manifest.id == record.modID else {
+                    appendLog(
+                        .warning,
+                        "Skipped scheduled automation install \(record.id): manifest id \(mod.definition.manifest.id) does not match install record \(record.modID)."
+                    )
+                    continue
+                }
+
+                guard isModRuntimeEnabled(
+                    mod,
+                    scope: scope,
+                    projectID: record.projectID,
+                    selectedPath: nil,
+                    installRecords: installRecords,
+                    vettedFirstPartyPaths: vettedFirstPartyPaths
+                ) else {
+                    continue
+                }
+
+                await addAutomations(
+                    for: mod,
+                    scope: record.scope,
+                    projectID: record.projectID,
+                    installContext: (record.id, record.sourceURL)
+                )
+            } catch {
+                appendLog(
+                    .warning,
+                    "Skipped scheduled automation install at \(record.installedPath): \(error.localizedDescription)"
+                )
+            }
+        }
+
+        return automationsByRuntimeID.values.sorted { lhs, rhs in
+            if lhs.installID != rhs.installID {
+                return lhs.installID < rhs.installID
+            }
+            return lhs.definition.id < rhs.definition.id
+        }
+    }
+
+    private func resolveScheduledExtensionAutomations(
+        for mod: DiscoveredUIMod,
+        scope: ExtensionInstallScope,
+        projectID: UUID?,
+        installContext: (installID: String, sourceURL: String?)
+    ) async -> [ResolvedExtensionAutomation] {
+        guard !mod.definition.automations.isEmpty,
+              let automationExecutionContext = await resolvedAutomationExecutionContext(
+                  scope: scope,
+                  projectID: projectID
+              )
+        else {
+            return []
+        }
+
+        return mod.definition.automations.map {
+            ResolvedExtensionAutomation(
+                modID: mod.definition.manifest.id,
+                modDirectoryPath: mod.directoryPath,
+                definition: $0,
+                installID: installContext.installID,
+                installScope: scope,
+                installProjectID: projectID,
+                installSourceURL: installContext.sourceURL,
+                executionProjectID: automationExecutionContext.projectID,
+                executionProjectPath: automationExecutionContext.projectPath,
+                executionThreadID: automationExecutionContext.threadID
+            )
+        }
+    }
+
     private func resolvedAutomationExecutionContext(
         scope: ExtensionInstallScope,
         projectID: UUID?
-    ) -> (projectID: UUID, projectPath: String, threadID: UUID)? {
+    ) async -> (projectID: UUID, projectPath: String, threadID: UUID)? {
+        func defaultThreadID(for project: ProjectRecord) async -> UUID {
+            guard let threadRepository,
+                  let thread = try? await threadRepository.listThreads(projectID: project.id, scope: .active).first
+            else {
+                return project.id
+            }
+            return thread.id
+        }
+
         switch scope {
         case .project:
             guard let project = projects.first(where: { $0.id == projectID }) else {
                 return nil
             }
-            let threadID: UUID = if project.id == selectedProjectID {
-                selectedThreadID ?? project.id
-            } else {
-                project.id
-            }
+            let threadID = await defaultThreadID(for: project)
             return (project.id, project.path, threadID)
         case .global:
-            let project = generalProject ?? selectedProject ?? projects.first
+            let project = generalProject ?? projects.first
             guard let project else {
                 return nil
             }
-            let threadID: UUID = if project.isGeneralProject {
-                generalThreads.first?.id ?? project.id
-            } else if project.id == selectedProjectID {
-                selectedThreadID ?? project.id
-            } else {
-                project.id
-            }
+            let threadID = await defaultThreadID(for: project)
             return (project.id, project.path, threadID)
         }
     }

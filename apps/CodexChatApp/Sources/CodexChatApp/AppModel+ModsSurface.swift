@@ -89,7 +89,7 @@ extension AppModel {
                         enabledProjectModIDs: enabledModIDs.project
                     )
                 )
-                syncActiveExtensions(
+                await syncActiveExtensions(
                     globalMods: snapshot.globalMods,
                     projectMods: snapshot.projectMods,
                     selectedGlobalPath: snapshot.selectedGlobal,

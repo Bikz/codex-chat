@@ -81,6 +81,21 @@ public final class UIModDiscoveryService: @unchecked Sendable {
         )
     }
 
+    public func discoverMod(at directoryPath: String, scope: ModScope) throws -> DiscoveredUIMod {
+        let candidate = URL(fileURLWithPath: directoryPath, isDirectory: true).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw UIModDiscoveryError.missingManifest(candidate.path)
+        }
+
+        let definitionURL = candidate.appendingPathComponent("ui.mod.json", isDirectory: false)
+        guard fileManager.fileExists(atPath: definitionURL.path) else {
+            throw UIModDiscoveryError.missingManifest(definitionURL.path)
+        }
+
+        return try discoverMod(at: candidate, definitionURL: definitionURL, scope: scope)
+    }
+
     public func writeSampleMod(to directoryPath: String, name: String) throws -> URL {
         let directoryURL = URL(fileURLWithPath: directoryPath, isDirectory: true)
         try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)

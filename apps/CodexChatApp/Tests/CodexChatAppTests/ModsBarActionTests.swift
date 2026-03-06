@@ -676,7 +676,7 @@ final class ModsBarActionTests: XCTestCase {
         XCTAssertEqual(model.selectedModsBarQuickSwitchOption?.mod.definition.manifest.id, modID)
     }
 
-    func testSyncActiveExtensionsIncludesMultipleEnabledGlobalMods() {
+    func testSyncActiveExtensionsIncludesMultipleEnabledGlobalMods() async {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let modAPath = "/tmp/mod-a-\(UUID().uuidString)"
         let modBPath = "/tmp/mod-b-\(UUID().uuidString)"
@@ -708,7 +708,7 @@ final class ModsBarActionTests: XCTestCase {
             computedChecksum: nil
         )
 
-        model.syncActiveExtensions(
+        await model.syncActiveExtensions(
             globalMods: [modA, modB],
             projectMods: [],
             selectedGlobalPath: modAPath,
