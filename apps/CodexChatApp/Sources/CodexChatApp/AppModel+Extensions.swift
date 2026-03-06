@@ -1343,19 +1343,35 @@ extension AppModel {
     }
 
     private func configureBackgroundAutomationIfNeeded() async {
-        let automationsRequiringBackground = activeExtensionAutomations.filter(\.definition.permissions.runWhenAppClosed)
-        guard !automationsRequiringBackground.isEmpty else { return }
-
-        let granted = await ensureBackgroundAutomationPermissionIfNeeded()
-        guard granted else {
-            extensionStatusMessage = "Background automations disabled by user preference."
-            return
-        }
-
         let launchdDirectory = storagePaths.systemURL
             .appendingPathComponent("launchd", isDirectory: true)
         let launchdManager = LaunchdManager()
         let uid = getuid()
+        let automationsRequiringBackground = activeExtensionAutomations.filter(\.definition.permissions.runWhenAppClosed)
+
+        guard !automationsRequiringBackground.isEmpty else {
+            reconcileBackgroundAutomationJobs(
+                keepingLabels: [],
+                launchdDirectory: launchdDirectory,
+                launchdManager: launchdManager,
+                uid: uid
+            )
+            return
+        }
+
+        let granted = await ensureBackgroundAutomationPermissionIfNeeded()
+        guard granted else {
+            reconcileBackgroundAutomationJobs(
+                keepingLabels: [],
+                launchdDirectory: launchdDirectory,
+                launchdManager: launchdManager,
+                uid: uid
+            )
+            extensionStatusMessage = "Background automations disabled by user preference."
+            return
+        }
+
+        var configuredLabels: Set<String> = []
 
         for automation in automationsRequiringBackground {
             let runWhenClosedPermission = ModExtensionPermissions(runWhenAppClosed: true)
@@ -1409,6 +1425,7 @@ extension AppModel {
                 let plistURL = try launchdManager.writePlist(spec: spec, directoryURL: launchdDirectory)
                 try? launchdManager.bootout(label: label, uid: uid)
                 try launchdManager.bootstrap(plistURL: plistURL, uid: uid)
+                configuredLabels.insert(label)
 
                 let nextRun = try? CronSchedule(expression: automation.definition.schedule).nextRun(after: Date())
                 await markAutomationState(
@@ -1442,6 +1459,68 @@ extension AppModel {
                 )
             }
         }
+
+        reconcileBackgroundAutomationJobs(
+            keepingLabels: configuredLabels,
+            launchdDirectory: launchdDirectory,
+            launchdManager: launchdManager,
+            uid: uid
+        )
+    }
+
+    private func reconcileBackgroundAutomationJobs(
+        keepingLabels: Set<String>,
+        launchdDirectory: URL,
+        launchdManager: LaunchdManager,
+        uid: uid_t
+    ) {
+        do {
+            let removedLabels = try Self.pruneBackgroundAutomationJobs(
+                keepingLabels: keepingLabels,
+                launchdDirectory: launchdDirectory,
+                uid: uid,
+                launchdManager: launchdManager
+            )
+            if !removedLabels.isEmpty {
+                appendLog(.info, "Removed stale background automation jobs: \(removedLabels.joined(separator: ", "))")
+            }
+        } catch {
+            appendLog(.warning, "Failed reconciling background automation jobs: \(error.localizedDescription)")
+        }
+    }
+
+    nonisolated static func pruneBackgroundAutomationJobs(
+        keepingLabels: Set<String>,
+        launchdDirectory: URL,
+        uid: uid_t,
+        launchdManager: LaunchdManager,
+        fileManager: FileManager = .default
+    ) throws -> [String] {
+        guard fileManager.fileExists(atPath: launchdDirectory.path) else {
+            return []
+        }
+
+        let plistURLs = try fileManager.contentsOfDirectory(
+            at: launchdDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "plist" }
+
+        var removedLabels: [String] = []
+        for plistURL in plistURLs {
+            let label = plistURL.deletingPathExtension().lastPathComponent
+            guard label.hasPrefix("app.codexchat."),
+                  !keepingLabels.contains(label)
+            else {
+                continue
+            }
+
+            try? launchdManager.bootout(label: label, uid: uid)
+            try fileManager.removeItem(at: plistURL)
+            removedLabels.append(label)
+        }
+
+        return removedLabels.sorted()
     }
 
     private func launchdWorkingDirectoryPath(for automation: ResolvedExtensionAutomation) -> String {
