@@ -4,6 +4,13 @@ import CodexSkills
 import Foundation
 
 extension AppModel {
+    private struct SkillMaintenanceTrustContext: Sendable {
+        let source: String?
+        let installer: SkillInstallerKind
+        let scope: SkillInstallScope
+        let projectIDs: [UUID]?
+    }
+
     var isComposerSkillAutocompleteActive: Bool {
         composerSkillTokenMatch(in: composerText) != nil
     }
@@ -144,6 +151,19 @@ extension AppModel {
         Task {
             defer { isSkillOperationInProgress = false }
             do {
+                let blockedCapabilities = try await blockedCapabilitiesForSkillMaintenance(item)
+                if !blockedCapabilities.isEmpty {
+                    let blockedList = blockedCapabilities.map(\.rawValue).sorted().joined(separator: ", ")
+                    let operation = item.updateCapability == .reinstall ? "reinstall" : "update"
+                    skillStatusMessage = "Skill \(operation) blocked in untrusted project: \(blockedList)."
+                    let source = item.updateSource ?? item.skill.skillPath
+                    appendLog(
+                        .warning,
+                        "Skill \(operation) blocked in untrusted project (\(blockedList)) for source \(source)"
+                    )
+                    return
+                }
+
                 switch item.updateCapability {
                 case .gitUpdate:
                     _ = try skillCatalogService.updateSkill(at: item.skill.skillPath)
@@ -845,20 +865,85 @@ extension AppModel {
         }
     }
 
+    private func skillMaintenanceTrustContext(
+        for item: SkillListItem
+    ) async throws -> SkillMaintenanceTrustContext? {
+        guard let installer = item.updateInstaller else {
+            return nil
+        }
+
+        let source = item.updateSource?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let record = try await installRecord(for: item) {
+            return SkillMaintenanceTrustContext(
+                source: source,
+                installer: installer,
+                scope: record.mode == .all ? .global : .project,
+                projectIDs: record.mode == .selected ? record.projectIDs : nil
+            )
+        }
+
+        let scope: SkillInstallScope
+        let projectIDs: [UUID]?
+        if item.enabledTargets.contains(.project), !item.enabledTargets.contains(.global) {
+            scope = .project
+            projectIDs = selectedProjectID.map { [$0] }
+        } else {
+            scope = .global
+            projectIDs = nil
+        }
+
+        return SkillMaintenanceTrustContext(
+            source: source,
+            installer: installer,
+            scope: scope,
+            projectIDs: projectIDs
+        )
+    }
+
     func blockedCapabilitiesForSkillInstall(
         source: String,
         scope: SkillInstallScope,
         installer: SkillInstallerKind,
         projectIDs: [UUID]? = nil
     ) -> Set<ExtensibilityCapability> {
-        guard scope == .project else {
-            return []
-        }
-
         let requiredCapabilities = requiredExtensibilityCapabilitiesForSkillInstall(
             source: source,
             installer: installer
         )
+        return blockedCapabilitiesForSkillOperation(
+            requiredCapabilities: requiredCapabilities,
+            scope: scope,
+            projectIDs: projectIDs
+        )
+    }
+
+    func blockedCapabilitiesForSkillMaintenance(_ item: SkillListItem) async throws -> Set<ExtensibilityCapability> {
+        guard let context = try await skillMaintenanceTrustContext(for: item) else {
+            return []
+        }
+
+        let requiredCapabilities = requiredExtensibilityCapabilitiesForSkillMaintenance(
+            source: context.source,
+            installer: context.installer,
+            updateCapability: item.updateCapability
+        )
+        return blockedCapabilitiesForSkillOperation(
+            requiredCapabilities: requiredCapabilities,
+            scope: context.scope,
+            projectIDs: context.projectIDs
+        )
+    }
+
+    private func blockedCapabilitiesForSkillOperation(
+        requiredCapabilities: Set<ExtensibilityCapability>,
+        scope: SkillInstallScope,
+        projectIDs: [UUID]? = nil
+    ) -> Set<ExtensibilityCapability> {
+        guard scope == .project else {
+            return []
+        }
+
         guard !requiredCapabilities.isEmpty else {
             return []
         }
@@ -894,6 +979,31 @@ extension AppModel {
             [.network, .runtimeControl]
         case .git:
             skillInstallLikelyRequiresNetwork(source) ? [.network] : []
+        }
+    }
+
+    func requiredExtensibilityCapabilitiesForSkillMaintenance(
+        source: String?,
+        installer: SkillInstallerKind,
+        updateCapability: SkillUpdateCapability
+    ) -> Set<ExtensibilityCapability> {
+        switch installer {
+        case .npx:
+            return [.network, .runtimeControl]
+        case .git:
+            if let source {
+                let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return requiredExtensibilityCapabilitiesForSkillInstall(
+                        source: trimmed,
+                        installer: installer
+                    )
+                }
+            }
+
+            // Existing git-backed updates can still reach out to remotes even if
+            // original source metadata is missing, so fail closed here.
+            return updateCapability == .unavailable ? [] : [.network]
         }
     }
 

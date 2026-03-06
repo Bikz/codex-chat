@@ -1,5 +1,6 @@
 import CodexChatCore
 @testable import CodexChatShared
+import CodexSkills
 import XCTest
 
 @MainActor
@@ -13,7 +14,7 @@ final class AppModelSkillsTrustPolicyTests: XCTestCase {
             installer: .git
         )
 
-        XCTAssertEqual(blocked, Set([.network]))
+        XCTAssertEqual(blocked, Set<ExtensibilityCapability>([.network]))
     }
 
     func testBlockedCapabilitiesForProjectNpxInstallInUntrustedProjectIncludesNetworkAndRuntimeControl() {
@@ -25,7 +26,7 @@ final class AppModelSkillsTrustPolicyTests: XCTestCase {
             installer: .npx
         )
 
-        XCTAssertEqual(blocked, Set([.network, .runtimeControl]))
+        XCTAssertEqual(blocked, Set<ExtensibilityCapability>([.network, .runtimeControl]))
     }
 
     func testBlockedCapabilitiesForProjectGitInstallInUntrustedProjectAllowsLocalPath() {
@@ -134,6 +135,72 @@ final class AppModelSkillsTrustPolicyTests: XCTestCase {
         XCTAssertFalse(model.isSkillOperationInProgress)
     }
 
+    func testBlockedCapabilitiesForProjectScopedGitUpdateInUntrustedProjectIncludesNetwork() async throws {
+        let model = makeModelWithSelectedProject(trustState: .untrusted)
+        let item = makeSkillItem(
+            scope: .project,
+            enabledTargets: [.project],
+            updateCapability: .gitUpdate,
+            updateSource: "https://github.com/acme/skills.git",
+            updateInstaller: .git
+        )
+
+        let blocked = try await model.blockedCapabilitiesForSkillMaintenance(item)
+
+        XCTAssertEqual(blocked, Set([.network]))
+    }
+
+    func testBlockedCapabilitiesForProjectScopedReinstallInUntrustedProjectIncludesNetworkAndRuntimeControl() async throws {
+        let model = makeModelWithSelectedProject(trustState: .untrusted)
+        let item = makeSkillItem(
+            scope: .project,
+            enabledTargets: [.project],
+            updateCapability: .reinstall,
+            updateSource: "@acme/skill-pack",
+            updateInstaller: .npx
+        )
+
+        let blocked = try await model.blockedCapabilitiesForSkillMaintenance(item)
+
+        XCTAssertEqual(blocked, Set([.network, .runtimeControl]))
+    }
+
+    func testUpdateSkillBlocksGitUpdateForProjectScopedSkillInUntrustedProject() async throws {
+        let model = makeModelWithSelectedProject(trustState: .untrusted)
+        let item = makeSkillItem(
+            scope: .project,
+            enabledTargets: [.project],
+            updateCapability: .gitUpdate,
+            updateSource: "https://github.com/acme/skills.git",
+            updateInstaller: .git
+        )
+
+        model.updateSkill(item)
+
+        try await waitUntil(timeout: 1.0) {
+            model.skillStatusMessage == "Skill update blocked in untrusted project: network."
+                && !model.isSkillOperationInProgress
+        }
+    }
+
+    func testUpdateSkillBlocksReinstallForProjectScopedSkillInUntrustedProject() async throws {
+        let model = makeModelWithSelectedProject(trustState: .untrusted)
+        let item = makeSkillItem(
+            scope: .project,
+            enabledTargets: [.project],
+            updateCapability: .reinstall,
+            updateSource: "@acme/skill-pack",
+            updateInstaller: .npx
+        )
+
+        model.updateSkill(item)
+
+        try await waitUntil(timeout: 1.0) {
+            model.skillStatusMessage == "Skill reinstall blocked in untrusted project: network, runtime-control."
+                && !model.isSkillOperationInProgress
+        }
+    }
+
     private func makeModelWithSelectedProject(trustState: ProjectTrustState) -> AppModel {
         let projectID = UUID()
         return makeModel(
@@ -154,5 +221,50 @@ final class AppModelSkillsTrustPolicyTests: XCTestCase {
         model.projectsState = .loaded(projects)
         model.selectedProjectID = selectedProjectID
         return model
+    }
+
+    private func makeSkillItem(
+        scope: SkillScope,
+        enabledTargets: Set<SkillEnablementTarget>,
+        updateCapability: SkillUpdateCapability,
+        updateSource: String?,
+        updateInstaller: SkillInstallerKind?
+    ) -> AppModel.SkillListItem {
+        let skillPath = "/tmp/skill-\(UUID().uuidString)"
+        let skill = DiscoveredSkill(
+            name: "Skill",
+            description: "Description",
+            scope: scope,
+            skillPath: skillPath,
+            skillDefinitionPath: "\(skillPath)/SKILL.md",
+            hasScripts: false,
+            sourceURL: updateSource,
+            optionalMetadata: [:],
+            installMetadata: updateSource.map {
+                SkillInstallMetadata(source: $0, installer: updateInstaller ?? .git)
+            },
+            isGitRepository: updateCapability == .gitUpdate
+        )
+
+        return AppModel.SkillListItem(
+            skill: skill,
+            enabledTargets: enabledTargets,
+            isEnabledForSelectedProject: enabledTargets.contains(.project),
+            selectedProjectCount: enabledTargets.contains(.project) ? 1 : nil,
+            updateCapability: updateCapability,
+            updateSource: updateSource,
+            updateInstaller: updateInstaller
+        )
+    }
+
+    private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTFail("Timed out waiting for condition.")
     }
 }
