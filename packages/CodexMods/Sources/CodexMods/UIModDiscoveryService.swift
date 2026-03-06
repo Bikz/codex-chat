@@ -14,7 +14,36 @@ public final class UIModDiscoveryService: @unchecked Sendable {
             return []
         }
 
+        let rootCandidates = try fileManager.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+
         var discovered: [DiscoveredUIMod] = []
+        for candidate in rootCandidates {
+            let isDirectory = (try? candidate.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            guard isDirectory else { continue }
+
+            let definitionURL = candidate.appendingPathComponent("ui.mod.json", isDirectory: false)
+            guard fileManager.fileExists(atPath: definitionURL.path) else { continue }
+
+            try discovered.append(discoverMod(at: candidate, definitionURL: definitionURL, scope: scope))
+        }
+
+        return discovered.sorted {
+            $0.definition.manifest.name.localizedCaseInsensitiveCompare($1.definition.manifest.name) == .orderedAscending
+        }
+    }
+
+    public func discoverModsLenient(in rootPath: String, scope: ModScope) throws -> UIModDiscoveryResult {
+        let rootURL = URL(fileURLWithPath: rootPath, isDirectory: true)
+        guard fileManager.fileExists(atPath: rootURL.path) else {
+            return UIModDiscoveryResult(mods: [], failures: [])
+        }
+
+        var discovered: [DiscoveredUIMod] = []
+        var failures: [UIModDiscoveryFailure] = []
 
         let rootCandidates = try fileManager.contentsOfDirectory(
             at: rootURL,
@@ -29,52 +58,27 @@ public final class UIModDiscoveryService: @unchecked Sendable {
             let definitionURL = candidate.appendingPathComponent("ui.mod.json", isDirectory: false)
             guard fileManager.fileExists(atPath: definitionURL.path) else { continue }
 
-            let definitionData = try Data(contentsOf: definitionURL)
-            let checksum = Self.sha256Hex(of: definitionData)
-
-            if Self.containsLegacyRightInspectorKey(in: definitionData) {
-                throw UIModDiscoveryError.unsupportedLegacyKey("uiSlots.rightInspector")
-            }
-
-            let definition: UIModDefinition
             do {
-                let decoder = JSONDecoder()
-                definition = try decoder.decode(UIModDefinition.self, from: definitionData)
+                try discovered.append(discoverMod(at: candidate, definitionURL: definitionURL, scope: scope))
             } catch {
-                throw UIModDiscoveryError.unreadableDefinition(error.localizedDescription)
-            }
-
-            guard definition.schemaVersion == 1 else {
-                throw UIModDiscoveryError.invalidSchemaVersion(definition.schemaVersion)
-            }
-            guard !definition.manifest.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw UIModDiscoveryError.invalidManifestID(definition.manifest.id)
-            }
-
-            if let expected = definition.manifest.checksum?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !expected.isEmpty
-            {
-                let normalizedExpected = expected.lowercased()
-                let normalizedActual = "sha256:\(checksum)"
-                if normalizedExpected != normalizedActual {
-                    throw UIModDiscoveryError.invalidChecksum(expected: expected, actual: normalizedActual)
-                }
-            }
-
-            discovered.append(
-                DiscoveredUIMod(
-                    scope: scope,
-                    directoryPath: candidate.standardizedFileURL.path,
-                    definitionPath: definitionURL.standardizedFileURL.path,
-                    definition: definition,
-                    computedChecksum: "sha256:\(checksum)"
+                failures.append(
+                    UIModDiscoveryFailure(
+                        directoryPath: candidate.standardizedFileURL.path,
+                        definitionPath: definitionURL.standardizedFileURL.path,
+                        message: error.localizedDescription
+                    )
                 )
-            )
+            }
         }
 
-        return discovered.sorted {
-            $0.definition.manifest.name.localizedCaseInsensitiveCompare($1.definition.manifest.name) == .orderedAscending
-        }
+        return UIModDiscoveryResult(
+            mods: discovered.sorted {
+                $0.definition.manifest.name.localizedCaseInsensitiveCompare($1.definition.manifest.name) == .orderedAscending
+            },
+            failures: failures.sorted {
+                $0.directoryPath.localizedCaseInsensitiveCompare($1.directoryPath) == .orderedAscending
+            }
+        )
     }
 
     public func writeSampleMod(to directoryPath: String, name: String) throws -> URL {
@@ -234,6 +238,48 @@ public final class UIModDiscoveryService: @unchecked Sendable {
         }
 
         return uiSlots["rightInspector"] != nil
+    }
+
+    private func discoverMod(at candidate: URL, definitionURL: URL, scope: ModScope) throws -> DiscoveredUIMod {
+        let definitionData = try Data(contentsOf: definitionURL)
+        let checksum = Self.sha256Hex(of: definitionData)
+
+        if Self.containsLegacyRightInspectorKey(in: definitionData) {
+            throw UIModDiscoveryError.unsupportedLegacyKey("uiSlots.rightInspector")
+        }
+
+        let definition: UIModDefinition
+        do {
+            let decoder = JSONDecoder()
+            definition = try decoder.decode(UIModDefinition.self, from: definitionData)
+        } catch {
+            throw UIModDiscoveryError.unreadableDefinition(error.localizedDescription)
+        }
+
+        guard definition.schemaVersion == 1 else {
+            throw UIModDiscoveryError.invalidSchemaVersion(definition.schemaVersion)
+        }
+        guard !definition.manifest.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw UIModDiscoveryError.invalidManifestID(definition.manifest.id)
+        }
+
+        if let expected = definition.manifest.checksum?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !expected.isEmpty
+        {
+            let normalizedExpected = expected.lowercased()
+            let normalizedActual = "sha256:\(checksum)"
+            if normalizedExpected != normalizedActual {
+                throw UIModDiscoveryError.invalidChecksum(expected: expected, actual: normalizedActual)
+            }
+        }
+
+        return DiscoveredUIMod(
+            scope: scope,
+            directoryPath: candidate.standardizedFileURL.path,
+            definitionPath: definitionURL.standardizedFileURL.path,
+            definition: definition,
+            computedChecksum: "sha256:\(checksum)"
+        )
     }
 
     private func writeScript(_ script: String, to url: URL) throws {

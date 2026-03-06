@@ -4,11 +4,15 @@ import CodexMods
 import Foundation
 
 extension AppModel {
+    private static let invalidModsWarningMessage = "Some mods were skipped because they are invalid. Check logs for details."
+
     private struct ModsRefreshSnapshot: Sendable {
         let globalRoot: String
         let projectRoot: String?
         let globalMods: [DiscoveredUIMod]
         let projectMods: [DiscoveredUIMod]
+        let globalFailures: [UIModDiscoveryFailure]
+        let projectFailures: [UIModDiscoveryFailure]
         let selectedGlobal: String?
         let selectedProject: String?
     }
@@ -31,11 +35,11 @@ extension AppModel {
                     let globalRoot = try Self.globalModsRootPath()
                     let projectRoot = selectedProjectPath.map { Self.projectModsRootPath(projectPath: $0) }
 
-                    let globalMods = try modDiscoveryService.discoverMods(in: globalRoot, scope: .global)
-                    let projectMods: [DiscoveredUIMod] = if let projectRoot {
-                        try modDiscoveryService.discoverMods(in: projectRoot, scope: .project)
+                    let globalDiscovery = try modDiscoveryService.discoverModsLenient(in: globalRoot, scope: .global)
+                    let projectDiscovery: UIModDiscoveryResult = if let projectRoot {
+                        try modDiscoveryService.discoverModsLenient(in: projectRoot, scope: .project)
                     } else {
-                        []
+                        UIModDiscoveryResult(mods: [], failures: [])
                     }
 
                     let persistedGlobal = try await preferenceRepository?.getPreference(key: .globalUIModPath)
@@ -44,8 +48,10 @@ extension AppModel {
                     return ModsRefreshSnapshot(
                         globalRoot: globalRoot,
                         projectRoot: projectRoot,
-                        globalMods: globalMods,
-                        projectMods: projectMods,
+                        globalMods: globalDiscovery.mods,
+                        projectMods: projectDiscovery.mods,
+                        globalFailures: globalDiscovery.failures,
+                        projectFailures: projectDiscovery.failures,
                         selectedGlobal: selectedGlobal,
                         selectedProject: selectedProject
                     )
@@ -90,6 +96,15 @@ extension AppModel {
                     selectedProjectPath: snapshot.selectedProject,
                     installRecords: installRecords
                 )
+                let discoveryFailures = snapshot.globalFailures + snapshot.projectFailures
+                if !discoveryFailures.isEmpty {
+                    modStatusMessage = Self.invalidModsWarningMessage
+                    for failure in discoveryFailures {
+                        appendLog(.warning, "Skipped invalid mod at \(failure.definitionPath): \(failure.message)")
+                    }
+                } else if modStatusMessage == Self.invalidModsWarningMessage {
+                    modStatusMessage = nil
+                }
                 let modIDs = (snapshot.globalMods + snapshot.projectMods).map(\.definition.manifest.id)
                 await refreshAutomationHealthSummaries(for: modIDs)
 

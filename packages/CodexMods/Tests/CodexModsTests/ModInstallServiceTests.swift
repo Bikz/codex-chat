@@ -713,6 +713,40 @@ final class ModInstallServiceTests: XCTestCase {
         XCTAssertEqual(discovered.first?.definition.uiSlots?.modsBar?.title, "Summary")
     }
 
+    func testLenientDiscoverySkipsInvalidCandidatesAndReturnsFailures() throws {
+        let root = try makeTempDirectory(prefix: "codexmods-lenient-discovery")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let goodMod = root.appendingPathComponent("good-mod", isDirectory: true)
+        try FileManager.default.createDirectory(at: goodMod, withIntermediateDirectories: true)
+        _ = try writeUIMod(
+            to: goodMod,
+            id: "acme.good-mod",
+            name: "Good Mod",
+            version: "1.0.0",
+            permissions: .init()
+        )
+        let badMod = root.appendingPathComponent("bad-mod", isDirectory: true)
+        try FileManager.default.createDirectory(at: badMod, withIntermediateDirectories: true)
+        try Data(
+            """
+            {
+              "schemaVersion": 2,
+              "manifest": { "id": "acme.bad-mod", "name": "Bad Mod", "version": "1.0.0" },
+              "theme": {}
+            }
+            """.utf8
+        ).write(to: badMod.appendingPathComponent("ui.mod.json", isDirectory: false), options: [.atomic])
+
+        let service = UIModDiscoveryService()
+        let result = try service.discoverModsLenient(in: root.path, scope: .global)
+
+        XCTAssertEqual(result.mods.map(\.definition.manifest.id), ["acme.good-mod"])
+        XCTAssertEqual(result.failures.count, 1)
+        XCTAssertEqual(result.failures.first?.directoryPath, badMod.standardizedFileURL.path)
+        XCTAssertTrue(result.failures.first?.message.contains("schemaVersion 1") == true)
+    }
+
     func testInstallServiceResolvesSingleNestedModFolder() throws {
         let sourceRoot = try makeTempDirectory(prefix: "codexmods-nested-src")
         let destinationRoot = try makeTempDirectory(prefix: "codexmods-nested-dst")

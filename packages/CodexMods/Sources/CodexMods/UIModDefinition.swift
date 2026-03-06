@@ -130,6 +130,28 @@ public struct DiscoveredUIMod: Identifiable, Hashable, Sendable {
     }
 }
 
+public struct UIModDiscoveryFailure: Hashable, Sendable {
+    public let directoryPath: String
+    public let definitionPath: String
+    public let message: String
+
+    public init(directoryPath: String, definitionPath: String, message: String) {
+        self.directoryPath = directoryPath
+        self.definitionPath = definitionPath
+        self.message = message
+    }
+}
+
+public struct UIModDiscoveryResult: Hashable, Sendable {
+    public let mods: [DiscoveredUIMod]
+    public let failures: [UIModDiscoveryFailure]
+
+    public init(mods: [DiscoveredUIMod], failures: [UIModDiscoveryFailure]) {
+        self.mods = mods
+        self.failures = failures
+    }
+}
+
 public enum UIModDiscoveryError: LocalizedError, Sendable {
     case missingManifest(String)
     case invalidManifestID(String)
