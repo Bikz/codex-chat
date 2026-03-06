@@ -629,6 +629,35 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
     }
 
+    func testApprovalRespondPreservesLegacyDecisionAliases() async {
+        let legacyDecisions = ["approve", "approve-once", "approve-session", "approveforsession", "reject"]
+
+        for decision in legacyDecisions {
+            let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+            model.allowRemoteApprovals = true
+
+            let threadID = UUID()
+            model.selectedThreadID = threadID
+            let request = makeApprovalRequest(id: 420, threadID: threadID)
+            model.approvalStateMachine.enqueue(request, threadID: threadID)
+            model.syncApprovalPresentationState()
+
+            let ack = await model.processRemoteControlCommand(
+                RemoteControlCommandPayload(
+                    name: .approvalRespond,
+                    commandID: "cmd-approval-legacy-\(decision)",
+                    approvalRequestID: String(request.id),
+                    approvalDecision: decision
+                ),
+                inboundCommandSequence: 200
+            )
+
+            XCTAssertEqual(ack.status, .rejected, "Offline runtime should reject legacy decision alias \(decision).")
+            XCTAssertEqual(ack.reason, "desktop_offline", "Legacy decision alias \(decision) should still parse before runtime rejection.")
+            XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
+        }
+    }
+
     func testApprovalRespondRejectsWhenRuntimeCanNotApplyPendingApproval() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-stale-runtime-route")
         let model = fixture.model

@@ -577,11 +577,11 @@ extension AppModel {
 
     private func remoteApprovalDecision(from rawDecision: String) -> RuntimeApprovalDecision? {
         switch rawDecision {
-        case "approve_once":
+        case "approve", "approve_once", "approve-once":
             .approveOnce
-        case "approve_for_session":
+        case "approve_for_session", "approve-session", "approveforsession":
             .approveForSession
-        case "decline":
+        case "decline", "reject":
             .decline
         default:
             nil
