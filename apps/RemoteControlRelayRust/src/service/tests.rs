@@ -428,6 +428,7 @@ fn make_valid_command_payload(session_id: &str, sequence: u64) -> Value {
             "type": "command",
             "payload": {
                 "name": "thread.select",
+                "commandID": format!("cmd-{}", sequence),
                 "threadID": "thread-1"
             }
         }
@@ -501,6 +502,7 @@ fn protocol_invariant_overwrites_spoofed_mobile_metadata() {
             "type": "command",
             "payload": {
                 "name": "thread.select",
+                "commandID": "cmd-1",
                 "threadID": "thread-1"
             }
         }
@@ -517,6 +519,37 @@ fn protocol_invariant_overwrites_spoofed_mobile_metadata() {
     assert_eq!(
         parsed.get("relayDeviceID").and_then(Value::as_str),
         Some("device-actual")
+    );
+}
+
+#[test]
+fn protocol_invariant_rejects_missing_command_id() {
+    let config = make_protocol_validation_config();
+    let mut session = make_test_session("session-1", "device-1", "token-1");
+    let payload = json!({
+        "schemaVersion": 1,
+        "sessionID": "session-1",
+        "seq": 7,
+        "payload": {
+            "type": "command",
+            "payload": {
+                "name": "thread.select",
+                "threadID": "thread-1"
+            }
+        }
+    });
+
+    let result = validate_mobile_payload(
+        &mut session,
+        Some(&payload),
+        "session-1",
+        "conn-1",
+        "device-1",
+        &config,
+    );
+    assert_eq!(
+        result.err().map(|error| error.code),
+        Some("invalid_command")
     );
 }
 

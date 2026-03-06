@@ -178,6 +178,7 @@ pub(super) fn validate_mobile_payload(
         command_payload,
         &[
             "name",
+            "commandID",
             "threadID",
             "projectID",
             "text",
@@ -194,6 +195,19 @@ pub(super) fn validate_mobile_payload(
             code: "invalid_command",
             message: "Command name is required.".to_string(),
         })?;
+    let command_id = command_payload
+        .get("commandID")
+        .and_then(Value::as_str)
+        .ok_or_else(|| RelayValidationError {
+            code: "invalid_command",
+            message: "commandID is required.".to_string(),
+        })?;
+    if !is_small_identifier(command_id) {
+        return Err(RelayValidationError {
+            code: "invalid_command",
+            message: "commandID must be a compact identifier.".to_string(),
+        });
+    }
     let command_seq =
         parsed
             .get("seq")

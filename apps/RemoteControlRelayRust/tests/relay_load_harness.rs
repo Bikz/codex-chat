@@ -453,6 +453,7 @@ async fn relay_parallel_sessions_load_harness() {
                         "type": "command",
                         "payload": {
                             "name": "thread.select",
+                            "commandID": format!("cmd-{}-{}", session_index, seq),
                             "threadID": format!("thread-{}", session_index),
                         }
                     }

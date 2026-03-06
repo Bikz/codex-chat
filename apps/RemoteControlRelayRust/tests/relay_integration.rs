@@ -811,6 +811,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
                     "type": "command",
                     "payload": {
                         "name": "thread.select",
+                        "commandID": "cmd-10",
                         "threadID": "thread-offline"
                     }
                 }
@@ -870,6 +871,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
                     "type": "command",
                     "payload": {
                         "name": "thread.select",
+                        "commandID": "cmd-11",
                         "threadID": "thread-online"
                     }
                 }
@@ -926,6 +928,7 @@ async fn mobile_receives_desktop_offline_status_and_command_rejection() {
                     "type": "command",
                     "payload": {
                         "name": "thread.select",
+                        "commandID": "cmd-11",
                         "threadID": "thread-offline"
                     }
                 }
@@ -1798,6 +1801,7 @@ async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
                     "type": "command",
                     "payload": {
                         "name": "terminal.exec",
+                        "commandID": "cmd-1",
                         "threadID": "11111111-1111-1111-1111-111111111111",
                         "text": "rm -rf /"
                     }
@@ -1850,6 +1854,7 @@ async fn mobile_command_with_unexpected_field_is_rejected_and_not_forwarded() {
                     "type": "command",
                     "payload": {
                         "name": "thread.select",
+                        "commandID": "cmd-1",
                         "threadID": "11111111-1111-1111-1111-111111111111",
                         "unexpectedField": "not-allowed"
                     }
@@ -1905,6 +1910,7 @@ async fn mobile_command_ignores_spoofed_relay_metadata_and_forwards() {
                     "type": "command",
                     "payload": {
                         "name": "thread.select",
+                        "commandID": "cmd-1",
                         "threadID": "11111111-1111-1111-1111-111111111111"
                     }
                 }
@@ -2044,6 +2050,7 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
                         "type": "command",
                         "payload": {
                             "name": "thread.select",
+                            "commandID": format!("cmd-{}", seq),
                             "threadID": "11111111-1111-1111-1111-111111111111"
                         }
                     }
@@ -2118,6 +2125,7 @@ async fn per_session_command_rate_limit_blocks_excess_mobile_commands() {
                         "type": "command",
                         "payload": {
                             "name": "thread.select",
+                            "commandID": format!("cmd-{}", seq),
                             "threadID": "11111111-1111-1111-1111-111111111111"
                         }
                     }
@@ -2250,6 +2258,7 @@ async fn replayed_mobile_command_sequence_is_rejected() {
             "type": "command",
             "payload": {
                 "name": "thread.select",
+                "commandID": "cmd-1",
                 "threadID": "11111111-1111-1111-1111-111111111111"
             }
         }
@@ -2328,6 +2337,7 @@ async fn per_socket_websocket_message_rate_limit_disconnects_abusive_client() {
                         "type": "command",
                         "payload": {
                             "name": "thread.select",
+                            "commandID": format!("cmd-{}", seq),
                             "threadID": "11111111-1111-1111-1111-111111111111"
                         }
                     }
