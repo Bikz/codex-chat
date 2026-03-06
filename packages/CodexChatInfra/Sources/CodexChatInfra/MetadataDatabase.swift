@@ -390,6 +390,45 @@ public final class MetadataDatabase: @unchecked Sendable {
             )
         }
 
+        migrator.registerMigration("v18_scope_extension_permissions_by_install") { db in
+            try Self.migrateExtensionPermissionsToInstallScope(db)
+        }
+
         return migrator
+    }
+
+    static func migrateExtensionPermissionsToInstallScope(_ db: Database) throws {
+        let columns = try String.fetchAll(
+            db,
+            sql: "SELECT name FROM pragma_table_info('extension_permissions')"
+        )
+        guard !columns.contains("installID") else {
+            return
+        }
+
+        try db.create(table: "extension_permissions_scoped") { table in
+            table.column("installID", .text).notNull()
+            table.column("modID", .text).notNull()
+            table.column("permissionKey", .text).notNull()
+            table.column("status", .text).notNull()
+            table.column("grantedAt", .datetime).notNull()
+            table.primaryKey(["installID", "permissionKey"])
+        }
+
+        try db.execute(sql: """
+        INSERT INTO extension_permissions_scoped (installID, modID, permissionKey, status, grantedAt)
+        SELECT installs.id, permissions.modID, permissions.permissionKey, permissions.status, permissions.grantedAt
+        FROM extension_permissions permissions
+        INNER JOIN extension_installs installs
+            ON installs.modID = permissions.modID
+        """)
+
+        try db.execute(sql: "DROP TABLE extension_permissions")
+        try db.execute(sql: "ALTER TABLE extension_permissions_scoped RENAME TO extension_permissions")
+        try db.create(
+            index: "idx_extension_permissions_mod_install",
+            on: "extension_permissions",
+            columns: ["modID", "installID"]
+        )
     }
 }

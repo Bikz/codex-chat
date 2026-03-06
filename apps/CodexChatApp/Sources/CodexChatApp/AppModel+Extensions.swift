@@ -206,20 +206,62 @@ extension AppModel {
         var automations: [ResolvedExtensionAutomation] = []
 
         for globalMod in activeGlobalMods {
+            let installContext = resolvedExtensionInstallContext(
+                for: globalMod,
+                scope: .global,
+                projectID: nil,
+                installRecords: installRecords
+            )
             hooks.append(contentsOf: globalMod.definition.hooks.map {
-                ResolvedExtensionHook(modID: globalMod.definition.manifest.id, modDirectoryPath: globalMod.directoryPath, definition: $0)
+                ResolvedExtensionHook(
+                    modID: globalMod.definition.manifest.id,
+                    modDirectoryPath: globalMod.directoryPath,
+                    definition: $0,
+                    installID: installContext.installID,
+                    installScope: .global,
+                    installSourceURL: installContext.sourceURL
+                )
             })
             automations.append(contentsOf: globalMod.definition.automations.map {
-                ResolvedExtensionAutomation(modID: globalMod.definition.manifest.id, modDirectoryPath: globalMod.directoryPath, definition: $0)
+                ResolvedExtensionAutomation(
+                    modID: globalMod.definition.manifest.id,
+                    modDirectoryPath: globalMod.directoryPath,
+                    definition: $0,
+                    installID: installContext.installID,
+                    installScope: .global,
+                    installSourceURL: installContext.sourceURL
+                )
             })
         }
 
         for projectMod in activeProjectMods {
+            let installContext = resolvedExtensionInstallContext(
+                for: projectMod,
+                scope: .project,
+                projectID: selectedProjectID,
+                installRecords: installRecords
+            )
             hooks.append(contentsOf: projectMod.definition.hooks.map {
-                ResolvedExtensionHook(modID: projectMod.definition.manifest.id, modDirectoryPath: projectMod.directoryPath, definition: $0)
+                ResolvedExtensionHook(
+                    modID: projectMod.definition.manifest.id,
+                    modDirectoryPath: projectMod.directoryPath,
+                    definition: $0,
+                    installID: installContext.installID,
+                    installScope: .project,
+                    installProjectID: selectedProjectID,
+                    installSourceURL: installContext.sourceURL
+                )
             })
             automations.append(contentsOf: projectMod.definition.automations.map {
-                ResolvedExtensionAutomation(modID: projectMod.definition.manifest.id, modDirectoryPath: projectMod.directoryPath, definition: $0)
+                ResolvedExtensionAutomation(
+                    modID: projectMod.definition.manifest.id,
+                    modDirectoryPath: projectMod.directoryPath,
+                    definition: $0,
+                    installID: installContext.installID,
+                    installScope: .project,
+                    installProjectID: selectedProjectID,
+                    installSourceURL: installContext.sourceURL
+                )
             })
         }
 
@@ -253,6 +295,28 @@ extension AppModel {
             await refreshAutomationScheduler()
             await loadModsBarCacheForSelectedThread()
         }
+    }
+
+    private func resolvedExtensionInstallContext(
+        for mod: DiscoveredUIMod,
+        scope: ExtensionInstallScope,
+        projectID: UUID?,
+        installRecords: [ExtensionInstallRecord]
+    ) -> (installID: String, sourceURL: String?) {
+        let installRecord = Self.matchingInstallRecord(
+            for: mod,
+            scope: scope,
+            projectID: projectID,
+            installRecords: installRecords
+        )
+        return (
+            installRecord?.id ?? Self.syntheticExtensionInstallID(
+                scope: scope,
+                projectID: projectID,
+                modID: mod.definition.manifest.id
+            ),
+            installRecord?.sourceURL
+        )
     }
 
     private func isModRuntimeEnabled(
@@ -693,7 +757,11 @@ extension AppModel {
             }
 
             let permitted = await ensurePermissions(
+                installID: resolved.installID,
                 modID: resolved.modID,
+                installScope: resolved.installScope,
+                installSourceURL: resolved.installSourceURL,
+                installedPath: resolved.modDirectoryPath,
                 permissions: resolved.definition.permissions,
                 projectID: UUID(uuidString: envelope.project.id),
                 contextHint: "Hook \(resolved.definition.id)"
@@ -752,7 +820,11 @@ extension AppModel {
         }
 
         let permissionOK = await ensurePermissions(
+            installID: resolved.installID,
             modID: resolved.modID,
+            installScope: resolved.installScope,
+            installSourceURL: resolved.installSourceURL,
+            installedPath: resolved.modDirectoryPath,
             permissions: resolved.definition.permissions,
             projectID: project.id,
             contextHint: "Automation \(resolved.definition.id)"
@@ -872,7 +944,11 @@ extension AppModel {
     }
 
     private func ensurePermissions(
+        installID: String,
         modID: String,
+        installScope: ExtensionInstallScope,
+        installSourceURL: String?,
+        installedPath: String,
         permissions: ModExtensionPermissions,
         projectID: UUID?,
         contextHint: String
@@ -900,7 +976,7 @@ extension AppModel {
         }
 
         do {
-            let stored = try await extensionPermissionRepository.list(modID: modID)
+            let stored = try await extensionPermissionRepository.list(installID: installID)
             var granted = Set(stored.filter { $0.status == .granted }.map(\.permissionKey))
             let denied = Set(stored.filter { $0.status == .denied }.map(\.permissionKey))
 
@@ -914,8 +990,16 @@ extension AppModel {
             }
 
             for key in missing {
-                let status = promptForPermission(modID: modID, permission: key, contextHint: contextHint)
+                let status = promptForPermission(
+                    modID: modID,
+                    installScope: installScope,
+                    installSourceURL: installSourceURL,
+                    installedPath: installedPath,
+                    permission: key,
+                    contextHint: contextHint
+                )
                 try await extensionPermissionRepository.set(
+                    installID: installID,
                     modID: modID,
                     permissionKey: key,
                     status: status,
@@ -936,15 +1020,38 @@ extension AppModel {
 
     private func promptForPermission(
         modID: String,
+        installScope: ExtensionInstallScope,
+        installSourceURL: String?,
+        installedPath: String,
         permission: CodexChatCore.ExtensionPermissionKey,
         contextHint: String
     ) -> CodexChatCore.ExtensionPermissionStatus {
         let alert = NSAlert()
         alert.messageText = "Allow extension permission?"
-        alert.informativeText = "\(contextHint) from mod `\(modID)` requests `\(permission.rawValue)` permission."
+        alert.informativeText = """
+        \(contextHint) from mod `\(modID)` requests `\(permission.rawValue)` permission for the \(extensionInstallPermissionLabel(
+            scope: installScope,
+            sourceURL: installSourceURL,
+            installedPath: installedPath
+        )).
+        """
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Deny")
         return alert.runModal() == .alertFirstButtonReturn ? .granted : .denied
+    }
+
+    private func extensionInstallPermissionLabel(
+        scope: ExtensionInstallScope,
+        sourceURL: String?,
+        installedPath: String
+    ) -> String {
+        if let sourceURL = sourceURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sourceURL.isEmpty
+        {
+            return "\(scope.rawValue) install from \(sourceURL)"
+        }
+
+        return "\(scope.rawValue) install at \(installedPath)"
     }
 
     private func applyWorkerOutput(
@@ -1376,7 +1483,11 @@ extension AppModel {
         for automation in automationsRequiringBackground {
             let runWhenClosedPermission = ModExtensionPermissions(runWhenAppClosed: true)
             let permitted = await ensurePermissions(
+                installID: automation.installID,
                 modID: automation.modID,
+                installScope: automation.installScope,
+                installSourceURL: automation.installSourceURL,
+                installedPath: automation.modDirectoryPath,
                 permissions: runWhenClosedPermission,
                 projectID: selectedProjectID,
                 contextHint: "Background automation \(automation.definition.id)"

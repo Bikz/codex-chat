@@ -916,12 +916,6 @@ extension AppModel {
         projectID: UUID?,
         modID: String
     ) -> String {
-        switch scope {
-        case .global:
-            return "global:\(modID)"
-        case .project:
-            let projectKey = projectID?.uuidString.lowercased() ?? "unknown-project"
-            return "project:\(projectKey):\(modID)"
-        }
+        Self.syntheticExtensionInstallID(scope: scope, projectID: projectID, modID: modID)
     }
 }

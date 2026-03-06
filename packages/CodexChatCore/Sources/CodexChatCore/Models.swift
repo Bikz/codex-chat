@@ -464,17 +464,20 @@ public enum ExtensionPermissionStatus: String, CaseIterable, Hashable, Sendable,
 }
 
 public struct ExtensionPermissionRecord: Hashable, Sendable, Codable {
+    public let installID: String
     public let modID: String
     public let permissionKey: ExtensionPermissionKey
     public var status: ExtensionPermissionStatus
     public var grantedAt: Date
 
     public init(
+        installID: String,
         modID: String,
         permissionKey: ExtensionPermissionKey,
         status: ExtensionPermissionStatus,
         grantedAt: Date = Date()
     ) {
+        self.installID = installID
         self.modID = modID
         self.permissionKey = permissionKey
         self.status = status

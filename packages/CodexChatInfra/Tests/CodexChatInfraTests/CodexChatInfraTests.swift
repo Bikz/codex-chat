@@ -39,6 +39,12 @@ final class CodexChatInfraTests: XCTestCase {
             try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('extension_installs')")
         }
         XCTAssertTrue(extensionInstallColumns.contains("projectID"))
+
+        let extensionPermissionColumns = try database.dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('extension_permissions')")
+        }
+        XCTAssertTrue(extensionPermissionColumns.contains("installID"))
+        XCTAssertTrue(extensionPermissionColumns.contains("modID"))
     }
 
     func testProjectThreadAndPreferencePersistence() async throws {
@@ -208,13 +214,15 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertEqual(storedInstall.modID, extensionInstall.modID)
 
         try await repositories.extensionPermissionRepository.set(
+            installID: extensionInstall.id,
             modID: extensionInstall.modID,
             permissionKey: .projectRead,
             status: .granted,
             grantedAt: Date()
         )
-        let permissions = try await repositories.extensionPermissionRepository.list(modID: extensionInstall.modID)
+        let permissions = try await repositories.extensionPermissionRepository.list(installID: extensionInstall.id)
         XCTAssertEqual(permissions.count, 1)
+        XCTAssertEqual(permissions.first?.installID, extensionInstall.id)
         XCTAssertEqual(permissions.first?.status, .granted)
 
         let hookState = try await repositories.extensionHookStateRepository.upsert(
@@ -265,6 +273,154 @@ final class CodexChatInfraTests: XCTestCase {
         let unarchived = try await repositories.threadRepository.unarchiveThread(id: second.id)
         XCTAssertNil(unarchived.archivedAt)
         XCTAssertFalse(unarchived.isPinned)
+    }
+
+    func testExtensionPermissionMigrationBackfillsInstallScopedRows() throws {
+        let databaseURL = temporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: databaseURL) }
+
+        let dbQueue = try DatabaseQueue(path: databaseURL.path)
+        try dbQueue.write { db in
+            try db.create(table: "extension_installs") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("modID", .text).notNull()
+                table.column("scope", .text).notNull()
+                table.column("projectID", .text)
+                table.column("sourceURL", .text)
+                table.column("installedPath", .text).notNull()
+                table.column("enabled", .boolean).notNull().defaults(to: true)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "extension_permissions") { table in
+                table.column("modID", .text).notNull()
+                table.column("permissionKey", .text).notNull()
+                table.column("status", .text).notNull()
+                table.column("grantedAt", .datetime).notNull()
+                table.primaryKey(["modID", "permissionKey"])
+            }
+
+            let now = Date()
+            try db.execute(
+                sql: """
+                INSERT INTO extension_installs
+                    (id, modID, scope, projectID, sourceURL, installedPath, enabled, createdAt, updatedAt)
+                VALUES
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?),
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: StatementArguments([
+                    "global:acme.shared-mod",
+                    "acme.shared-mod",
+                    "global",
+                    nil,
+                    "https://example.com/shared-mod",
+                    "/tmp/global-shared-mod",
+                    true,
+                    now,
+                    now,
+                    "project:123:acme.shared-mod",
+                    "acme.shared-mod",
+                    "project",
+                    "123",
+                    "https://example.com/shared-mod",
+                    "/tmp/project-shared-mod",
+                    true,
+                    now,
+                    now,
+                ])
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO extension_permissions (modID, permissionKey, status, grantedAt)
+                VALUES (?, ?, ?, ?)
+                """,
+                arguments: ["acme.shared-mod", "projectWrite", "granted", now]
+            )
+        }
+
+        try dbQueue.write { db in
+            try MetadataDatabase.migrateExtensionPermissionsToInstallScope(db)
+        }
+
+        let columns = try dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('extension_permissions')")
+        }
+        XCTAssertTrue(columns.contains("installID"))
+
+        let migratedRows = try dbQueue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT installID, modID, permissionKey, status
+                FROM extension_permissions
+                ORDER BY installID
+                """
+            )
+        }
+        XCTAssertEqual(migratedRows.count, 2)
+        XCTAssertEqual(
+            migratedRows.map { $0["installID"] as String },
+            ["global:acme.shared-mod", "project:123:acme.shared-mod"]
+        )
+        XCTAssertEqual(Set(migratedRows.map { $0["modID"] as String }), ["acme.shared-mod"])
+        XCTAssertEqual(Set(migratedRows.map { $0["permissionKey"] as String }), ["projectWrite"])
+        XCTAssertEqual(Set(migratedRows.map { $0["status"] as String }), ["granted"])
+    }
+
+    func testExtensionPermissionRepositoryIsolatesSameModAcrossInstallIDs() async throws {
+        let database = try MetadataDatabase(databaseURL: temporaryDatabaseURL())
+        let repositories = MetadataRepositories(database: database)
+
+        let modID = "acme.shared-mod"
+        let globalInstall = ExtensionInstallRecord(
+            id: "global:\(modID)",
+            modID: modID,
+            scope: .global,
+            sourceURL: "https://example.com/shared-mod",
+            installedPath: "/tmp/global-shared-mod",
+            enabled: true
+        )
+        let projectInstall = ExtensionInstallRecord(
+            id: "project:project-1:\(modID)",
+            modID: modID,
+            scope: .project,
+            projectID: UUID(),
+            sourceURL: "https://example.com/shared-mod",
+            installedPath: "/tmp/project-shared-mod",
+            enabled: true
+        )
+
+        _ = try await repositories.extensionInstallRepository.upsert(globalInstall)
+        _ = try await repositories.extensionInstallRepository.upsert(projectInstall)
+
+        try await repositories.extensionPermissionRepository.set(
+            installID: globalInstall.id,
+            modID: modID,
+            permissionKey: .projectWrite,
+            status: .granted,
+            grantedAt: Date()
+        )
+        try await repositories.extensionPermissionRepository.set(
+            installID: projectInstall.id,
+            modID: modID,
+            permissionKey: .projectWrite,
+            status: .denied,
+            grantedAt: Date()
+        )
+
+        let globalPermissions = try await repositories.extensionPermissionRepository.list(
+            installID: globalInstall.id
+        )
+        let projectPermissions = try await repositories.extensionPermissionRepository.list(
+            installID: projectInstall.id
+        )
+
+        XCTAssertEqual(globalPermissions.map(\.status), [.granted])
+        XCTAssertEqual(projectPermissions.map(\.status), [.denied])
+        XCTAssertEqual(globalPermissions.map(\.modID), [modID])
+        XCTAssertEqual(projectPermissions.map(\.modID), [modID])
     }
 
     func testPinningThreadPreservesUpdatedAtAndRecencyOrderAfterUnpin() async throws {

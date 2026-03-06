@@ -58,6 +58,20 @@ extension AppModel {
         return scopedRecords.first(where: { $0.modID == mod.definition.manifest.id })
     }
 
+    nonisolated static func syntheticExtensionInstallID(
+        scope: ExtensionInstallScope,
+        projectID: UUID?,
+        modID: String
+    ) -> String {
+        switch scope {
+        case .global:
+            return "global:\(modID)"
+        case .project:
+            let projectKey = projectID?.uuidString.lowercased() ?? "unknown-project"
+            return "project:\(projectKey):\(modID)"
+        }
+    }
+
     func isVettedFirstPartyMod(_ mod: DiscoveredUIMod, source: String? = nil) -> Bool {
         let normalizedPath = Self.normalizedModDirectoryPath(mod.directoryPath)
         return Self.isFirstPartyModFixturePath(normalizedPath)

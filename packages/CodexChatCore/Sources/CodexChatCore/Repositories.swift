@@ -146,8 +146,14 @@ public protocol ExtensionInstallRepository: Sendable {
 }
 
 public protocol ExtensionPermissionRepository: Sendable {
-    func list(modID: String) async throws -> [ExtensionPermissionRecord]
-    func set(modID: String, permissionKey: ExtensionPermissionKey, status: ExtensionPermissionStatus, grantedAt: Date) async throws
+    func list(installID: String) async throws -> [ExtensionPermissionRecord]
+    func set(
+        installID: String,
+        modID: String,
+        permissionKey: ExtensionPermissionKey,
+        status: ExtensionPermissionStatus,
+        grantedAt: Date
+    ) async throws
 }
 
 public protocol ExtensionHookStateRepository: Sendable {

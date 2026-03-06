@@ -571,14 +571,66 @@ final class AppModel: ObservableObject {
 
     struct ResolvedExtensionHook: Hashable {
         let modID: String
+        let installID: String
+        let installScope: ExtensionInstallScope
+        let installProjectID: UUID?
+        let installSourceURL: String?
         let modDirectoryPath: String
         let definition: ModHookDefinition
+
+        init(
+            modID: String,
+            modDirectoryPath: String,
+            definition: ModHookDefinition,
+            installID: String? = nil,
+            installScope: ExtensionInstallScope = .global,
+            installProjectID: UUID? = nil,
+            installSourceURL: String? = nil
+        ) {
+            self.modID = modID
+            self.installScope = installScope
+            self.installProjectID = installProjectID
+            self.installSourceURL = installSourceURL
+            self.modDirectoryPath = modDirectoryPath
+            self.definition = definition
+            self.installID = installID ?? AppModel.syntheticExtensionInstallID(
+                scope: installScope,
+                projectID: installProjectID,
+                modID: modID
+            )
+        }
     }
 
     struct ResolvedExtensionAutomation: Hashable {
         let modID: String
+        let installID: String
+        let installScope: ExtensionInstallScope
+        let installProjectID: UUID?
+        let installSourceURL: String?
         let modDirectoryPath: String
         let definition: ModAutomationDefinition
+
+        init(
+            modID: String,
+            modDirectoryPath: String,
+            definition: ModAutomationDefinition,
+            installID: String? = nil,
+            installScope: ExtensionInstallScope = .global,
+            installProjectID: UUID? = nil,
+            installSourceURL: String? = nil
+        ) {
+            self.modID = modID
+            self.installScope = installScope
+            self.installProjectID = installProjectID
+            self.installSourceURL = installSourceURL
+            self.modDirectoryPath = modDirectoryPath
+            self.definition = definition
+            self.installID = installID ?? AppModel.syntheticExtensionInstallID(
+                scope: installScope,
+                projectID: installProjectID,
+                modID: modID
+            )
+        }
     }
 
     struct ExtensionAutomationHealthSummary: Hashable, Sendable {
