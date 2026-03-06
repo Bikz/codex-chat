@@ -457,8 +457,35 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertGreaterThan(ackPairs[1].index, snapshotIndices[0], "Replay ack should be sent when duplicate arrives.")
     }
 
-    func testStaleSequenceDuplicateWithFallbackIdentityReplaysCachedAck() async throws {
-        let fixture = try await makeRemoteCommandFixture(sessionID: "session-stale-ack-replay")
+    func testThreadSendRejectsMissingCommandIDWithoutApplyingMessage() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-missing-command-id")
+        let model = fixture.model
+        let thread = fixture.thread
+        let project = fixture.project
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .threadSendMessage,
+                threadID: thread.id.uuidString,
+                projectID: project.id.uuidString,
+                text: "Missing command ID should not send"
+            ),
+            inboundCommandSequence: 9
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "command_id_required")
+        XCTAssertEqual(
+            countUserMessages(
+                in: model.transcriptStore[thread.id, default: []],
+                text: "Missing command ID should not send"
+            ),
+            0
+        )
+    }
+
+    func testStaleSequenceMalformedCommandWithoutCommandIDReplaysRejectedAck() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-stale-missing-command-id")
         let model = fixture.model
         let thread = fixture.thread
         let project = fixture.project
@@ -472,7 +499,7 @@ final class RemoteControlSyncTests: XCTestCase {
             name: .threadSendMessage,
             threadID: thread.id.uuidString,
             projectID: project.id.uuidString,
-            text: "Fallback identity command"
+            text: "Missing command ID duplicate"
         )
         let sessionID = try XCTUnwrap(model.remoteControlStatus.session?.sessionID)
 
@@ -495,24 +522,23 @@ final class RemoteControlSyncTests: XCTestCase {
 
         let messageCount = countUserMessages(
             in: model.transcriptStore[thread.id, default: []],
-            text: "Fallback identity command"
+            text: "Missing command ID duplicate"
         )
-        XCTAssertEqual(messageCount, 1, "Stale duplicate should not reapply the command.")
+        XCTAssertEqual(messageCount, 0, "Malformed commands should not apply any remote send.")
 
         let envelopes = await recorder.entries
         let ackPairs = indexedCommandAcks(envelopes) { ack in
             ack.commandName == .threadSendMessage &&
                 ack.threadID == thread.id.uuidString &&
-                ack.commandID == nil
+                ack.reason == "command_id_required"
         }
         XCTAssertEqual(ackPairs.count, 2)
         XCTAssertEqual(ackPairs[0].ack.commandSeq, 9)
-        XCTAssertEqual(ackPairs[1].ack, ackPairs[0].ack, "Stale duplicate should replay the cached ack payload.")
+        XCTAssertEqual(ackPairs[0].ack.status, .rejected)
+        XCTAssertEqual(ackPairs[1].ack, ackPairs[0].ack, "Stale malformed commands should replay the same rejected ack.")
 
         let snapshotIndices = indexedSnapshots(envelopes)
-        XCTAssertFalse(snapshotIndices.isEmpty)
-        XCTAssertLessThan(ackPairs[0].index, snapshotIndices[0], "Initial accepted ack should precede snapshot.")
-        XCTAssertGreaterThan(ackPairs[1].index, snapshotIndices[0], "Stale replay ack should be emitted when duplicate arrives.")
+        XCTAssertTrue(snapshotIndices.isEmpty, "Rejected malformed commands should not force a snapshot.")
     }
 
     func testApprovalRespondRejectsMissingCommandID() async throws {

@@ -573,7 +573,10 @@ extension AppModel {
             break
         case .stale:
             if case let .command(commandPayload) = envelope.payload {
-                await replayRemoteControlCommandAckIfCached(for: commandPayload)
+                await replayRemoteControlCommandAckIfCached(
+                    for: commandPayload,
+                    inboundCommandSequence: envelope.seq
+                )
             }
             return
         case .gapDetected:
@@ -1006,8 +1009,20 @@ extension AppModel {
     }
 
     private func replayRemoteControlCommandAckIfCached(
-        for command: RemoteControlCommandPayload
+        for command: RemoteControlCommandPayload,
+        inboundCommandSequence: UInt64
     ) async {
+        guard normalizedRemoteControlCommandID(for: command) != nil else {
+            await sendRemoteControlCommandAck(
+                remoteControlCommandAck(
+                    command: command,
+                    commandSequence: inboundCommandSequence,
+                    status: .rejected,
+                    reason: "command_id_required"
+                )
+            )
+            return
+        }
         guard let cachedAck = cachedRemoteControlCommandAck(for: command) else {
             return
         }
@@ -1017,7 +1032,9 @@ extension AppModel {
     private func cachedRemoteControlCommandAck(
         for command: RemoteControlCommandPayload
     ) -> RemoteControlCommandAckPayload? {
-        let commandIdentity = remoteControlCommandIdentity(for: command)
+        guard let commandIdentity = remoteControlCommandIdentity(for: command) else {
+            return nil
+        }
         return RemoteControlCommandAckReplayStore.ack(
             for: self,
             commandIdentity: commandIdentity
@@ -1028,7 +1045,9 @@ extension AppModel {
         _ ack: RemoteControlCommandAckPayload,
         for command: RemoteControlCommandPayload
     ) {
-        let commandIdentity = remoteControlCommandIdentity(for: command)
+        guard let commandIdentity = remoteControlCommandIdentity(for: command) else {
+            return
+        }
         RemoteControlCommandAckReplayStore.store(
             ack,
             for: self,
@@ -1041,28 +1060,16 @@ extension AppModel {
         RemoteControlCommandAckReplayStore.reset(for: self)
     }
 
-    private func remoteControlCommandIdentity(for command: RemoteControlCommandPayload) -> String {
-        if let commandID = command.commandID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !commandID.isEmpty
-        {
-            return "command_id:\(commandID)"
-        }
+    private func normalizedRemoteControlCommandID(for command: RemoteControlCommandPayload) -> String? {
+        let trimmed = command.commandID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
-        let fields: [String] = [
-            command.name.rawValue,
-            command.threadID ?? "",
-            command.projectID ?? "",
-            command.text ?? "",
-            command.approvalRequestID ?? "",
-            command.approvalDecision?.lowercased() ?? "",
-        ]
-        var encodedFields: [String] = []
-        encodedFields.reserveCapacity(fields.count)
-        for field in fields {
-            encodedFields.append("\(field.utf8.count)#\(field)")
+    private func remoteControlCommandIdentity(for command: RemoteControlCommandPayload) -> String? {
+        guard let commandID = normalizedRemoteControlCommandID(for: command) else {
+            return nil
         }
-
-        return "fallback:\(encodedFields.joined(separator: "|"))"
+        return "command_id:\(commandID)"
     }
 
     private func remoteControlTranscriptMutationStamp(for threadID: UUID?) -> UInt64 {
@@ -1396,6 +1403,17 @@ extension AppModel {
         _ command: RemoteControlCommandPayload,
         inboundCommandSequence: UInt64
     ) async -> RemoteControlCommandAckPayload {
+        guard normalizedRemoteControlCommandID(for: command) != nil else {
+            let ack = remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "command_id_required"
+            )
+            await sendRemoteControlCommandAck(ack)
+            return ack
+        }
+
         if let cachedAck = cachedRemoteControlCommandAck(for: command) {
             await sendRemoteControlCommandAck(cachedAck)
             return cachedAck
@@ -1673,16 +1691,6 @@ extension AppModel {
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
                 reason: "invalid_approval_decision"
-            )
-        }
-
-        guard command.commandID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        else {
-            return remoteControlCommandAck(
-                command: command,
-                commandSequence: inboundCommandSequence,
-                status: .rejected,
-                reason: "command_id_required"
             )
         }
 

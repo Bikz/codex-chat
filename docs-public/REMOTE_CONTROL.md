@@ -25,6 +25,7 @@ This MVP delivers:
 - Authenticated websocket connections are rate-limited by inbound message throughput.
 - Relay uses websocket ping/pong heartbeat timeouts to reap stalled connections.
 - Mobile command envelopes are validated and rate-limited per device and per session.
+- Mobile commands must include a stable `commandID`; the desktop rejects missing IDs so replay protection and ack caching stay deterministic across reconnects.
 - Snapshot requests are rate-limited per device.
 - Device connections per session are capped.
 - Global websocket admission is capped.
