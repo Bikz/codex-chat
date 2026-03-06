@@ -394,6 +394,10 @@ public final class MetadataDatabase: @unchecked Sendable {
             try Self.migrateExtensionPermissionsToInstallScope(db)
         }
 
+        migrator.registerMigration("v19_scope_extension_automation_state_by_install") { db in
+            try Self.migrateExtensionAutomationStateToInstallScope(db)
+        }
+
         return migrator
     }
 
@@ -428,6 +432,53 @@ public final class MetadataDatabase: @unchecked Sendable {
         try db.create(
             index: "idx_extension_permissions_mod_install",
             on: "extension_permissions",
+            columns: ["modID", "installID"]
+        )
+    }
+
+    static func migrateExtensionAutomationStateToInstallScope(_ db: Database) throws {
+        let columns = try String.fetchAll(
+            db,
+            sql: "SELECT name FROM pragma_table_info('extension_automation_state')"
+        )
+        guard !columns.contains("installID") else {
+            return
+        }
+
+        try db.create(table: "extension_automation_state_scoped") { table in
+            table.column("installID", .text).notNull()
+            table.column("modID", .text).notNull()
+            table.column("automationID", .text).notNull()
+            table.column("nextRunAt", .datetime)
+            table.column("lastRunAt", .datetime)
+            table.column("lastStatus", .text).notNull()
+            table.column("lastError", .text)
+            table.column("launchdLabel", .text)
+            table.primaryKey(["installID", "automationID"])
+        }
+
+        try db.execute(sql: """
+        INSERT INTO extension_automation_state_scoped
+            (installID, modID, automationID, nextRunAt, lastRunAt, lastStatus, lastError, launchdLabel)
+        SELECT
+            installs.id,
+            state.modID,
+            state.automationID,
+            state.nextRunAt,
+            state.lastRunAt,
+            state.lastStatus,
+            state.lastError,
+            state.launchdLabel
+        FROM extension_automation_state state
+        INNER JOIN extension_installs installs
+            ON installs.modID = state.modID
+        """)
+
+        try db.execute(sql: "DROP TABLE extension_automation_state")
+        try db.execute(sql: "ALTER TABLE extension_automation_state_scoped RENAME TO extension_automation_state")
+        try db.create(
+            index: "idx_extension_automation_state_mod_install",
+            on: "extension_automation_state",
             columns: ["modID", "installID"]
         )
     }

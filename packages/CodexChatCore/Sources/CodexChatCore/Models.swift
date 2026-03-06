@@ -508,6 +508,7 @@ public struct ExtensionHookStateRecord: Hashable, Sendable, Codable {
 }
 
 public struct ExtensionAutomationStateRecord: Hashable, Sendable, Codable {
+    public let installID: String
     public let modID: String
     public let automationID: String
     public var nextRunAt: Date?
@@ -517,6 +518,7 @@ public struct ExtensionAutomationStateRecord: Hashable, Sendable, Codable {
     public var launchdLabel: String?
 
     public init(
+        installID: String? = nil,
         modID: String,
         automationID: String,
         nextRunAt: Date? = nil,
@@ -525,6 +527,7 @@ public struct ExtensionAutomationStateRecord: Hashable, Sendable, Codable {
         lastError: String? = nil,
         launchdLabel: String? = nil
     ) {
+        self.installID = installID ?? "global:\(modID)"
         self.modID = modID
         self.automationID = automationID
         self.nextRunAt = nextRunAt

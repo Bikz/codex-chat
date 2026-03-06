@@ -604,9 +604,13 @@ final class AppModel: ObservableObject {
     struct ResolvedExtensionAutomation: Hashable {
         let modID: String
         let installID: String
+        let runtimeAutomationID: String
         let installScope: ExtensionInstallScope
         let installProjectID: UUID?
         let installSourceURL: String?
+        let executionProjectID: UUID?
+        let executionProjectPath: String?
+        let executionThreadID: UUID?
         let modDirectoryPath: String
         let definition: ModAutomationDefinition
 
@@ -617,18 +621,29 @@ final class AppModel: ObservableObject {
             installID: String? = nil,
             installScope: ExtensionInstallScope = .global,
             installProjectID: UUID? = nil,
-            installSourceURL: String? = nil
+            installSourceURL: String? = nil,
+            executionProjectID: UUID? = nil,
+            executionProjectPath: String? = nil,
+            executionThreadID: UUID? = nil
         ) {
             self.modID = modID
             self.installScope = installScope
             self.installProjectID = installProjectID
             self.installSourceURL = installSourceURL
+            self.executionProjectID = executionProjectID
+            self.executionProjectPath = executionProjectPath
+            self.executionThreadID = executionThreadID
             self.modDirectoryPath = modDirectoryPath
             self.definition = definition
-            self.installID = installID ?? AppModel.syntheticExtensionInstallID(
+            let resolvedInstallID = installID ?? AppModel.syntheticExtensionInstallID(
                 scope: installScope,
                 projectID: installProjectID,
                 modID: modID
+            )
+            self.installID = resolvedInstallID
+            runtimeAutomationID = AppModel.runtimeAutomationID(
+                installID: resolvedInstallID,
+                automationID: definition.id
             )
         }
     }

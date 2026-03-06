@@ -212,6 +212,10 @@ extension AppModel {
                 projectID: nil,
                 installRecords: installRecords
             )
+            let automationExecutionContext = resolvedAutomationExecutionContext(
+                scope: .global,
+                projectID: nil
+            )
             hooks.append(contentsOf: globalMod.definition.hooks.map {
                 ResolvedExtensionHook(
                     modID: globalMod.definition.manifest.id,
@@ -222,16 +226,21 @@ extension AppModel {
                     installSourceURL: installContext.sourceURL
                 )
             })
-            automations.append(contentsOf: globalMod.definition.automations.map {
-                ResolvedExtensionAutomation(
-                    modID: globalMod.definition.manifest.id,
-                    modDirectoryPath: globalMod.directoryPath,
-                    definition: $0,
-                    installID: installContext.installID,
-                    installScope: .global,
-                    installSourceURL: installContext.sourceURL
-                )
-            })
+            if let automationExecutionContext {
+                automations.append(contentsOf: globalMod.definition.automations.map {
+                    ResolvedExtensionAutomation(
+                        modID: globalMod.definition.manifest.id,
+                        modDirectoryPath: globalMod.directoryPath,
+                        definition: $0,
+                        installID: installContext.installID,
+                        installScope: .global,
+                        installSourceURL: installContext.sourceURL,
+                        executionProjectID: automationExecutionContext.projectID,
+                        executionProjectPath: automationExecutionContext.projectPath,
+                        executionThreadID: automationExecutionContext.threadID
+                    )
+                })
+            }
         }
 
         for projectMod in activeProjectMods {
@@ -240,6 +249,10 @@ extension AppModel {
                 scope: .project,
                 projectID: selectedProjectID,
                 installRecords: installRecords
+            )
+            let automationExecutionContext = resolvedAutomationExecutionContext(
+                scope: .project,
+                projectID: selectedProjectID
             )
             hooks.append(contentsOf: projectMod.definition.hooks.map {
                 ResolvedExtensionHook(
@@ -252,17 +265,22 @@ extension AppModel {
                     installSourceURL: installContext.sourceURL
                 )
             })
-            automations.append(contentsOf: projectMod.definition.automations.map {
-                ResolvedExtensionAutomation(
-                    modID: projectMod.definition.manifest.id,
-                    modDirectoryPath: projectMod.directoryPath,
-                    definition: $0,
-                    installID: installContext.installID,
-                    installScope: .project,
-                    installProjectID: selectedProjectID,
-                    installSourceURL: installContext.sourceURL
-                )
-            })
+            if let automationExecutionContext {
+                automations.append(contentsOf: projectMod.definition.automations.map {
+                    ResolvedExtensionAutomation(
+                        modID: projectMod.definition.manifest.id,
+                        modDirectoryPath: projectMod.directoryPath,
+                        definition: $0,
+                        installID: installContext.installID,
+                        installScope: .project,
+                        installProjectID: selectedProjectID,
+                        installSourceURL: installContext.sourceURL,
+                        executionProjectID: automationExecutionContext.projectID,
+                        executionProjectPath: automationExecutionContext.projectPath,
+                        executionThreadID: automationExecutionContext.threadID
+                    )
+                })
+            }
         }
 
         activeExtensionHooks = hooks
@@ -319,6 +337,37 @@ extension AppModel {
         )
     }
 
+    private func resolvedAutomationExecutionContext(
+        scope: ExtensionInstallScope,
+        projectID: UUID?
+    ) -> (projectID: UUID, projectPath: String, threadID: UUID)? {
+        switch scope {
+        case .project:
+            guard let project = projects.first(where: { $0.id == projectID }) else {
+                return nil
+            }
+            let threadID: UUID = if project.id == selectedProjectID {
+                selectedThreadID ?? project.id
+            } else {
+                project.id
+            }
+            return (project.id, project.path, threadID)
+        case .global:
+            let project = generalProject ?? selectedProject ?? projects.first
+            guard let project else {
+                return nil
+            }
+            let threadID: UUID = if project.isGeneralProject {
+                generalThreads.first?.id ?? project.id
+            } else if project.id == selectedProjectID {
+                selectedThreadID ?? project.id
+            } else {
+                project.id
+            }
+            return (project.id, project.path, threadID)
+        }
+    }
+
     private func isModRuntimeEnabled(
         _ mod: DiscoveredUIMod,
         scope: ModScope,
@@ -356,7 +405,7 @@ extension AppModel {
     func refreshAutomationScheduler() async {
         let automations = activeExtensionAutomations.map { resolved in
             ExtensionAutomationDefinition(
-                id: resolved.definition.id,
+                id: resolved.runtimeAutomationID,
                 schedule: resolved.definition.schedule,
                 handler: ExtensionHandlerDefinition(
                     command: resolved.definition.handler.command,
@@ -369,7 +418,7 @@ extension AppModel {
 
         await extensionAutomationScheduler.replaceAutomations(automations) { [weak self] automation in
             guard let self else { return false }
-            return await executeAutomation(automationID: automation.id)
+            return await executeAutomation(runtimeAutomationID: automation.id)
         }
 
         await configureBackgroundAutomationIfNeeded()
@@ -811,13 +860,17 @@ extension AppModel {
         }
     }
 
-    func executeAutomation(automationID: String) async -> Bool {
-        guard let resolved = activeExtensionAutomations.first(where: { $0.definition.id == automationID }),
-              let project = selectedProject,
-              let threadID = selectedThreadID
+    func executeAutomation(runtimeAutomationID: String) async -> Bool {
+        guard let resolved = activeExtensionAutomations.first(where: { $0.runtimeAutomationID == runtimeAutomationID }),
+              let projectID = resolved.executionProjectID,
+              let projectPath = resolved.executionProjectPath,
+              let threadID = resolved.executionThreadID
         else {
             return false
         }
+
+        let project = ExtensionProjectContext(id: projectID.uuidString, path: projectPath)
+        let thread = ExtensionThreadContext(id: threadID.uuidString)
 
         let permissionOK = await ensurePermissions(
             installID: resolved.installID,
@@ -826,7 +879,7 @@ extension AppModel {
             installSourceURL: resolved.installSourceURL,
             installedPath: resolved.modDirectoryPath,
             permissions: resolved.definition.permissions,
-            projectID: project.id,
+            projectID: projectID,
             contextHint: "Automation \(resolved.definition.id)"
         )
         guard permissionOK else {
@@ -843,8 +896,8 @@ extension AppModel {
             envelope: ExtensionEventEnvelope(
                 event: .transcriptPersisted,
                 timestamp: Date(),
-                project: .init(id: project.id.uuidString, path: project.path),
-                thread: .init(id: threadID.uuidString),
+                project: project,
+                thread: thread,
                 turn: nil,
                 payload: ["automationId": resolved.definition.id]
             )
@@ -867,8 +920,8 @@ extension AppModel {
                 envelope: ExtensionEventEnvelope(
                     event: .transcriptPersisted,
                     timestamp: Date(),
-                    project: .init(id: project.id.uuidString, path: project.path),
-                    thread: .init(id: threadID.uuidString),
+                    project: project,
+                    thread: thread,
                     payload: ["automationId": resolved.definition.id]
                 ),
                 modDirectoryPath: resolved.modDirectoryPath,
@@ -1175,6 +1228,7 @@ extension AppModel {
         do {
             _ = try await extensionAutomationStateRepository.upsert(
                 ExtensionAutomationStateRecord(
+                    installID: resolved.installID,
                     modID: resolved.modID,
                     automationID: resolved.definition.id,
                     nextRunAt: nextRunAt,
@@ -1286,9 +1340,13 @@ extension AppModel {
     }
 
     private func launchdLabel(for resolved: ResolvedExtensionAutomation) -> String {
-        let safeMod = resolved.modID.replacingOccurrences(of: "[^A-Za-z0-9_.-]", with: "-", options: .regularExpression)
+        let safeInstall = resolved.installID.replacingOccurrences(
+            of: "[^A-Za-z0-9_.-]",
+            with: "-",
+            options: .regularExpression
+        )
         let safeAutomation = resolved.definition.id.replacingOccurrences(of: "[^A-Za-z0-9_.-]", with: "-", options: .regularExpression)
-        return "app.codexchat.\(safeMod).\(safeAutomation)"
+        return "app.codexchat.\(safeInstall).\(safeAutomation)"
     }
 
     private func emitAutomationHealthDiagnosticIfNeeded(
@@ -1489,7 +1547,7 @@ extension AppModel {
                 installSourceURL: automation.installSourceURL,
                 installedPath: automation.modDirectoryPath,
                 permissions: runWhenClosedPermission,
-                projectID: selectedProjectID,
+                projectID: automation.executionProjectID,
                 contextHint: "Background automation \(automation.definition.id)"
             )
             guard permitted else {

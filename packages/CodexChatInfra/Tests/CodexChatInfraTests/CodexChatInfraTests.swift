@@ -45,6 +45,12 @@ final class CodexChatInfraTests: XCTestCase {
         }
         XCTAssertTrue(extensionPermissionColumns.contains("installID"))
         XCTAssertTrue(extensionPermissionColumns.contains("modID"))
+
+        let extensionAutomationColumns = try database.dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('extension_automation_state')")
+        }
+        XCTAssertTrue(extensionAutomationColumns.contains("installID"))
+        XCTAssertTrue(extensionAutomationColumns.contains("modID"))
     }
 
     func testProjectThreadAndPreferencePersistence() async throws {
@@ -232,6 +238,7 @@ final class CodexChatInfraTests: XCTestCase {
 
         let automationState = try await repositories.extensionAutomationStateRepository.upsert(
             ExtensionAutomationStateRecord(
+                installID: extensionInstall.id,
                 modID: extensionInstall.modID,
                 automationID: "daily-notes",
                 nextRunAt: Date().addingTimeInterval(3600),
@@ -239,6 +246,7 @@ final class CodexChatInfraTests: XCTestCase {
                 launchdLabel: "app.codexchat.daily-notes"
             )
         )
+        XCTAssertEqual(automationState.installID, extensionInstall.id)
         XCTAssertEqual(automationState.automationID, "daily-notes")
     }
 
@@ -421,6 +429,111 @@ final class CodexChatInfraTests: XCTestCase {
         XCTAssertEqual(projectPermissions.map(\.status), [.denied])
         XCTAssertEqual(globalPermissions.map(\.modID), [modID])
         XCTAssertEqual(projectPermissions.map(\.modID), [modID])
+    }
+
+    func testExtensionAutomationStateMigrationBackfillsInstallScopedRows() throws {
+        let databaseURL = temporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: databaseURL) }
+
+        let dbQueue = try DatabaseQueue(path: databaseURL.path)
+        try dbQueue.write { db in
+            try db.create(table: "extension_installs") { table in
+                table.column("id", .text).notNull().primaryKey()
+                table.column("modID", .text).notNull()
+                table.column("scope", .text).notNull()
+                table.column("projectID", .text)
+                table.column("sourceURL", .text)
+                table.column("installedPath", .text).notNull()
+                table.column("enabled", .boolean).notNull().defaults(to: true)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "extension_automation_state") { table in
+                table.column("modID", .text).notNull()
+                table.column("automationID", .text).notNull()
+                table.column("nextRunAt", .datetime)
+                table.column("lastRunAt", .datetime)
+                table.column("lastStatus", .text).notNull()
+                table.column("lastError", .text)
+                table.column("launchdLabel", .text)
+                table.primaryKey(["modID", "automationID"])
+            }
+
+            let now = Date()
+            try db.execute(
+                sql: """
+                INSERT INTO extension_installs
+                    (id, modID, scope, projectID, sourceURL, installedPath, enabled, createdAt, updatedAt)
+                VALUES
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?),
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: StatementArguments([
+                    "global:acme.shared-mod",
+                    "acme.shared-mod",
+                    "global",
+                    nil,
+                    "https://example.com/shared-mod",
+                    "/tmp/global-shared-mod",
+                    true,
+                    now,
+                    now,
+                    "project:123:acme.shared-mod",
+                    "acme.shared-mod",
+                    "project",
+                    "123",
+                    "https://example.com/shared-mod",
+                    "/tmp/project-shared-mod",
+                    true,
+                    now,
+                    now,
+                ])
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO extension_automation_state
+                    (modID, automationID, nextRunAt, lastRunAt, lastStatus, lastError, launchdLabel)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    "acme.shared-mod",
+                    "daily-sync",
+                    now.addingTimeInterval(600),
+                    now,
+                    "launchd-scheduled",
+                    nil,
+                    "app.codexchat.daily-sync",
+                ]
+            )
+        }
+
+        try dbQueue.write { db in
+            try MetadataDatabase.migrateExtensionAutomationStateToInstallScope(db)
+        }
+
+        let columns = try dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('extension_automation_state')")
+        }
+        XCTAssertTrue(columns.contains("installID"))
+
+        let migratedRows = try dbQueue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT installID, modID, automationID, lastStatus
+                FROM extension_automation_state
+                ORDER BY installID
+                """
+            )
+        }
+        XCTAssertEqual(migratedRows.count, 2)
+        XCTAssertEqual(
+            migratedRows.map { $0["installID"] as String },
+            ["global:acme.shared-mod", "project:123:acme.shared-mod"]
+        )
+        XCTAssertEqual(Set(migratedRows.map { $0["automationID"] as String }), ["daily-sync"])
+        XCTAssertEqual(Set(migratedRows.map { $0["lastStatus"] as String }), ["launchd-scheduled"])
     }
 
     func testPinningThreadPreservesUpdatedAtAndRecencyOrderAfterUnpin() async throws {

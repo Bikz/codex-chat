@@ -81,6 +81,11 @@ In `Skills & Mods -> Mods`, runtime enablement is now separate from active selec
 - `Set Active` chooses which scoped mod is currently focused in the panel
 - `Set Icon` lets users override the rail icon per mod; `Automatic` falls back to manifest/default resolver
 
+## Scheduled Automations
+
+- Runtime scheduler entries are keyed per install, so project/global installs of the same mod automation do not collide.
+- Open-app scheduled automations run against the execution context captured for that active install instead of following the current sidebar selection.
+
 ## Hook Events
 
 - `thread.started`

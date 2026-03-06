@@ -5,6 +5,7 @@ import GRDB
 private struct ExtensionAutomationStateEntity: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "extension_automation_state"
 
+    var installID: String
     var modID: String
     var automationID: String
     var nextRunAt: Date?
@@ -14,6 +15,7 @@ private struct ExtensionAutomationStateEntity: Codable, FetchableRecord, Persist
     var launchdLabel: String?
 
     init(record: ExtensionAutomationStateRecord) {
+        installID = record.installID
         modID = record.modID
         automationID = record.automationID
         nextRunAt = record.nextRunAt
@@ -25,6 +27,7 @@ private struct ExtensionAutomationStateEntity: Codable, FetchableRecord, Persist
 
     var record: ExtensionAutomationStateRecord {
         ExtensionAutomationStateRecord(
+            installID: installID,
             modID: modID,
             automationID: automationID,
             nextRunAt: nextRunAt,

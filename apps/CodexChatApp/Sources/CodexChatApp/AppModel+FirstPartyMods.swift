@@ -72,6 +72,10 @@ extension AppModel {
         }
     }
 
+    nonisolated static func runtimeAutomationID(installID: String, automationID: String) -> String {
+        "\(installID)::\(automationID)"
+    }
+
     func isVettedFirstPartyMod(_ mod: DiscoveredUIMod, source: String? = nil) -> Bool {
         let normalizedPath = Self.normalizedModDirectoryPath(mod.directoryPath)
         return Self.isFirstPartyModFixturePath(normalizedPath)
