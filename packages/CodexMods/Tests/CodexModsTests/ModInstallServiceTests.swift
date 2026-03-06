@@ -627,6 +627,65 @@ final class ModInstallServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: markerURL.path), "Expected existing install to be restored after rollback")
     }
 
+    func testInstallServiceUpdateRejectsPackageIdentityMismatch() throws {
+        let sourceRoot = try makeTempDirectory(prefix: "codexmods-update-mismatch-src")
+        let existingRoot = try makeTempDirectory(prefix: "codexmods-update-mismatch-existing")
+        defer {
+            try? FileManager.default.removeItem(at: sourceRoot)
+            try? FileManager.default.removeItem(at: existingRoot)
+        }
+
+        let definition = try writeUIMod(
+            to: sourceRoot,
+            id: "acme.replacement",
+            name: "Replacement Mod",
+            version: "1.0.1",
+            permissions: .init(projectRead: true)
+        )
+        let checksum = try checksumForUIMod(at: sourceRoot)
+        try writePackageManifest(
+            to: sourceRoot,
+            ModPackageManifest(
+                id: definition.manifest.id,
+                name: definition.manifest.name,
+                version: definition.manifest.version,
+                permissions: [.projectRead],
+                integrity: .init(uiModSha256: checksum)
+            )
+        )
+
+        let existingInstallURL = existingRoot.appendingPathComponent("acme.original", isDirectory: true)
+        try FileManager.default.createDirectory(at: existingInstallURL, withIntermediateDirectories: true)
+        let markerURL = existingInstallURL.appendingPathComponent("marker.txt", isDirectory: false)
+        try Data("old-state".utf8).write(to: markerURL, options: [.atomic])
+
+        let service = ModInstallService()
+
+        XCTAssertThrowsError(
+            try service.update(
+                source: sourceRoot.path,
+                existingInstallURL: existingInstallURL,
+                expectedModID: "acme.original"
+            )
+        ) { error in
+            guard let installError = error as? ModInstallServiceError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            guard case let .packageIdentityMismatch(expectedID, actualID) = installError else {
+                return XCTFail("Expected packageIdentityMismatch, got \(installError)")
+            }
+            XCTAssertEqual(expectedID, "acme.original")
+            XCTAssertEqual(actualID, "acme.replacement")
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: markerURL.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: existingInstallURL.appendingPathComponent("ui.mod.json", isDirectory: false).path
+            )
+        )
+    }
+
     func testDiscoveryRejectsLegacySchemaVersionWithMigrationGuidance() throws {
         let root = try makeTempDirectory(prefix: "codexmods-legacy-schema")
         defer { try? FileManager.default.removeItem(at: root) }

@@ -529,7 +529,8 @@ extension AppModel {
                 let installService = ModInstallService()
                 let result = try installService.update(
                     source: source,
-                    existingInstallURL: URL(fileURLWithPath: record.installedPath, isDirectory: true)
+                    existingInstallURL: URL(fileURLWithPath: record.installedPath, isDirectory: true),
+                    expectedModID: record.modID
                 )
 
                 let updatedMod = DiscoveredUIMod(

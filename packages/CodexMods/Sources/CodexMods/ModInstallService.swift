@@ -65,6 +65,7 @@ public enum ModInstallServiceError: LocalizedError, Sendable {
     case packageRootNotFound
     case existingInstallNotFound(String)
     case existingInstallNotDirectory(String)
+    case packageIdentityMismatch(expectedID: String, actualID: String)
     case copyFailed(String)
     case commandFailed(command: String, output: String)
 
@@ -93,6 +94,8 @@ public enum ModInstallServiceError: LocalizedError, Sendable {
             "Existing install path not found: \(path)"
         case let .existingInstallNotDirectory(path):
             "Existing install path must be a directory: \(path)"
+        case let .packageIdentityMismatch(expectedID, actualID):
+            "Updated mod package ID \(actualID) does not match the existing install ID \(expectedID)."
         case let .copyFailed(detail):
             "Failed to copy mod package into destination: \(detail)"
         case let .commandFailed(command, output):
@@ -184,7 +187,11 @@ public final class ModInstallService: @unchecked Sendable {
         )
     }
 
-    public func update(source: String, existingInstallURL: URL) throws -> ModInstallResult {
+    public func update(
+        source: String,
+        existingInstallURL: URL,
+        expectedModID: String? = nil
+    ) throws -> ModInstallResult {
         let normalizedExistingURL = existingInstallURL.standardizedFileURL
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: normalizedExistingURL.path, isDirectory: &isDirectory) else {
@@ -199,6 +206,14 @@ public final class ModInstallService: @unchecked Sendable {
             if let cleanupURL = prepared.cleanupURL {
                 try? fileManager.removeItem(at: cleanupURL)
             }
+        }
+        if let expectedModID,
+           prepared.resolvedPackage.manifest.id != expectedModID
+        {
+            throw ModInstallServiceError.packageIdentityMismatch(
+                expectedID: expectedModID,
+                actualID: prepared.resolvedPackage.manifest.id
+            )
         }
 
         let parentURL = normalizedExistingURL.deletingLastPathComponent()
