@@ -1388,7 +1388,7 @@ extension AppModel {
         case .threadSendMessage:
             await applyRemoteThreadSendCommand(command, inboundCommandSequence: inboundCommandSequence)
         case .approvalRespond:
-            applyRemoteApprovalCommand(command, inboundCommandSequence: inboundCommandSequence)
+            await applyRemoteApprovalCommand(command, inboundCommandSequence: inboundCommandSequence)
         }
     }
 
@@ -1616,7 +1616,7 @@ extension AppModel {
     private func applyRemoteApprovalCommand(
         _ command: RemoteControlCommandPayload,
         inboundCommandSequence: UInt64
-    ) -> RemoteControlCommandAckPayload {
+    ) async -> RemoteControlCommandAckPayload {
         guard allowRemoteApprovals else {
             return remoteControlCommandAck(
                 command: command,
@@ -1637,13 +1637,90 @@ extension AppModel {
             )
         }
 
-        let requestID = command.approvalRequestID.flatMap(Int.init)
-        submitRemoteApprovalDecision(decision, requestID: requestID)
-        return remoteControlCommandAck(
-            command: command,
-            commandSequence: inboundCommandSequence,
-            status: .accepted
-        )
+        guard command.commandID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "command_id_required"
+            )
+        }
+
+        guard let requestIDRaw = command.approvalRequestID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !requestIDRaw.isEmpty
+        else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "approval_request_required"
+            )
+        }
+        guard let requestID = Int(requestIDRaw) else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "invalid_approval_request"
+            )
+        }
+        guard resolvePendingApprovalRequest(id: requestID) != nil else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "unknown_approval_request"
+            )
+        }
+
+        do {
+            try await submitRemoteApprovalDecision(decision, requestID: requestID)
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .accepted
+            )
+        } catch let error as ApprovalDecisionSubmissionError {
+            let reason = switch error {
+            case .runtimeUnavailable:
+                "desktop_offline"
+            case .requestNotFound:
+                "unknown_approval_request"
+            }
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: reason
+            )
+        } catch let error as CodexRuntimeError {
+            let reason = switch error {
+            case .processNotRunning, .transportClosed:
+                "desktop_offline"
+            case let .invalidResponse(detail)
+                where detail.contains("Unknown pooled approval request id")
+                || detail.contains("Unknown approval request id"):
+                "unknown_approval_request"
+            default:
+                "approval_failed"
+            }
+            appendLog(.warning, "Remote approval command failed for request \(requestID): \(error.localizedDescription)")
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: reason
+            )
+        } catch {
+            appendLog(.warning, "Remote approval command failed for request \(requestID): \(error.localizedDescription)")
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "approval_failed"
+            )
+        }
     }
 
     private func remoteControlCommandAck(

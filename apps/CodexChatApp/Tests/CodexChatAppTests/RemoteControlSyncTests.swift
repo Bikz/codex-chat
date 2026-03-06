@@ -473,6 +473,115 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertGreaterThan(ackPairs[1].index, snapshotIndices[0], "Stale replay ack should be emitted when duplicate arrives.")
     }
 
+    func testApprovalRespondRejectsMissingCommandID() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-missing-command-id")
+        let model = fixture.model
+        model.allowRemoteApprovals = true
+
+        let request = makeApprovalRequest(id: 41, threadID: fixture.thread.id)
+        model.approvalStateMachine.enqueue(request, threadID: fixture.thread.id)
+        model.syncApprovalPresentationState()
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .approvalRespond,
+                approvalRequestID: String(request.id),
+                approvalDecision: "approve_once"
+            ),
+            inboundCommandSequence: 17
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "command_id_required")
+        XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
+    }
+
+    func testApprovalRespondRejectsMissingApprovalRequestID() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-missing-request-id")
+        let model = fixture.model
+        model.allowRemoteApprovals = true
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .approvalRespond,
+                commandID: "cmd-approval-missing-request",
+                approvalDecision: "approve_once"
+            ),
+            inboundCommandSequence: 18
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "approval_request_required")
+    }
+
+    func testApprovalRespondRejectsUnknownApprovalRequestID() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-unknown-request-id")
+        let model = fixture.model
+        model.allowRemoteApprovals = true
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .approvalRespond,
+                commandID: "cmd-approval-unknown-request",
+                approvalRequestID: "999",
+                approvalDecision: "approve_once"
+            ),
+            inboundCommandSequence: 19
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "unknown_approval_request")
+    }
+
+    func testApprovalRespondRejectsWhenDesktopIsOffline() async {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.allowRemoteApprovals = true
+
+        let threadID = UUID()
+        model.selectedThreadID = threadID
+        let request = makeApprovalRequest(id: 42, threadID: threadID)
+        model.approvalStateMachine.enqueue(request, threadID: threadID)
+        model.syncApprovalPresentationState()
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .approvalRespond,
+                commandID: "cmd-approval-offline",
+                approvalRequestID: String(request.id),
+                approvalDecision: "approve_once"
+            ),
+            inboundCommandSequence: 20
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "desktop_offline")
+        XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
+    }
+
+    func testApprovalRespondRejectsWhenRuntimeCanNotApplyPendingApproval() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-stale-runtime-route")
+        let model = fixture.model
+        model.allowRemoteApprovals = true
+
+        let request = makeApprovalRequest(id: 43, threadID: fixture.thread.id)
+        model.approvalStateMachine.enqueue(request, threadID: fixture.thread.id)
+        model.syncApprovalPresentationState()
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .approvalRespond,
+                commandID: "cmd-approval-stale-runtime-route",
+                approvalRequestID: String(request.id),
+                approvalDecision: "approve_once"
+            ),
+            inboundCommandSequence: 21
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "unknown_approval_request")
+        XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
+    }
+
     func testRestorePersistedRemoteControlSessionReconnectsWithoutPairRestart() async throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let joinURL = try XCTUnwrap(URL(string: "https://remote.example/rc#sid=session-resume&jt=join-token-resume"))
@@ -730,5 +839,22 @@ final class RemoteControlSyncTests: XCTestCase {
             }
             return index
         }
+    }
+
+    private func makeApprovalRequest(id: Int, threadID: UUID) -> RuntimeApprovalRequest {
+        RuntimeApprovalRequest(
+            id: id,
+            kind: .commandExecution,
+            method: "shell",
+            threadID: threadID.uuidString,
+            turnID: nil,
+            itemID: nil,
+            reason: "Need approval",
+            risk: "medium",
+            cwd: "/tmp",
+            command: ["/bin/echo", "hello"],
+            changes: [],
+            detail: "Approval detail"
+        )
     }
 }
