@@ -193,6 +193,48 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertTrue(didSeeExpectedMessageInSnapshot)
     }
 
+    func testAcceptedRemoteThreadSendPreservesLocalComposerDraftAndAttachments() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-preserve-local-draft")
+        let model = fixture.model
+        let thread = fixture.thread
+        let project = fixture.project
+
+        let attachmentURL = URL(fileURLWithPath: project.path, isDirectory: true)
+            .appendingPathComponent("notes.txt", isDirectory: false)
+        try Data("local attachment".utf8).write(to: attachmentURL, options: [.atomic])
+
+        let draftAttachment = AppModel.ComposerAttachment(
+            path: attachmentURL.path,
+            name: attachmentURL.lastPathComponent,
+            kind: .mentionFile
+        )
+        model.composerText = "preserve local draft"
+        model.composerAttachments = [draftAttachment]
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .threadSendMessage,
+                commandID: "cmd-preserve-local-draft",
+                threadID: thread.id.uuidString,
+                projectID: project.id.uuidString,
+                text: "Ship the patch."
+            ),
+            inboundCommandSequence: 79
+        )
+
+        XCTAssertEqual(ack.status, .accepted)
+        XCTAssertEqual(ack.threadID, thread.id.uuidString)
+        XCTAssertEqual(model.composerText, "preserve local draft")
+        XCTAssertEqual(model.composerAttachments, [draftAttachment])
+        XCTAssertEqual(
+            countUserMessages(
+                in: model.transcriptStore[thread.id, default: []],
+                text: "Ship the patch."
+            ),
+            1
+        )
+    }
+
     func testAssistantDeltaTriggersImmediateRemoteSyncWithoutPumpTick() async throws {
         let model = AppModel(
             repositories: nil,

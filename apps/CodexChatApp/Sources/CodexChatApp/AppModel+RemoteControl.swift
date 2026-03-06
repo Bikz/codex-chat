@@ -1586,10 +1586,23 @@ extension AppModel {
                 threadID: observedThreadID?.uuidString
             )
         }
+        guard let observedThreadID,
+              let observedProjectID = selectedProjectID
+        else {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "thread_required"
+            )
+        }
 
         let baselineMutationStamp = remoteControlTranscriptMutationStamp(for: observedThreadID)
-        composerText = text
-        sendMessage()
+        submitRemoteThreadMessage(
+            text: text,
+            threadID: observedThreadID,
+            projectID: observedProjectID
+        )
 
         let didObserveMutation = await waitForRemoteControlTranscriptMutation(
             threadID: observedThreadID,
@@ -1601,7 +1614,7 @@ extension AppModel {
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
                 reason: "desktop_busy",
-                threadID: observedThreadID?.uuidString
+                threadID: observedThreadID.uuidString
             )
         }
 
@@ -1609,8 +1622,34 @@ extension AppModel {
             command: command,
             commandSequence: inboundCommandSequence,
             status: .accepted,
-            threadID: observedThreadID?.uuidString
+            threadID: observedThreadID.uuidString
         )
+    }
+
+    private func submitRemoteThreadMessage(text: String, threadID: UUID, projectID: UUID) {
+        markTurnStartPending(threadID: threadID)
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            do {
+                guard let project = try await projectRepository?.getProject(id: projectID) else {
+                    throw CodexChatCoreError.missingRecord(projectID.uuidString)
+                }
+
+                try await dispatchNow(
+                    text: text,
+                    threadID: threadID,
+                    projectID: project.id,
+                    projectPath: project.path,
+                    sourceQueueItemID: nil,
+                    priority: .selected
+                )
+            } catch {
+                clearTurnStartPending(threadID: threadID)
+                appendLog(.error, "Remote thread send failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func applyRemoteApprovalCommand(
