@@ -186,7 +186,7 @@ public struct RemoteControlEventPayload: Codable, Sendable, Equatable {
 
 public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
     public var name: RemoteControlCommandName
-    public var commandID: String?
+    public var commandID: String
     public var threadID: String?
     public var projectID: String?
     public var text: String?
@@ -195,7 +195,7 @@ public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
 
     public init(
         name: RemoteControlCommandName,
-        commandID: String? = nil,
+        commandID: String,
         threadID: String? = nil,
         projectID: String? = nil,
         text: String? = nil,
@@ -214,7 +214,7 @@ public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
 
 public struct RemoteControlCommandAckPayload: Codable, Sendable, Equatable {
     public var commandSeq: UInt64
-    public var commandID: String?
+    public var commandID: String
     public var commandName: RemoteControlCommandName
     public var status: RemoteControlCommandAckStatus
     public var reason: String?
@@ -222,7 +222,7 @@ public struct RemoteControlCommandAckPayload: Codable, Sendable, Equatable {
 
     public init(
         commandSeq: UInt64,
-        commandID: String? = nil,
+        commandID: String,
         commandName: RemoteControlCommandName,
         status: RemoteControlCommandAckStatus,
         reason: String? = nil,

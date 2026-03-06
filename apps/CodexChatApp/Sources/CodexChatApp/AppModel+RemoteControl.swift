@@ -1061,7 +1061,7 @@ extension AppModel {
     }
 
     private func normalizedRemoteControlCommandID(for command: RemoteControlCommandPayload) -> String? {
-        let trimmed = command.commandID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmed = command.commandID.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 

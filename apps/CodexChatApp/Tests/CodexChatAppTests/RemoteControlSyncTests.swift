@@ -457,7 +457,7 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertGreaterThan(ackPairs[1].index, snapshotIndices[0], "Replay ack should be sent when duplicate arrives.")
     }
 
-    func testThreadSendRejectsMissingCommandIDWithoutApplyingMessage() async throws {
+    func testThreadSendRejectsBlankCommandIDWithoutApplyingMessage() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-missing-command-id")
         let model = fixture.model
         let thread = fixture.thread
@@ -466,6 +466,7 @@ final class RemoteControlSyncTests: XCTestCase {
         let ack = await model.processRemoteControlCommand(
             RemoteControlCommandPayload(
                 name: .threadSendMessage,
+                commandID: "   ",
                 threadID: thread.id.uuidString,
                 projectID: project.id.uuidString,
                 text: "Missing command ID should not send"
@@ -484,7 +485,7 @@ final class RemoteControlSyncTests: XCTestCase {
         )
     }
 
-    func testStaleSequenceMalformedCommandWithoutCommandIDReplaysRejectedAck() async throws {
+    func testStaleSequenceMalformedCommandWithBlankCommandIDReplaysRejectedAck() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-stale-missing-command-id")
         let model = fixture.model
         let thread = fixture.thread
@@ -497,6 +498,7 @@ final class RemoteControlSyncTests: XCTestCase {
 
         let command = RemoteControlCommandPayload(
             name: .threadSendMessage,
+            commandID: " ",
             threadID: thread.id.uuidString,
             projectID: project.id.uuidString,
             text: "Missing command ID duplicate"
@@ -553,6 +555,7 @@ final class RemoteControlSyncTests: XCTestCase {
         let ack = await model.processRemoteControlCommand(
             RemoteControlCommandPayload(
                 name: .approvalRespond,
+                commandID: "",
                 approvalRequestID: String(request.id),
                 approvalDecision: "approve_once"
             ),

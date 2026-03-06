@@ -137,4 +137,29 @@ final class RemoteControlProtocolTests: XCTestCase {
 
         XCTAssertEqual(decoded, original)
     }
+
+    func testCommandEnvelopeDecodeFailsWithoutCommandID() {
+        let rawJSON = """
+        {
+          "schemaVersion": 1,
+          "sessionID": "session-1",
+          "seq": 12,
+          "timestamp": "2023-11-14T22:18:20Z",
+          "payload": {
+            "type": "command",
+            "payload": {
+              "name": "thread.send_message",
+              "threadID": "thread-1",
+              "projectID": "project-1",
+              "text": "Missing command ID"
+            }
+          }
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        XCTAssertThrowsError(try decoder.decode(RemoteControlEnvelope.self, from: Data(rawJSON.utf8)))
+    }
 }
