@@ -27,15 +27,19 @@ enum ComputerActionHarnessServerError: LocalizedError {
 final class ComputerActionHarnessServer: @unchecked Sendable {
     typealias RequestHandler = @Sendable (HarnessInvokeRequest) async -> HarnessInvokeResponse
     typealias LogHandler = @Sendable (String) -> Void
+    typealias SocketWriter = @Sendable (Int32, UnsafeRawPointer?, Int) -> Int
 
     private enum Constants {
         static let maxRequestBytes = 128 * 1024
         static let readBufferSize = 4096
+        static let maxWriteRetryCount = 32
+        static let writeRetryDelayMicroseconds: useconds_t = 1000
     }
 
     private let socketPath: String
     private let requestHandler: RequestHandler
     private let logHandler: LogHandler
+    private let socketWriter: SocketWriter
     private let queue = DispatchQueue(label: "com.codexchat.harness.server")
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -48,11 +52,15 @@ final class ComputerActionHarnessServer: @unchecked Sendable {
     init(
         socketPath: String,
         requestHandler: @escaping RequestHandler,
-        logHandler: @escaping LogHandler = { _ in }
+        logHandler: @escaping LogHandler = { _ in },
+        socketWriter: @escaping SocketWriter = { fileDescriptor, buffer, count in
+            Darwin.write(fileDescriptor, buffer, count)
+        }
     ) {
         self.socketPath = socketPath
         self.requestHandler = requestHandler
         self.logHandler = logHandler
+        self.socketWriter = socketWriter
     }
 
     func start() throws {
@@ -276,11 +284,61 @@ final class ComputerActionHarnessServer: @unchecked Sendable {
 
         var payload = encoded
         payload.append(0x0A)
-        _ = payload.withUnsafeBytes { rawBuffer in
+        let didWrite = Self.writeAll(
+            payload,
+            to: clientFileDescriptor,
+            using: socketWriter
+        )
+        if !didWrite {
+            logHandler("Harness response write failed: \(Self.systemErrorDescription())")
+        }
+    }
+
+    static func writeAll(
+        _ data: Data,
+        to fileDescriptor: Int32,
+        using socketWriter: SocketWriter,
+        sleepMicroseconds: useconds_t = Constants.writeRetryDelayMicroseconds
+    ) -> Bool {
+        guard !data.isEmpty else {
+            return true
+        }
+
+        return data.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.baseAddress else {
-                return 0
+                return true
             }
-            return Darwin.write(clientFileDescriptor, baseAddress, rawBuffer.count)
+
+            var bytesRemaining = rawBuffer.count
+            var currentPointer = baseAddress
+            var retryCount = 0
+
+            while bytesRemaining > 0 {
+                let written = socketWriter(fileDescriptor, currentPointer, bytesRemaining)
+                if written > 0 {
+                    bytesRemaining -= written
+                    currentPointer = currentPointer.advanced(by: written)
+                    retryCount = 0
+                    continue
+                }
+
+                if written == -1, errno == EINTR {
+                    continue
+                }
+
+                if written == -1, errno == EAGAIN || errno == EWOULDBLOCK {
+                    retryCount += 1
+                    guard retryCount <= Constants.maxWriteRetryCount else {
+                        return false
+                    }
+                    usleep(sleepMicroseconds)
+                    continue
+                }
+
+                return false
+            }
+
+            return true
         }
     }
 

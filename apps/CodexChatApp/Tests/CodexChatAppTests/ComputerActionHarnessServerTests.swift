@@ -3,6 +3,23 @@ import Darwin
 import Foundation
 import XCTest
 
+private final class PartialWriteRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = Data()
+
+    func append(_ bytes: UnsafePointer<UInt8>, count: Int) {
+        lock.lock()
+        buffer.append(bytes, count: count)
+        lock.unlock()
+    }
+
+    func snapshot() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer
+    }
+}
+
 final class ComputerActionHarnessServerTests: XCTestCase {
     func testServerRejectsInvalidJSONRequest() throws {
         let socketURL = try makeSocketURL()
@@ -62,6 +79,28 @@ final class ComputerActionHarnessServerTests: XCTestCase {
             XCTAssertEqual(response.status, .invalid)
             XCTAssertEqual(response.errorCode, "invalid_json")
         }
+    }
+
+    func testWriteAllCompletesAcrossPartialWriterCallbacks() {
+        let recorder = PartialWriteRecorder()
+        let payload = Data(String(repeating: "partial-write-response-", count: 16).utf8)
+
+        let didWrite = ComputerActionHarnessServer.writeAll(
+            payload,
+            to: 0,
+            using: { _, buffer, count in
+                guard let buffer else {
+                    return -1
+                }
+                let chunkSize = min(count, 11)
+                recorder.append(buffer.assumingMemoryBound(to: UInt8.self), count: chunkSize)
+                return chunkSize
+            },
+            sleepMicroseconds: 0
+        )
+
+        XCTAssertTrue(didWrite)
+        XCTAssertEqual(recorder.snapshot(), payload)
     }
 
     private func makeSocketURL() throws -> URL {
