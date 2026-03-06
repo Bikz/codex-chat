@@ -191,7 +191,26 @@ extension AppModel {
         guard let commandID = normalizedRemoteControlCommandID(for: command) else {
             return nil
         }
-        return "command_id:\(commandID)"
+
+        let canonicalCommand = RemoteControlCommandPayload(
+            name: command.name,
+            commandID: commandID,
+            threadID: command.threadID,
+            projectID: command.projectID,
+            text: command.text,
+            approvalRequestID: command.approvalRequestID,
+            approvalDecision: command.approvalDecision
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        guard let encoded = try? encoder.encode(canonicalCommand),
+              let identity = String(data: encoded, encoding: .utf8)
+        else {
+            return nil
+        }
+
+        return identity
     }
 
     private func remoteControlTranscriptMutationStamp(for threadID: UUID?) -> UInt64 {

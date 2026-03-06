@@ -457,6 +457,39 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertGreaterThan(ackPairs[1].index, snapshotIndices[0], "Replay ack should be sent when duplicate arrives.")
     }
 
+    func testReusedCommandIDWithDifferentCommandShapeDoesNotReplayStaleAck() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-reused-command-id")
+        let model = fixture.model
+        let project = fixture.project
+
+        let firstAck = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .projectSelect,
+                commandID: "cmd-reused-1",
+                projectID: project.id.uuidString
+            ),
+            inboundCommandSequence: 17
+        )
+
+        XCTAssertEqual(firstAck.status, .accepted)
+        XCTAssertEqual(firstAck.commandName, .projectSelect)
+
+        let secondAck = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .threadSelect,
+                commandID: "cmd-reused-1",
+                threadID: UUID().uuidString,
+                projectID: project.id.uuidString
+            ),
+            inboundCommandSequence: 18
+        )
+
+        XCTAssertEqual(secondAck.status, .rejected)
+        XCTAssertEqual(secondAck.commandName, .threadSelect)
+        XCTAssertEqual(secondAck.reason, "unknown_thread")
+        XCTAssertEqual(secondAck.commandSeq, 18)
+    }
+
     func testThreadSendRejectsBlankCommandIDWithoutApplyingMessage() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-missing-command-id")
         let model = fixture.model
