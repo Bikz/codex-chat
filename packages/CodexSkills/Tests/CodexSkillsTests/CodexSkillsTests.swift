@@ -121,6 +121,74 @@ final class CodexSkillsTests: XCTestCase {
         XCTAssertNil(first.first?.sourceURL)
     }
 
+    func testDiscoverSkillsParsesLiteralMultilineFrontmatterDescription() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-literal-description-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let agentsHome = root.appendingPathComponent(".agents", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+
+        try createSkill(
+            at: codexHome.appendingPathComponent("skills/literal-description", isDirectory: true),
+            body: """
+            ---
+            name: literal-description
+            description: |
+              First line.
+              Second line.
+
+              Third line.
+            ---
+            # Literal Description
+            """
+        )
+
+        let service = SkillCatalogService(codexHomeURL: codexHome, agentsHomeURL: agentsHome)
+        let discovered = try service.discoverSkills(projectPath: project.path)
+
+        XCTAssertEqual(
+            discovered.first(where: { $0.name == "literal-description" })?.description,
+            "First line.\nSecond line.\n\nThird line."
+        )
+    }
+
+    func testDiscoverSkillsParsesFoldedMultilineFrontmatterDescription() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexskills-folded-description-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+        let agentsHome = root.appendingPathComponent(".agents", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+
+        try createSkill(
+            at: codexHome.appendingPathComponent("skills/folded-description", isDirectory: true),
+            body: """
+            ---
+            name: folded-description
+            description: >
+              First line.
+              Second line.
+
+              Final paragraph.
+            ---
+            # Folded Description
+            """
+        )
+
+        let service = SkillCatalogService(codexHomeURL: codexHome, agentsHomeURL: agentsHome)
+        let discovered = try service.discoverSkills(projectPath: project.path)
+
+        XCTAssertEqual(
+            discovered.first(where: { $0.name == "folded-description" })?.description,
+            "First line. Second line.\n\nFinal paragraph."
+        )
+    }
+
     func testDiscoverSkillsCacheInvalidatesWhenSkillDefinitionChanges() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexskills-cache-invalidate-\(UUID().uuidString)", isDirectory: true)

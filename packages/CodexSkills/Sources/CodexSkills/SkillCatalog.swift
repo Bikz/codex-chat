@@ -833,24 +833,7 @@ public final class SkillCatalogService: @unchecked Sendable {
         let content = try String(contentsOf: skillFileURL, encoding: .utf8)
         let lines = content.components(separatedBy: .newlines)
 
-        var frontmatter: [String: String] = [:]
-        var bodyStartIndex = 0
-
-        if lines.first?.trimmingCharacters(in: .whitespaces) == "---" {
-            for index in 1 ..< lines.count {
-                let line = lines[index].trimmingCharacters(in: .whitespaces)
-                if line == "---" {
-                    bodyStartIndex = index + 1
-                    break
-                }
-                guard !line.isEmpty, let colonIndex = line.firstIndex(of: ":") else { continue }
-                let key = line[..<colonIndex].trimmingCharacters(in: .whitespaces).lowercased()
-                let value = line[line.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
-                if !key.isEmpty, !value.isEmpty {
-                    frontmatter[key] = value
-                }
-            }
-        }
+        let (frontmatter, bodyStartIndex) = Self.parseFrontmatter(from: lines)
 
         let bodyLines = Array(lines.dropFirst(bodyStartIndex))
         let headingName = bodyLines
@@ -883,6 +866,148 @@ public final class SkillCatalogService: @unchecked Sendable {
             description: description,
             optionalMetadata: optionalMetadata
         )
+    }
+
+    private enum FrontmatterBlockScalarStyle {
+        case literal
+        case folded
+    }
+
+    private static func parseFrontmatter(from lines: [String]) -> ([String: String], Int) {
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else {
+            return ([:], 0)
+        }
+
+        var frontmatter: [String: String] = [:]
+        var bodyStartIndex = 0
+        var index = 1
+
+        while index < lines.count {
+            let rawLine = lines[index]
+            let trimmedLine = rawLine.trimmingCharacters(in: .whitespaces)
+            if trimmedLine == "---" {
+                bodyStartIndex = index + 1
+                break
+            }
+
+            guard !trimmedLine.isEmpty,
+                  let colonIndex = rawLine.firstIndex(of: ":")
+            else {
+                index += 1
+                continue
+            }
+
+            let key = rawLine[..<colonIndex].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = rawLine[rawLine.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else {
+                index += 1
+                continue
+            }
+
+            if let blockStyle = frontmatterBlockScalarStyle(for: value) {
+                let (blockValue, nextIndex) = consumeFrontmatterBlockScalar(
+                    from: lines,
+                    startingAt: index + 1,
+                    style: blockStyle
+                )
+                if !blockValue.isEmpty {
+                    frontmatter[key] = blockValue
+                }
+                index = nextIndex
+                continue
+            }
+
+            if !value.isEmpty {
+                frontmatter[key] = value
+            }
+            index += 1
+        }
+
+        return (frontmatter, bodyStartIndex)
+    }
+
+    private static func frontmatterBlockScalarStyle(for value: String) -> FrontmatterBlockScalarStyle? {
+        switch value {
+        case "|", "|-", "|+":
+            .literal
+        case ">", ">-", ">+":
+            .folded
+        default:
+            nil
+        }
+    }
+
+    private static func consumeFrontmatterBlockScalar(
+        from lines: [String],
+        startingAt startIndex: Int,
+        style: FrontmatterBlockScalarStyle
+    ) -> (String, Int) {
+        var index = startIndex
+        var collectedLines: [String] = []
+
+        while index < lines.count {
+            let rawLine = lines[index]
+            let trimmedLine = rawLine.trimmingCharacters(in: .whitespaces)
+            if trimmedLine == "---" {
+                break
+            }
+            if rawLine.isEmpty || rawLine.hasPrefix(" ") || rawLine.hasPrefix("\t") {
+                collectedLines.append(rawLine)
+                index += 1
+                continue
+            }
+            break
+        }
+
+        let normalizedLines = normalizeFrontmatterBlockLines(collectedLines)
+        let value = switch style {
+        case .literal:
+            normalizedLines.joined(separator: "\n")
+        case .folded:
+            foldFrontmatterLines(normalizedLines)
+        }
+        return (value.trimmingCharacters(in: .whitespacesAndNewlines), index)
+    }
+
+    private static func normalizeFrontmatterBlockLines(_ lines: [String]) -> [String] {
+        let minimumIndent = lines
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map(leadingIndentWidth(for:))
+            .min() ?? 0
+
+        return lines.map { line in
+            guard minimumIndent > 0 else { return line }
+            return String(line.dropFirst(minimumIndent))
+        }
+    }
+
+    private static func foldFrontmatterLines(_ lines: [String]) -> String {
+        var paragraphs: [[String]] = []
+        var currentParagraph: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                if !currentParagraph.isEmpty {
+                    paragraphs.append(currentParagraph)
+                    currentParagraph = []
+                }
+                continue
+            }
+            currentParagraph.append(trimmed)
+        }
+
+        if !currentParagraph.isEmpty {
+            paragraphs.append(currentParagraph)
+        }
+
+        return paragraphs
+            .map { $0.joined(separator: " ") }
+            .joined(separator: "\n\n")
+    }
+
+    private static func leadingIndentWidth(for line: String) -> Int {
+        line.prefix { $0 == " " || $0 == "\t" }.count
     }
 
     private func gitRemoteURL(for skillPath: String) throws -> String {
