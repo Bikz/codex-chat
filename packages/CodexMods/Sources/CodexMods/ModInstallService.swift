@@ -60,6 +60,7 @@ public enum ModInstallServiceError: LocalizedError, Sendable {
     case sourceNotDirectory(String)
     case unsupportedRemoteSource(String)
     case unsupportedGitHubBlobURL(String)
+    case reservedNamespaceRequiresOfficialSource(String)
     case cloneFailed(String)
     case packageRootNotFound
     case existingInstallNotFound(String)
@@ -80,6 +81,10 @@ public enum ModInstallServiceError: LocalizedError, Sendable {
         case let .unsupportedGitHubBlobURL(source):
             "Unsupported GitHub blob URL: \(source). Use the repository URL or a tree URL "
                 + "(`https://github.com/<owner>/<repo>/tree/<branch>/<mod-path>`)."
+        case let .reservedNamespaceRequiresOfficialSource(modID):
+            "Mod ID \(modID) uses the reserved `codexchat.` namespace. "
+                + "Only vetted first-party packs sourced from the official CodexChat "
+                + "`mods/first-party` catalog may use that namespace."
         case let .cloneFailed(detail):
             "Failed to clone mod source: \(detail)"
         case .packageRootNotFound:
@@ -249,6 +254,11 @@ public final class ModInstallService: @unchecked Sendable {
         let staged = try stageSource(trimmedSource)
         let packageRootURL = try resolvePackageRoot(from: staged.rootURL, preferredSubpath: staged.packageSubpath)
         let resolvedPackage = try ModPackageManifestLoader.load(packageRootURL: packageRootURL, fileManager: fileManager)
+        if FirstPartyModTrust.usesReservedNamespace(resolvedPackage.manifest.id),
+           !FirstPartyModTrust.isVettedFirstPartySource(trimmedSource)
+        {
+            throw ModInstallServiceError.reservedNamespaceRequiresOfficialSource(resolvedPackage.manifest.id)
+        }
         return PreparedPackage(
             source: trimmedSource,
             packageRootURL: packageRootURL,

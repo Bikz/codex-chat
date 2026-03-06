@@ -61,27 +61,35 @@ extension AppModel {
         }
     }
 
-    func canRunExecutableModFeatures(for mod: DiscoveredUIMod) -> Bool {
+    func canRunExecutableModFeatures(for mod: DiscoveredUIMod, source: String? = nil) -> Bool {
         guard modHasExecutableFeatures(mod) else {
             return true
         }
 
-        if isVettedFirstPartyMod(mod) {
+        if isVettedFirstPartyMod(mod, source: source) {
             return true
         }
 
         return areAdvancedExecutableModsUnlocked
     }
 
-    func executableModBlockedReason(for mod: DiscoveredUIMod) -> String? {
+    func canRunExecutableModFeatures(for mod: DiscoveredUIMod, installRecord: ExtensionInstallRecord?) -> Bool {
+        canRunExecutableModFeatures(for: mod, source: installRecord?.sourceURL)
+    }
+
+    func executableModBlockedReason(for mod: DiscoveredUIMod, source: String? = nil) -> String? {
         guard modHasExecutableFeatures(mod),
-              !isVettedFirstPartyMod(mod),
+              !isVettedFirstPartyMod(mod, source: source),
               !areAdvancedExecutableModsUnlocked
         else {
             return nil
         }
 
         return "This mod includes executable hooks/automations. Unlock advanced executable mods in Settings > Experimental to enable it."
+    }
+
+    func executableModBlockedReason(for mod: DiscoveredUIMod, installRecord: ExtensionInstallRecord?) -> String? {
+        executableModBlockedReason(for: mod, source: installRecord?.sourceURL)
     }
 
     func modHasExecutableFeatures(_ mod: DiscoveredUIMod) -> Bool {
@@ -103,15 +111,5 @@ extension AppModel {
         }
 
         return projects.contains(where: { ($0.uiModPath ?? "").isEmpty == false })
-    }
-
-    private func isVettedFirstPartyMod(_ mod: DiscoveredUIMod) -> Bool {
-        let id = mod.definition.manifest.id.lowercased()
-        if id.hasPrefix("codexchat.") {
-            return true
-        }
-
-        let normalizedPath = NSString(string: mod.directoryPath).standardizingPath
-        return normalizedPath.contains("/mods/first-party/")
     }
 }

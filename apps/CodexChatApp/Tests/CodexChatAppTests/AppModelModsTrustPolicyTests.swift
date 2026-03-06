@@ -215,6 +215,104 @@ final class AppModelModsTrustPolicyTests: XCTestCase {
         XCTAssertTrue(resolved.project.isEmpty)
     }
 
+    func testResolveEnabledModIDsDoesNotAutoEnableReservedNamespaceOutsideFirstPartyPath() {
+        let modID = "codexchat.personal-notes"
+
+        let resolved = AppModel.resolveEnabledModIDs(
+            globalMods: [
+                makeMod(id: modID, directoryPath: "/tmp/spoofed-personal-notes", scope: .global),
+            ],
+            projectMods: [],
+            selectedGlobalPath: nil,
+            selectedProjectPath: nil,
+            selectedProjectID: UUID(),
+            installRecords: []
+        )
+
+        XCTAssertTrue(resolved.global.isEmpty)
+        XCTAssertTrue(resolved.project.isEmpty)
+    }
+
+    func testResolveEnabledModIDsAutoEnablesFirstPartyFixtureWithoutInstallRecord() {
+        let modID = "codexchat.personal-notes"
+
+        let resolved = AppModel.resolveEnabledModIDs(
+            globalMods: [
+                makeMod(
+                    id: modID,
+                    directoryPath: "/tmp/codexchat-tests/mods/first-party/personal-notes",
+                    scope: .global
+                ),
+            ],
+            projectMods: [],
+            selectedGlobalPath: nil,
+            selectedProjectPath: nil,
+            selectedProjectID: UUID(),
+            installRecords: []
+        )
+
+        XCTAssertEqual(resolved.global, [modID])
+        XCTAssertTrue(resolved.project.isEmpty)
+    }
+
+    func testResolveEnabledModIDsRespectsExplicitDisableForFirstPartyFixture() {
+        let modID = "codexchat.personal-notes"
+        let modPath = "/tmp/codexchat-tests/mods/first-party/personal-notes"
+
+        let resolved = AppModel.resolveEnabledModIDs(
+            globalMods: [
+                makeMod(id: modID, directoryPath: modPath, scope: .global),
+            ],
+            projectMods: [],
+            selectedGlobalPath: nil,
+            selectedProjectPath: nil,
+            selectedProjectID: UUID(),
+            installRecords: [
+                ExtensionInstallRecord(
+                    id: "global:\(modID)",
+                    modID: modID,
+                    scope: .global,
+                    projectID: nil,
+                    sourceURL: modPath,
+                    installedPath: modPath,
+                    enabled: false
+                ),
+            ]
+        )
+
+        XCTAssertTrue(resolved.global.isEmpty)
+        XCTAssertTrue(resolved.project.isEmpty)
+    }
+
+    func testResolveEnabledModIDsAutoEnablesOfficialFirstPartyInstallFromSourceMetadata() {
+        let modID = "codexchat.personal-notes"
+        let installedPath = "/tmp/codexchat-installed/personal-notes"
+
+        let resolved = AppModel.resolveEnabledModIDs(
+            globalMods: [
+                makeMod(id: modID, directoryPath: installedPath, scope: .global),
+            ],
+            projectMods: [],
+            selectedGlobalPath: nil,
+            selectedProjectPath: nil,
+            selectedProjectID: UUID(),
+            installRecords: [
+                ExtensionInstallRecord(
+                    id: "global:\(modID)",
+                    modID: modID,
+                    scope: .global,
+                    projectID: nil,
+                    sourceURL: "https://github.com/bikz/codexchat/tree/main/mods/first-party/personal-notes",
+                    installedPath: installedPath,
+                    enabled: true
+                ),
+            ]
+        )
+
+        XCTAssertEqual(resolved.global, [modID])
+        XCTAssertTrue(resolved.project.isEmpty)
+    }
+
     private func makeModelWithSelectedProject(trustState: ProjectTrustState) -> AppModel {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let projectID = UUID()

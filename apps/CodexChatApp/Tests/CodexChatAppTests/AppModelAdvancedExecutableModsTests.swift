@@ -57,14 +57,45 @@ final class AppModelAdvancedExecutableModsTests: XCTestCase {
         XCTAssertNotNil(model.executableModBlockedReason(for: mod))
     }
 
-    func testExecutableModAllowedForFirstPartyWhenLocked() {
+    func testExecutableModAllowedForFirstPartyFixturePathWhenLocked() {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.areAdvancedExecutableModsUnlocked = false
 
         let mod = makeExecutableMod(
             id: "codexchat.personal-notes",
             name: "Personal Notes",
-            directoryPath: "/tmp/codexchat-personal-notes"
+            directoryPath: "/tmp/codexchat-tests/mods/first-party/personal-notes"
+        )
+
+        XCTAssertTrue(model.canRunExecutableModFeatures(for: mod))
+        XCTAssertNil(model.executableModBlockedReason(for: mod))
+    }
+
+    func testExecutableModWithReservedNamespaceIsBlockedWithoutFirstPartyProvenance() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.areAdvancedExecutableModsUnlocked = false
+
+        let mod = makeExecutableMod(
+            id: "codexchat.personal-notes",
+            name: "Spoofed Personal Notes",
+            directoryPath: "/tmp/spoofed-personal-notes"
+        )
+
+        XCTAssertFalse(model.canRunExecutableModFeatures(for: mod))
+        XCTAssertNotNil(model.executableModBlockedReason(for: mod))
+    }
+
+    func testExecutableModAllowedForVettedInstalledCopyWhenLocked() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        model.areAdvancedExecutableModsUnlocked = false
+
+        let installedPath = "/tmp/CodexChat/global/mods/codexchat.personal-notes"
+        model.vettedFirstPartyModDirectoryPaths = [AppModel.normalizedModDirectoryPath(installedPath)]
+
+        let mod = makeExecutableMod(
+            id: "codexchat.personal-notes",
+            name: "Installed Personal Notes",
+            directoryPath: installedPath
         )
 
         XCTAssertTrue(model.canRunExecutableModFeatures(for: mod))
@@ -140,7 +171,9 @@ final class AppModelAdvancedExecutableModsTests: XCTestCase {
 
         model.setInstalledModEnabled(mod, scope: .global, enabled: true)
 
-        XCTAssertEqual(model.modStatusMessage, model.executableModBlockedReason(for: mod))
+        try await eventually(timeoutSeconds: 3) {
+            model.modStatusMessage == model.executableModBlockedReason(for: mod)
+        }
 
         let installs = try await repositories.extensionInstallRepository.list()
         let record = try XCTUnwrap(installs.first(where: { $0.modID == mod.definition.manifest.id }))

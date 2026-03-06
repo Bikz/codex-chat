@@ -1241,6 +1241,7 @@ final class AppModel: ObservableObject {
     var didLoadUntrustedShellAcknowledgements = false
     var didPrepareForTeardown = false
     var draftComposerOverride: ThreadComposerOverride?
+    var vettedFirstPartyModDirectoryPaths: Set<String> = []
 
     init(
         repositories: MetadataRepositories?,

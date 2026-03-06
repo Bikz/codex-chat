@@ -54,6 +54,64 @@ final class ModInstallServiceTests: XCTestCase {
         }
     }
 
+    func testManifestLoaderRejectsReservedFirstPartyNamespaceOutsideFirstPartyPath() throws {
+        let root = try makeTempDirectory(prefix: "codexmods-reserved-id")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let definition = try writeUIMod(
+            to: root,
+            id: "codexchat.personal-notes",
+            name: "Spoofed Notes",
+            version: "1.0.0",
+            permissions: .init()
+        )
+        try writePackageManifest(
+            to: root,
+            ModPackageManifest(
+                id: definition.manifest.id,
+                name: definition.manifest.name,
+                version: definition.manifest.version,
+                permissions: []
+            )
+        )
+
+        XCTAssertThrowsError(try ModPackageManifestLoader.load(packageRootURL: root)) { error in
+            guard case let ModPackageValidationError.reservedPackageID(id) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(id, "codexchat.personal-notes")
+        }
+    }
+
+    func testManifestLoaderAllowsReservedFirstPartyNamespaceUnderFirstPartyPath() throws {
+        let root = try makeTempDirectory(prefix: "codexmods-first-party-id")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let packageRoot = root
+            .appendingPathComponent("mods/first-party/personal-notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
+
+        let definition = try writeUIMod(
+            to: packageRoot,
+            id: "codexchat.personal-notes",
+            name: "Personal Notes",
+            version: "1.0.0",
+            permissions: .init()
+        )
+        try writePackageManifest(
+            to: packageRoot,
+            ModPackageManifest(
+                id: definition.manifest.id,
+                name: definition.manifest.name,
+                version: definition.manifest.version,
+                permissions: []
+            )
+        )
+
+        let resolved = try ModPackageManifestLoader.load(packageRootURL: packageRoot)
+        XCTAssertEqual(resolved.manifest.id, "codexchat.personal-notes")
+    }
+
     func testManifestLoaderRejectsUnsafeEntrypointPath() throws {
         let root = try makeTempDirectory(prefix: "codexmods-entrypoint")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -180,6 +238,67 @@ final class ModInstallServiceTests: XCTestCase {
         XCTAssertTrue(preview.warnings.isEmpty)
     }
 
+    func testInstallServiceRejectsReservedNamespaceFromNonOfficialSource() throws {
+        let repoFixtureRoot = try makeTempDirectory(prefix: "codexmods-reserved-namespace")
+        defer { try? FileManager.default.removeItem(at: repoFixtureRoot) }
+
+        let packageRoot = repoFixtureRoot
+            .appendingPathComponent("mods/first-party/personal-notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
+
+        let definition = try writeUIMod(
+            to: packageRoot,
+            id: "codexchat.personal-notes",
+            name: "Spoofed Personal Notes",
+            version: "1.0.0",
+            permissions: .init(projectRead: true)
+        )
+        try writePackageManifest(
+            to: packageRoot,
+            ModPackageManifest(
+                id: definition.manifest.id,
+                name: definition.manifest.name,
+                version: definition.manifest.version,
+                permissions: [.projectRead]
+            )
+        )
+
+        let processRunner: ModInstallService.ProcessRunner = { argv, _ in
+            if argv == ["git", "ls-remote", "--heads", "--tags", "https://github.com/acme/spoofed-mod-pack.git"] {
+                return """
+                1111111111111111111111111111111111111111\trefs/heads/main
+                """
+            }
+
+            guard argv.count >= 2,
+                  argv[0] == "git",
+                  argv[1] == "clone",
+                  argv.contains("--branch"),
+                  argv.contains("main"),
+                  argv.contains("https://github.com/acme/spoofed-mod-pack.git"),
+                  let destinationPath = argv.last
+            else {
+                throw ModInstallServiceError.commandFailed(command: argv.joined(separator: " "), output: "Unexpected command")
+            }
+            let destinationURL = URL(fileURLWithPath: destinationPath, isDirectory: true)
+            try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+            try Self.copyDirectoryContents(from: repoFixtureRoot, to: destinationURL)
+            return ""
+        }
+
+        let service = ModInstallService(processRunner: processRunner)
+        let sourceURL = "https://github.com/acme/spoofed-mod-pack/tree/main/mods/first-party/personal-notes"
+        XCTAssertThrowsError(try service.preview(source: sourceURL)) { error in
+            guard let installError = error as? ModInstallServiceError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            guard case let .reservedNamespaceRequiresOfficialSource(modID) = installError else {
+                return XCTFail("Expected reservedNamespaceRequiresOfficialSource, got \(installError)")
+            }
+            XCTAssertEqual(modID, "codexchat.personal-notes")
+        }
+    }
+
     func testInstallServiceRejectsSourceMissingCodexManifest() throws {
         let sourceRoot = try makeTempDirectory(prefix: "codexmods-missing-codex")
         defer { try? FileManager.default.removeItem(at: sourceRoot) }
@@ -263,6 +382,68 @@ final class ModInstallServiceTests: XCTestCase {
         let result = try service.install(source: sourceURL, destinationRootURL: destinationRoot)
 
         XCTAssertEqual(result.definition.manifest.id, "acme.personal-notes")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.installedDirectoryPath))
+    }
+
+    func testInstallServiceAllowsReservedNamespaceFromOfficialFirstPartyGitHubSource() throws {
+        let repoFixtureRoot = try makeTempDirectory(prefix: "codexmods-official-first-party-src")
+        let destinationRoot = try makeTempDirectory(prefix: "codexmods-official-first-party-dst")
+        defer {
+            try? FileManager.default.removeItem(at: repoFixtureRoot)
+            try? FileManager.default.removeItem(at: destinationRoot)
+        }
+
+        let packageRoot = repoFixtureRoot
+            .appendingPathComponent("mods/first-party/personal-notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
+
+        let definition = try writeUIMod(
+            to: packageRoot,
+            id: "codexchat.personal-notes",
+            name: "Personal Notes",
+            version: "1.0.0",
+            permissions: .init(projectRead: true, projectWrite: true)
+        )
+        let checksum = try checksumForUIMod(at: packageRoot)
+        try writePackageManifest(
+            to: packageRoot,
+            ModPackageManifest(
+                id: definition.manifest.id,
+                name: definition.manifest.name,
+                version: definition.manifest.version,
+                permissions: [.projectRead, .projectWrite],
+                integrity: .init(uiModSha256: checksum)
+            )
+        )
+
+        let processRunner: ModInstallService.ProcessRunner = { argv, _ in
+            if argv == ["git", "ls-remote", "--heads", "--tags", "https://github.com/bikz/codexchat.git"] {
+                return """
+                1111111111111111111111111111111111111111\trefs/heads/main
+                """
+            }
+
+            guard argv.count >= 2,
+                  argv[0] == "git",
+                  argv[1] == "clone",
+                  argv.contains("--branch"),
+                  argv.contains("main"),
+                  argv.contains("https://github.com/bikz/codexchat.git"),
+                  let destinationPath = argv.last
+            else {
+                throw ModInstallServiceError.commandFailed(command: argv.joined(separator: " "), output: "Unexpected command")
+            }
+            let destinationURL = URL(fileURLWithPath: destinationPath, isDirectory: true)
+            try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+            try Self.copyDirectoryContents(from: repoFixtureRoot, to: destinationURL)
+            return ""
+        }
+
+        let service = ModInstallService(processRunner: processRunner)
+        let sourceURL = "https://github.com/bikz/codexchat/tree/main/mods/first-party/personal-notes"
+        let result = try service.install(source: sourceURL, destinationRootURL: destinationRoot)
+
+        XCTAssertEqual(result.definition.manifest.id, "codexchat.personal-notes")
         XCTAssertTrue(FileManager.default.fileExists(atPath: result.installedDirectoryPath))
     }
 

@@ -135,6 +135,7 @@ public enum ModPackageValidationError: LocalizedError, Sendable {
     case incompatiblePlatform([String])
     case invalidCompatibilityVersion(field: String, value: String)
     case integrityMismatch(expected: String, actual: String)
+    case reservedPackageID(String)
 
     public var errorDescription: String? {
         switch self {
@@ -166,6 +167,8 @@ public enum ModPackageValidationError: LocalizedError, Sendable {
             "Invalid compatibility \(field) version: \(value). Expected semver (for example 1.2.3)."
         case let .integrityMismatch(expected, actual):
             "ui.mod.json checksum mismatch. Expected \(expected), got \(actual)."
+        case let .reservedPackageID(id):
+            "Mod id \(id) uses the reserved codexchat.* namespace. Only vetted first-party packages under mods/first-party may use that namespace."
         }
     }
 }
@@ -219,7 +222,12 @@ public enum ModPackageManifestLoader {
 
         let requestedPermissions = Self.requestedPermissions(for: uiModDefinition)
 
-        try validate(packageManifest: packageManifest, uiModDefinition: uiModDefinition, requestedPermissions: requestedPermissions)
+        try validate(
+            packageManifest: packageManifest,
+            uiModDefinition: uiModDefinition,
+            requestedPermissions: requestedPermissions,
+            packageRootURL: normalizedRoot
+        )
         if let checksum = packageManifest.integrity?.uiModSha256?.trimmingCharacters(in: .whitespacesAndNewlines),
            !checksum.isEmpty
         {
@@ -257,7 +265,8 @@ public enum ModPackageManifestLoader {
     private static func validate(
         packageManifest: ModPackageManifest,
         uiModDefinition: UIModDefinition,
-        requestedPermissions: Set<ModPermissionKey>
+        requestedPermissions: Set<ModPermissionKey>,
+        packageRootURL: URL
     ) throws {
         guard packageManifest.schemaVersion == 1 else {
             throw ModPackageValidationError.unsupportedSchemaVersion(packageManifest.schemaVersion)
@@ -265,6 +274,11 @@ public enum ModPackageManifestLoader {
 
         guard isValidPackageID(packageManifest.id) else {
             throw ModPackageValidationError.invalidPackageID(packageManifest.id)
+        }
+        if FirstPartyModTrust.usesReservedNamespace(packageManifest.id),
+           !FirstPartyModTrust.isFirstPartyDirectoryPath(packageRootURL.standardizedFileURL.path)
+        {
+            throw ModPackageValidationError.reservedPackageID(packageManifest.id)
         }
         guard isValidVersion(packageManifest.version) else {
             throw ModPackageValidationError.invalidPackageVersion(packageManifest.version)

@@ -177,6 +177,7 @@ extension AppModel {
         selectedProjectPath: String?,
         installRecords: [ExtensionInstallRecord]
     ) {
+        let vettedFirstPartyPaths = Self.vettedFirstPartyInstalledPaths(from: installRecords)
         let selectedGlobalMod = globalMods.first(where: { $0.directoryPath == selectedGlobalPath })
         let selectedProjectMod = projectMods.first(where: { $0.directoryPath == selectedProjectPath })
 
@@ -186,7 +187,8 @@ extension AppModel {
                 scope: .global,
                 projectID: nil,
                 selectedPath: selectedGlobalPath,
-                installRecords: installRecords
+                installRecords: installRecords,
+                vettedFirstPartyPaths: vettedFirstPartyPaths
             )
         }
         let activeProjectMods = projectMods.filter { mod in
@@ -195,7 +197,8 @@ extension AppModel {
                 scope: .project,
                 projectID: selectedProjectID,
                 selectedPath: selectedProjectPath,
-                installRecords: installRecords
+                installRecords: installRecords,
+                vettedFirstPartyPaths: vettedFirstPartyPaths
             )
         }
 
@@ -257,7 +260,8 @@ extension AppModel {
         scope: ModScope,
         projectID: UUID?,
         selectedPath: String?,
-        installRecords: [ExtensionInstallRecord]
+        installRecords: [ExtensionInstallRecord],
+        vettedFirstPartyPaths: Set<String>
     ) -> Bool {
         let installScope: ExtensionInstallScope = switch scope {
         case .global:
@@ -266,17 +270,12 @@ extension AppModel {
             .project
         }
 
-        let matchingRecord = installRecords.first(where: { record in
-            guard record.scope == installScope,
-                  record.modID == mod.definition.manifest.id
-            else {
-                return false
-            }
-            if installScope == .project {
-                return record.projectID == projectID
-            }
-            return true
-        })
+        let matchingRecord = Self.matchingInstallRecord(
+            for: mod,
+            scope: installScope,
+            projectID: projectID,
+            installRecords: installRecords
+        )
 
         if let matchingRecord {
             return matchingRecord.enabled
@@ -286,11 +285,8 @@ extension AppModel {
             return true
         }
 
-        let normalizedPath = NSString(string: mod.directoryPath).standardizingPath
-        if normalizedPath.contains("/mods/first-party/") {
-            return true
-        }
-        return mod.definition.manifest.id.lowercased().hasPrefix("codexchat.")
+        let normalizedPath = Self.normalizedModDirectoryPath(mod.directoryPath)
+        return Self.isFirstPartyModFixturePath(normalizedPath) || vettedFirstPartyPaths.contains(normalizedPath)
     }
 
     func refreshAutomationScheduler() async {

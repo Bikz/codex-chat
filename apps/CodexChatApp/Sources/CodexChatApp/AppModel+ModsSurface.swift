@@ -62,6 +62,7 @@ extension AppModel {
                     selectedProjectPath: snapshot.selectedProject
                 )
                 let installRecords = try await extensionInstallRepository?.list() ?? []
+                vettedFirstPartyModDirectoryPaths = Self.vettedFirstPartyInstalledPaths(from: installRecords)
                 let enabledModIDs = Self.resolveEnabledModIDs(
                     globalMods: snapshot.globalMods,
                     projectMods: snapshot.projectMods,
@@ -96,6 +97,7 @@ extension AppModel {
             } catch {
                 modsState = .failed(error.localizedDescription)
                 modStatusMessage = "Failed to load mods: \(error.localizedDescription)"
+                vettedFirstPartyModDirectoryPaths = []
                 activeModsBarSlot = nil
                 activeExtensionHooks = []
                 activeExtensionAutomations = []
@@ -116,16 +118,25 @@ extension AppModel {
             return
         }
 
-        if let mod,
-           let blockedReason = executableModBlockedReason(for: mod)
-        {
-            modStatusMessage = blockedReason
-            return
-        }
-
         let value = mod?.directoryPath ?? ""
         Task {
             do {
+                let installRecords = try await extensionInstallRepository?.list() ?? []
+                let installRecord = mod.map {
+                    Self.matchingInstallRecord(
+                        for: $0,
+                        scope: .global,
+                        projectID: nil,
+                        installRecords: installRecords
+                    )
+                } ?? nil
+                if let mod,
+                   let blockedReason = executableModBlockedReason(for: mod, installRecord: installRecord)
+                {
+                    modStatusMessage = blockedReason
+                    return
+                }
+
                 try await preferenceRepository.setPreference(key: .globalUIModPath, value: value)
                 try await updateExtensionInstallEnablement(
                     scope: .global,
@@ -149,15 +160,24 @@ extension AppModel {
             return
         }
 
-        if let mod,
-           let blockedReason = executableModBlockedReason(for: mod)
-        {
-            modStatusMessage = blockedReason
-            return
-        }
-
         Task {
             do {
+                let installRecords = try await extensionInstallRepository?.list() ?? []
+                let installRecord = mod.map {
+                    Self.matchingInstallRecord(
+                        for: $0,
+                        scope: .project,
+                        projectID: selectedProjectID,
+                        installRecords: installRecords
+                    )
+                } ?? nil
+                if let mod,
+                   let blockedReason = executableModBlockedReason(for: mod, installRecord: installRecord)
+                {
+                    modStatusMessage = blockedReason
+                    return
+                }
+
                 _ = try await projectRepository.updateProjectUIModPath(id: selectedProjectID, uiModPath: mod?.directoryPath)
                 try await updateExtensionInstallEnablement(
                     scope: .project,
@@ -184,26 +204,23 @@ extension AppModel {
             return
         }
 
-        if enabled, let blockedReason = executableModBlockedReason(for: mod) {
-            modStatusMessage = blockedReason
-            return
-        }
-
         Task {
             do {
                 let projectID = installProjectID(for: scope)
                 let installs = try await extensionInstallRepository.list()
-                let existing = installs.first(where: { record in
-                    guard record.scope == scope,
-                          record.modID == mod.definition.manifest.id
-                    else {
-                        return false
-                    }
-                    if scope == .project {
-                        return record.projectID == projectID
-                    }
-                    return true
-                })
+                let existing = Self.matchingInstallRecord(
+                    for: mod,
+                    scope: scope,
+                    projectID: projectID,
+                    installRecords: installs
+                )
+
+                if enabled,
+                   let blockedReason = executableModBlockedReason(for: mod, installRecord: existing)
+                {
+                    modStatusMessage = blockedReason
+                    return
+                }
 
                 var next = existing ?? ExtensionInstallRecord(
                     id: extensionInstallRecordID(
@@ -377,7 +394,7 @@ extension AppModel {
                 }
 
                 if let extensionInstallRepository {
-                    let allowExecutable = canRunExecutableModFeatures(for: installedMod)
+                    let allowExecutable = canRunExecutableModFeatures(for: installedMod, source: trimmedSource)
                     _ = try await extensionInstallRepository.upsert(
                         ExtensionInstallRecord(
                             id: extensionInstallRecordID(
@@ -395,7 +412,7 @@ extension AppModel {
                     )
                 }
 
-                if let blockedReason = executableModBlockedReason(for: installedMod) {
+                if let blockedReason = executableModBlockedReason(for: installedMod, source: trimmedSource) {
                     switch scope {
                     case .global:
                         setGlobalMod(nil)
@@ -422,7 +439,7 @@ extension AppModel {
                 }
                 let warningHint = installResult.warnings.isEmpty ? "" : " \(installResult.warnings.joined(separator: " "))"
 
-                if executableModBlockedReason(for: installedMod) == nil {
+                if executableModBlockedReason(for: installedMod, source: trimmedSource) == nil {
                     modStatusMessage = "Installed and enabled mod: \(installResult.definition.manifest.name).\(permissionHint)\(warningHint)"
                 }
                 appendLog(.info, "Installed mod \(installResult.definition.manifest.id) from \(trimmedSource)")
@@ -466,11 +483,12 @@ extension AppModel {
             do {
                 let installProjectID = installProjectID(for: scope)
                 let installs = try await extensionInstallRepository.list()
-                guard let record = installs.first(where: {
-                    $0.scope == scope
-                        && $0.modID == mod.definition.manifest.id
-                        && $0.projectID == installProjectID
-                }) else {
+                guard let record = Self.matchingInstallRecord(
+                    for: mod,
+                    scope: scope,
+                    projectID: installProjectID,
+                    installRecords: installs
+                ) else {
                     throw NSError(
                         domain: "CodexChat.ModInstall",
                         code: 3,
@@ -508,7 +526,7 @@ extension AppModel {
                     definition: result.definition,
                     computedChecksum: nil
                 )
-                let blockedReason = executableModBlockedReason(for: updatedMod)
+                let blockedReason = executableModBlockedReason(for: updatedMod, source: source)
                 var updatedRecord = record
                 updatedRecord.installedPath = result.installedDirectoryPath
                 updatedRecord.enabled = record.enabled && blockedReason == nil
@@ -745,6 +763,7 @@ extension AppModel {
         selectedProjectID: UUID?,
         installRecords: [ExtensionInstallRecord]
     ) -> (global: Set<String>, project: Set<String>) {
+        let vettedFirstPartyPaths = vettedFirstPartyInstalledPaths(from: installRecords)
         let globalIDs = Set(globalMods.map(\.definition.manifest.id))
         let projectIDs = Set(projectMods.map(\.definition.manifest.id))
 
@@ -768,17 +787,29 @@ extension AppModel {
         }
 
         for mod in globalMods {
-            let normalizedPath = NSString(string: mod.directoryPath).standardizingPath
-            if mod.definition.manifest.id.lowercased().hasPrefix("codexchat.")
-                || normalizedPath.contains("/mods/first-party/")
+            let normalizedPath = normalizedModDirectoryPath(mod.directoryPath)
+            let hasExplicitRecord = matchingInstallRecord(
+                for: mod,
+                scope: .global,
+                projectID: nil,
+                installRecords: installRecords
+            ) != nil
+            if !hasExplicitRecord,
+               isFirstPartyModFixturePath(normalizedPath) || vettedFirstPartyPaths.contains(normalizedPath)
             {
                 enabledGlobal.insert(mod.definition.manifest.id)
             }
         }
         for mod in projectMods {
-            let normalizedPath = NSString(string: mod.directoryPath).standardizingPath
-            if mod.definition.manifest.id.lowercased().hasPrefix("codexchat.")
-                || normalizedPath.contains("/mods/first-party/")
+            let normalizedPath = normalizedModDirectoryPath(mod.directoryPath)
+            let hasExplicitRecord = matchingInstallRecord(
+                for: mod,
+                scope: .project,
+                projectID: selectedProjectID,
+                installRecords: installRecords
+            ) != nil
+            if !hasExplicitRecord,
+               isFirstPartyModFixturePath(normalizedPath) || vettedFirstPartyPaths.contains(normalizedPath)
             {
                 enabledProject.insert(mod.definition.manifest.id)
             }
