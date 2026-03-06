@@ -11,7 +11,7 @@ final class LaunchdManagerTests: XCTestCase {
             workingDirectory: "/tmp/project",
             standardOutPath: "/tmp/out.log",
             standardErrorPath: "/tmp/err.log",
-            startIntervalSeconds: 5
+            schedule: .interval(seconds: 5)
         )
 
         let data = try manager.plistData(for: spec)
@@ -35,7 +35,7 @@ final class LaunchdManagerTests: XCTestCase {
         let spec = LaunchdJobSpec(
             label: "com.codexchat.persist",
             programArguments: ["/usr/bin/true"],
-            startIntervalSeconds: 120
+            schedule: .interval(seconds: 120)
         )
         let plistURL = try manager.writePlist(spec: spec, directoryURL: root)
         XCTAssertTrue(FileManager.default.fileExists(atPath: plistURL.path))
@@ -82,5 +82,45 @@ final class LaunchdManagerTests: XCTestCase {
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("launchctl bootstrap"))
         }
+    }
+
+    func testPlistDataEncodesCalendarScheduleAsStartCalendarInterval() throws {
+        let manager = LaunchdManager(commandRunner: { _ in "" })
+        let spec = LaunchdJobSpec(
+            label: "com.codexchat.calendar",
+            programArguments: ["/usr/bin/true"],
+            schedule: .calendar([
+                LaunchdCalendarInterval(minute: 30, hour: 9, weekday: 1),
+                LaunchdCalendarInterval(minute: 30, hour: 9, weekday: 3),
+            ])
+        )
+
+        let data = try manager.plistData(for: spec)
+        let object = try PropertyListSerialization.propertyList(from: data, format: nil)
+        let dictionary = try XCTUnwrap(object as? [String: Any])
+        let calendarIntervals = try XCTUnwrap(dictionary["StartCalendarInterval"] as? [[String: Int]])
+
+        XCTAssertNil(dictionary["StartInterval"])
+        XCTAssertEqual(
+            calendarIntervals,
+            [
+                ["Minute": 30, "Hour": 9, "Weekday": 1],
+                ["Minute": 30, "Hour": 9, "Weekday": 3],
+            ]
+        )
+    }
+
+    func testCronScheduleBuildsCalendarIntervalsForWeekdaySchedules() throws {
+        let schedule = try CronSchedule(expression: "30 9 * * 1,3,5")
+
+        XCTAssertNil(schedule.fixedLaunchdIntervalSeconds())
+        XCTAssertEqual(
+            schedule.launchdCalendarIntervals(),
+            [
+                LaunchdCalendarInterval(minute: 30, hour: 9, weekday: 1),
+                LaunchdCalendarInterval(minute: 30, hour: 9, weekday: 3),
+                LaunchdCalendarInterval(minute: 30, hour: 9, weekday: 5),
+            ]
+        )
     }
 }

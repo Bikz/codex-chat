@@ -6,6 +6,12 @@ import Darwin
 import Foundation
 
 struct BackgroundAutomationLaunchPayload: Codable, Equatable, Sendable {
+    let installID: String
+    let modID: String
+    let automationID: String
+    let schedule: String
+    let launchdLabel: String
+    let resultPath: String
     let modDirectoryPath: String
     let projectPath: String
     let workingDirectory: String
@@ -15,7 +21,32 @@ struct BackgroundAutomationLaunchPayload: Codable, Equatable, Sendable {
     let input: ExtensionWorkerInput
 }
 
+struct BackgroundAutomationRunResult: Codable, Equatable, Sendable {
+    let installID: String
+    let modID: String
+    let automationID: String
+    let schedule: String
+    let launchdLabel: String
+    let completedAt: Date
+    let status: String
+    let error: String?
+}
+
 extension AppModel {
+    private enum BackgroundAutomationLaunchdScheduleError: LocalizedError {
+        case invalid(String)
+        case unsupported(String)
+
+        var errorDescription: String? {
+            switch self {
+            case let .invalid(schedule):
+                "Background automation schedule is invalid: \(schedule)"
+            case let .unsupported(schedule):
+                "Background automation schedule is not supported while the app is closed: \(schedule)"
+            }
+        }
+    }
+
     private struct PersistedModsBarUIState: Codable, Sendable {
         var isVisible: Bool
         var presentationMode: ModsBarPresentationMode
@@ -43,23 +74,29 @@ extension AppModel {
         static let failed = "failed"
         static let permissionDenied = "permission-denied"
         static let launchdScheduled = "launchd-scheduled"
+        static let launchdOK = "launchd-ok"
         static let launchdFailed = "launchd-failed"
+        static let launchdRunFailed = "launchd-run-failed"
         static let launchdPermissionDenied = "launchd-permission-denied"
 
         static let failingStatuses: Set<String> = [
             failed,
             permissionDenied,
             launchdFailed,
+            launchdRunFailed,
             launchdPermissionDenied,
         ]
 
         static let launchdScheduledStatuses: Set<String> = [
             launchdScheduled,
+            launchdOK,
+            launchdRunFailed,
             "scheduled", // Backward compatibility for pre-migration records.
         ]
 
         static let launchdFailingStatuses: Set<String> = [
             launchdFailed,
+            launchdRunFailed,
             launchdPermissionDenied,
         ]
     }
@@ -1384,6 +1421,8 @@ extension AppModel {
             return
         }
 
+        await importPendingBackgroundAutomationRunResultsIfNeeded()
+
         let previousByModID = extensionAutomationHealthByModID
         var next: [String: ExtensionAutomationHealthSummary] = [:]
         for modID in uniqueModIDs {
@@ -1411,6 +1450,8 @@ extension AppModel {
             extensionAutomationHealthByModID.removeValue(forKey: modID)
             return
         }
+
+        await importPendingBackgroundAutomationRunResultsIfNeeded()
 
         let previous = extensionAutomationHealthByModID[modID]
         do {
@@ -1712,7 +1753,23 @@ extension AppModel {
             }
 
             let label = launchdLabel(for: automation)
-            guard let payload = backgroundAutomationLaunchPayload(for: automation) else {
+            let launchdSchedule: LaunchdJobSchedule
+            do {
+                launchdSchedule = try backgroundAutomationLaunchdSchedule(for: automation.definition.schedule)
+            } catch {
+                await markAutomationState(
+                    resolved: automation,
+                    status: ExtensionAutomationStatus.launchdFailed,
+                    error: sanitizeExtensionLog(error.localizedDescription),
+                    nextRunAt: nil
+                )
+                continue
+            }
+            guard let payload = backgroundAutomationLaunchPayload(
+                for: automation,
+                label: label,
+                launchdDirectory: launchdDirectory
+            ) else {
                 await markAutomationState(
                     resolved: automation,
                     status: ExtensionAutomationStatus.launchdFailed,
@@ -1721,8 +1778,6 @@ extension AppModel {
                 )
                 continue
             }
-
-            let startInterval = launchdStartIntervalSeconds(for: automation.definition.schedule)
 
             do {
                 let payloadURL = try writeBackgroundAutomationLaunchPayload(
@@ -1741,7 +1796,7 @@ extension AppModel {
                     workingDirectory: payload.workingDirectory,
                     standardOutPath: launchdDirectory.appendingPathComponent("\(label).log").path,
                     standardErrorPath: launchdDirectory.appendingPathComponent("\(label).err.log").path,
-                    startIntervalSeconds: startInterval
+                    schedule: launchdSchedule
                 )
                 let plistURL = try launchdManager.writePlist(spec: spec, directoryURL: launchdDirectory)
                 try? launchdManager.bootout(label: label, uid: uid)
@@ -1842,6 +1897,10 @@ extension AppModel {
             if fileManager.fileExists(atPath: payloadURL.path) {
                 try? fileManager.removeItem(at: payloadURL)
             }
+            let resultURL = launchdDirectory.appendingPathComponent("\(label).result.json", isDirectory: false)
+            if fileManager.fileExists(atPath: resultURL.path) {
+                try? fileManager.removeItem(at: resultURL)
+            }
             removedLabels.append(label)
         }
 
@@ -1859,18 +1918,35 @@ extension AppModel {
         return automation.modDirectoryPath
     }
 
-    private func launchdStartIntervalSeconds(for schedule: String) -> Int {
-        guard let cron = try? CronSchedule(expression: schedule),
-              let first = cron.nextRun(after: Date()),
-              let second = cron.nextRun(after: first.addingTimeInterval(1))
-        else {
-            return 3600
+    private func backgroundAutomationLaunchdSchedule(
+        for schedule: String,
+        referenceDate: Date = Date()
+    ) throws -> LaunchdJobSchedule {
+        let cron: CronSchedule
+        do {
+            cron = try CronSchedule(expression: schedule)
+        } catch {
+            throw BackgroundAutomationLaunchdScheduleError.invalid(schedule)
         }
-        let delta = Int(second.timeIntervalSince(first))
-        return min(max(60, delta), 86400)
+
+        if let interval = cron.fixedLaunchdIntervalSeconds(referenceDate: referenceDate) {
+            return .interval(seconds: interval)
+        }
+        if let calendarIntervals = cron.launchdCalendarIntervals() {
+            return .calendar(calendarIntervals)
+        }
+        throw BackgroundAutomationLaunchdScheduleError.unsupported(schedule)
     }
 
-    func backgroundAutomationLaunchPayload(for automation: ResolvedExtensionAutomation) -> BackgroundAutomationLaunchPayload? {
+    private func backgroundAutomationResultFileURL(label: String, launchdDirectory: URL) -> URL {
+        launchdDirectory.appendingPathComponent("\(label).result.json", isDirectory: false)
+    }
+
+    func backgroundAutomationLaunchPayload(
+        for automation: ResolvedExtensionAutomation,
+        label: String? = nil,
+        launchdDirectory: URL? = nil
+    ) -> BackgroundAutomationLaunchPayload? {
         guard let input = automationWorkerInput(for: automation),
               let projectPath = automation.executionProjectPath
         else {
@@ -1884,7 +1960,20 @@ extension AppModel {
             return nil
         }
 
+        let resolvedLabel = label ?? launchdLabel(for: automation)
+        let resolvedLaunchdDirectory = launchdDirectory ?? storagePaths.systemURL
+            .appendingPathComponent("launchd", isDirectory: true)
+
         return BackgroundAutomationLaunchPayload(
+            installID: automation.installID,
+            modID: automation.modID,
+            automationID: automation.definition.id,
+            schedule: automation.definition.schedule,
+            launchdLabel: resolvedLabel,
+            resultPath: backgroundAutomationResultFileURL(
+                label: resolvedLabel,
+                launchdDirectory: resolvedLaunchdDirectory
+            ).path,
             modDirectoryPath: automation.modDirectoryPath,
             projectPath: projectPath,
             workingDirectory: launchdWorkingDirectoryPath(for: automation),
@@ -1907,6 +1996,58 @@ extension AppModel {
         let data = try encoder.encode(payload)
         try data.write(to: payloadURL, options: [.atomic])
         return payloadURL
+    }
+
+    private func importPendingBackgroundAutomationRunResultsIfNeeded(
+        fileManager: FileManager = .default
+    ) async {
+        guard let extensionAutomationStateRepository else { return }
+
+        let launchdDirectory = storagePaths.systemURL
+            .appendingPathComponent("launchd", isDirectory: true)
+        guard fileManager.fileExists(atPath: launchdDirectory.path) else {
+            return
+        }
+
+        let resultURLs: [URL]
+        do {
+            resultURLs = try fileManager.contentsOfDirectory(
+                at: launchdDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ).filter { $0.lastPathComponent.hasSuffix(".result.json") }
+        } catch {
+            appendLog(.warning, "Failed reading background automation results: \(error.localizedDescription)")
+            return
+        }
+
+        guard !resultURLs.isEmpty else { return }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        for resultURL in resultURLs {
+            do {
+                let data = try Data(contentsOf: resultURL)
+                let result = try decoder.decode(BackgroundAutomationRunResult.self, from: data)
+                let nextRunAt = try? CronSchedule(expression: result.schedule).nextRun(after: result.completedAt)
+                _ = try await extensionAutomationStateRepository.upsert(
+                    ExtensionAutomationStateRecord(
+                        installID: result.installID,
+                        modID: result.modID,
+                        automationID: result.automationID,
+                        nextRunAt: nextRunAt,
+                        lastRunAt: result.completedAt,
+                        lastStatus: result.status,
+                        lastError: result.error,
+                        launchdLabel: result.launchdLabel
+                    )
+                )
+                try? fileManager.removeItem(at: resultURL)
+            } catch {
+                appendLog(.warning, "Failed importing background automation result \(resultURL.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
     }
 
     func ensureBackgroundAutomationWrapperCommand(
@@ -1940,10 +2081,47 @@ extension AppModel {
         import json
         import subprocess
         import sys
+        from datetime import datetime, timezone
         from pathlib import Path
 
 
+        payload = None
+
+
+        def write_result(status, error=None):
+            if not isinstance(payload, dict):
+                return
+
+            result_path_value = str(payload.get("resultPath") or "").strip()
+            if not result_path_value:
+                return
+
+            try:
+                result_path = Path(result_path_value)
+                result_path.parent.mkdir(parents=True, exist_ok=True)
+                result_path.write_text(
+                    json.dumps(
+                        {
+                            "installID": payload.get("installID"),
+                            "modID": payload.get("modID"),
+                            "automationID": payload.get("automationID"),
+                            "schedule": payload.get("schedule"),
+                            "launchdLabel": payload.get("launchdLabel"),
+                            "completedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                            "status": status,
+                            "error": error,
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                sys.stderr.write(f"Failed to persist background automation result: {exc}\\n")
+
+
         def fail(message, code=1):
+            write_result("launchd-run-failed", message.rstrip())
             sys.stderr.write(message.rstrip() + "\\n")
             sys.exit(code)
 
@@ -2086,6 +2264,8 @@ extension AppModel {
 
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_text(str(artifact.get("content", "")), encoding="utf-8")
+
+        write_result("launchd-ok")
 
         if stderr_text:
             sys.stderr.write(stderr_text + "\\n")

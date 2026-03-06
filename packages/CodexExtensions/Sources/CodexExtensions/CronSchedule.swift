@@ -81,6 +81,71 @@ public struct CronSchedule: Hashable, Sendable {
         return nil
     }
 
+    public func fixedLaunchdIntervalSeconds(
+        referenceDate: Date = Date(),
+        maximum: Int = 86400,
+        timeZone: TimeZone = .current,
+        calendar: Calendar = .current
+    ) -> Int? {
+        guard daysOfMonth == Self.allDaysOfMonth,
+              months == Self.allMonths,
+              weekdays == Self.allWeekdays,
+              let first = nextRun(after: referenceDate, timeZone: timeZone, calendar: calendar),
+              let second = nextRun(
+                  after: first.addingTimeInterval(1),
+                  timeZone: timeZone,
+                  calendar: calendar
+              )
+        else {
+            return nil
+        }
+
+        let delta = Int(second.timeIntervalSince(first))
+        return min(max(60, delta), maximum)
+    }
+
+    public func launchdCalendarIntervals(maximumEntries: Int = 512) -> [LaunchdCalendarInterval]? {
+        let minuteOptions = minutes.sorted().map(Optional.some)
+        let hourOptions = options(for: hours, fullRange: Self.allHours)
+        let dayOptions = options(for: daysOfMonth, fullRange: Self.allDaysOfMonth)
+        let monthOptions = options(for: months, fullRange: Self.allMonths)
+        let weekdayOptions = options(for: weekdays, fullRange: Self.allWeekdays)
+
+        let combinationCount = minuteOptions.count
+            * hourOptions.count
+            * dayOptions.count
+            * monthOptions.count
+            * weekdayOptions.count
+
+        guard combinationCount > 0, combinationCount <= maximumEntries else {
+            return nil
+        }
+
+        let intervals = minuteOptions.flatMap { minute in
+            hourOptions.flatMap { hour in
+                dayOptions.flatMap { day in
+                    monthOptions.flatMap { month in
+                        weekdayOptions.map { weekday in
+                            LaunchdCalendarInterval(
+                                minute: minute,
+                                hour: hour,
+                                day: day,
+                                month: month,
+                                weekday: weekday
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        guard intervals.contains(where: { !$0.plistValue.isEmpty }) else {
+            return nil
+        }
+
+        return intervals
+    }
+
     private static func parseWeekdayField(_ value: String) throws -> Set<Int> {
         let parsed = try parseField(value, min: 0, max: 7)
         if parsed.contains(7) {
@@ -174,5 +239,17 @@ public struct CronSchedule: Hashable, Sendable {
             throw CronParseError.invalidField(value)
         }
         return resolved
+    }
+
+    private static let allHours = Set(0 ... 23)
+    private static let allDaysOfMonth = Set(1 ... 31)
+    private static let allMonths = Set(1 ... 12)
+    private static let allWeekdays = Set(0 ... 6)
+
+    private func options(for values: Set<Int>, fullRange: Set<Int>) -> [Int?] {
+        if values == fullRange {
+            return [nil]
+        }
+        return values.sorted().map(Optional.some)
     }
 }

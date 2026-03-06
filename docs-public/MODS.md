@@ -87,6 +87,8 @@ In `Skills & Mods -> Mods`, runtime enablement is now separate from active selec
 - Enabled project installs are scheduled across all projects, not just the project currently selected in the sidebar.
 - Open-app scheduled automations run against the execution context captured for that active install instead of following the current sidebar selection.
 - Closed-app scheduled automations execute through the same JSON worker envelope as the open-app scheduler, with launchd invoking a generated background runner instead of calling handlers directly.
+- Closed-app launchd jobs use exact calendar schedules for weekday/weekly cron shapes; unsupported closed-app cron shapes are rejected instead of being silently approximated.
+- Background automation runs persist a durable result handoff that refreshes per-mod automation health the next time CodexChat reloads mod state.
 
 ## Hook Events
 

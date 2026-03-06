@@ -1,12 +1,59 @@
 import Foundation
 
+public struct LaunchdCalendarInterval: Hashable, Sendable {
+    public var minute: Int?
+    public var hour: Int?
+    public var day: Int?
+    public var month: Int?
+    public var weekday: Int?
+
+    public init(
+        minute: Int? = nil,
+        hour: Int? = nil,
+        day: Int? = nil,
+        month: Int? = nil,
+        weekday: Int? = nil
+    ) {
+        self.minute = minute
+        self.hour = hour
+        self.day = day
+        self.month = month
+        self.weekday = weekday
+    }
+
+    var plistValue: [String: Int] {
+        var dictionary: [String: Int] = [:]
+        if let minute {
+            dictionary["Minute"] = minute
+        }
+        if let hour {
+            dictionary["Hour"] = hour
+        }
+        if let day {
+            dictionary["Day"] = day
+        }
+        if let month {
+            dictionary["Month"] = month
+        }
+        if let weekday {
+            dictionary["Weekday"] = weekday
+        }
+        return dictionary
+    }
+}
+
+public enum LaunchdJobSchedule: Hashable, Sendable {
+    case interval(seconds: Int)
+    case calendar([LaunchdCalendarInterval])
+}
+
 public struct LaunchdJobSpec: Hashable, Sendable {
     public var label: String
     public var programArguments: [String]
     public var workingDirectory: String?
     public var standardOutPath: String?
     public var standardErrorPath: String?
-    public var startIntervalSeconds: Int
+    public var schedule: LaunchdJobSchedule
 
     public init(
         label: String,
@@ -14,14 +61,14 @@ public struct LaunchdJobSpec: Hashable, Sendable {
         workingDirectory: String? = nil,
         standardOutPath: String? = nil,
         standardErrorPath: String? = nil,
-        startIntervalSeconds: Int
+        schedule: LaunchdJobSchedule
     ) {
         self.label = label
         self.programArguments = programArguments
         self.workingDirectory = workingDirectory
         self.standardOutPath = standardOutPath
         self.standardErrorPath = standardErrorPath
-        self.startIntervalSeconds = startIntervalSeconds
+        self.schedule = schedule
     }
 }
 
@@ -53,8 +100,19 @@ public struct LaunchdManager {
             "Label": spec.label,
             "ProgramArguments": spec.programArguments,
             "RunAtLoad": false,
-            "StartInterval": max(60, spec.startIntervalSeconds),
         ]
+
+        switch spec.schedule {
+        case let .interval(seconds):
+            dictionary["StartInterval"] = max(60, seconds)
+        case let .calendar(intervals):
+            let resolvedIntervals = intervals.map(\.plistValue)
+            if resolvedIntervals.count == 1 {
+                dictionary["StartCalendarInterval"] = resolvedIntervals[0]
+            } else {
+                dictionary["StartCalendarInterval"] = resolvedIntervals
+            }
+        }
 
         if let workingDirectory = spec.workingDirectory, !workingDirectory.isEmpty {
             dictionary["WorkingDirectory"] = workingDirectory
