@@ -180,9 +180,11 @@ extension AppModel {
                         }
 
                         staleThreadRecreateRetryCount += 1
+                        let retrySummary =
+                            "\(staleThreadRecreateRetryCount)/\(Self.staleRuntimeThreadRecreateRetryLimit)"
                         appendLog(
                             .warning,
-                            "Runtime thread \(runtimeThreadID) appears stale. Creating a new runtime thread and retrying (\(staleThreadRecreateRetryCount)/\(Self.staleRuntimeThreadRecreateRetryLimit))."
+                            "Runtime thread \(runtimeThreadID) appears stale. Creating a new runtime thread and retrying (\(retrySummary))."
                         )
                         await invalidateRuntimeThreadID(for: threadID)
                         runtimeThreadID = try await createAndPersistRuntimeThreadID(

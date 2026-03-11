@@ -323,7 +323,7 @@ struct ContentView: View {
             Image(systemName: "exclamationmark.bubble.fill")
                 .foregroundStyle(.orange)
 
-            Text(model.totalPendingApprovalCount == 1 ? "1 pending request needs attention." : "\(model.totalPendingApprovalCount) pending requests need attention.")
+            Text(pendingApprovalBannerText)
                 .font(.caption.weight(.semibold))
 
             Spacer(minLength: 0)
@@ -346,6 +346,13 @@ struct ContentView: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pending approvals banner")
+    }
+
+    private var pendingApprovalBannerText: String {
+        if model.totalPendingApprovalCount == 1 {
+            return "1 pending request needs attention."
+        }
+        return "\(model.totalPendingApprovalCount) pending requests need attention."
     }
 }
 
