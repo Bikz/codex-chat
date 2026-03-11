@@ -9,18 +9,21 @@ final class PendingApprovalSummaryTests: XCTestCase {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         let threadID = UUID()
         let request = makeApprovalRequest(id: 801)
+        let serverRequest = makeUserInputRequest(id: 803, threadID: "thr_801")
         model.threadsState = .loaded([
             ThreadRecord(id: threadID, projectId: UUID(), title: "Needs review"),
         ])
         model.approvalStateMachine.enqueue(request, threadID: threadID)
+        model.serverRequestStateMachine.enqueue(.userInput(serverRequest), threadID: threadID)
         model.unscopedApprovalRequests = [makeApprovalRequest(id: 802)]
+        model.unscopedServerRequests = [.userInput(makeUserInputRequest(id: 804, threadID: nil))]
         model.syncApprovalPresentationState()
 
         let summaries = model.pendingApprovalSummaries
         XCTAssertEqual(summaries.count, 2)
         XCTAssertEqual(summaries.first?.threadID, nil)
-        XCTAssertEqual(summaries.first?.count, 1)
-        XCTAssertTrue(summaries.contains(where: { $0.threadID == threadID && $0.title == "Needs review" && $0.count == 1 }))
+        XCTAssertEqual(summaries.first?.count, 2)
+        XCTAssertTrue(summaries.contains(where: { $0.threadID == threadID && $0.title == "Needs review" && $0.count == 2 }))
     }
 
     func testTotalPendingApprovalCountIncludesSupplementalThreadBlockers() {
@@ -52,6 +55,22 @@ final class PendingApprovalSummaryTests: XCTestCase {
             cwd: "/tmp",
             command: ["echo", "test"],
             changes: [],
+            detail: "{}"
+        )
+    }
+
+    private func makeUserInputRequest(id: Int, threadID: String?) -> RuntimeUserInputRequest {
+        RuntimeUserInputRequest(
+            id: id,
+            method: "item/tool/requestUserInput",
+            threadID: threadID,
+            turnID: "turn_\(id)",
+            itemID: "item_\(id)",
+            title: "Need input",
+            prompt: "Provide more detail",
+            placeholder: "details",
+            value: nil,
+            options: [],
             detail: "{}"
         )
     }
