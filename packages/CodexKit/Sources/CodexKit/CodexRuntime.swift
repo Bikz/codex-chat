@@ -2,7 +2,7 @@ import Foundation
 
 public actor CodexRuntime {
     public typealias ExecutableResolver = @Sendable () -> String?
-    private static let eventBufferLimit = 512
+    private static let eventBufferLimit = 4096
 
     let executableResolver: ExecutableResolver
     let environmentOverrides: [String: String]
