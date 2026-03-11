@@ -1106,6 +1106,7 @@ final class AppModel: ObservableObject {
     @Published var unreadThreadIDs: Set<UUID> = []
     @Published var followUpStatusMessage: String?
     @Published var runtimeCapabilities: RuntimeCapabilities = .none
+    @Published var runtimeHandshake: RuntimeHandshake?
     @Published var runtimePoolSnapshot: RuntimePoolSnapshot = .empty
     @Published var adaptiveTurnConcurrencyLimit: Int = AppModel.defaultMaxConcurrentTurns
     @Published var rollingTTFTP95MS: Double?
@@ -1227,6 +1228,7 @@ final class AppModel: ObservableObject {
     var localThreadIDByCommandItemID: [String: UUID] = [:]
     var approvalStateMachine = ApprovalStateMachine()
     var approvalDecisionInFlightRequestIDs: Set<Int> = []
+    var approvalResolutionFallbackTasksByRequestID: [Int: Task<Void, Never>] = [:]
     var activeTurnContextsByThreadID: [UUID: ActiveTurnContext] = [:]
     var pendingTurnStartThreadIDs: Set<UUID> = []
     var pendingFirstTokenThreadIDs: Set<UUID> = []

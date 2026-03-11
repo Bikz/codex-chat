@@ -341,6 +341,7 @@ extension AppModel {
         runtimeIssue = nil
         runtimeSetupMessage = nil
         runtimeCapabilities = await runtimePool.capabilities()
+        runtimeHandshake = await runtimePool.handshake()
         await refreshRuntimePoolSnapshot()
         reconcileStaleApprovalState(
             reason: restarting ? "the runtime restarted" : "the runtime reconnected"
@@ -787,6 +788,7 @@ extension AppModel {
     func handleRuntimeTermination(detail: String) {
         runtimeStatus = .error
         runtimeCapabilities = .none
+        runtimeHandshake = nil
         cancelVoiceCapture()
         reconcileStaleApprovalState(reason: "the runtime stopped unexpectedly")
         runtimeIssue = .recoverable(detail)
@@ -799,6 +801,7 @@ extension AppModel {
     func handleRuntimeError(_ error: Error) {
         runtimeStatus = .error
         runtimeCapabilities = .none
+        runtimeHandshake = nil
         cancelVoiceCapture()
         reconcileStaleApprovalState(reason: "runtime communication failed")
         clearActiveTurnState()
@@ -869,6 +872,8 @@ extension AppModel {
 
         approvalStateMachine.clear()
         approvalDecisionInFlightRequestIDs.removeAll()
+        approvalResolutionFallbackTasksByRequestID.values.forEach { $0.cancel() }
+        approvalResolutionFallbackTasksByRequestID.removeAll()
         unscopedApprovalRequests.removeAll(keepingCapacity: false)
         isApprovalDecisionInProgress = false
         syncApprovalPresentationState()

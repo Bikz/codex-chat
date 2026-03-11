@@ -13,7 +13,7 @@ actor RuntimePool {
         let threadID: String
     }
 
-    private struct ApprovalRoute: Sendable {
+    private struct ServerRequestRoute: Sendable {
         let workerID: RuntimePoolWorkerID
         let rawRequestID: Int
     }
@@ -33,7 +33,7 @@ actor RuntimePool {
     private var healthByWorkerID: [RuntimePoolWorkerID: WorkerHealth] = [:]
     private var inFlightTurnsByWorkerID: [RuntimePoolWorkerID: Int] = [:]
     private let workerTurnScheduler = WorkerTurnScheduler()
-    private var routeBySyntheticApprovalID: [Int: ApprovalRoute] = [:]
+    private var routeBySyntheticServerRequestID: [Int: ServerRequestRoute] = [:]
     private var nextSyntheticApprovalID: Int = 1
     private var pinnedWorkerIDByLocalThreadID: [UUID: RuntimePoolWorkerID] = [:]
 
@@ -135,7 +135,7 @@ actor RuntimePool {
             await worker.stop()
         }
 
-        routeBySyntheticApprovalID.removeAll(keepingCapacity: false)
+        routeBySyntheticServerRequestID.removeAll(keepingCapacity: false)
         pinnedWorkerIDByLocalThreadID.removeAll(keepingCapacity: false)
         for workerID in healthByWorkerID.keys {
             healthByWorkerID[workerID]?.state = .stopped
@@ -149,6 +149,20 @@ actor RuntimePool {
             return .none
         }
         return await primaryWorker.capabilities()
+    }
+
+    func handshake() async -> RuntimeHandshake? {
+        guard let primaryWorker = workersByID[Constants.primaryWorkerID] else {
+            return nil
+        }
+        return await primaryWorker.handshake()
+    }
+
+    func runtimeCompatibility() async -> RuntimeCompatibilityState {
+        guard let primaryWorker = workersByID[Constants.primaryWorkerID] else {
+            return RuntimeCompatibilityMatrix.current.evaluate(version: nil)
+        }
+        return await primaryWorker.runtimeCompatibility()
     }
 
     func readAccount(refreshToken: Bool) async throws -> RuntimeAccountState {
@@ -173,6 +187,38 @@ actor RuntimePool {
 
     func listAllModels() async throws -> [RuntimeModelInfo] {
         try await primaryWorker().listAllModels()
+    }
+
+    func interruptTurn(scopedThreadID: String, scopedTurnID: String? = nil) async throws {
+        let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
+        let worker = try await worker(for: route.workerID)
+        let rawTurnID = try scopedTurnID.map {
+            try Self.resolveScopedRuntimeID($0, expectedWorkerID: route.workerID, kind: "turn")
+        }
+        try await worker.interruptTurn(threadID: route.threadID, turnID: rawTurnID)
+    }
+
+    func resumeThread(scopedThreadID: String) async throws -> JSONValue {
+        let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
+        let worker = try await worker(for: route.workerID)
+        return try await worker.resumeThread(threadID: route.threadID)
+    }
+
+    func forkThread(scopedThreadID: String) async throws -> String {
+        let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
+        let worker = try await worker(for: route.workerID)
+        let rawThreadID = try await worker.forkThread(threadID: route.threadID)
+        return Self.scope(id: rawThreadID, workerID: route.workerID)
+    }
+
+    func listThreads(cursor: String? = nil) async throws -> JSONValue {
+        try await primaryWorker().listThreads(cursor: cursor)
+    }
+
+    func readThread(scopedThreadID: String) async throws -> JSONValue {
+        let route = try Self.resolveRoute(fromScopedThreadID: scopedThreadID)
+        let worker = try await worker(for: route.workerID)
+        return try await worker.readThread(threadID: route.threadID)
     }
 
     func startThread(
@@ -301,11 +347,22 @@ actor RuntimePool {
         requestID: Int,
         decision: RuntimeApprovalDecision
     ) async throws {
-        guard let route = routeBySyntheticApprovalID.removeValue(forKey: requestID) else {
+        guard let route = routeBySyntheticServerRequestID.removeValue(forKey: requestID) else {
             throw CodexRuntimeError.invalidResponse("Unknown pooled approval request id: \(requestID)")
         }
         let worker = try await worker(for: route.workerID)
         try await worker.respondToApproval(requestID: route.rawRequestID, decision: decision)
+    }
+
+    func respondToServerRequest(
+        requestID: Int,
+        response: RuntimeServerRequestResponse
+    ) async throws {
+        guard let route = routeBySyntheticServerRequestID.removeValue(forKey: requestID) else {
+            throw CodexRuntimeError.invalidResponse("Unknown pooled server request id: \(requestID)")
+        }
+        let worker = try await worker(for: route.workerID)
+        try await worker.respondToServerRequest(requestID: route.rawRequestID, response: response)
     }
 
     func snapshot() async -> RuntimePoolSnapshot {
@@ -612,6 +669,16 @@ actor RuntimePool {
                 )
             )
 
+        case let .fileChangeOutputDelta(output):
+            return .fileChangeOutputDelta(
+                RuntimeFileChangeOutputDelta(
+                    itemID: Self.scope(id: output.itemID, workerID: workerID),
+                    threadID: output.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: output.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    delta: output.delta
+                )
+            )
+
         case let .followUpSuggestions(batch):
             return .followUpSuggestions(
                 RuntimeFollowUpSuggestionBatch(
@@ -635,7 +702,7 @@ actor RuntimePool {
         case let .approvalRequested(request):
             let syntheticID = nextSyntheticApprovalID
             nextSyntheticApprovalID = nextSyntheticApprovalID &+ 1
-            routeBySyntheticApprovalID[syntheticID] = ApprovalRoute(
+            routeBySyntheticServerRequestID[syntheticID] = ServerRequestRoute(
                 workerID: workerID,
                 rawRequestID: request.id
             )
@@ -652,9 +719,98 @@ actor RuntimePool {
                     cwd: request.cwd,
                     command: request.command,
                     changes: request.changes,
-                    detail: request.detail
+                    availableDecisions: request.availableDecisions,
+                    grantRoot: request.grantRoot,
+                    networkContext: request.networkContext,
+                    detail: request.detail,
+                    rawPayload: request.rawPayload
                 )
             )
+
+        case let .serverRequest(request):
+            let syntheticID = nextSyntheticApprovalID
+            nextSyntheticApprovalID = nextSyntheticApprovalID &+ 1
+            routeBySyntheticServerRequestID[syntheticID] = ServerRequestRoute(
+                workerID: workerID,
+                rawRequestID: request.id
+            )
+            return .serverRequest(scopeServerRequest(request, syntheticID: syntheticID, workerID: workerID))
+
+        case let .serverRequestResolved(resolution):
+            return .serverRequestResolved(
+                RuntimeServerRequestResolution(
+                    requestID: resolution.requestID,
+                    method: resolution.method,
+                    threadID: resolution.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: resolution.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: resolution.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    detail: resolution.detail
+                )
+            )
+
+        case let .threadStatusUpdated(update):
+            return .threadStatusUpdated(
+                RuntimeThreadStatusUpdate(
+                    threadID: update.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    status: update.status
+                )
+            )
+
+        case let .tokenUsageUpdated(update):
+            return .tokenUsageUpdated(
+                RuntimeTokenUsageUpdate(
+                    threadID: update.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    inputTokens: update.inputTokens,
+                    outputTokens: update.outputTokens,
+                    totalTokens: update.totalTokens
+                )
+            )
+
+        case let .turnDiffUpdated(update):
+            return .turnDiffUpdated(
+                RuntimeTurnDiffUpdate(
+                    threadID: update.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: update.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    diff: update.diff,
+                    rawPayload: update.rawPayload
+                )
+            )
+
+        case let .turnPlanUpdated(update):
+            return .turnPlanUpdated(
+                RuntimeTurnPlanUpdate(
+                    threadID: update.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: update.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    summary: update.summary,
+                    rawPayload: update.rawPayload
+                )
+            )
+
+        case let .modelRerouted(update):
+            return .modelRerouted(
+                RuntimeModelReroute(
+                    threadID: update.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: update.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    fromModel: update.fromModel,
+                    toModel: update.toModel,
+                    reason: update.reason
+                )
+            )
+
+        case let .runtimeError(update):
+            return .runtimeError(
+                RuntimeErrorNotice(
+                    threadID: update.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: update.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: update.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    code: update.code,
+                    message: update.message,
+                    rawPayload: update.rawPayload
+                )
+            )
+
+        case .unknownNotification:
+            return event
 
         case let .action(action):
             return .action(
@@ -684,6 +840,97 @@ actor RuntimePool {
 
         case .accountUpdated, .accountLoginCompleted:
             return event
+        }
+    }
+
+    private func scopeServerRequest(
+        _ request: RuntimeServerRequest,
+        syntheticID: Int,
+        workerID: RuntimePoolWorkerID
+    ) -> RuntimeServerRequest {
+        switch request {
+        case let .approval(approval):
+            .approval(
+                RuntimeApprovalRequest(
+                    id: syntheticID,
+                    kind: approval.kind,
+                    method: approval.method,
+                    threadID: approval.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: approval.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: approval.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    reason: approval.reason,
+                    risk: approval.risk,
+                    cwd: approval.cwd,
+                    command: approval.command,
+                    changes: approval.changes,
+                    availableDecisions: approval.availableDecisions,
+                    grantRoot: approval.grantRoot,
+                    networkContext: approval.networkContext,
+                    detail: approval.detail,
+                    rawPayload: approval.rawPayload
+                )
+            )
+        case let .permissions(permissions):
+            .permissions(
+                RuntimePermissionsRequest(
+                    id: syntheticID,
+                    method: permissions.method,
+                    threadID: permissions.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: permissions.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: permissions.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    reason: permissions.reason,
+                    cwd: permissions.cwd,
+                    permissions: permissions.permissions,
+                    grantRoot: permissions.grantRoot,
+                    detail: permissions.detail,
+                    rawPayload: permissions.rawPayload
+                )
+            )
+        case let .userInput(userInput):
+            .userInput(
+                RuntimeUserInputRequest(
+                    id: syntheticID,
+                    method: userInput.method,
+                    threadID: userInput.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: userInput.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: userInput.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    title: userInput.title,
+                    prompt: userInput.prompt,
+                    placeholder: userInput.placeholder,
+                    value: userInput.value,
+                    options: userInput.options,
+                    detail: userInput.detail,
+                    rawPayload: userInput.rawPayload
+                )
+            )
+        case let .mcpElicitation(mcp):
+            .mcpElicitation(
+                RuntimeMCPElicitationRequest(
+                    id: syntheticID,
+                    method: mcp.method,
+                    threadID: mcp.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: mcp.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: mcp.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    serverName: mcp.serverName,
+                    prompt: mcp.prompt,
+                    detail: mcp.detail,
+                    rawPayload: mcp.rawPayload
+                )
+            )
+        case let .dynamicToolCall(dynamicCall):
+            .dynamicToolCall(
+                RuntimeDynamicToolCallRequest(
+                    id: syntheticID,
+                    method: dynamicCall.method,
+                    threadID: dynamicCall.threadID.map { Self.scope(id: $0, workerID: workerID) },
+                    turnID: dynamicCall.turnID.map { Self.scope(id: $0, workerID: workerID) },
+                    itemID: dynamicCall.itemID.map { Self.scope(id: $0, workerID: workerID) },
+                    toolName: dynamicCall.toolName,
+                    arguments: dynamicCall.arguments,
+                    detail: dynamicCall.detail,
+                    rawPayload: dynamicCall.rawPayload
+                )
+            )
         }
     }
 

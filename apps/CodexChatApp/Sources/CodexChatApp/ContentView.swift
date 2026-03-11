@@ -125,6 +125,7 @@ struct ContentView: View {
         .sheet(isPresented: $model.isDiagnosticsVisible) {
             DiagnosticsView(
                 runtimeStatus: model.runtimeStatus,
+                runtimeHandshake: model.runtimeHandshake,
                 runtimePoolSnapshot: model.runtimePoolSnapshot,
                 adaptiveTurnConcurrencyLimit: model.adaptiveTurnConcurrencyLimit,
                 rollingTTFTP95MS: model.rollingTTFTP95MS,

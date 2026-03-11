@@ -4,6 +4,7 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     let runtimeStatus: RuntimeStatus
+    let runtimeHandshake: RuntimeHandshake?
     let runtimePoolSnapshot: RuntimePoolSnapshot
     let adaptiveTurnConcurrencyLimit: Int
     let rollingTTFTP95MS: Double?
@@ -49,6 +50,30 @@ struct DiagnosticsView: View {
                         Text(runtimeStatus.rawValue.capitalized)
                             .foregroundStyle(.secondary)
                     }
+                    HStack(alignment: .top) {
+                        Text("Version")
+                        Spacer()
+                        Text(runtimeHandshake?.runtimeVersion?.rawValue ?? "Unknown")
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(alignment: .top) {
+                        Text("Support")
+                        Spacer()
+                        Text(runtimeHandshake?.compatibility.supportLevel.rawValue.capitalized ?? "Unknown")
+                            .foregroundStyle(.secondary)
+                    }
+                    if let handshake = runtimeHandshake,
+                       !handshake.compatibility.degradedReasons.isEmpty
+                    {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Degraded reasons")
+                            ForEach(handshake.compatibility.degradedReasons, id: \.self) { reason in
+                                Text(reason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                     HStack {
                         Text("Adaptive turn limit")
                         Spacer()
@@ -63,6 +88,14 @@ struct DiagnosticsView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             Text("N/A")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if let handshake = runtimeHandshake {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Negotiated capabilities")
+                            Text(capabilitiesSummary(handshake.negotiatedCapabilities))
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -614,5 +647,31 @@ struct DiagnosticsView: View {
         case .openAppSettings:
             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         }
+    }
+
+    private func capabilitiesSummary(_ capabilities: RuntimeCapabilities) -> String {
+        let enabled = [
+            capabilities.supportsTurnSteer ? "turn steer" : nil,
+            capabilities.supportsFollowUpSuggestions ? "follow-ups" : nil,
+            capabilities.supportsServerRequestResolution ? "request resolution" : nil,
+            capabilities.supportsTurnInterrupt ? "interrupt" : nil,
+            capabilities.supportsThreadResume ? "thread resume" : nil,
+            capabilities.supportsThreadFork ? "thread fork" : nil,
+            capabilities.supportsThreadList ? "thread list" : nil,
+            capabilities.supportsThreadRead ? "thread read" : nil,
+            capabilities.supportsPermissionsApproval ? "permissions approvals" : nil,
+            capabilities.supportsUserInputRequests ? "user input" : nil,
+            capabilities.supportsMCPElicitationRequests ? "MCP elicitation" : nil,
+            capabilities.supportsPlanUpdates ? "plan updates" : nil,
+            capabilities.supportsDiffUpdates ? "diff updates" : nil,
+            capabilities.supportsTokenUsageUpdates ? "token usage" : nil,
+            capabilities.supportsModelReroutes ? "model reroutes" : nil,
+        ].compactMap(\.self)
+
+        if enabled.isEmpty {
+            return "No runtime capabilities advertised."
+        }
+
+        return enabled.joined(separator: ", ")
     }
 }

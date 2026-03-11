@@ -142,14 +142,44 @@ extension AppModel {
         case let .commandOutputDelta(output):
             handleCommandOutputDelta(output)
 
+        case let .fileChangeOutputDelta(output):
+            handleFileChangeOutputDelta(output)
+
         case let .followUpSuggestions(batch):
             handleFollowUpSuggestions(batch)
 
         case let .fileChangesUpdated(update):
             handleFileChangesUpdate(update)
 
+        case let .serverRequest(request):
+            handleServerRequestEvent(request)
+
+        case let .serverRequestResolved(resolution):
+            handleServerRequestResolved(resolution)
+
         case let .approvalRequested(request):
             handleApprovalRequest(request)
+
+        case let .threadStatusUpdated(update):
+            handleThreadStatusUpdate(update)
+
+        case let .tokenUsageUpdated(update):
+            handleTokenUsageUpdate(update)
+
+        case let .turnDiffUpdated(update):
+            handleTurnDiffUpdate(update)
+
+        case let .turnPlanUpdated(update):
+            handleTurnPlanUpdate(update)
+
+        case let .modelRerouted(update):
+            handleModelRerouted(update)
+
+        case let .runtimeError(update):
+            handleRuntimeErrorNotice(update)
+
+        case let .unknownNotification(update):
+            appendLog(.warning, "Unknown runtime notification: \(update.method)")
 
         case let .action(action):
             handleRuntimeAction(action)
@@ -543,6 +573,140 @@ extension AppModel {
         reviewChangesByThreadID[localThreadID] = update.changes
     }
 
+    private func handleFileChangeOutputDelta(_ output: RuntimeFileChangeOutputDelta) {
+        let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: output.threadID,
+            itemID: output.itemID,
+            runtimeTurnID: output.turnID
+        )
+
+        guard let localThreadID else {
+            appendLog(.debug, "File change output delta without thread mapping")
+            return
+        }
+
+        enqueueThreadLog(level: .info, text: output.delta, to: localThreadID)
+    }
+
+    private func handleServerRequestEvent(_ request: RuntimeServerRequest) {
+        switch request {
+        case .approval:
+            return
+        case let .permissions(request):
+            appendPendingServerRequestAction(
+                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
+                method: request.method,
+                title: "Permission request pending",
+                detail: request.detail
+            )
+        case let .userInput(request):
+            appendPendingServerRequestAction(
+                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
+                method: request.method,
+                title: "Input request pending",
+                detail: request.detail
+            )
+        case let .mcpElicitation(request):
+            appendPendingServerRequestAction(
+                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
+                method: request.method,
+                title: "MCP elicitation pending",
+                detail: request.detail
+            )
+        case let .dynamicToolCall(request):
+            appendPendingServerRequestAction(
+                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
+                method: request.method,
+                title: "Dynamic tool call requested",
+                detail: request.detail
+            )
+        }
+    }
+
+    private func appendPendingServerRequestAction(
+        threadID: UUID?,
+        method: String,
+        title: String,
+        detail: String
+    ) {
+        appendLog(.warning, "\(title): \(method)")
+        guard let threadID else {
+            return
+        }
+
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: threadID,
+                    method: method,
+                    title: title,
+                    detail: detail
+                )
+            ),
+            to: threadID
+        )
+        markThreadUnreadIfNeeded(threadID)
+    }
+
+    private func handleServerRequestResolved(_ resolution: RuntimeServerRequestResolution) {
+        guard let requestID = resolution.requestID else {
+            return
+        }
+        resolveRuntimeApprovalRequest(
+            id: requestID,
+            statusMessage: "Runtime resolved request \(requestID)."
+        )
+    }
+
+    private func handleThreadStatusUpdate(_ update: RuntimeThreadStatusUpdate) {
+        appendLog(.info, "Runtime thread status changed: \(update.status)")
+    }
+
+    private func handleTokenUsageUpdate(_ update: RuntimeTokenUsageUpdate) {
+        let parts = [
+            update.inputTokens.map { "input=\($0)" },
+            update.outputTokens.map { "output=\($0)" },
+            update.totalTokens.map { "total=\($0)" },
+        ].compactMap(\.self)
+        guard !parts.isEmpty else {
+            return
+        }
+        appendLog(.debug, "Runtime token usage updated: \(parts.joined(separator: ", "))")
+    }
+
+    private func handleTurnDiffUpdate(_ update: RuntimeTurnDiffUpdate) {
+        appendLog(.info, "Runtime turn diff updated")
+        guard let diff = update.diff,
+              let localThreadID = resolveLocalThreadID(
+                  runtimeThreadID: update.threadID,
+                  itemID: nil,
+                  runtimeTurnID: update.turnID
+              )
+        else {
+            return
+        }
+        enqueueThreadLog(level: .info, text: diff, to: localThreadID)
+    }
+
+    private func handleTurnPlanUpdate(_ update: RuntimeTurnPlanUpdate) {
+        guard let summary = update.summary, !summary.isEmpty else {
+            appendLog(.info, "Runtime plan updated")
+            return
+        }
+        appendLog(.info, "Runtime plan updated: \(summary)")
+    }
+
+    private func handleModelRerouted(_ update: RuntimeModelReroute) {
+        let fromModel = update.fromModel ?? "unknown"
+        let toModel = update.toModel ?? "unknown"
+        appendLog(.warning, "Runtime rerouted model from \(fromModel) to \(toModel).")
+    }
+
+    private func handleRuntimeErrorNotice(_ update: RuntimeErrorNotice) {
+        let detail = [update.code, update.message].compactMap(\.self).joined(separator: ": ")
+        appendLog(.error, "Runtime error: \(detail)")
+    }
+
     private func handleApprovalRequest(_ request: RuntimeApprovalRequest) {
         approvalStatusMessage = nil
 
@@ -802,12 +966,32 @@ private extension CodexRuntimeEvent {
             "assistantDelta"
         case .commandOutputDelta:
             "commandOutputDelta"
+        case .fileChangeOutputDelta:
+            "fileChangeOutputDelta"
         case .followUpSuggestions:
             "followUpSuggestions"
         case .fileChangesUpdated:
             "fileChangesUpdated"
+        case .serverRequest:
+            "serverRequest"
+        case .serverRequestResolved:
+            "serverRequestResolved"
         case .approvalRequested:
             "approvalRequested"
+        case .threadStatusUpdated:
+            "threadStatusUpdated"
+        case .tokenUsageUpdated:
+            "tokenUsageUpdated"
+        case .turnDiffUpdated:
+            "turnDiffUpdated"
+        case .turnPlanUpdated:
+            "turnPlanUpdated"
+        case .modelRerouted:
+            "modelRerouted"
+        case .runtimeError:
+            "runtimeError"
+        case .unknownNotification:
+            "unknownNotification"
         case .action:
             "action"
         case .turnCompleted:

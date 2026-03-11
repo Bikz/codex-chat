@@ -61,4 +61,51 @@ final class RuntimeApprovalContinuityTests: XCTestCase {
         }
         XCTAssertTrue(approvalResetCardExists)
     }
+
+    func testServerRequestResolvedClearsPendingApprovalAuthoritatively() {
+        let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
+        let threadID = UUID()
+
+        let request = RuntimeApprovalRequest(
+            id: 901,
+            kind: .commandExecution,
+            method: "item/commandExecution/requestApproval",
+            threadID: "thr_runtime_resolved",
+            turnID: "turn_runtime_resolved",
+            itemID: "item_runtime_resolved",
+            reason: "needs confirmation",
+            risk: nil,
+            cwd: "/tmp",
+            command: ["echo", "hello"],
+            changes: [],
+            detail: "{}"
+        )
+
+        model.selectedThreadID = threadID
+        model.localThreadIDByRuntimeThreadID["thr_runtime_resolved"] = threadID
+        model.approvalStateMachine.enqueue(request, threadID: threadID)
+        model.syncApprovalPresentationState()
+        model.approvalResolutionFallbackTasksByRequestID[request.id] = Task<Void, Never> { @MainActor in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+        }
+
+        model.handleRuntimeEvent(
+            .serverRequestResolved(
+                RuntimeServerRequestResolution(
+                    requestID: request.id,
+                    method: request.method,
+                    threadID: request.threadID,
+                    turnID: request.turnID,
+                    itemID: request.itemID,
+                    detail: "{}"
+                )
+            )
+        )
+
+        XCTAssertFalse(model.approvalStateMachine.hasPendingApprovals)
+        XCTAssertNil(model.activeApprovalRequest)
+        XCTAssertNil(model.resolvePendingApprovalRequest(id: request.id))
+        XCTAssertNil(model.approvalResolutionFallbackTasksByRequestID[request.id])
+        XCTAssertEqual(model.approvalStatusMessage, "Runtime resolved request \(request.id).")
+    }
 }

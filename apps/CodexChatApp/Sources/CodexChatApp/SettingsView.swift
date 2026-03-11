@@ -298,6 +298,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             runtimeDefaultsCard
             runtimeConfigCard
+            runtimeCompatibilityCard
         }
     }
 
@@ -426,6 +427,52 @@ struct SettingsView: View {
                 Text("API keys are stored in macOS Keychain. Per-project secret references are tracked in local metadata.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var runtimeCompatibilityCard: some View {
+        SettingsSectionCard(
+            title: "Runtime Compatibility",
+            subtitle: "Detected Codex runtime version and negotiated protocol support."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsFieldRow(label: "Version") {
+                    Text(model.runtimeHandshake?.runtimeVersion?.rawValue ?? "Unknown")
+                        .foregroundStyle(.secondary)
+                }
+
+                SettingsFieldRow(label: "Support") {
+                    Text(model.runtimeHandshake?.compatibility.supportLevel.rawValue.capitalized ?? "Unknown")
+                        .foregroundStyle(.secondary)
+                }
+
+                if let handshake = model.runtimeHandshake,
+                   !handshake.compatibility.degradedReasons.isEmpty
+                {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Degraded mode reasons")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        ForEach(handshake.compatibility.degradedReasons, id: \.self) { reason in
+                            Text(reason)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("Runtime compatibility is healthy for the current validated window.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let disabledFeatures = model.runtimeHandshake?.compatibility.disabledFeatures,
+                   !disabledFeatures.isEmpty
+                {
+                    Text("Disabled features: \(disabledFeatures.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }

@@ -54,6 +54,14 @@ actor CodexRuntimeWorker {
         await runtime.capabilities()
     }
 
+    func handshake() async -> RuntimeHandshake? {
+        await runtime.handshake()
+    }
+
+    func runtimeCompatibility() async -> RuntimeCompatibilityState {
+        await runtime.runtimeCompatibility()
+    }
+
     func startThread(
         cwd: String?,
         safetyConfiguration: RuntimeSafetyConfiguration?
@@ -102,6 +110,36 @@ actor CodexRuntimeWorker {
             requestID: requestID,
             decision: decision
         )
+    }
+
+    func respondToServerRequest(
+        requestID: Int,
+        response: RuntimeServerRequestResponse
+    ) async throws {
+        try await runtime.respondToServerRequest(
+            requestID: requestID,
+            response: response
+        )
+    }
+
+    func interruptTurn(threadID: String, turnID: String? = nil) async throws {
+        try await runtime.interruptTurn(threadID: threadID, turnID: turnID)
+    }
+
+    func resumeThread(threadID: String) async throws -> JSONValue {
+        try await runtime.resumeThread(threadID: threadID)
+    }
+
+    func forkThread(threadID: String) async throws -> String {
+        try await runtime.forkThread(threadID: threadID)
+    }
+
+    func listThreads(cursor: String? = nil) async throws -> JSONValue {
+        try await runtime.listThreads(cursor: cursor)
+    }
+
+    func readThread(threadID: String) async throws -> JSONValue {
+        try await runtime.readThread(threadID: threadID)
     }
 
     func readAccount(refreshToken: Bool) async throws -> RuntimeAccountState {

@@ -82,6 +82,26 @@ extension AppModel {
         return approvalStateMachine.pendingByThreadID[threadID]?.first(where: { $0.id == requestID })
     }
 
+    func resolveRuntimeApprovalRequest(
+        id requestID: Int,
+        statusMessage: String? = nil,
+        autoDrainReason: String = "approval resolved"
+    ) {
+        approvalResolutionFallbackTasksByRequestID[requestID]?.cancel()
+        approvalResolutionFallbackTasksByRequestID.removeValue(forKey: requestID)
+        approvalDecisionInFlightRequestIDs.remove(requestID)
+        isApprovalDecisionInProgress = !approvalDecisionInFlightRequestIDs.isEmpty
+
+        _ = approvalStateMachine.resolve(id: requestID)
+        unscopedApprovalRequests.removeAll(where: { $0.id == requestID })
+        syncApprovalPresentationState()
+
+        if let statusMessage {
+            approvalStatusMessage = statusMessage
+        }
+        requestAutoDrain(reason: autoDrainReason)
+    }
+
     private func performApprovalDecision(
         _ decision: RuntimeApprovalDecision,
         request: RuntimeApprovalRequest,
@@ -97,12 +117,12 @@ extension AppModel {
         }
 
         try await runtimePool.respondToApproval(requestID: request.id, decision: decision)
-        _ = approvalStateMachine.resolve(id: request.id)
-        unscopedApprovalRequests.removeAll(where: { $0.id == request.id })
-        syncApprovalPresentationState()
         approvalStatusMessage = "Sent decision: \(approvalDecisionLabel(decision))."
         appendLog(.info, "Approval decision sent for request \(request.id): \(approvalDecisionLabel(decision))")
-        requestAutoDrain(reason: "approval resolved")
+        scheduleApprovalResolutionFallback(
+            requestID: request.id,
+            statusMessage: approvalStatusMessage
+        )
     }
 
     private func approvalDecisionLabel(_ decision: RuntimeApprovalDecision) -> String {
@@ -115,6 +135,25 @@ extension AppModel {
             "Decline"
         case .cancel:
             "Cancel"
+        }
+    }
+
+    private func scheduleApprovalResolutionFallback(requestID: Int, statusMessage: String?) {
+        approvalResolutionFallbackTasksByRequestID[requestID]?.cancel()
+        approvalResolutionFallbackTasksByRequestID[requestID] = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self,
+                  resolvePendingApprovalRequest(id: requestID) != nil
+            else {
+                return
+            }
+
+            resolveRuntimeApprovalRequest(
+                id: requestID,
+                statusMessage: statusMessage,
+                autoDrainReason: "approval fallback resolved"
+            )
+            appendLog(.warning, "Approval \(requestID) resolved locally after runtime did not emit serverRequest/resolved in time.")
         }
     }
 }

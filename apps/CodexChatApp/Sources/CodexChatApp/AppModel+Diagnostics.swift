@@ -108,6 +108,7 @@ extension AppModel {
                 generatedAt: Date(),
                 runtimeStatus: runtimeStatus,
                 runtimeIssue: runtimeIssue?.message,
+                runtimeHandshake: runtimeHandshake,
                 accountSummary: accountSummaryText,
                 logs: logs
             )

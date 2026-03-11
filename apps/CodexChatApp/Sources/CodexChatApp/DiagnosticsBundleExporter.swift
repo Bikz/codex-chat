@@ -21,6 +21,7 @@ struct DiagnosticsBundleSnapshot: Codable {
     let generatedAt: Date
     let runtimeStatus: RuntimeStatus
     let runtimeIssue: String?
+    let runtimeHandshake: RuntimeHandshake?
     let accountSummary: String
     let logs: [LogEntry]
 }
@@ -48,6 +49,7 @@ enum DiagnosticsBundleExporter {
             generatedAt: snapshot.generatedAt,
             runtimeStatus: snapshot.runtimeStatus,
             runtimeIssue: snapshot.runtimeIssue,
+            runtimeHandshake: snapshot.runtimeHandshake,
             accountSummary: snapshot.accountSummary,
             logs: snapshot.logs.map { entry in
                 LogEntry(

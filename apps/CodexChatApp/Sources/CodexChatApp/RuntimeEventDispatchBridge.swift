@@ -104,7 +104,13 @@ actor RuntimeEventDispatchBridge {
         switch event {
         case .turnCompleted:
             true
+        case .serverRequestResolved:
+            true
         case .approvalRequested:
+            true
+        case .serverRequest:
+            true
+        case .runtimeError:
             true
         case let .action(action):
             action.method == "runtime/terminated"
@@ -114,6 +120,8 @@ actor RuntimeEventDispatchBridge {
             false
         case .commandOutputDelta:
             false
+        case .fileChangeOutputDelta:
+            false
         case .followUpSuggestions:
             false
         case .fileChangesUpdated:
@@ -121,6 +129,18 @@ actor RuntimeEventDispatchBridge {
         case .threadStarted:
             false
         case .turnStarted:
+            false
+        case .threadStatusUpdated:
+            false
+        case .tokenUsageUpdated:
+            false
+        case .turnDiffUpdated:
+            false
+        case .turnPlanUpdated:
+            false
+        case .modelRerouted:
+            false
+        case .unknownNotification:
             false
         case .accountUpdated:
             false
@@ -178,6 +198,20 @@ actor RuntimeEventDispatchBridge {
             && lastDelta.turnID == nextDelta.turnID:
             pendingEvents[pendingEvents.count - 1] = .commandOutputDelta(
                 RuntimeCommandOutputDelta(
+                    itemID: lastDelta.itemID,
+                    threadID: lastDelta.threadID,
+                    turnID: lastDelta.turnID,
+                    delta: lastDelta.delta + nextDelta.delta
+                )
+            )
+            return true
+
+        case let (.fileChangeOutputDelta(lastDelta), .fileChangeOutputDelta(nextDelta))
+            where lastDelta.itemID == nextDelta.itemID
+            && lastDelta.threadID == nextDelta.threadID
+            && lastDelta.turnID == nextDelta.turnID:
+            pendingEvents[pendingEvents.count - 1] = .fileChangeOutputDelta(
+                RuntimeFileChangeOutputDelta(
                     itemID: lastDelta.itemID,
                     threadID: lastDelta.threadID,
                     turnID: lastDelta.turnID,
