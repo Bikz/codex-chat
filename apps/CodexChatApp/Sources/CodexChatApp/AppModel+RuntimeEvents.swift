@@ -22,6 +22,9 @@ extension AppModel {
             if !unscopedApprovalRequests.isEmpty {
                 promoteResolvableUnscopedApprovals()
             }
+            if !unscopedServerRequests.isEmpty {
+                promoteResolvableUnscopedServerRequests()
+            }
         }
         defer {
             if let startedAt {
@@ -592,34 +595,8 @@ extension AppModel {
         switch request {
         case .approval:
             return
-        case let .permissions(request):
-            appendPendingServerRequestAction(
-                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
-                method: request.method,
-                title: "Permission request pending",
-                detail: request.detail
-            )
-        case let .userInput(request):
-            appendPendingServerRequestAction(
-                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
-                method: request.method,
-                title: "Input request pending",
-                detail: request.detail
-            )
-        case let .mcpElicitation(request):
-            appendPendingServerRequestAction(
-                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
-                method: request.method,
-                title: "MCP elicitation pending",
-                detail: request.detail
-            )
-        case let .dynamicToolCall(request):
-            appendPendingServerRequestAction(
-                threadID: resolveLocalThreadID(runtimeThreadID: request.threadID, itemID: request.itemID, runtimeTurnID: request.turnID),
-                method: request.method,
-                title: "Dynamic tool call requested",
-                detail: request.detail
-            )
+        case .permissions, .userInput, .mcpElicitation, .dynamicToolCall:
+            presentServerRequest(request)
         }
     }
 
@@ -652,10 +629,18 @@ extension AppModel {
         guard let requestID = resolution.requestID else {
             return
         }
-        resolveRuntimeApprovalRequest(
-            id: requestID,
-            statusMessage: "Runtime resolved request \(requestID)."
-        )
+        if resolvePendingApprovalRequest(id: requestID) != nil {
+            resolveRuntimeApprovalRequest(
+                id: requestID,
+                statusMessage: "Runtime resolved request \(requestID)."
+            )
+        }
+        if resolvePendingServerRequest(id: requestID) != nil {
+            resolveRuntimeServerRequest(
+                id: requestID,
+                statusMessage: "Runtime resolved request \(requestID)."
+            )
+        }
     }
 
     private func handleThreadStatusUpdate(_ update: RuntimeThreadStatusUpdate) {
@@ -860,6 +845,134 @@ extension AppModel {
         if unresolved.count != unscopedApprovalRequests.count {
             unscopedApprovalRequests = unresolved
             syncApprovalPresentationState()
+        }
+    }
+
+    private func presentServerRequest(_ request: RuntimeServerRequest) {
+        let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: runtimeThreadID(for: request),
+            itemID: itemID(for: request),
+            runtimeTurnID: runtimeTurnID(for: request)
+        ) ?? fallbackLocalThreadIDForUnscopedServerRequest(request)
+
+        let summary = serverRequestSummary(for: request)
+        if let localThreadID {
+            serverRequestStateMachine.enqueue(request, threadID: localThreadID)
+            syncApprovalPresentationState()
+            appendPendingServerRequestAction(
+                threadID: localThreadID,
+                method: request.method,
+                title: summary.title,
+                detail: summary.detail
+            )
+            return
+        }
+
+        if !unscopedServerRequests.contains(where: { $0.id == request.id }) {
+            unscopedServerRequests.append(request)
+            syncApprovalPresentationState()
+        }
+        appendLog(.warning, "\(summary.title) arrived without local thread mapping")
+    }
+
+    private func promoteResolvableUnscopedServerRequests() {
+        guard !unscopedServerRequests.isEmpty else {
+            return
+        }
+
+        var unresolved: [RuntimeServerRequest] = []
+        unresolved.reserveCapacity(unscopedServerRequests.count)
+
+        for request in unscopedServerRequests {
+            let localThreadID = resolveLocalThreadID(
+                runtimeThreadID: runtimeThreadID(for: request),
+                itemID: itemID(for: request),
+                runtimeTurnID: runtimeTurnID(for: request)
+            ) ?? fallbackLocalThreadIDForUnscopedServerRequest(request)
+
+            guard let localThreadID else {
+                unresolved.append(request)
+                continue
+            }
+
+            serverRequestStateMachine.enqueue(request, threadID: localThreadID)
+        }
+
+        if unresolved.count != unscopedServerRequests.count {
+            unscopedServerRequests = unresolved
+            syncApprovalPresentationState()
+        }
+    }
+
+    private func runtimeThreadID(for request: RuntimeServerRequest) -> String? {
+        switch request {
+        case let .approval(approval):
+            approval.threadID
+        case let .permissions(permission):
+            permission.threadID
+        case let .userInput(userInput):
+            userInput.threadID
+        case let .mcpElicitation(mcp):
+            mcp.threadID
+        case let .dynamicToolCall(tool):
+            tool.threadID
+        }
+    }
+
+    private func runtimeTurnID(for request: RuntimeServerRequest) -> String? {
+        switch request {
+        case let .approval(approval):
+            approval.turnID
+        case let .permissions(permission):
+            permission.turnID
+        case let .userInput(userInput):
+            userInput.turnID
+        case let .mcpElicitation(mcp):
+            mcp.turnID
+        case let .dynamicToolCall(tool):
+            tool.turnID
+        }
+    }
+
+    private func itemID(for request: RuntimeServerRequest) -> String? {
+        switch request {
+        case let .approval(approval):
+            approval.itemID
+        case let .permissions(permission):
+            permission.itemID
+        case let .userInput(userInput):
+            userInput.itemID
+        case let .mcpElicitation(mcp):
+            mcp.itemID
+        case let .dynamicToolCall(tool):
+            tool.itemID
+        }
+    }
+
+    private func fallbackLocalThreadIDForUnscopedServerRequest(_ request: RuntimeServerRequest) -> UUID? {
+        guard runtimeThreadID(for: request) == nil,
+              runtimeTurnID(for: request) == nil,
+              itemID(for: request) == nil,
+              activeTurnContextsByThreadID.count == 1
+        else {
+            return nil
+        }
+
+        return activeTurnContextsByThreadID.first?.key
+    }
+
+    private func serverRequestSummary(for request: RuntimeServerRequest) -> (title: String, detail: String) {
+        switch request {
+        case let .permissions(permission):
+            ("Permission request pending", permission.detail)
+        case let .userInput(userInput):
+            ("Input request pending", userInput.detail)
+        case let .mcpElicitation(mcp):
+            ("MCP elicitation pending", mcp.detail)
+        case let .dynamicToolCall(tool):
+            ("Dynamic tool call requested", tool.detail)
+        case let .approval(approval):
+            ("Approval request pending", approval.detail)
         }
     }
 

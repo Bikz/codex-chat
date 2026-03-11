@@ -179,9 +179,15 @@ struct ContentView: View {
             ModChangesReviewSheet(model: model, review: review)
                 .interactiveDismissDisabled(true)
         }
-        .sheet(item: unscopedApprovalSheetBinding) { request in
-            ApprovalRequestSheet(model: model, request: request)
-                .interactiveDismissDisabled(model.isApprovalDecisionInProgress)
+        .sheet(item: pendingRuntimeRequestSheetBinding) { request in
+            switch request {
+            case let .approval(approval):
+                ApprovalRequestSheet(model: model, request: approval)
+                    .interactiveDismissDisabled(model.isApprovalDecisionInProgress)
+            case let .serverRequest(serverRequest):
+                ServerRequestSheet(model: model, request: serverRequest)
+                    .interactiveDismissDisabled(model.isSelectedThreadApprovalInProgress)
+            }
         }
         .sheet(item: Binding(get: {
             model.activeUntrustedShellWarning
@@ -269,9 +275,17 @@ struct ContentView: View {
         return current == .detailOnly ? .all : .detailOnly
     }
 
-    private var unscopedApprovalSheetBinding: Binding<RuntimeApprovalRequest?> {
+    private var pendingRuntimeRequestSheetBinding: Binding<PendingRuntimeRequestSheetItem?> {
         Binding(
-            get: { model.unscopedApprovalRequests.first },
+            get: {
+                if let approval = model.unscopedApprovalRequests.first {
+                    return .approval(approval)
+                }
+                if let serverRequest = model.unscopedServerRequests.first {
+                    return .serverRequest(serverRequest)
+                }
+                return nil
+            },
             set: { _ in }
         )
     }
@@ -309,7 +323,7 @@ struct ContentView: View {
             Image(systemName: "exclamationmark.bubble.fill")
                 .foregroundStyle(.orange)
 
-            Text(model.totalPendingApprovalCount == 1 ? "1 pending approval needs attention." : "\(model.totalPendingApprovalCount) pending approvals need attention.")
+            Text(model.totalPendingApprovalCount == 1 ? "1 pending request needs attention." : "\(model.totalPendingApprovalCount) pending requests need attention.")
                 .font(.caption.weight(.semibold))
 
             Spacer(minLength: 0)
@@ -332,5 +346,19 @@ struct ContentView: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pending approvals banner")
+    }
+}
+
+private enum PendingRuntimeRequestSheetItem: Identifiable {
+    case approval(RuntimeApprovalRequest)
+    case serverRequest(RuntimeServerRequest)
+
+    var id: String {
+        switch self {
+        case let .approval(request):
+            "approval-\(request.id)"
+        case let .serverRequest(request):
+            "server-\(request.id)"
+        }
     }
 }

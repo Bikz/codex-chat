@@ -1064,6 +1064,7 @@ final class AppModel: ObservableObject {
     @Published var accountState: RuntimeAccountState = .signedOut
     @Published var accountStatusMessage: String?
     @Published var approvalStatusMessage: String?
+    @Published var serverRequestStatusMessage: String?
     @Published var projectStatusMessage: String?
     @Published var skillStatusMessage: String?
     @Published var memoryStatusMessage: String?
@@ -1084,6 +1085,8 @@ final class AppModel: ObservableObject {
     @Published var pendingAPIKey = ""
     @Published var activeApprovalRequest: RuntimeApprovalRequest?
     @Published var unscopedApprovalRequests: [RuntimeApprovalRequest] = []
+    @Published var activeServerRequest: RuntimeServerRequest?
+    @Published var unscopedServerRequests: [RuntimeServerRequest] = []
     @Published var pendingApprovalThreadIDs: Set<UUID> = []
     @Published var pendingModReview: PendingModReview?
     @Published var isModReviewDecisionInProgress = false
@@ -1227,8 +1230,11 @@ final class AppModel: ObservableObject {
     var localThreadIDByRuntimeTurnID: [String: UUID] = [:]
     var localThreadIDByCommandItemID: [String: UUID] = [:]
     var approvalStateMachine = ApprovalStateMachine()
+    var serverRequestStateMachine = ServerRequestStateMachine()
     var approvalDecisionInFlightRequestIDs: Set<Int> = []
+    var serverRequestDecisionInFlightRequestIDs: Set<Int> = []
     var approvalResolutionFallbackTasksByRequestID: [Int: Task<Void, Never>] = [:]
+    var serverRequestResolutionFallbackTasksByRequestID: [Int: Task<Void, Never>] = [:]
     var activeTurnContextsByThreadID: [UUID: ActiveTurnContext] = [:]
     var pendingTurnStartThreadIDs: Set<UUID> = []
     var pendingFirstTokenThreadIDs: Set<UUID> = []
@@ -1586,6 +1592,13 @@ final class AppModel: ObservableObject {
         return approvalStateMachine.pendingRequest(for: selectedThreadID)
     }
 
+    var pendingServerRequestForSelectedThread: RuntimeServerRequest? {
+        guard let selectedThreadID else {
+            return nil
+        }
+        return serverRequestStateMachine.pendingRequest(for: selectedThreadID)
+    }
+
     var pendingComputerActionPreviewForSelectedThread: PendingComputerActionPreview? {
         guard let selectedThreadID,
               let preview = pendingComputerActionPreview,
@@ -1645,8 +1658,31 @@ final class AppModel: ObservableObject {
         return nil
     }
 
+    var pendingServerRequestForComposerSurface: RuntimeServerRequest? {
+        if let scopedRequest = pendingServerRequestForSelectedThread {
+            return scopedRequest
+        }
+
+        guard let unscopedRequest = unscopedServerRequests.first else {
+            return nil
+        }
+
+        if selectedThreadID == nil {
+            return unscopedRequest
+        }
+
+        if activeTurnContextsByThreadID.count == 1,
+           let onlyActiveThreadID = activeTurnContextsByThreadID.keys.first,
+           onlyActiveThreadID == selectedThreadID
+        {
+            return unscopedRequest
+        }
+
+        return nil
+    }
+
     var hasPendingApprovalForSelectedThread: Bool {
-        pendingUserApprovalForSelectedThread != nil
+        pendingUserApprovalForSelectedThread != nil || pendingServerRequestForSelectedThread != nil
     }
 
     var pendingApprovalSummaries: [PendingApprovalSummary] {
@@ -1655,19 +1691,24 @@ final class AppModel: ObservableObject {
                 PendingApprovalSummary(
                     threadID: threadID,
                     title: titleForThread(threadID),
-                    count: max(approvalStateMachine.pendingRequestCount(for: threadID), 1)
+                    count: max(
+                        approvalStateMachine.pendingRequestCount(for: threadID)
+                            + serverRequestStateMachine.pendingRequestCount(for: threadID),
+                        1
+                    )
                 )
             }
             .sorted { lhs, rhs in
                 lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
             }
 
-        if !unscopedApprovalRequests.isEmpty {
+        let unscopedCount = unscopedApprovalRequests.count + unscopedServerRequests.count
+        if unscopedCount > 0 {
             summaries.insert(
                 PendingApprovalSummary(
                     threadID: nil,
-                    title: "Unscoped runtime approvals",
-                    count: unscopedApprovalRequests.count
+                    title: "Unscoped runtime requests",
+                    count: unscopedCount
                 ),
                 at: 0
             )
@@ -1678,12 +1719,19 @@ final class AppModel: ObservableObject {
 
     var totalPendingApprovalCount: Int {
         var runtimeRequestIDs: Set<Int> = Set(unscopedApprovalRequests.map(\.id))
+        runtimeRequestIDs.formUnion(unscopedServerRequests.map(\.id))
         var supplementalThreadBlockerCount = 0
 
         for threadID in pendingApprovalThreadIDs {
             if let request = approvalStateMachine.pendingRequest(for: threadID) {
                 runtimeRequestIDs.insert(request.id)
-            } else {
+            }
+            if let request = serverRequestStateMachine.pendingRequest(for: threadID) {
+                runtimeRequestIDs.insert(request.id)
+            }
+            if approvalStateMachine.pendingRequest(for: threadID) == nil,
+               serverRequestStateMachine.pendingRequest(for: threadID) == nil
+            {
                 // For non-runtime approval blockers (computer actions / permission notices),
                 // count one blocker per thread when there isn't a mapped runtime request.
                 supplementalThreadBlockerCount += 1
@@ -1697,11 +1745,17 @@ final class AppModel: ObservableObject {
         if let request = pendingApprovalForSelectedThread {
             return approvalDecisionInFlightRequestIDs.contains(request.id)
         }
+        if let request = pendingServerRequestForSelectedThread {
+            return serverRequestDecisionInFlightRequestIDs.contains(request.id)
+        }
         return isComputerActionExecutionInProgress
     }
 
     func hasPendingApproval(for threadID: UUID) -> Bool {
         if approvalStateMachine.pendingRequest(for: threadID) != nil {
+            return true
+        }
+        if serverRequestStateMachine.pendingRequest(for: threadID) != nil {
             return true
         }
         if pendingComputerActionPreview?.threadID == threadID {
@@ -2458,6 +2512,7 @@ final class AppModel: ObservableObject {
 
     func syncApprovalPresentationState() {
         var combinedPendingThreadIDs = approvalStateMachine.pendingThreadIDs
+        combinedPendingThreadIDs.formUnion(serverRequestStateMachine.pendingThreadIDs)
         if let preview = pendingComputerActionPreview {
             combinedPendingThreadIDs.insert(preview.threadID)
         }
@@ -2472,6 +2527,11 @@ final class AppModel: ObservableObject {
             activeApprovalRequest = selectedThreadRequest
         } else {
             activeApprovalRequest = unscopedApprovalRequests.first
+        }
+        if let selectedThreadRequest = pendingServerRequestForSelectedThread {
+            activeServerRequest = selectedThreadRequest
+        } else {
+            activeServerRequest = unscopedServerRequests.first
         }
 
         requestRemoteControlImmediateSync()

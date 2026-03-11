@@ -865,16 +865,27 @@ extension AppModel {
 
     private func reconcileStaleApprovalState(reason: String) {
         let pendingRequest = unscopedApprovalRequests.first ?? approvalStateMachine.firstPendingRequest
+        let pendingServerRequest = unscopedServerRequests.first ?? serverRequestStateMachine.firstPendingRequest
         let pendingThreadID = approvalStateMachine.pendingThreadIDs.first
-        let hadPendingApprovals = approvalStateMachine.hasPendingApprovals
+            ?? serverRequestStateMachine.pendingThreadIDs.first
+        let hadApprovalRequests = approvalStateMachine.hasPendingApprovals
             || !unscopedApprovalRequests.isEmpty
             || isApprovalDecisionInProgress
+        let hadPendingApprovals = hadApprovalRequests
+            || serverRequestStateMachine.hasPendingRequests
+            || !unscopedServerRequests.isEmpty
+            || !serverRequestDecisionInFlightRequestIDs.isEmpty
 
         approvalStateMachine.clear()
+        serverRequestStateMachine.clear()
         approvalDecisionInFlightRequestIDs.removeAll()
+        serverRequestDecisionInFlightRequestIDs.removeAll()
         approvalResolutionFallbackTasksByRequestID.values.forEach { $0.cancel() }
         approvalResolutionFallbackTasksByRequestID.removeAll()
+        serverRequestResolutionFallbackTasksByRequestID.values.forEach { $0.cancel() }
+        serverRequestResolutionFallbackTasksByRequestID.removeAll()
         unscopedApprovalRequests.removeAll(keepingCapacity: false)
+        unscopedServerRequests.removeAll(keepingCapacity: false)
         isApprovalDecisionInProgress = false
         syncApprovalPresentationState()
 
@@ -882,11 +893,26 @@ extension AppModel {
             return
         }
 
-        let message = "Approval request was reset because \(reason). Re-run the action to request approval again."
+        let message: String
+        let resetMethod: String
+        let resetTitle: String
+        if hadApprovalRequests {
+            message = "Approval request was reset because \(reason). Re-run the action to request approval again."
+            resetMethod = "approval/reset"
+            resetTitle = "Approval reset"
+        } else {
+            message = "Runtime request was reset because \(reason). Re-run the action to request it again."
+            resetMethod = "runtime-request/reset"
+            resetTitle = "Runtime request reset"
+        }
         approvalStatusMessage = message
+        serverRequestStatusMessage = message
         appendLog(.warning, message)
 
-        guard let localThreadID = pendingThreadID ?? localThreadIDForPendingApproval(pendingRequest) else {
+        guard let localThreadID = pendingThreadID
+            ?? localThreadIDForPendingApproval(pendingRequest)
+            ?? localThreadIDForPendingServerRequest(pendingServerRequest)
+        else {
             return
         }
 
@@ -894,8 +920,8 @@ extension AppModel {
             .actionCard(
                 ActionCard(
                     threadID: localThreadID,
-                    method: "approval/reset",
-                    title: "Approval reset",
+                    method: resetMethod,
+                    title: resetTitle,
                     detail: message
                 )
             ),
@@ -929,6 +955,79 @@ extension AppModel {
         }
 
         return nil
+    }
+
+    private func localThreadIDForPendingServerRequest(_ request: RuntimeServerRequest?) -> UUID? {
+        if let itemID = request.flatMap(serverRequestItemID),
+           let mappedThreadID = localThreadIDByCommandItemID[itemID]
+        {
+            return mappedThreadID
+        }
+
+        if let runtimeThreadID = request.flatMap(serverRequestThreadID) {
+            if let mappedThreadID = localThreadIDByRuntimeThreadID[runtimeThreadID] {
+                return mappedThreadID
+            }
+
+            if let mappedContext = activeTurnContextsByThreadID.values.first(where: { $0.runtimeThreadID == runtimeThreadID }) {
+                return mappedContext.localThreadID
+            }
+        }
+
+        if request.flatMap(serverRequestThreadID) == nil,
+           request.flatMap(serverRequestTurnID) == nil,
+           request.flatMap(serverRequestItemID) == nil,
+           activeTurnContextsByThreadID.count == 1
+        {
+            return activeTurnContextsByThreadID.first?.key
+        }
+
+        return nil
+    }
+
+    private func serverRequestThreadID(_ request: RuntimeServerRequest) -> String? {
+        switch request {
+        case let .approval(approval):
+            approval.threadID
+        case let .permissions(permission):
+            permission.threadID
+        case let .userInput(userInput):
+            userInput.threadID
+        case let .mcpElicitation(mcp):
+            mcp.threadID
+        case let .dynamicToolCall(tool):
+            tool.threadID
+        }
+    }
+
+    private func serverRequestTurnID(_ request: RuntimeServerRequest) -> String? {
+        switch request {
+        case let .approval(approval):
+            approval.turnID
+        case let .permissions(permission):
+            permission.turnID
+        case let .userInput(userInput):
+            userInput.turnID
+        case let .mcpElicitation(mcp):
+            mcp.turnID
+        case let .dynamicToolCall(tool):
+            tool.turnID
+        }
+    }
+
+    private func serverRequestItemID(_ request: RuntimeServerRequest) -> String? {
+        switch request {
+        case let .approval(approval):
+            approval.itemID
+        case let .permissions(permission):
+            permission.itemID
+        case let .userInput(userInput):
+            userInput.itemID
+        case let .mcpElicitation(mcp):
+            mcp.itemID
+        case let .dynamicToolCall(tool):
+            tool.itemID
+        }
     }
 
     private func protocolCompatibilityGuidance(for error: CodexRuntimeError) -> String? {

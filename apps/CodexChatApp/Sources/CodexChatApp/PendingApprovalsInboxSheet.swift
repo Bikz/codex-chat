@@ -9,8 +9,8 @@ struct PendingApprovalsInboxSheet: View {
             Group {
                 if model.pendingApprovalSummaries.isEmpty {
                     EmptyStateView(
-                        title: "No pending approvals",
-                        message: "All approvals are resolved.",
+                        title: "No pending requests",
+                        message: "All runtime requests are resolved.",
                         systemImage: "checkmark.seal"
                     )
                 } else {
@@ -40,7 +40,7 @@ struct PendingApprovalsInboxSheet: View {
                     .listStyle(.inset)
                 }
             }
-            .navigationTitle("Pending Approvals")
+            .navigationTitle("Pending Requests")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {

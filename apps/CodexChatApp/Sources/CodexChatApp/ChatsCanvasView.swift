@@ -157,12 +157,15 @@ struct ChatsCanvasView: View {
                         request: request,
                         permissionRecoveryDetailsNotice: $permissionRecoveryDetailsNotice
                     )
+                } else if let request = model.pendingServerRequestForComposerSurface {
+                    InlineServerRequestView(model: model, request: request)
                 } else {
                     composerSurface
                 }
 
                 if let notice = model.permissionRecoveryNotice,
-                   model.pendingUserApprovalForComposerSurface == nil
+                   model.pendingUserApprovalForComposerSurface == nil,
+                   model.pendingServerRequestForComposerSurface == nil
                 {
                     permissionRecoveryInlineBanner(notice)
                         .padding(.horizontal, tokens.spacing.medium)
@@ -188,7 +191,9 @@ struct ChatsCanvasView: View {
             await model.refreshModsBarForSelectedThread()
         }
         .onChange(of: model.composerFocusRequestID) { _, _ in
-            guard model.pendingUserApprovalForComposerSurface == nil else {
+            guard model.pendingUserApprovalForComposerSurface == nil,
+                  model.pendingServerRequestForComposerSurface == nil
+            else {
                 return
             }
             DispatchQueue.main.async {
