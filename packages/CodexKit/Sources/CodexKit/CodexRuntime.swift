@@ -27,7 +27,7 @@ public actor CodexRuntime {
     var runtimeVersionInfo: RuntimeVersionInfo?
     var runtimeCompatibilityState: RuntimeCompatibilityState = RuntimeCompatibilityMatrix.current.evaluate(version: nil)
     var runtimeHandshake: RuntimeHandshake?
-    var protocolAdapter: RuntimeProtocolAdapter = RuntimeProtocolAdapter.select(version: nil)
+    var protocolAdapter = RuntimeProtocolAdapter.select(version: nil)
 
     var stdoutPumpTask: Task<Void, Never>?
     var stderrPumpTask: Task<Void, Never>?
