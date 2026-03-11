@@ -7,19 +7,210 @@ public enum RuntimeStatus: String, CaseIterable, Codable, Sendable {
     case error
 }
 
-public struct RuntimeCapabilities: Hashable, Sendable {
+public struct RuntimeCapabilities: Hashable, Sendable, Codable {
     public var supportsTurnSteer: Bool
     public var supportsFollowUpSuggestions: Bool
+    public var supportsServerRequestResolution: Bool
+    public var supportsTurnInterrupt: Bool
+    public var supportsThreadResume: Bool
+    public var supportsThreadFork: Bool
+    public var supportsThreadList: Bool
+    public var supportsThreadRead: Bool
+    public var supportsPermissionsApproval: Bool
+    public var supportsUserInputRequests: Bool
+    public var supportsMCPElicitationRequests: Bool
+    public var supportsDynamicToolCallRequests: Bool
+    public var supportsPlanUpdates: Bool
+    public var supportsDiffUpdates: Bool
+    public var supportsTokenUsageUpdates: Bool
+    public var supportsModelReroutes: Bool
 
-    public init(supportsTurnSteer: Bool, supportsFollowUpSuggestions: Bool) {
+    public init(
+        supportsTurnSteer: Bool,
+        supportsFollowUpSuggestions: Bool,
+        supportsServerRequestResolution: Bool = false,
+        supportsTurnInterrupt: Bool = false,
+        supportsThreadResume: Bool = false,
+        supportsThreadFork: Bool = false,
+        supportsThreadList: Bool = false,
+        supportsThreadRead: Bool = false,
+        supportsPermissionsApproval: Bool = false,
+        supportsUserInputRequests: Bool = false,
+        supportsMCPElicitationRequests: Bool = false,
+        supportsDynamicToolCallRequests: Bool = false,
+        supportsPlanUpdates: Bool = false,
+        supportsDiffUpdates: Bool = false,
+        supportsTokenUsageUpdates: Bool = false,
+        supportsModelReroutes: Bool = false
+    ) {
         self.supportsTurnSteer = supportsTurnSteer
         self.supportsFollowUpSuggestions = supportsFollowUpSuggestions
+        self.supportsServerRequestResolution = supportsServerRequestResolution
+        self.supportsTurnInterrupt = supportsTurnInterrupt
+        self.supportsThreadResume = supportsThreadResume
+        self.supportsThreadFork = supportsThreadFork
+        self.supportsThreadList = supportsThreadList
+        self.supportsThreadRead = supportsThreadRead
+        self.supportsPermissionsApproval = supportsPermissionsApproval
+        self.supportsUserInputRequests = supportsUserInputRequests
+        self.supportsMCPElicitationRequests = supportsMCPElicitationRequests
+        self.supportsDynamicToolCallRequests = supportsDynamicToolCallRequests
+        self.supportsPlanUpdates = supportsPlanUpdates
+        self.supportsDiffUpdates = supportsDiffUpdates
+        self.supportsTokenUsageUpdates = supportsTokenUsageUpdates
+        self.supportsModelReroutes = supportsModelReroutes
     }
 
     public static let none = RuntimeCapabilities(
         supportsTurnSteer: false,
-        supportsFollowUpSuggestions: false
+        supportsFollowUpSuggestions: false,
+        supportsServerRequestResolution: false,
+        supportsTurnInterrupt: false,
+        supportsThreadResume: false,
+        supportsThreadFork: false,
+        supportsThreadList: false,
+        supportsThreadRead: false,
+        supportsPermissionsApproval: false,
+        supportsUserInputRequests: false,
+        supportsMCPElicitationRequests: false,
+        supportsDynamicToolCallRequests: false,
+        supportsPlanUpdates: false,
+        supportsDiffUpdates: false,
+        supportsTokenUsageUpdates: false,
+        supportsModelReroutes: false
     )
+}
+
+public struct RuntimeClientInfo: Hashable, Sendable, Codable {
+    public let name: String
+    public let title: String
+    public let version: String
+
+    public init(name: String, title: String, version: String) {
+        self.name = name
+        self.title = title
+        self.version = version
+    }
+}
+
+public struct RuntimeClientCapabilities: Hashable, Sendable, Codable {
+    public let experimentalAPI: Bool
+    public let optOutNotificationMethods: [String]
+
+    public init(
+        experimentalAPI: Bool = false,
+        optOutNotificationMethods: [String] = []
+    ) {
+        self.experimentalAPI = experimentalAPI
+        self.optOutNotificationMethods = optOutNotificationMethods
+    }
+}
+
+public struct RuntimeVersionInfo: Hashable, Sendable, Codable, Comparable {
+    public let rawValue: String
+    public let major: Int
+    public let minor: Int
+    public let patch: Int
+    public let prerelease: String?
+
+    public init(
+        rawValue: String,
+        major: Int,
+        minor: Int,
+        patch: Int,
+        prerelease: String? = nil
+    ) {
+        self.rawValue = rawValue
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+        self.prerelease = prerelease
+    }
+
+    public var minorLine: String {
+        "\(major).\(minor)"
+    }
+
+    public static func < (lhs: RuntimeVersionInfo, rhs: RuntimeVersionInfo) -> Bool {
+        if lhs.major != rhs.major {
+            return lhs.major < rhs.major
+        }
+        if lhs.minor != rhs.minor {
+            return lhs.minor < rhs.minor
+        }
+        if lhs.patch != rhs.patch {
+            return lhs.patch < rhs.patch
+        }
+
+        switch (lhs.prerelease, rhs.prerelease) {
+        case let (left?, right?):
+            return left.localizedStandardCompare(right) == .orderedAscending
+        case (nil, .some):
+            return false
+        case (.some, nil):
+            return true
+        case (nil, nil):
+            return false
+        }
+    }
+}
+
+public enum RuntimeSupportLevel: String, Hashable, Sendable, Codable {
+    case validated
+    case grace
+    case unsupported
+    case unknown
+}
+
+public struct RuntimeCompatibilityState: Hashable, Sendable, Codable {
+    public let detectedVersion: RuntimeVersionInfo?
+    public let supportLevel: RuntimeSupportLevel
+    public let supportedMinorLine: String
+    public let graceMinorLine: String
+    public let degradedReasons: [String]
+    public let disabledFeatures: [String]
+
+    public init(
+        detectedVersion: RuntimeVersionInfo?,
+        supportLevel: RuntimeSupportLevel,
+        supportedMinorLine: String,
+        graceMinorLine: String,
+        degradedReasons: [String],
+        disabledFeatures: [String]
+    ) {
+        self.detectedVersion = detectedVersion
+        self.supportLevel = supportLevel
+        self.supportedMinorLine = supportedMinorLine
+        self.graceMinorLine = graceMinorLine
+        self.degradedReasons = degradedReasons
+        self.disabledFeatures = disabledFeatures
+    }
+
+    public var isDegraded: Bool {
+        supportLevel != .validated || !disabledFeatures.isEmpty || !degradedReasons.isEmpty
+    }
+}
+
+public struct RuntimeHandshake: Hashable, Sendable, Codable {
+    public let clientInfo: RuntimeClientInfo
+    public let sentCapabilities: RuntimeClientCapabilities
+    public let negotiatedCapabilities: RuntimeCapabilities
+    public let runtimeVersion: RuntimeVersionInfo?
+    public let compatibility: RuntimeCompatibilityState
+
+    public init(
+        clientInfo: RuntimeClientInfo,
+        sentCapabilities: RuntimeClientCapabilities,
+        negotiatedCapabilities: RuntimeCapabilities,
+        runtimeVersion: RuntimeVersionInfo?,
+        compatibility: RuntimeCompatibilityState
+    ) {
+        self.clientInfo = clientInfo
+        self.sentCapabilities = sentCapabilities
+        self.negotiatedCapabilities = negotiatedCapabilities
+        self.runtimeVersion = runtimeVersion
+        self.compatibility = compatibility
+    }
 }
 
 public struct RuntimeReasoningEffortOption: Hashable, Sendable, Codable {
@@ -340,16 +531,36 @@ public enum RuntimeApprovalDecision: Hashable, Sendable {
     case decline
     case cancel
 
-    var rpcResult: JSONValue {
+    var wireDecision: String {
         switch self {
         case .approveOnce:
-            .string("accept")
+            "accept"
         case .approveForSession:
-            .string("acceptForSession")
+            "acceptForSession"
         case .decline:
-            .string("decline")
+            "decline"
         case .cancel:
-            .string("cancel")
+            "cancel"
+        }
+    }
+}
+
+public enum RuntimeApprovalOption: String, Hashable, Sendable, Codable, CaseIterable {
+    case approveOnce = "accept"
+    case approveForSession = "acceptForSession"
+    case decline
+    case cancel
+
+    public var title: String {
+        switch self {
+        case .approveOnce:
+            "Approve Once"
+        case .approveForSession:
+            "Approve for Session"
+        case .decline:
+            "Decline"
+        case .cancel:
+            "Cancel"
         }
     }
 }
@@ -487,7 +698,11 @@ public struct RuntimeApprovalRequest: Identifiable, Hashable, Sendable, Codable 
     public let cwd: String?
     public let command: [String]
     public let changes: [RuntimeFileChange]
+    public let availableDecisions: [RuntimeApprovalOption]
+    public let grantRoot: String?
+    public let networkContext: String?
     public let detail: String
+    public let rawPayload: JSONValue?
 
     public init(
         id: Int,
@@ -501,7 +716,11 @@ public struct RuntimeApprovalRequest: Identifiable, Hashable, Sendable, Codable 
         cwd: String?,
         command: [String],
         changes: [RuntimeFileChange],
-        detail: String
+        availableDecisions: [RuntimeApprovalOption] = [.approveOnce, .approveForSession, .decline],
+        grantRoot: String? = nil,
+        networkContext: String? = nil,
+        detail: String,
+        rawPayload: JSONValue? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -514,7 +733,422 @@ public struct RuntimeApprovalRequest: Identifiable, Hashable, Sendable, Codable 
         self.cwd = cwd
         self.command = command
         self.changes = changes
+        self.availableDecisions = availableDecisions
+        self.grantRoot = grantRoot
+        self.networkContext = networkContext
         self.detail = detail
+        self.rawPayload = rawPayload
+    }
+}
+
+public enum RuntimeServerRequestKind: String, Hashable, Sendable, Codable {
+    case approval
+    case permissionsApproval
+    case userInput
+    case mcpElicitation
+    case dynamicToolCall
+}
+
+public struct RuntimePermissionsRequest: Identifiable, Hashable, Sendable, Codable {
+    public let id: Int
+    public let method: String
+    public let threadID: String?
+    public let turnID: String?
+    public let itemID: String?
+    public let reason: String?
+    public let cwd: String?
+    public let permissions: [String]
+    public let grantRoot: String?
+    public let detail: String
+    public let rawPayload: JSONValue?
+
+    public init(
+        id: Int,
+        method: String,
+        threadID: String?,
+        turnID: String?,
+        itemID: String?,
+        reason: String?,
+        cwd: String?,
+        permissions: [String],
+        grantRoot: String?,
+        detail: String,
+        rawPayload: JSONValue? = nil
+    ) {
+        self.id = id
+        self.method = method
+        self.threadID = threadID
+        self.turnID = turnID
+        self.itemID = itemID
+        self.reason = reason
+        self.cwd = cwd
+        self.permissions = permissions
+        self.grantRoot = grantRoot
+        self.detail = detail
+        self.rawPayload = rawPayload
+    }
+}
+
+public struct RuntimeUserInputOption: Hashable, Sendable, Codable, Identifiable {
+    public let id: String
+    public let label: String
+    public let description: String?
+
+    public init(id: String, label: String, description: String? = nil) {
+        self.id = id
+        self.label = label
+        self.description = description
+    }
+}
+
+public struct RuntimeUserInputRequest: Identifiable, Hashable, Sendable, Codable {
+    public let id: Int
+    public let method: String
+    public let threadID: String?
+    public let turnID: String?
+    public let itemID: String?
+    public let title: String?
+    public let prompt: String
+    public let placeholder: String?
+    public let value: String?
+    public let options: [RuntimeUserInputOption]
+    public let detail: String
+    public let rawPayload: JSONValue?
+
+    public init(
+        id: Int,
+        method: String,
+        threadID: String?,
+        turnID: String?,
+        itemID: String?,
+        title: String?,
+        prompt: String,
+        placeholder: String?,
+        value: String?,
+        options: [RuntimeUserInputOption],
+        detail: String,
+        rawPayload: JSONValue? = nil
+    ) {
+        self.id = id
+        self.method = method
+        self.threadID = threadID
+        self.turnID = turnID
+        self.itemID = itemID
+        self.title = title
+        self.prompt = prompt
+        self.placeholder = placeholder
+        self.value = value
+        self.options = options
+        self.detail = detail
+        self.rawPayload = rawPayload
+    }
+}
+
+public struct RuntimeMCPElicitationRequest: Identifiable, Hashable, Sendable, Codable {
+    public let id: Int
+    public let method: String
+    public let threadID: String?
+    public let turnID: String?
+    public let itemID: String?
+    public let serverName: String?
+    public let prompt: String
+    public let detail: String
+    public let rawPayload: JSONValue?
+
+    public init(
+        id: Int,
+        method: String,
+        threadID: String?,
+        turnID: String?,
+        itemID: String?,
+        serverName: String?,
+        prompt: String,
+        detail: String,
+        rawPayload: JSONValue? = nil
+    ) {
+        self.id = id
+        self.method = method
+        self.threadID = threadID
+        self.turnID = turnID
+        self.itemID = itemID
+        self.serverName = serverName
+        self.prompt = prompt
+        self.detail = detail
+        self.rawPayload = rawPayload
+    }
+}
+
+public struct RuntimeDynamicToolCallRequest: Identifiable, Hashable, Sendable, Codable {
+    public let id: Int
+    public let method: String
+    public let threadID: String?
+    public let turnID: String?
+    public let itemID: String?
+    public let toolName: String
+    public let arguments: JSONValue?
+    public let detail: String
+    public let rawPayload: JSONValue?
+
+    public init(
+        id: Int,
+        method: String,
+        threadID: String?,
+        turnID: String?,
+        itemID: String?,
+        toolName: String,
+        arguments: JSONValue?,
+        detail: String,
+        rawPayload: JSONValue? = nil
+    ) {
+        self.id = id
+        self.method = method
+        self.threadID = threadID
+        self.turnID = turnID
+        self.itemID = itemID
+        self.toolName = toolName
+        self.arguments = arguments
+        self.detail = detail
+        self.rawPayload = rawPayload
+    }
+}
+
+public enum RuntimeServerRequest: Hashable, Sendable {
+    case approval(RuntimeApprovalRequest)
+    case permissions(RuntimePermissionsRequest)
+    case userInput(RuntimeUserInputRequest)
+    case mcpElicitation(RuntimeMCPElicitationRequest)
+    case dynamicToolCall(RuntimeDynamicToolCallRequest)
+
+    public var id: Int {
+        switch self {
+        case let .approval(request):
+            request.id
+        case let .permissions(request):
+            request.id
+        case let .userInput(request):
+            request.id
+        case let .mcpElicitation(request):
+            request.id
+        case let .dynamicToolCall(request):
+            request.id
+        }
+    }
+
+    public var method: String {
+        switch self {
+        case let .approval(request):
+            request.method
+        case let .permissions(request):
+            request.method
+        case let .userInput(request):
+            request.method
+        case let .mcpElicitation(request):
+            request.method
+        case let .dynamicToolCall(request):
+            request.method
+        }
+    }
+
+    public var kind: RuntimeServerRequestKind {
+        switch self {
+        case .approval:
+            .approval
+        case .permissions:
+            .permissionsApproval
+        case .userInput:
+            .userInput
+        case .mcpElicitation:
+            .mcpElicitation
+        case .dynamicToolCall:
+            .dynamicToolCall
+        }
+    }
+}
+
+public enum RuntimeServerRequestResponse: Hashable, Sendable {
+    case approval(RuntimeApprovalDecision)
+    case permissions(permissions: [String], scope: String?)
+    case userInput(text: String?, optionID: String?)
+    case mcpElicitation(text: String?)
+    case dynamicToolCall(approved: Bool)
+
+    var rpcResult: JSONValue {
+        switch self {
+        case let .approval(decision):
+            return .object(["decision": .string(decision.wireDecision)])
+        case let .permissions(permissions, scope):
+            var payload: [String: JSONValue] = [
+                "permissions": .array(permissions.map(JSONValue.string)),
+            ]
+            if let scope, !scope.isEmpty {
+                payload["scope"] = .string(scope)
+            }
+            return .object(payload)
+        case let .userInput(text, optionID):
+            var payload: [String: JSONValue] = [:]
+            if let text {
+                payload["text"] = .string(text)
+            }
+            if let optionID {
+                payload["optionId"] = .string(optionID)
+            }
+            return .object(payload)
+        case let .mcpElicitation(text):
+            if let text {
+                return .object(["text": .string(text)])
+            }
+            return .object([:])
+        case let .dynamicToolCall(approved):
+            return .object(["approved": .bool(approved)])
+        }
+    }
+}
+
+public struct RuntimeServerRequestResolution: Hashable, Sendable, Codable {
+    public let requestID: Int?
+    public let method: String?
+    public let threadID: String?
+    public let turnID: String?
+    public let itemID: String?
+    public let detail: String
+
+    public init(
+        requestID: Int?,
+        method: String?,
+        threadID: String?,
+        turnID: String?,
+        itemID: String?,
+        detail: String
+    ) {
+        self.requestID = requestID
+        self.method = method
+        self.threadID = threadID
+        self.turnID = turnID
+        self.itemID = itemID
+        self.detail = detail
+    }
+}
+
+public struct RuntimeThreadStatusUpdate: Hashable, Sendable, Codable {
+    public let threadID: String?
+    public let status: String
+
+    public init(threadID: String?, status: String) {
+        self.threadID = threadID
+        self.status = status
+    }
+}
+
+public struct RuntimeTokenUsageUpdate: Hashable, Sendable, Codable {
+    public let threadID: String?
+    public let inputTokens: Int?
+    public let outputTokens: Int?
+    public let totalTokens: Int?
+
+    public init(threadID: String?, inputTokens: Int?, outputTokens: Int?, totalTokens: Int?) {
+        self.threadID = threadID
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.totalTokens = totalTokens
+    }
+}
+
+public struct RuntimeTurnDiffUpdate: Hashable, Sendable, Codable {
+    public let threadID: String?
+    public let turnID: String?
+    public let diff: String?
+    public let rawPayload: JSONValue?
+
+    public init(threadID: String?, turnID: String?, diff: String?, rawPayload: JSONValue?) {
+        self.threadID = threadID
+        self.turnID = turnID
+        self.diff = diff
+        self.rawPayload = rawPayload
+    }
+}
+
+public struct RuntimeTurnPlanUpdate: Hashable, Sendable, Codable {
+    public let threadID: String?
+    public let turnID: String?
+    public let summary: String?
+    public let rawPayload: JSONValue?
+
+    public init(threadID: String?, turnID: String?, summary: String?, rawPayload: JSONValue?) {
+        self.threadID = threadID
+        self.turnID = turnID
+        self.summary = summary
+        self.rawPayload = rawPayload
+    }
+}
+
+public struct RuntimeModelReroute: Hashable, Sendable, Codable {
+    public let threadID: String?
+    public let turnID: String?
+    public let fromModel: String?
+    public let toModel: String?
+    public let reason: String?
+
+    public init(
+        threadID: String?,
+        turnID: String?,
+        fromModel: String?,
+        toModel: String?,
+        reason: String?
+    ) {
+        self.threadID = threadID
+        self.turnID = turnID
+        self.fromModel = fromModel
+        self.toModel = toModel
+        self.reason = reason
+    }
+}
+
+public struct RuntimeFileChangeOutputDelta: Hashable, Sendable, Codable {
+    public let itemID: String
+    public let threadID: String?
+    public let turnID: String?
+    public let delta: String
+
+    public init(itemID: String, threadID: String?, turnID: String?, delta: String) {
+        self.itemID = itemID
+        self.threadID = threadID
+        self.turnID = turnID
+        self.delta = delta
+    }
+}
+
+public struct RuntimeErrorNotice: Hashable, Sendable, Codable {
+    public let threadID: String?
+    public let turnID: String?
+    public let itemID: String?
+    public let code: String?
+    public let message: String
+    public let rawPayload: JSONValue?
+
+    public init(
+        threadID: String?,
+        turnID: String?,
+        itemID: String?,
+        code: String?,
+        message: String,
+        rawPayload: JSONValue? = nil
+    ) {
+        self.threadID = threadID
+        self.turnID = turnID
+        self.itemID = itemID
+        self.code = code
+        self.message = message
+        self.rawPayload = rawPayload
+    }
+}
+
+public struct RuntimeUnknownNotification: Hashable, Sendable, Codable {
+    public let method: String
+    public let params: JSONValue?
+
+    public init(method: String, params: JSONValue?) {
+        self.method = method
+        self.params = params
     }
 }
 
@@ -523,9 +1157,19 @@ public enum CodexRuntimeEvent: Hashable, Sendable {
     case turnStarted(threadID: String?, turnID: String)
     case assistantMessageDelta(RuntimeAssistantMessageDelta)
     case commandOutputDelta(RuntimeCommandOutputDelta)
+    case fileChangeOutputDelta(RuntimeFileChangeOutputDelta)
     case followUpSuggestions(RuntimeFollowUpSuggestionBatch)
     case fileChangesUpdated(RuntimeFileChangeUpdate)
+    case serverRequest(RuntimeServerRequest)
+    case serverRequestResolved(RuntimeServerRequestResolution)
     case approvalRequested(RuntimeApprovalRequest)
+    case threadStatusUpdated(RuntimeThreadStatusUpdate)
+    case tokenUsageUpdated(RuntimeTokenUsageUpdate)
+    case turnDiffUpdated(RuntimeTurnDiffUpdate)
+    case turnPlanUpdated(RuntimeTurnPlanUpdate)
+    case modelRerouted(RuntimeModelReroute)
+    case runtimeError(RuntimeErrorNotice)
+    case unknownNotification(RuntimeUnknownNotification)
     case action(RuntimeAction)
     case turnCompleted(RuntimeTurnCompletion)
     case accountUpdated(authMode: RuntimeAuthMode)

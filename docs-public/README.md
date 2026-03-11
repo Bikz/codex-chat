@@ -23,6 +23,7 @@ This folder contains contributor-facing documentation tracked in git.
 - `RUNTIME_RELIABILITY_BUNDLE.md` — one-command local reliability diagnostics bundle workflow.
 - `EXTENSIONS.md` — compatibility landing page linking to canonical `MODS_SHARING.md` sections.
 - `ADR-EXTENSIONS-RUNTIME.md` — extension runtime architecture decision.
+- `ADR-RUNTIME-CONTRACT-VERSIONING.md` — runtime compatibility window, degraded-mode policy, and protocol adapter direction.
 - `EXTENSIONS_SPEC_VNEXT.md` — proposed package/runtime extension spec for ecosystem scaling.
 - `EXTENSIONS_QUICKSTART.md` — quickstart for creating/installing extension packages.
 - `EXTENSIONS_CURRENT_STATE_AUDIT.md` — architecture + DX audit and prioritized roadmap.

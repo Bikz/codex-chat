@@ -49,6 +49,25 @@ extension CodexRuntime {
             .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
+    static func detectRuntimeVersion(executablePath: String) async throws -> RuntimeVersionInfo? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = ["--version"]
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        let stdoutData = try stdoutPipe.fileHandleForReading.readToEnd() ?? Data()
+        let stderrData = try stderrPipe.fileHandleForReading.readToEnd() ?? Data()
+        let mergedOutput = String(data: stdoutData + stderrData, encoding: .utf8)
+        return RuntimeVersionInfo.parse(from: mergedOutput)
+    }
+
     nonisolated static func authMode(fromAccountType type: String) -> RuntimeAuthMode {
         switch type.lowercased() {
         case "apikey":

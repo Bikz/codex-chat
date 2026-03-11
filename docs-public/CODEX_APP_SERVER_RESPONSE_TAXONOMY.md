@@ -1,6 +1,6 @@
 # Codex App-Server Response Taxonomy
 
-Last updated: 2026-02-24
+Last updated: 2026-03-11
 
 ## Why this exists
 
@@ -32,10 +32,15 @@ These are request methods CodexChat sends and expects results/errors for.
 
 | Method | Expected success payload | Consumed in |
 | --- | --- | --- |
-| `initialize` | `result.capabilities` (optional `turnSteer`, `followUpSuggestions`) | `performHandshake` + `decodeCapabilities` |
+| `initialize` | `result.capabilities` plus negotiated compatibility snapshot | `performHandshake` + `decodeCapabilities` |
 | `thread/start` | `result.thread.id` | `startThread` |
 | `turn/start` | `result.turn.id` | `startTurn` |
 | `turn/steer` | any ack payload (currently ignored) | `steerTurn` |
+| `turn/interrupt` | ack only | `interruptTurn` |
+| `thread/resume` | runtime-defined thread payload | `resumeThread` |
+| `thread/fork` | `result.thread.id` | `forkThread` |
+| `thread/list` | runtime-defined list payload | `listThreads` |
+| `thread/read` | runtime-defined thread payload | `readThread` |
 | `account/read` | `result.requiresOpenaiAuth`, optional `result.account` | `readAccount` |
 | `account/login/start` | chatgpt: `result.authUrl`, optional `result.loginId`; apiKey: ack only | `startChatGPTLogin`, `startAPIKeyLogin` |
 | `account/login/cancel` | ack only | `cancelChatGPTLogin` |
@@ -46,11 +51,16 @@ Reference: `packages/CodexKit/Sources/CodexKit/CodexRuntime+PublicAPI.swift`, `p
 
 ## Layer 3: App-server requests (server -> client)
 
-CodexChat currently handles one server-request family:
+CodexChat now decodes a typed family of server requests. Approval requests are fully actionable; other request families are decoded and surfaced for diagnostics/log UX while dedicated interaction UI is still being built.
 
 | Pattern | Decoded as | Notes |
 | --- | --- | --- |
-| `*/requestApproval` | `CodexRuntimeEvent.approvalRequested(RuntimeApprovalRequest)` | `kind` inferred from method (`commandExecution`, `fileChange`, else `unknown`) |
+| `item/commandExecution/requestApproval` | `CodexRuntimeEvent.approvalRequested(RuntimeApprovalRequest)` | command approval, canonical response `{decision: ...}` |
+| `item/fileChange/requestApproval` | `CodexRuntimeEvent.approvalRequested(RuntimeApprovalRequest)` | file-change approval, canonical response `{decision: ...}` |
+| `item/permissions/requestApproval` | `CodexRuntimeEvent.serverRequest(.permissionsApproval)` | decoded and logged; UI follow-up still pending |
+| `item/tool/requestUserInput` | `CodexRuntimeEvent.serverRequest(.userInput)` | decoded and logged; UI follow-up still pending |
+| `mcpServer/elicitation/request` | `CodexRuntimeEvent.serverRequest(.mcpElicitation)` | decoded and logged; UI follow-up still pending |
+| `item/tool/call` | `CodexRuntimeEvent.serverRequest(.dynamicToolCall)` | capability-gated, decoded and logged only |
 
 Approval payload fields currently parsed:
 
@@ -58,6 +68,9 @@ Approval payload fields currently parsed:
 - `reason`, `risk`, `cwd`
 - `command` (array or string)
 - `changes[]` (`path`, `kind`, `diff`)
+- `availableDecisions[]`
+- `grantRoot`
+- `networkContext`
 
 References:
 
@@ -74,14 +87,22 @@ All notification decoding lives in `AppServerEventDecoder.decodeAll`.
 | `turn/started` | `.turnStarted` | `threadId`, `turn.id` |
 | `item/agentMessage/delta` | `.assistantMessageDelta(RuntimeAssistantMessageDelta)` | `threadId`, `turnId`, `itemId`, `delta`, optional `channel`, optional `stage` |
 | `item/commandExecution/outputDelta` | `.commandOutputDelta` | `threadId`, `turnId`, `itemId`, `delta` |
+| `item/fileChange/outputDelta` | `.fileChangeOutputDelta` | `threadId`, `turnId`, `itemId`, `delta` |
 | `turn/followUpsSuggested` | `.followUpSuggestions` | `threadId`, `turnId`, `suggestions[]` |
 | `item/started` | `.action` (+ `.fileChangesUpdated` if `item.type == fileChange`) | `item.id`, `item.type`, `item.status`, `item.changes[]`, optional worker trace |
 | `item/completed` | `.action` (+ `.fileChangesUpdated` if `item.type == fileChange`) | same as above |
 | `turn/completed` | `.turnCompleted` | `threadId`, `turn.id`, `turn.status`, `turn.error.message` |
+| `serverRequest/resolved` | `.serverRequestResolved` | `requestId`, `method`, `threadId`, `turnId`, `itemId` |
+| `thread/status/changed` | `.threadStatusUpdated` | `threadId`, `status` |
+| `thread/tokenUsage/updated` | `.tokenUsageUpdated` | `threadId`, `turnId`, token counts |
+| `turn/diff/updated` | `.turnDiffUpdated` | `threadId`, `turnId`, diff |
+| `turn/plan/updated` | `.turnPlanUpdated` | `threadId`, `turnId`, summary/plan payload |
+| `model/rerouted` | `.modelRerouted` | `fromModel`, `toModel`, optional thread/turn context |
+| `error` | `.runtimeError` | `code`, `message`, optional thread/turn context |
 | `account/updated` | `.accountUpdated` | `authMode` |
 | `account/login/completed` | `.accountLoginCompleted` | `loginId`, `success`, `error` |
 
-Unknown notification methods are ignored.
+Unknown notification methods are preserved as `.unknownNotification` and written into diagnostics/logs instead of being silently dropped.
 
 Reference: `packages/CodexKit/Sources/CodexKit/AppServerEventDecoder.swift`
 
@@ -174,8 +195,9 @@ Reference: `apps/CodexChatApp/Sources/CodexChatApp/LiveActivityTraceFormatter.sw
 ### Approval UX
 
 - `approvalRequested` shows inline approval UI replacing composer.
-- Decisions: `Approve Once`, `Approve for Session`, `Decline`.
+- Decisions: `Approve Once`, `Approve for Session`, `Decline`, and `Cancel` when advertised by the runtime.
 - Separate inline variants exist for runtime approvals, computer-action previews, and permission recovery notices.
+- `serverRequest/resolved` is now the authoritative cleanup signal for pending runtime approvals. Local stale-approval reconciliation remains crash recovery only.
 
 References:
 

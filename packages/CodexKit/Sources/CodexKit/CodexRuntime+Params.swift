@@ -249,6 +249,64 @@ extension CodexRuntime {
         }
     }
 
+    static func decodeServerRequest(
+        requestID: Int,
+        method: String,
+        params: JSONValue?
+    ) -> RuntimeServerRequest? {
+        if method.hasSuffix("/requestApproval") {
+            return .approval(
+                decodeApprovalRequest(
+                    requestID: requestID,
+                    method: method,
+                    params: params
+                )
+            )
+        }
+
+        if method == "item/permissions/requestApproval" {
+            return .permissions(
+                decodePermissionsRequest(
+                    requestID: requestID,
+                    method: method,
+                    params: params
+                )
+            )
+        }
+
+        if method == "item/tool/requestUserInput" {
+            return .userInput(
+                decodeUserInputRequest(
+                    requestID: requestID,
+                    method: method,
+                    params: params
+                )
+            )
+        }
+
+        if method == "mcpServer/elicitation/request" {
+            return .mcpElicitation(
+                decodeMCPElicitationRequest(
+                    requestID: requestID,
+                    method: method,
+                    params: params
+                )
+            )
+        }
+
+        if method == "item/tool/call" {
+            return .dynamicToolCall(
+                decodeDynamicToolCallRequest(
+                    requestID: requestID,
+                    method: method,
+                    params: params
+                )
+            )
+        }
+
+        return nil
+    }
+
     static func decodeApprovalRequest(
         requestID: Int,
         method: String,
@@ -305,6 +363,8 @@ extension CodexRuntime {
             return RuntimeFileChange(path: path, kind: kind, diff: diff)
         }
 
+        let availableDecisions = decodeAvailableApprovalDecisions(from: payload)
+
         return RuntimeApprovalRequest(
             id: requestID,
             kind: kind,
@@ -344,7 +404,173 @@ extension CodexRuntime {
             cwd: firstString(in: payload, keyPaths: [["cwd"], ["workingDirectory"], ["working_directory"]]),
             command: command,
             changes: changes,
-            detail: payload.prettyPrinted()
+            availableDecisions: availableDecisions.isEmpty ? [.approveOnce, .approveForSession, .decline] : availableDecisions,
+            grantRoot: firstString(in: payload, keyPaths: [["grantRoot"], ["grant_root"]]),
+            networkContext: firstString(in: payload, keyPaths: [["networkApprovalContext"], ["network_approval_context"]]),
+            detail: payload.prettyPrinted(),
+            rawPayload: payload
+        )
+    }
+
+    static func decodePermissionsRequest(
+        requestID: Int,
+        method: String,
+        params: JSONValue?
+    ) -> RuntimePermissionsRequest {
+        let payload = params ?? .object([:])
+        let additionalPermissions = firstValue(
+            in: payload,
+            keyPaths: [["additionalPermissions"], ["additional_permissions"], ["permissions"]]
+        )?.arrayValue ?? []
+        let permissions = additionalPermissions.compactMap { value in
+            value.stringValue ?? value.value(at: ["name"])?.stringValue ?? value.value(at: ["permission"])?.stringValue
+        }
+
+        return RuntimePermissionsRequest(
+            id: requestID,
+            method: method,
+            threadID: threadID(from: payload),
+            turnID: turnID(from: payload),
+            itemID: itemID(from: payload),
+            reason: firstString(in: payload, keyPaths: [["reason"], ["message"]]),
+            cwd: firstString(in: payload, keyPaths: [["cwd"], ["workingDirectory"], ["working_directory"]]),
+            permissions: permissions,
+            grantRoot: firstString(in: payload, keyPaths: [["grantRoot"], ["grant_root"]]),
+            detail: payload.prettyPrinted(),
+            rawPayload: payload
+        )
+    }
+
+    static func decodeUserInputRequest(
+        requestID: Int,
+        method: String,
+        params: JSONValue?
+    ) -> RuntimeUserInputRequest {
+        let payload = params ?? .object([:])
+        let options = firstValue(in: payload, keyPaths: [["options"]])?.arrayValue ?? []
+        let decodedOptions = options.enumerated().compactMap { index, option -> RuntimeUserInputOption? in
+            let label = option.value(at: ["label"])?.stringValue
+                ?? option.value(at: ["text"])?.stringValue
+                ?? option.stringValue
+            guard let label, !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
+            let optionID = option.value(at: ["id"])?.stringValue ?? "option_\(index)"
+            return RuntimeUserInputOption(
+                id: optionID,
+                label: label,
+                description: option.value(at: ["description"])?.stringValue
+            )
+        }
+
+        return RuntimeUserInputRequest(
+            id: requestID,
+            method: method,
+            threadID: threadID(from: payload),
+            turnID: turnID(from: payload),
+            itemID: itemID(from: payload),
+            title: firstString(in: payload, keyPaths: [["title"], ["header"]]),
+            prompt: firstString(in: payload, keyPaths: [["prompt"], ["message"], ["question"]]) ?? "Runtime requested input.",
+            placeholder: firstString(in: payload, keyPaths: [["placeholder"]]),
+            value: firstString(in: payload, keyPaths: [["value"], ["defaultValue"], ["default_value"]]),
+            options: decodedOptions,
+            detail: payload.prettyPrinted(),
+            rawPayload: payload
+        )
+    }
+
+    static func decodeMCPElicitationRequest(
+        requestID: Int,
+        method: String,
+        params: JSONValue?
+    ) -> RuntimeMCPElicitationRequest {
+        let payload = params ?? .object([:])
+        return RuntimeMCPElicitationRequest(
+            id: requestID,
+            method: method,
+            threadID: threadID(from: payload),
+            turnID: turnID(from: payload),
+            itemID: itemID(from: payload),
+            serverName: firstString(in: payload, keyPaths: [["serverName"], ["server_name"], ["server", "name"]]),
+            prompt: firstString(in: payload, keyPaths: [["prompt"], ["message"], ["question"]]) ?? "MCP server requested input.",
+            detail: payload.prettyPrinted(),
+            rawPayload: payload
+        )
+    }
+
+    static func decodeDynamicToolCallRequest(
+        requestID: Int,
+        method: String,
+        params: JSONValue?
+    ) -> RuntimeDynamicToolCallRequest {
+        let payload = params ?? .object([:])
+        return RuntimeDynamicToolCallRequest(
+            id: requestID,
+            method: method,
+            threadID: threadID(from: payload),
+            turnID: turnID(from: payload),
+            itemID: itemID(from: payload),
+            toolName: firstString(in: payload, keyPaths: [["toolName"], ["tool_name"], ["tool", "name"]]) ?? "dynamic_tool_call",
+            arguments: firstValue(in: payload, keyPaths: [["arguments"], ["args"], ["toolArguments"], ["tool_arguments"]]),
+            detail: payload.prettyPrinted(),
+            rawPayload: payload
+        )
+    }
+
+    private static func decodeAvailableApprovalDecisions(from payload: JSONValue) -> [RuntimeApprovalOption] {
+        let rawValues = firstValue(
+            in: payload,
+            keyPaths: [["availableDecisions"], ["available_decisions"]]
+        )?.arrayValue ?? []
+
+        var seen: Set<RuntimeApprovalOption> = []
+        return rawValues.compactMap { value in
+            guard let raw = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let option = RuntimeApprovalOption(rawValue: raw),
+                  seen.insert(option).inserted
+            else {
+                return nil
+            }
+            return option
+        }
+    }
+
+    private static func threadID(from payload: JSONValue) -> String? {
+        firstString(
+            in: payload,
+            keyPaths: [
+                ["threadId"],
+                ["thread_id"],
+                ["thread", "id"],
+                ["thread", "threadId"],
+                ["thread", "thread_id"],
+            ]
+        )
+    }
+
+    private static func turnID(from payload: JSONValue) -> String? {
+        firstString(
+            in: payload,
+            keyPaths: [
+                ["turnId"],
+                ["turn_id"],
+                ["turn", "id"],
+                ["turn", "turnId"],
+                ["turn", "turn_id"],
+            ]
+        )
+    }
+
+    private static func itemID(from payload: JSONValue) -> String? {
+        firstString(
+            in: payload,
+            keyPaths: [
+                ["itemId"],
+                ["item_id"],
+                ["item", "id"],
+                ["item", "itemId"],
+                ["item", "item_id"],
+            ]
         )
     }
 

@@ -5,6 +5,18 @@ public extension CodexRuntime {
         runtimeCapabilities
     }
 
+    func handshake() async -> RuntimeHandshake? {
+        runtimeHandshake
+    }
+
+    func runtimeVersion() async -> RuntimeVersionInfo? {
+        runtimeVersionInfo
+    }
+
+    func runtimeCompatibility() async -> RuntimeCompatibilityState {
+        runtimeCompatibilityState
+    }
+
     func start() async throws {
         if process != nil {
             return
@@ -13,6 +25,10 @@ public extension CodexRuntime {
         guard let executablePath = executableResolver() else {
             throw CodexRuntimeError.binaryNotFound
         }
+
+        runtimeVersionInfo = try await Self.detectRuntimeVersion(executablePath: executablePath)
+        protocolAdapter = RuntimeProtocolAdapter.select(version: runtimeVersionInfo)
+        runtimeCompatibilityState = protocolAdapter.compatibility
 
         try await spawnProcess(executablePath: executablePath)
 
@@ -147,6 +163,59 @@ public extension CodexRuntime {
             expectedTurnID: normalizedTurnID
         )
         _ = try await sendRequest(method: "turn/steer", params: params)
+    }
+
+    func interruptTurn(threadID: String, turnID: String? = nil) async throws {
+        try await start()
+
+        var params: [String: JSONValue] = [
+            "threadId": .string(threadID),
+        ]
+        if let turnID, !turnID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            params["turnId"] = .string(turnID)
+        }
+        _ = try await sendRequest(method: "turn/interrupt", params: .object(params))
+    }
+
+    func resumeThread(threadID: String) async throws -> JSONValue {
+        try await start()
+        return try await sendRequest(
+            method: "thread/resume",
+            params: .object(["threadId": .string(threadID)])
+        )
+    }
+
+    func forkThread(threadID: String) async throws -> String {
+        try await start()
+
+        let result = try await sendRequest(
+            method: "thread/fork",
+            params: .object(["threadId": .string(threadID)])
+        )
+
+        guard let forkedThreadID = result.value(at: ["thread", "id"])?.stringValue else {
+            throw CodexRuntimeError.invalidResponse("thread/fork missing result.thread.id")
+        }
+
+        return forkedThreadID
+    }
+
+    func listThreads(cursor: String? = nil) async throws -> JSONValue {
+        try await start()
+
+        var params: [String: JSONValue] = [:]
+        if let cursor, !cursor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            params["cursor"] = .string(cursor)
+        }
+        return try await sendRequest(method: "thread/list", params: .object(params))
+    }
+
+    func readThread(threadID: String) async throws -> JSONValue {
+        try await start()
+        return try await sendRequest(
+            method: "thread/read",
+            params: .object(["threadId": .string(threadID)])
+        )
     }
 
     func readAccount(refreshToken: Bool = false) async throws -> RuntimeAccountState {

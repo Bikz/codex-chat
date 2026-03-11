@@ -62,6 +62,27 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
         XCTAssertEqual(capabilities, .none)
     }
 
+    func testRuntimeHandshakeCapturesVersionAndCompatibility() async throws {
+        let fakeCodexPath = try Self.resolveFakeCodexPath()
+        guard FileManager.default.isExecutableFile(atPath: fakeCodexPath) else {
+            throw XCTSkip("fake-codex fixture is not executable at \(fakeCodexPath)")
+        }
+
+        let runtime = CodexRuntime(executableResolver: { fakeCodexPath })
+        defer { Task { await runtime.stop() } }
+
+        _ = try await runtime.startThread(cwd: FileManager.default.temporaryDirectory.path)
+
+        let handshake = await runtime.handshake()
+        XCTAssertEqual(handshake?.runtimeVersion?.rawValue, "0.114.0")
+        XCTAssertEqual(handshake?.compatibility.supportLevel, .validated)
+        XCTAssertEqual(handshake?.compatibility.disabledFeatures, [])
+
+        let compatibility = await runtime.runtimeCompatibility()
+        XCTAssertEqual(compatibility.supportLevel, .validated)
+        XCTAssertEqual(compatibility.detectedVersion?.rawValue, "0.114.0")
+    }
+
     func testLifecycleWithFakeAppServerStreamsApprovalAndCompletion() async throws {
         let fakeCodexPath = try Self.resolveFakeCodexPath()
         guard FileManager.default.isExecutableFile(atPath: fakeCodexPath) else {
@@ -124,6 +145,40 @@ final class CodexRuntimeIntegrationTests: XCTestCase {
 
         XCTAssertTrue(outcome.0)
         XCTAssertEqual(outcome.1, "Approval completed.")
+    }
+
+    func testLifecycleEmitsServerRequestResolvedAfterApprovalResponse() async throws {
+        let fakeCodexPath = try Self.resolveFakeCodexPath()
+        guard FileManager.default.isExecutableFile(atPath: fakeCodexPath) else {
+            throw XCTSkip("fake-codex fixture is not executable at \(fakeCodexPath)")
+        }
+
+        let runtime = CodexRuntime(executableResolver: { fakeCodexPath })
+        defer { Task { await runtime.stop() } }
+
+        let stream = await runtime.events()
+        let threadID = try await runtime.startThread(cwd: FileManager.default.temporaryDirectory.path)
+        _ = try await runtime.startTurn(threadID: threadID, text: "Hello")
+
+        let resolution = try await withTimeout(seconds: 2.0) {
+            for await event in stream {
+                switch event {
+                case let .approvalRequested(request):
+                    try await runtime.respondToApproval(requestID: request.id, decision: .approveOnce)
+                case let .serverRequestResolved(resolution):
+                    return resolution
+                default:
+                    continue
+                }
+            }
+
+            throw XCTestError(.failureWhileWaiting)
+        }
+
+        XCTAssertEqual(resolution.requestID, 9001)
+        XCTAssertEqual(resolution.method, "item/commandExecution/requestApproval")
+        XCTAssertEqual(resolution.threadID, "thr_test")
+        XCTAssertEqual(resolution.turnID, "turn_test")
     }
 
     func testRestartDoesNotEmitRuntimeTerminatedActionForIntentionalRestart() async throws {

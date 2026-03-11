@@ -12,6 +12,9 @@ def _send(message: Dict[str, Any]) -> None:
 
 def _main() -> int:
     args = sys.argv[1:]
+    if len(args) == 1 and args[0] == "--version":
+        sys.stdout.write("codex 0.114.0\n")
+        return 0
     if len(args) != 1 or args[0] != "app-server":
         sys.stderr.write("usage: fake-codex app-server\n")
         return 2
@@ -136,7 +139,35 @@ def _main() -> int:
 
         if is_response:
             if pending_approval_id is not None and msg_id == pending_approval_id:
+                if not isinstance(result, dict) or result.get("decision") not in {"accept", "acceptForSession", "decline", "cancel"}:
+                    _send(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {
+                                "code": -32600,
+                                "message": "approval response must be an object with decision",
+                                "data": None,
+                            },
+                        }
+                    )
+                    continue
+
+                resolved_request_id = pending_approval_id
                 pending_approval_id = None
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "serverRequest/resolved",
+                        "params": {
+                            "requestId": resolved_request_id,
+                            "method": "item/commandExecution/requestApproval",
+                            "threadId": thread_id,
+                            "turnId": turn_id,
+                            "itemId": "cmd_1",
+                        },
+                    }
+                )
 
                 diff = "--- a/notes.txt\n+++ b/notes.txt\n@@\n+hello\n"
                 item = {

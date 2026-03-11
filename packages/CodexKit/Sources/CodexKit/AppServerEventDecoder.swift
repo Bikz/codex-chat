@@ -88,6 +88,27 @@ enum AppServerEventDecoder {
             )
             return [.commandOutputDelta(output)]
 
+        case "item/fileChange/outputDelta":
+            guard let itemID = stringValue(
+                in: params,
+                keyPaths: [["itemId"], ["item_id"], ["item", "id"], ["item", "itemId"], ["item", "item_id"]]
+            ),
+                let delta = params.value(at: ["delta"])?.stringValue,
+                !delta.isEmpty
+            else {
+                return []
+            }
+            return [
+                .fileChangeOutputDelta(
+                    RuntimeFileChangeOutputDelta(
+                        itemID: itemID,
+                        threadID: threadID,
+                        turnID: turnID,
+                        delta: delta
+                    )
+                ),
+            ]
+
         case "turn/followUpsSuggested":
             let suggestionValues: [JSONValue] = params.value(at: ["suggestions"])?.arrayValue ?? []
             let suggestions: [RuntimeFollowUpSuggestion] = suggestionValues.compactMap { value in
@@ -162,6 +183,110 @@ enum AppServerEventDecoder {
             )
             return [.turnCompleted(completion)]
 
+        case "serverRequest/resolved":
+            return [
+                .serverRequestResolved(
+                    RuntimeServerRequestResolution(
+                        requestID: intValue(
+                            in: params,
+                            keyPaths: [["requestId"], ["request_id"], ["serverRequestId"], ["server_request_id"]]
+                        ),
+                        method: stringValue(in: params, keyPaths: [["method"], ["requestMethod"], ["request_method"]]),
+                        threadID: threadID,
+                        turnID: turnID,
+                        itemID: stringValue(
+                            in: params,
+                            keyPaths: [["itemId"], ["item_id"], ["item", "id"], ["item", "itemId"], ["item", "item_id"]]
+                        ),
+                        detail: params.prettyPrinted()
+                    )
+                ),
+            ]
+
+        case "thread/status/changed":
+            guard let status = stringValue(in: params, keyPaths: [["status"], ["thread", "status"]]) else {
+                return []
+            }
+            return [.threadStatusUpdated(RuntimeThreadStatusUpdate(threadID: threadID, status: status))]
+
+        case "thread/tokenUsage/updated":
+            return [
+                .tokenUsageUpdated(
+                    RuntimeTokenUsageUpdate(
+                        threadID: threadID,
+                        inputTokens: intValue(
+                            in: params,
+                            keyPaths: [["usage", "inputTokens"], ["usage", "input_tokens"], ["inputTokens"], ["input_tokens"]]
+                        ),
+                        outputTokens: intValue(
+                            in: params,
+                            keyPaths: [["usage", "outputTokens"], ["usage", "output_tokens"], ["outputTokens"], ["output_tokens"]]
+                        ),
+                        totalTokens: intValue(
+                            in: params,
+                            keyPaths: [["usage", "totalTokens"], ["usage", "total_tokens"], ["totalTokens"], ["total_tokens"]]
+                        )
+                    )
+                ),
+            ]
+
+        case "turn/diff/updated":
+            return [
+                .turnDiffUpdated(
+                    RuntimeTurnDiffUpdate(
+                        threadID: threadID,
+                        turnID: turnID,
+                        diff: stringValue(in: params, keyPaths: [["diff"], ["patch"]]),
+                        rawPayload: params
+                    )
+                ),
+            ]
+
+        case "turn/plan/updated":
+            return [
+                .turnPlanUpdated(
+                    RuntimeTurnPlanUpdate(
+                        threadID: threadID,
+                        turnID: turnID,
+                        summary: stringValue(in: params, keyPaths: [["summary"], ["plan", "summary"], ["text"]]),
+                        rawPayload: params
+                    )
+                ),
+            ]
+
+        case "model/rerouted":
+            return [
+                .modelRerouted(
+                    RuntimeModelReroute(
+                        threadID: threadID,
+                        turnID: turnID,
+                        fromModel: stringValue(in: params, keyPaths: [["fromModel"], ["from_model"], ["from"]]),
+                        toModel: stringValue(in: params, keyPaths: [["toModel"], ["to_model"], ["to"]]),
+                        reason: stringValue(in: params, keyPaths: [["reason"], ["message"]])
+                    )
+                ),
+            ]
+
+        case "error":
+            guard let message = stringValue(in: params, keyPaths: [["message"], ["error", "message"]]) else {
+                return []
+            }
+            return [
+                .runtimeError(
+                    RuntimeErrorNotice(
+                        threadID: threadID,
+                        turnID: turnID,
+                        itemID: stringValue(
+                            in: params,
+                            keyPaths: [["itemId"], ["item_id"], ["item", "id"], ["item", "itemId"], ["item", "item_id"]]
+                        ),
+                        code: stringValue(in: params, keyPaths: [["code"], ["error", "code"]]),
+                        message: message,
+                        rawPayload: params
+                    )
+                ),
+            ]
+
         case "account/updated":
             let mode = RuntimeAuthMode(rawMode: params.value(at: ["authMode"])?.stringValue)
             return [.accountUpdated(authMode: mode)]
@@ -175,7 +300,7 @@ enum AppServerEventDecoder {
             return [.accountLoginCompleted(completion)]
 
         default:
-            return []
+            return [.unknownNotification(RuntimeUnknownNotification(method: method, params: params))]
         }
     }
 
@@ -317,6 +442,20 @@ enum AppServerEventDecoder {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 return trimmed
+            }
+        }
+        return nil
+    }
+
+    private static func intValue(in payload: JSONValue, keyPaths: [[String]]) -> Int? {
+        for keyPath in keyPaths {
+            if let value = payload.value(at: keyPath)?.intValue {
+                return value
+            }
+            if let raw = payload.value(at: keyPath)?.stringValue,
+               let value = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            {
+                return value
             }
         }
         return nil

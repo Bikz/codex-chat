@@ -2,6 +2,7 @@ import Foundation
 
 public actor CodexRuntime {
     public typealias ExecutableResolver = @Sendable () -> String?
+    private static let eventBufferLimit = 512
 
     let executableResolver: ExecutableResolver
     let environmentOverrides: [String: String]
@@ -15,13 +16,18 @@ public actor CodexRuntime {
     var stderrHandle: FileHandle?
     var framer = JSONLFramer()
     var stderrLineBuffer = Data()
-    struct PendingApprovalRequest: Sendable {
+    struct PendingServerRequest: Sendable {
         let rpcID: JSONRPCID
+        let request: RuntimeServerRequest
     }
 
-    var pendingApprovalRequests: [Int: PendingApprovalRequest] = [:]
-    var nextLocalApprovalRequestID: Int = 1
+    var pendingServerRequests: [Int: PendingServerRequest] = [:]
+    var nextLocalServerRequestID: Int = 1
     var runtimeCapabilities: RuntimeCapabilities = .none
+    var runtimeVersionInfo: RuntimeVersionInfo?
+    var runtimeCompatibilityState: RuntimeCompatibilityState = RuntimeCompatibilityMatrix.current.evaluate(version: nil)
+    var runtimeHandshake: RuntimeHandshake?
+    var protocolAdapter: RuntimeProtocolAdapter = RuntimeProtocolAdapter.select(version: nil)
 
     var stdoutPumpTask: Task<Void, Never>?
     var stderrPumpTask: Task<Void, Never>?
@@ -46,7 +52,7 @@ public actor CodexRuntime {
         self.environmentOverrides = environmentOverrides
 
         var continuation: AsyncStream<CodexRuntimeEvent>.Continuation?
-        eventStream = AsyncStream(bufferingPolicy: .unbounded) { continuation = $0 }
+        eventStream = AsyncStream(bufferingPolicy: .bufferingNewest(Self.eventBufferLimit)) { continuation = $0 }
         eventContinuation = continuation!
     }
 

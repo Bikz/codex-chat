@@ -54,7 +54,7 @@ extension CodexRuntime {
         isStderrReadPaused = false
 
         var stdoutContinuation: AsyncStream<Data>.Continuation?
-        let stdoutStream = AsyncStream<Data>(bufferingPolicy: .unbounded) { continuation in
+        let stdoutStream = AsyncStream<Data>(bufferingPolicy: .bufferingNewest(256)) { continuation in
             stdoutContinuation = continuation
         }
         let resolvedStdoutContinuation = stdoutContinuation!
@@ -70,7 +70,7 @@ extension CodexRuntime {
         installStdoutReadabilityHandler(using: resolvedStdoutContinuation)
 
         var stderrContinuation: AsyncStream<Data>.Continuation?
-        let stderrStream = AsyncStream<Data>(bufferingPolicy: .unbounded) { continuation in
+        let stderrStream = AsyncStream<Data>(bufferingPolicy: .bufferingNewest(256)) { continuation in
             stderrContinuation = continuation
         }
         let resolvedStderrContinuation = stderrContinuation!
@@ -181,9 +181,11 @@ extension CodexRuntime {
         stderrBufferedBytes = 0
         isStdoutReadPaused = false
         isStderrReadPaused = false
-        pendingApprovalRequests.removeAll()
-        nextLocalApprovalRequestID = 1
+        pendingServerRequests.removeAll()
+        nextLocalServerRequestID = 1
         runtimeCapabilities = .none
+        runtimeHandshake = nil
+        runtimeCompatibilityState = RuntimeCompatibilityMatrix.current.evaluate(version: runtimeVersionInfo)
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)
     }
@@ -213,9 +215,11 @@ extension CodexRuntime {
         stderrBufferedBytes = 0
         isStdoutReadPaused = false
         isStderrReadPaused = false
-        pendingApprovalRequests.removeAll()
-        nextLocalApprovalRequestID = 1
+        pendingServerRequests.removeAll()
+        nextLocalServerRequestID = 1
         runtimeCapabilities = .none
+        runtimeHandshake = nil
+        runtimeCompatibilityState = RuntimeCompatibilityMatrix.current.evaluate(version: runtimeVersionInfo)
 
         await correlator.failAll(error: CodexRuntimeError.transportClosed)
 

@@ -192,6 +192,119 @@ final class CodexKitTests: XCTestCase {
         XCTAssertEqual(resolved.result?.value(at: ["ok"])?.boolValue, true)
     }
 
+    func testRequestCorrelatorDropsLateResponsesForExpiredRequestIDs() async {
+        let correlator = RequestCorrelator()
+        let requestID = await correlator.makeRequestID()
+
+        _ = await correlator.failResponse(id: requestID, error: CodexRuntimeError.timedOut("waiting for test response"))
+
+        let lateResponse = JSONRPCMessageEnvelope.response(
+            id: requestID,
+            result: .object(["ok": .bool(true)])
+        )
+        let accepted = await correlator.resolveResponse(lateResponse)
+        XCTAssertFalse(accepted)
+    }
+
+    func testRuntimeVersionParsingAndCompatibilityMatrix() throws {
+        let parsed = try XCTUnwrap(RuntimeVersionInfo.parse(from: "codex 0.114.2-beta1"))
+        XCTAssertEqual(parsed.rawValue, "0.114.2-beta1")
+        XCTAssertEqual(parsed.minorLine, "0.114")
+
+        let matrix = RuntimeCompatibilityMatrix.current
+        let validated = matrix.evaluate(version: parsed)
+        XCTAssertEqual(validated.supportLevel, .validated)
+        XCTAssertTrue(validated.degradedReasons.isEmpty)
+
+        let grace = matrix.evaluate(version: RuntimeVersionInfo(rawValue: "0.113.9", major: 0, minor: 113, patch: 9))
+        XCTAssertEqual(grace.supportLevel, .grace)
+        XCTAssertFalse(grace.degradedReasons.isEmpty)
+
+        let unsupported = matrix.evaluate(version: RuntimeVersionInfo(rawValue: "0.112.4", major: 0, minor: 112, patch: 4))
+        XCTAssertEqual(unsupported.supportLevel, .unsupported)
+        XCTAssertFalse(unsupported.disabledFeatures.isEmpty)
+    }
+
+    func testRuntimeProtocolAdapterDecodesExpandedCapabilities() {
+        let adapter = RuntimeProtocolAdapter.select(
+            version: RuntimeVersionInfo(rawValue: "0.114.0", major: 0, minor: 114, patch: 0)
+        )
+        let initializeResult: JSONValue = .object([
+            "capabilities": .object([
+                "turnSteer": .bool(true),
+                "followUpSuggestions": .bool(true),
+                "serverRequestResolved": .bool(true),
+                "turnInterrupt": .bool(true),
+                "threadResume": .bool(true),
+                "threadFork": .bool(true),
+                "threadList": .bool(true),
+                "threadRead": .bool(true),
+                "permissionsApproval": .bool(true),
+                "requestUserInput": .bool(true),
+                "mcpElicitation": .bool(true),
+                "dynamicToolCall": .bool(true),
+                "turnPlanUpdates": .bool(true),
+                "turnDiffUpdates": .bool(true),
+                "tokenUsageUpdates": .bool(true),
+                "modelReroutes": .bool(true),
+            ]),
+        ])
+
+        let decoded = adapter.decodeCapabilities(from: initializeResult)
+        XCTAssertTrue(decoded.supportsTurnSteer)
+        XCTAssertTrue(decoded.supportsFollowUpSuggestions)
+        XCTAssertTrue(decoded.supportsServerRequestResolution)
+        XCTAssertTrue(decoded.supportsTurnInterrupt)
+        XCTAssertTrue(decoded.supportsThreadResume)
+        XCTAssertTrue(decoded.supportsThreadFork)
+        XCTAssertTrue(decoded.supportsThreadList)
+        XCTAssertTrue(decoded.supportsThreadRead)
+        XCTAssertTrue(decoded.supportsPermissionsApproval)
+        XCTAssertTrue(decoded.supportsUserInputRequests)
+        XCTAssertTrue(decoded.supportsMCPElicitationRequests)
+        XCTAssertTrue(decoded.supportsDynamicToolCallRequests)
+        XCTAssertTrue(decoded.supportsPlanUpdates)
+        XCTAssertTrue(decoded.supportsDiffUpdates)
+        XCTAssertTrue(decoded.supportsTokenUsageUpdates)
+        XCTAssertTrue(decoded.supportsModelReroutes)
+    }
+
+    func testEventDecoderDecodesServerRequestResolvedAndUnknownNotifications() {
+        let resolvedNotification = JSONRPCMessageEnvelope.notification(
+            method: "serverRequest/resolved",
+            params: .object([
+                "requestId": .number(9001),
+                "method": .string("item/commandExecution/requestApproval"),
+                "threadId": .string("thr_123"),
+                "turnId": .string("turn_123"),
+                "itemId": .string("item_123"),
+            ])
+        )
+
+        let resolvedEvents = AppServerEventDecoder.decodeAll(resolvedNotification)
+        guard case let .serverRequestResolved(resolution)? = resolvedEvents.first else {
+            XCTFail("Expected serverRequestResolved")
+            return
+        }
+        XCTAssertEqual(resolution.requestID, 9001)
+        XCTAssertEqual(resolution.method, "item/commandExecution/requestApproval")
+        XCTAssertEqual(resolution.threadID, "thr_123")
+
+        let unknownNotification = JSONRPCMessageEnvelope.notification(
+            method: "experimental/unknown",
+            params: .object([
+                "foo": .string("bar"),
+            ])
+        )
+        let unknownEvents = AppServerEventDecoder.decodeAll(unknownNotification)
+        guard case let .unknownNotification(unknown)? = unknownEvents.first else {
+            XCTFail("Expected unknownNotification")
+            return
+        }
+        XCTAssertEqual(unknown.method, "experimental/unknown")
+        XCTAssertEqual(unknown.params?.value(at: ["foo"])?.stringValue, "bar")
+    }
+
     func testEventDecoderAgentDeltaAndTurnCompletion() {
         let deltaNotification = JSONRPCMessageEnvelope.notification(
             method: "item/agentMessage/delta",

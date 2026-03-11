@@ -5,10 +5,20 @@ extension CodexRuntime {
         requestID: Int,
         decision: RuntimeApprovalDecision
     ) throws {
-        guard let pending = pendingApprovalRequests.removeValue(forKey: requestID) else {
-            throw CodexRuntimeError.invalidResponse("Unknown approval request id: \(requestID)")
+        try respondToServerRequest(
+            requestID: requestID,
+            response: .approval(decision)
+        )
+    }
+
+    public func respondToServerRequest(
+        requestID: Int,
+        response: RuntimeServerRequestResponse
+    ) throws {
+        guard let pending = pendingServerRequests.removeValue(forKey: requestID) else {
+            throw CodexRuntimeError.invalidResponse("Unknown server request id: \(requestID)")
         }
-        try writeMessage(JSONRPCMessageEnvelope.response(id: pending.rpcID, result: decision.rpcResult))
+        try writeMessage(JSONRPCMessageEnvelope.response(id: pending.rpcID, result: response.rpcResult))
     }
 
     func handleIncomingMessage(_ message: JSONRPCMessageEnvelope) async throws {
@@ -34,16 +44,23 @@ extension CodexRuntime {
             return
         }
 
-        if method.hasSuffix("/requestApproval") {
-            let localRequestID = nextLocalApprovalRequestID
-            nextLocalApprovalRequestID += 1
-            let approval = Self.decodeApprovalRequest(
-                requestID: localRequestID,
-                method: method,
-                params: request.params
+        let localRequestID = nextLocalServerRequestID
+        nextLocalServerRequestID += 1
+
+        if let decodedRequest = Self.decodeServerRequest(
+            requestID: localRequestID,
+            method: method,
+            params: request.params
+        ) {
+            pendingServerRequests[localRequestID] = PendingServerRequest(
+                rpcID: rpcID,
+                request: decodedRequest
             )
-            pendingApprovalRequests[localRequestID] = PendingApprovalRequest(rpcID: rpcID)
-            eventContinuation.yield(.approvalRequested(approval))
+            if case let .approval(approval) = decodedRequest {
+                eventContinuation.yield(.approvalRequested(approval))
+            } else {
+                eventContinuation.yield(.serverRequest(decodedRequest))
+            }
             return
         }
 
@@ -56,16 +73,18 @@ extension CodexRuntime {
     }
 
     func performHandshake() async throws {
-        let params: JSONValue = .object([
-            "clientInfo": .object([
-                "name": .string("codexchat_app"),
-                "title": .string("CodexChat"),
-                "version": .string("0.1.0"),
-            ]),
-        ])
+        let clientInfo = Self.defaultClientInfo()
+        let params = protocolAdapter.makeInitializeParams(clientInfo: clientInfo)
 
         let result = try await sendRequest(method: "initialize", params: params, timeoutSeconds: 10)
-        runtimeCapabilities = Self.decodeCapabilities(from: result)
+        runtimeCapabilities = protocolAdapter.decodeCapabilities(from: result)
+        runtimeHandshake = RuntimeHandshake(
+            clientInfo: clientInfo,
+            sentCapabilities: protocolAdapter.sentCapabilities,
+            negotiatedCapabilities: runtimeCapabilities,
+            runtimeVersion: runtimeVersionInfo,
+            compatibility: runtimeCompatibilityState
+        )
         try sendNotification(method: "initialized", params: .object([:]))
     }
 
@@ -120,22 +139,18 @@ extension CodexRuntime {
         stdinHandle.write(data)
     }
 
-    private static func decodeCapabilities(from initializeResult: JSONValue) -> RuntimeCapabilities {
-        let capabilities = initializeResult.value(at: ["capabilities"])
-        let supportsTurnSteer = capabilities?.value(at: ["turnSteer"])?.boolValue ?? false
+    private static func defaultClientInfo() -> RuntimeClientInfo {
+        let bundle = Bundle.main
+        let version = (
+            bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+                ?? bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+                ?? "dev"
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let followUpCapability = capabilities?.value(at: ["followUpSuggestions"])
-        let supportsFollowUpSuggestions = if let boolValue = followUpCapability?.boolValue {
-            boolValue
-        } else if followUpCapability?.objectValue != nil {
-            true
-        } else {
-            false
-        }
-
-        return RuntimeCapabilities(
-            supportsTurnSteer: supportsTurnSteer,
-            supportsFollowUpSuggestions: supportsFollowUpSuggestions
+        return RuntimeClientInfo(
+            name: "codexchat_app",
+            title: "CodexChat",
+            version: version.isEmpty ? "dev" : version
         )
     }
 

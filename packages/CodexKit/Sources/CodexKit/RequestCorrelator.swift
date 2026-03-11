@@ -1,10 +1,13 @@
 import Foundation
 
 actor RequestCorrelator {
+    private static let expiredRequestLimit = 256
     private var nextID: Int
     private var pending: [RequestKey: CheckedContinuation<JSONRPCMessageEnvelope, Error>] = [:]
     private var bufferedResponses: [RequestKey: JSONRPCMessageEnvelope] = [:]
     private var bufferedFailures: [RequestKey: Error] = [:]
+    private var expiredKeys: [RequestKey] = []
+    private var expiredKeySet: Set<RequestKey> = []
     private var terminalError: Error?
 
     init(startingID: Int = 1) {
@@ -20,6 +23,8 @@ actor RequestCorrelator {
         terminalError = nil
         bufferedResponses.removeAll(keepingCapacity: false)
         bufferedFailures.removeAll(keepingCapacity: false)
+        expiredKeys.removeAll(keepingCapacity: false)
+        expiredKeySet.removeAll(keepingCapacity: false)
     }
 
     func suspendResponse(id: JSONRPCID) async throws -> JSONRPCMessageEnvelope {
@@ -49,6 +54,10 @@ actor RequestCorrelator {
         else { return false }
         let key = requestKey(for: id)
 
+        if expiredKeySet.contains(key) {
+            return false
+        }
+
         if let continuation = pending.removeValue(forKey: key) {
             continuation.resume(returning: response)
             return true
@@ -62,6 +71,8 @@ actor RequestCorrelator {
     func failResponse(id: JSONRPCID, error: Error) -> Bool {
         guard terminalError == nil else { return false }
         let key = requestKey(for: id)
+
+        tombstoneExpiredKey(key)
 
         if let continuation = pending.removeValue(forKey: key) {
             continuation.resume(throwing: error)
@@ -78,7 +89,20 @@ actor RequestCorrelator {
         pending.removeAll(keepingCapacity: false)
         bufferedResponses.removeAll(keepingCapacity: false)
         bufferedFailures.removeAll(keepingCapacity: false)
+        expiredKeys.removeAll(keepingCapacity: false)
+        expiredKeySet.removeAll(keepingCapacity: false)
         continuations.forEach { $0.resume(throwing: error) }
+    }
+
+    private func tombstoneExpiredKey(_ key: RequestKey) {
+        guard expiredKeySet.insert(key).inserted else {
+            return
+        }
+        expiredKeys.append(key)
+        if expiredKeys.count > Self.expiredRequestLimit {
+            let removed = expiredKeys.removeFirst()
+            expiredKeySet.remove(removed)
+        }
     }
 
     private func requestKey(for id: JSONRPCID) -> RequestKey {

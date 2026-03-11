@@ -12,6 +12,9 @@ def _send(message: Dict[str, Any]) -> None:
 
 def _main() -> int:
     args = sys.argv[1:]
+    if len(args) == 1 and args[0] == "--version":
+        sys.stdout.write("codex 0.114.0\n")
+        return 0
     if len(args) != 1 or args[0] != "app-server":
         sys.stderr.write("usage: fake-codex-steer app-server\n")
         return 2
@@ -58,6 +61,19 @@ def _main() -> int:
                         "capabilities": {
                             "turnSteer": True,
                             "followUpSuggestions": {"version": 1},
+                            "serverRequestResolved": True,
+                            "turnInterrupt": True,
+                            "threadResume": True,
+                            "threadFork": True,
+                            "threadList": True,
+                            "threadRead": True,
+                            "permissionsApproval": True,
+                            "requestUserInput": True,
+                            "mcpElicitation": True,
+                            "turnPlanUpdates": True,
+                            "turnDiffUpdates": True,
+                            "tokenUsageUpdates": True,
+                            "modelReroutes": True,
                         }
                     },
                 }
