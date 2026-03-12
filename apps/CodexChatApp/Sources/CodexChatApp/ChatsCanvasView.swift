@@ -36,6 +36,17 @@ struct ChatsCanvasView: View {
         case info(String)
     }
 
+    struct TranscriptAutoScrollKey: Equatable {
+        let threadID: UUID?
+        let lastRowID: String?
+        let transcriptRevision: UInt64
+        let activeTurnID: UUID?
+        let activeAssistantLength: Int
+        let activeActionCount: Int
+        let threadLogCount: Int
+        let threadLogTailSignature: Int
+    }
+
     static func composerSurfaceStyle(
         isTransparentThemeMode: Bool,
         colorScheme: ColorScheme
@@ -124,6 +135,36 @@ struct ChatsCanvasView: View {
         }
 
         return .info(trimmed)
+    }
+
+    static func makeTranscriptAutoScrollKey(
+        threadID: UUID?,
+        rows: [TranscriptPresentationRow],
+        transcriptRevision: UInt64,
+        activeTurnContext: AppModel.ActiveTurnContext?,
+        threadLogs: [ThreadLogEntry]
+    ) -> TranscriptAutoScrollKey {
+        TranscriptAutoScrollKey(
+            threadID: threadID,
+            lastRowID: rows.last?.id,
+            transcriptRevision: transcriptRevision,
+            activeTurnID: activeTurnContext?.localTurnID,
+            activeAssistantLength: activeTurnContext?.assistantText.count ?? 0,
+            activeActionCount: activeTurnContext?.actions.count ?? 0,
+            threadLogCount: threadLogs.count,
+            threadLogTailSignature: transcriptThreadLogTailSignature(for: threadLogs)
+        )
+    }
+
+    static func transcriptThreadLogTailSignature(for threadLogs: [ThreadLogEntry]) -> Int {
+        var hasher = Hasher()
+        for entry in threadLogs.suffix(12) {
+            hasher.combine(entry.id)
+            hasher.combine(entry.timestamp.timeIntervalSinceReferenceDate)
+            hasher.combine(entry.level.rawValue)
+            hasher.combine(entry.text)
+        }
+        return hasher.finalize()
     }
 
     @ObservedObject var model: AppModel
@@ -812,6 +853,16 @@ struct ChatsCanvasView: View {
             case let .loaded(entries):
                 conversationWithModsBar {
                     let presentationRows = model.presentationRowsForSelectedConversation(entries: entries)
+                    let selectedThreadID = model.selectedThreadID
+                    let activeTurnContext = model.activeTurnContextForSelectedThread
+                    let selectedThreadLogs = model.selectedThreadLogs
+                    let autoScrollKey = Self.makeTranscriptAutoScrollKey(
+                        threadID: selectedThreadID,
+                        rows: presentationRows,
+                        transcriptRevision: selectedThreadID.flatMap { model.transcriptRevisionsByThreadID[$0] } ?? 0,
+                        activeTurnContext: activeTurnContext,
+                        threadLogs: selectedThreadLogs
+                    )
 
                     ScrollViewReader { proxy in
                         List(presentationRows, id: \.id) { row in
@@ -905,7 +956,7 @@ struct ChatsCanvasView: View {
                         .onAppear {
                             scrollTranscriptToBottom(rows: presentationRows, proxy: proxy, animated: false)
                         }
-                        .onChange(of: presentationRows.last?.id) { _, _ in
+                        .onChange(of: autoScrollKey) { _, _ in
                             scrollTranscriptToBottom(rows: presentationRows, proxy: proxy, animated: true)
                         }
                     }

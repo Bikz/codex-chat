@@ -1,3 +1,4 @@
+import CodexChatCore
 @testable import CodexChatShared
 import SwiftUI
 import XCTest
@@ -106,5 +107,104 @@ final class ChatsCanvasViewStyleTests: XCTestCase {
     func testFollowUpStatusPresentationDropsEmptyMessages() {
         XCTAssertNil(ChatsCanvasView.followUpStatusPresentation(for: "   "))
         XCTAssertNil(ChatsCanvasView.followUpStatusPresentation(for: nil))
+    }
+
+    func testTranscriptAutoScrollKeyChangesForTranscriptRevisionAndRowTail() {
+        let threadID = UUID()
+        let rows: [TranscriptPresentationRow] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "hi")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "hello")),
+        ]
+
+        let first = ChatsCanvasView.makeTranscriptAutoScrollKey(
+            threadID: threadID,
+            rows: rows,
+            transcriptRevision: 1,
+            activeTurnContext: nil,
+            threadLogs: []
+        )
+        let second = ChatsCanvasView.makeTranscriptAutoScrollKey(
+            threadID: threadID,
+            rows: rows + [.turnSummary(TurnSummaryPresentation(
+                id: UUID(),
+                actions: [],
+                actionCount: 0,
+                hiddenActionCount: 0,
+                milestoneCounts: TranscriptMilestoneCounts(),
+                isFailure: false,
+                duration: 0
+            ))],
+            transcriptRevision: 2,
+            activeTurnContext: nil,
+            threadLogs: []
+        )
+
+        XCTAssertNotEqual(first, second)
+    }
+
+    func testTranscriptAutoScrollKeyChangesForActiveTurnProgressAndThreadLogs() {
+        let threadID = UUID()
+        let turnID = UUID()
+        let rows: [TranscriptPresentationRow] = [
+            .message(ChatMessage(threadId: threadID, role: .user, text: "check repo")),
+            .liveActivity(LiveTurnActivityPresentation(
+                id: turnID,
+                turnID: turnID,
+                userPreview: "check repo",
+                assistantPreview: "Thinking",
+                latestActionTitle: "Searching files",
+                actions: [],
+                milestoneCounts: TranscriptMilestoneCounts(),
+                commandOutputPreview: nil
+            )),
+        ]
+
+        let firstContext = AppModel.ActiveTurnContext(
+            localTurnID: turnID,
+            localThreadID: threadID,
+            projectID: UUID(),
+            projectPath: "/tmp",
+            runtimeThreadID: "runtime-thread",
+            runtimeTurnID: "runtime-turn",
+            memoryWriteMode: .off,
+            userText: "check repo",
+            assistantText: "Thinking",
+            actions: [],
+            startedAt: Date()
+        )
+        let secondContext = AppModel.ActiveTurnContext(
+            localTurnID: turnID,
+            localThreadID: threadID,
+            projectID: firstContext.projectID,
+            projectPath: "/tmp",
+            runtimeThreadID: "runtime-thread",
+            runtimeTurnID: "runtime-turn",
+            memoryWriteMode: .off,
+            userText: "check repo",
+            assistantText: "Thinking through the repo now",
+            actions: [
+                ActionCard(threadID: threadID, method: "item/started", title: "Started commandExecution", detail: "git status"),
+            ],
+            startedAt: firstContext.startedAt
+        )
+
+        let first = ChatsCanvasView.makeTranscriptAutoScrollKey(
+            threadID: threadID,
+            rows: rows,
+            transcriptRevision: 1,
+            activeTurnContext: firstContext,
+            threadLogs: []
+        )
+        let second = ChatsCanvasView.makeTranscriptAutoScrollKey(
+            threadID: threadID,
+            rows: rows,
+            transcriptRevision: 1,
+            activeTurnContext: secondContext,
+            threadLogs: [
+                ThreadLogEntry(level: .info, text: "git status"),
+            ]
+        )
+
+        XCTAssertNotEqual(first, second)
     }
 }
