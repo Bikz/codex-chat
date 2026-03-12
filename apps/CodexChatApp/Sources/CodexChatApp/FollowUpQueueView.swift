@@ -246,15 +246,31 @@ struct FollowUpQueueView: View {
                     model.steerFollowUp(item.id)
                 }
                 .buttonStyle(.plain)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary.opacity(0.82))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary.opacity(0.72))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
                 .background(
                     Capsule()
-                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.055))
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.065 : 0.048))
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.055))
                 )
                 .accessibilityHint("Send this follow-up now if available")
+
+                Button {
+                    model.deleteFollowUp(item.id)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(item.state == .failed ? .red.opacity(0.88) : .secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Delete follow-up")
 
                 Menu {
                     Button {
@@ -301,21 +317,15 @@ struct FollowUpQueueView: View {
                     }
 
                     Divider()
-
-                    Button(role: .destructive) {
-                        model.deleteFollowUp(item.id)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .background(
-                            Circle()
-                                .fill(Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.04))
-                        )
+                    HStack(spacing: 3) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 12, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
                 }
                 .menuStyle(.borderlessButton)
                 .accessibilityLabel("More follow-up actions")
