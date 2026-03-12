@@ -3,7 +3,7 @@ import CodexChatCore
 import XCTest
 
 final class TranscriptPresentationTests: XCTestCase {
-    func testChatModeCompactsLifecycleActionsIntoTurnSummary() {
+    func testChatModeDoesNotShowTurnSummaryForShortReasoningOnlyTurns() {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [
             .message(userMessage(threadID: threadID, text: "Plan my day")),
@@ -20,7 +20,7 @@ final class TranscriptPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(rows.messageCount, 1)
-        XCTAssertEqual(rows.turnSummaryCount, 1)
+        XCTAssertEqual(rows.turnSummaryCount, 0)
         XCTAssertEqual(rows.actionMethods, [])
     }
 
@@ -74,7 +74,7 @@ final class TranscriptPresentationTests: XCTestCase {
         let entries: [TranscriptEntry] = [
             .message(userMessage(threadID: threadID, text: "what's a good voice ai stack?")),
             .actionCard(action(threadID: threadID, method: "turn/started", title: "Turn started")),
-            .actionCard(action(threadID: threadID, method: "item/started", title: "Started reasoning")),
+            .actionCard(action(threadID: threadID, method: "item/started", title: "Started webSearch")),
             .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
             .message(ChatMessage(threadId: threadID, role: .assistant, text: "Here is a strong default stack...")),
         ]
@@ -486,7 +486,7 @@ final class TranscriptPresentationTests: XCTestCase {
             .message(userMessage(threadID: threadID, text: "Review the repo")),
             .message(ChatMessage(threadId: threadID, role: .system, text: "Planning: I will map modules first.")),
             .message(ChatMessage(threadId: threadID, role: .system, text: "Running: I am checking build scripts now.")),
-            .actionCard(action(threadID: threadID, method: "item/started", title: "Started reasoning")),
+            .actionCard(action(threadID: threadID, method: "item/started", title: "Started commandExecution")),
             .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
             .message(ChatMessage(threadId: threadID, role: .assistant, text: "Here are the findings.")),
         ]
@@ -514,7 +514,7 @@ final class TranscriptPresentationTests: XCTestCase {
         let threadID = UUID()
         let entries: [TranscriptEntry] = [
             .message(userMessage(threadID: threadID, text: "Summarize this repo")),
-            .actionCard(action(threadID: threadID, method: "item/started", title: "Started reasoning")),
+            .actionCard(action(threadID: threadID, method: "item/started", title: "Started commandExecution")),
             .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
         ]
 
@@ -652,7 +652,7 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(model.transcriptPresentationCache.count, 1)
 
         model.appendEntry(
-            .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
+            .actionCard(action(threadID: threadID, method: "computer_action/execute", title: "Calendar check completed")),
             to: threadID
         )
 

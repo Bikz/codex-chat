@@ -612,6 +612,10 @@ enum TranscriptPresentationBuilder {
             return nil
         }
 
+        if detailLevel == .chat, !hasEventfulToolWork(in: bucket.actions) {
+            return nil
+        }
+
         let milestones = milestoneCounts(from: bucket.actions)
         let hasFailure = bucket.actions.contains {
             let method = $0.method.lowercased()
@@ -634,6 +638,50 @@ enum TranscriptPresentationBuilder {
             isFailure: hasFailure,
             duration: turnDuration(for: bucket.actions)
         )
+    }
+
+    private static func hasEventfulToolWork(in actions: [ActionCard]) -> Bool {
+        actions.contains { action in
+            let method = action.method.lowercased()
+            if method.hasPrefix("computer_action/")
+                || method.hasPrefix("item/tool/")
+                || method.contains("command")
+                || method.contains("websearch")
+                || method.contains("web_search")
+                || method.contains("filechange")
+                || method.contains("file_change")
+            {
+                return true
+            }
+
+            let kind = RuntimeVisualStateClassifier.classify(action).kind
+            switch kind {
+            case .webSearchActive,
+                 .fileReadActive,
+                 .toolCallActive,
+                 .commandExecActive,
+                 .commandOutputStreaming,
+                 .fileChangePreview,
+                 .planUpdate,
+                 .diffUpdate,
+                 .modelReroute:
+                return true
+            case .reasoningActive,
+                 .approvalRequired,
+                 .approvalResolved,
+                 .warningStderr,
+                 .errorStderr,
+                 .runtimeTerminated,
+                 .turnCompletedSuccess,
+                 .turnCompletedFailure,
+                 .accountStateChanged,
+                 .loginCompleted,
+                 .lifecycleEvent,
+                 .informational,
+                 .threadStatusUpdate:
+                return false
+            }
+        }
     }
 
     private static func turnDuration(for actions: [ActionCard]) -> TimeInterval {
