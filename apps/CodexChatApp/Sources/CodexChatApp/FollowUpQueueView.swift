@@ -33,7 +33,7 @@ struct FollowUpQueueView: View {
         )
 
         if !items.isEmpty || planSummary != nil {
-            VStack(alignment: .leading, spacing: tokens.spacing.small) {
+            VStack(alignment: .leading, spacing: 8) {
                 if let planSummary {
                     planHeader(summary: planSummary)
                 }
@@ -50,17 +50,12 @@ struct FollowUpQueueView: View {
     }
 
     static func compactTitle(for item: FollowUpQueueItemRecord) -> String {
-        switch item.source {
-        case .userQueued:
-            return "Continue"
-        case .assistantSuggestion:
-            let trimmed = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "Continue" : trimmed
-        }
+        let trimmed = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Continue" : trimmed
     }
 
     static func shouldShowVerboseText(for item: FollowUpQueueItemRecord) -> Bool {
-        item.source == .assistantSuggestion || item.state == .failed
+        item.state == .failed
     }
 
     static func planSummary(
@@ -217,16 +212,17 @@ struct FollowUpQueueView: View {
     }
 
     private func compactRow(item: FollowUpQueueItemRecord, index: Int, count: Int) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             Image(systemName: itemIcon(item))
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(item.state == .failed ? .red : .secondary)
-                .frame(width: 18)
+                .frame(width: 16, height: 18)
+                .padding(.top, 2)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(Self.compactTitle(for: item))
-                    .font(.callout.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
@@ -239,24 +235,24 @@ struct FollowUpQueueView: View {
                 }
             }
 
-            Spacer(minLength: 10)
+            Spacer(minLength: 8)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Button("Steer") {
                     model.steerFollowUp(item.id)
                 }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.primary.opacity(0.72))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .foregroundStyle(.primary.opacity(0.66))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
                 .background(
                     Capsule()
-                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.065 : 0.048))
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.055 : 0.042))
                 )
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.055))
+                        .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.07 : 0.05))
                 )
                 .accessibilityHint("Send this follow-up now if available")
 
@@ -266,7 +262,7 @@ struct FollowUpQueueView: View {
                     Image(systemName: "trash")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(item.state == .failed ? .red.opacity(0.88) : .secondary)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -325,20 +321,20 @@ struct FollowUpQueueView: View {
                             .font(.system(size: 9, weight: .semibold))
                     }
                     .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 24, height: 24)
                 }
                 .menuStyle(.borderlessButton)
                 .accessibilityLabel("More follow-up actions")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
         .background(cardBackground(item))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(cardStrokeColor(item))
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var planHeaderBackground: some View {
@@ -358,7 +354,7 @@ struct FollowUpQueueView: View {
     }
 
     private func cardBackground(_ item: FollowUpQueueItemRecord) -> some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(
                 item.state == .failed
                     ? Color.red.opacity(colorScheme == .dark ? 0.12 : 0.08)

@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class FollowUpQueueViewTests: XCTestCase {
-    func testCompactTitleUsesContinueForUserQueuedItems() {
+    func testCompactTitleUsesQueuedTextForUserQueuedItems() {
         let item = FollowUpQueueItemRecord(
             threadID: UUID(),
             source: .userQueued,
@@ -13,11 +13,11 @@ final class FollowUpQueueViewTests: XCTestCase {
             sortIndex: 0
         )
 
-        XCTAssertEqual(FollowUpQueueView.compactTitle(for: item), "Continue")
+        XCTAssertEqual(FollowUpQueueView.compactTitle(for: item), "tell me a joke")
         XCTAssertFalse(FollowUpQueueView.shouldShowVerboseText(for: item))
     }
 
-    func testCompactTitleKeepsAssistantSuggestionText() {
+    func testCompactTitleKeepsAssistantSuggestionTextCompact() {
         let item = FollowUpQueueItemRecord(
             threadID: UUID(),
             source: .assistantSuggestion,
@@ -27,7 +27,7 @@ final class FollowUpQueueViewTests: XCTestCase {
         )
 
         XCTAssertEqual(FollowUpQueueView.compactTitle(for: item), "Review changes")
-        XCTAssertTrue(FollowUpQueueView.shouldShowVerboseText(for: item))
+        XCTAssertFalse(FollowUpQueueView.shouldShowVerboseText(for: item))
     }
 
     func testPlanSummaryRequiresActivePlanForSelectedThread() {
