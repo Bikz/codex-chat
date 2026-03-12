@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 import type { HashRoute, RemoteView } from '@/lib/navigation/hash-route';
 import type {
-  Approval,
   BeforeInstallPromptEvent,
   Project,
   RemoteMessage,
+  RuntimeRequest,
   StatusLevel,
   Thread
 } from '@/lib/remote/types';
@@ -36,19 +36,19 @@ export interface RemoteStoreState {
   pendingSnapshotReason: string | null;
   nextOutgoingSeq: number;
   awaitingGapSnapshot: boolean;
-  canApproveRemotely: boolean;
+  canRespondToRuntimeRequests: boolean;
   queuedCommands: Array<{ envelope: unknown; bytes: number }>;
   queuedCommandsBytes: number;
   projects: Project[];
   threads: Thread[];
-  pendingApprovals: Approval[];
+  pendingRuntimeRequests: RuntimeRequest[];
   selectedProjectID: string | null;
   selectedProjectFilterID: string;
   selectedThreadID: string | null;
   currentView: RemoteView;
   isProjectSheetOpen: boolean;
   isAccountSheetOpen: boolean;
-  approvalsExpanded: boolean;
+  runtimeRequestsExpanded: boolean;
   showAllSystemMessages: boolean;
   messagesByThreadID: Map<string, RemoteMessage[]>;
   turnStateByThreadID: Map<string, boolean>;
@@ -97,19 +97,19 @@ export function createInitialState(): RemoteStoreState {
     pendingSnapshotReason: null,
     nextOutgoingSeq: 1,
     awaitingGapSnapshot: false,
-    canApproveRemotely: false,
+    canRespondToRuntimeRequests: false,
     queuedCommands: [],
     queuedCommandsBytes: 0,
     projects: [],
     threads: [],
-    pendingApprovals: [],
+    pendingRuntimeRequests: [],
     selectedProjectID: null,
     selectedProjectFilterID: 'all',
     selectedThreadID: null,
     currentView: 'home',
     isProjectSheetOpen: false,
     isAccountSheetOpen: false,
-    approvalsExpanded: false,
+    runtimeRequestsExpanded: false,
     showAllSystemMessages: false,
     messagesByThreadID: new Map(),
     turnStateByThreadID: new Map(),

@@ -1,5 +1,5 @@
 import { parseMessageText } from '@/lib/remote/message-parser';
-import type { Approval, Project, RemoteMessage, Thread } from '@/lib/remote/types';
+import type { Project, RemoteMessage, RuntimeRequest, Thread } from '@/lib/remote/types';
 
 export function getVisibleThreads(threads: Thread[], selectedProjectFilterID: string): Thread[] {
   if (selectedProjectFilterID === 'all') {
@@ -26,13 +26,13 @@ export function sortedProjectsByActivity(projects: Project[], threads: Thread[])
   });
 }
 
-export function pendingApprovalsByThread(pendingApprovals: Approval[]): Map<string, number> {
+export function pendingRuntimeRequestsByThread(pendingRuntimeRequests: RuntimeRequest[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const approval of pendingApprovals) {
-    if (!approval?.threadID) {
+  for (const runtimeRequest of pendingRuntimeRequests) {
+    if (!runtimeRequest?.threadID) {
       continue;
     }
-    counts.set(approval.threadID, (counts.get(approval.threadID) || 0) + 1);
+    counts.set(runtimeRequest.threadID, (counts.get(runtimeRequest.threadID) || 0) + 1);
   }
   return counts;
 }
@@ -40,7 +40,7 @@ export function pendingApprovalsByThread(pendingApprovals: Approval[]): Map<stri
 const TECHNICAL_EVENT_PREFIX = /^(Started|Completed)\s+(userMessage|agentMessage|commandExecution|reasoning):/i;
 const TECHNICAL_PAYLOAD_MARKERS = /"type"\s*:\s*"(agentMessage|userMessage|commandExecution|reasoning)"/i;
 const USER_RELEVANT_SYSTEM_MARKERS =
-  /\b(error|failed|failure|warning|approval|approve|denied|timed out|timeout|stale|offline|disconnected|reconnect|unavailable|blocked|status)\b/i;
+  /\b(error|failed|failure|warning|approval|approve|runtime request|permission|permissions|denied|timed out|timeout|stale|offline|disconnected|reconnect|unavailable|blocked|status)\b/i;
 
 function compactPreviewText(rawText: string): string {
   const collapsed = rawText.replace(/\s+/g, ' ').trim();

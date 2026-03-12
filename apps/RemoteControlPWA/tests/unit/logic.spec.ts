@@ -222,7 +222,7 @@ describe('remote client lifecycle', () => {
         reconnectDisabledReason: null,
         queuedCommands: [
           {
-            envelope: { schemaVersion: 1 },
+            envelope: { schemaVersion: 2 },
             bytes: 24
           }
         ],

@@ -1,20 +1,20 @@
 'use client';
 
 import { getRemoteClient } from '@/lib/remote/client';
-import { getUserVisibleThreadPreview, getVisibleThreads, pendingApprovalsByThread } from '@/lib/remote/selectors';
+import { getUserVisibleThreadPreview, getVisibleThreads, pendingRuntimeRequestsByThread } from '@/lib/remote/selectors';
 import { useRemoteStore } from '@/lib/remote/store';
 import { useShallow } from 'zustand/react/shallow';
 
 export function ChatList() {
   const client = getRemoteClient();
-  const { threads, projects, selectedProjectFilterID, selectedThreadID, pendingApprovals, turnStateByThreadID, unreadByThreadID, messagesByThreadID } =
+  const { threads, projects, selectedProjectFilterID, selectedThreadID, pendingRuntimeRequests, turnStateByThreadID, unreadByThreadID, messagesByThreadID } =
     useRemoteStore(
       useShallow((state) => ({
         threads: state.threads,
         projects: state.projects,
         selectedProjectFilterID: state.selectedProjectFilterID,
         selectedThreadID: state.selectedThreadID,
-        pendingApprovals: state.pendingApprovals,
+        pendingRuntimeRequests: state.pendingRuntimeRequests,
         turnStateByThreadID: state.turnStateByThreadID,
         unreadByThreadID: state.unreadByThreadID,
         messagesByThreadID: state.messagesByThreadID
@@ -22,7 +22,7 @@ export function ChatList() {
     );
 
   const visibleThreads = getVisibleThreads(threads, selectedProjectFilterID);
-  const approvalsByThread = pendingApprovalsByThread(pendingApprovals);
+  const runtimeRequestsByThread = pendingRuntimeRequestsByThread(pendingRuntimeRequests);
 
   let emptyMessage = '';
   if (threads.length === 0 && projects.length === 0) {
@@ -41,7 +41,7 @@ export function ChatList() {
       <ul id="chatList" className="chat-list" aria-label="Chats" hidden={Boolean(emptyMessage)}>
         {visibleThreads.map((thread) => {
           const running = turnStateByThreadID.get(thread.id) === true;
-          const approvals = approvalsByThread.get(thread.id) || 0;
+          const runtimeRequests = runtimeRequestsByThread.get(thread.id) || 0;
           const hasUnread = unreadByThreadID.get(thread.id) === true && thread.id !== selectedThreadID;
           const previewText = getUserVisibleThreadPreview(messagesByThreadID.get(thread.id) || []);
 
@@ -57,7 +57,9 @@ export function ChatList() {
                   <span className="chat-title">{thread.title}</span>
                   <span className="chat-badges">
                     {running ? <span className="mini-badge running">Running</span> : null}
-                    {approvals > 0 ? <span className="mini-badge approval">{approvals === 1 ? '1 approval' : `${approvals} approvals`}</span> : null}
+                    {runtimeRequests > 0 ? (
+                      <span className="mini-badge approval">{runtimeRequests === 1 ? '1 request' : `${runtimeRequests} requests`}</span>
+                    ) : null}
                     {hasUnread ? <span className="mini-badge unread">New</span> : null}
                   </span>
                 </div>

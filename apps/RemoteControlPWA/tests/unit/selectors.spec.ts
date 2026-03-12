@@ -76,7 +76,7 @@ describe('selectors', () => {
         id: 'm3',
         threadID: 't1',
         role: 'system',
-        text: 'Approval required: Allow command execution?',
+        text: 'Runtime request required: Allow command execution?',
         createdAt: '2026-01-01T00:00:02.000Z'
       },
       { id: 'm4', threadID: 't1', role: 'system', text: 'Turn failed to start', createdAt: '2026-01-01T00:00:03.000Z' },
@@ -116,6 +116,7 @@ describe('selectors', () => {
     expect(isTechnicalSystemMessageText('Started userMessage: {"id":"m1"}')).toBe(true);
     expect(isTechnicalSystemMessageText('Completed commandExecution: {"command":"echo hi"}')).toBe(true);
     expect(isUserRelevantSystemMessageText('Approval required: allow command')).toBe(true);
+    expect(isUserRelevantSystemMessageText('Runtime request required: allow command')).toBe(true);
     expect(isUserRelevantSystemMessageText('Turn failed to start')).toBe(true);
     expect(isUserRelevantSystemMessageText('Started userMessage: {"id":"m1"}')).toBe(false);
   });

@@ -4,9 +4,23 @@ import { buildRouteHash, normalizeProjectID, parseRouteHash, type HashRoute } fr
 import { buildJoinLink, parseJoinLink, type ParsedJoinLink } from '@/lib/remote/join-link';
 import { processIncomingSequence, queueEnvelopeWithLimits } from '@/lib/remote/logic';
 import { reasoningStatusFromText } from '@/lib/remote/message-parser';
+import {
+  buildRuntimeRequestResponseForOption,
+  isRuntimeRequestEventName,
+  normalizeCanRespondToRuntimeRequests,
+  normalizeRuntimeRequests
+} from '@/lib/remote/runtime-request';
 import { getUserVisibleThreadPreview, messageIsCollapsible } from '@/lib/remote/selectors';
 import { createInitialState, remoteStoreApi } from '@/lib/remote/store';
-import type { BeforeInstallPromptEvent, RemoteMessage, RemoteSnapshot, StatusLevel } from '@/lib/remote/types';
+import type {
+  BeforeInstallPromptEvent,
+  RemoteMessage,
+  RemoteSnapshot,
+  RuntimeRequest,
+  RuntimeRequestKind,
+  RuntimeRequestResponse,
+  StatusLevel
+} from '@/lib/remote/types';
 
 const MAX_QUEUED_COMMANDS = 64;
 const MAX_QUEUED_COMMAND_BYTES = 256 * 1024;
@@ -19,8 +33,6 @@ const RECONNECT_DISABLED_REASONS = new Set([
   'session_expired',
   'replaced_by_new_pair_start'
 ]);
-
-type ApprovalDecision = 'approve_once' | 'approve_for_session' | 'decline';
 
 class RemoteClient {
   private initialized = false;
@@ -626,7 +638,7 @@ class RemoteClient {
 
   toggleApprovalsExpanded() {
     const state = remoteStoreApi.getState();
-    remoteStoreApi.setState({ approvalsExpanded: !state.approvalsExpanded });
+    remoteStoreApi.setState({ runtimeRequestsExpanded: !state.runtimeRequestsExpanded });
   }
 
   setShowAllSystemMessages(enabled: boolean) {
@@ -757,7 +769,7 @@ class RemoteClient {
     const state = remoteStoreApi.getState();
     const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
     const threads = Array.isArray(snapshot.threads) ? snapshot.threads : [];
-    const pendingApprovals = Array.isArray(snapshot.pendingApprovals) ? snapshot.pendingApprovals : [];
+    const pendingRuntimeRequests = normalizeRuntimeRequests(snapshot);
 
     const nextSelectedFilter =
       state.selectedProjectFilterID !== 'all' && !projects.some((project) => project.id === state.selectedProjectFilterID)
@@ -853,7 +865,7 @@ class RemoteClient {
     remoteStoreApi.setState({
       projects,
       threads,
-      pendingApprovals,
+      pendingRuntimeRequests,
       selectedProjectID: snapshot.selectedProjectID || state.selectedProjectID,
       selectedProjectFilterID: nextSelectedFilter,
       selectedThreadID,
@@ -1025,6 +1037,7 @@ class RemoteClient {
       remoteStoreApi.setState((state) => ({
         ...state,
         isAuthenticated: true,
+        canRespondToRuntimeRequests: normalizeCanRespondToRuntimeRequests(message),
         desktopConnected:
           typeof payload.desktopConnected === 'boolean' ? payload.desktopConnected : state.desktopConnected,
         reconnectDisabledReason: null,
@@ -1130,7 +1143,7 @@ class RemoteClient {
       return;
     }
 
-    if (typeof message.schemaVersion === 'number' && message.schemaVersion !== 1) {
+    if (typeof message.schemaVersion === 'number' && message.schemaVersion !== 1 && message.schemaVersion !== 2) {
       this.setStatus('Ignored message with unsupported schema version.', 'warn');
       return;
     }
@@ -1176,10 +1189,12 @@ class RemoteClient {
 
     if (payload.type === 'hello') {
       this.markSynced();
-      const supportsApprovals = Boolean((payload.payload as Record<string, unknown> | undefined)?.supportsApprovals);
-      remoteStoreApi.setState({ canApproveRemotely: supportsApprovals });
-      if (!supportsApprovals) {
-        this.setStatus('Connected. Remote approvals are disabled on desktop.', 'warn');
+      const canRespondToRuntimeRequests = normalizeCanRespondToRuntimeRequests(
+        (payload.payload as Record<string, unknown> | undefined) || undefined
+      );
+      remoteStoreApi.setState({ canRespondToRuntimeRequests });
+      if (!canRespondToRuntimeRequests) {
+        this.setStatus('Connected. Runtime request responses are disabled on desktop.', 'warn');
       }
       return;
     }
@@ -1220,8 +1235,8 @@ class RemoteClient {
         this.appendMessageFromEvent(eventPayload);
         return;
       }
-      if (eventPayload.name === 'approval.requested' || eventPayload.name === 'approval.resolved') {
-        this.requestSnapshot('approval_event');
+      if (isRuntimeRequestEventName(typeof eventPayload.name === 'string' ? eventPayload.name : null)) {
+        this.requestSnapshot('runtime_request_event');
         return;
       }
       if (eventPayload.name === 'turn.status.update') {
@@ -1242,7 +1257,8 @@ class RemoteClient {
       case 'desktop_offline':
         return 'Desktop runtime is offline. Reconnect desktop and try again.';
       case 'approval_required':
-        return 'Desktop is waiting for approval. Resolve approval first.';
+      case 'runtime_request_required':
+        return 'Desktop is waiting for a runtime request response. Resolve it first.';
       case 'desktop_busy':
         return 'Desktop is busy and could not apply this command yet.';
       case 'invalid_thread':
@@ -1255,9 +1271,19 @@ class RemoteClient {
       case 'empty_message':
         return 'Cannot send an empty message.';
       case 'remote_approvals_disabled':
-        return 'Desktop has remote approvals disabled.';
+      case 'remote_runtime_requests_disabled':
+        return 'Desktop has remote runtime requests disabled.';
       case 'invalid_approval_decision':
-        return 'Desktop rejected the approval action due to invalid decision.';
+      case 'invalid_runtime_request':
+      case 'invalid_runtime_request_decision':
+      case 'invalid_runtime_request_response':
+        return 'Desktop rejected the runtime request response because the payload was invalid.';
+      case 'unknown_approval_request':
+      case 'unknown_runtime_request':
+        return 'Desktop could not find the pending runtime request.';
+      case 'approval_failed':
+      case 'runtime_request_failed':
+        return 'Desktop failed to apply the runtime request response.';
       default:
         if (commandName === 'thread.send_message') {
           return 'Desktop rejected the message command.';
@@ -1452,8 +1478,9 @@ class RemoteClient {
       threadID?: string | null;
       projectID?: string | null;
       text?: string | null;
-      approvalRequestID?: string | null;
-      approvalDecision?: ApprovalDecision | null;
+      runtimeRequestID?: string | null;
+      runtimeRequestKind?: RuntimeRequestKind | null;
+      runtimeRequestResponse?: RuntimeRequestResponse | null;
     } = {}
   ) {
     const state = remoteStoreApi.getState();
@@ -1470,7 +1497,7 @@ class RemoteClient {
     const commandThreadID = typeof options.threadID === 'string' && options.threadID.length > 0 ? options.threadID : null;
 
     const envelope = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       sessionID: state.sessionID,
       seq: commandSeq,
       timestamp: new Date().toISOString(),
@@ -1482,8 +1509,9 @@ class RemoteClient {
           threadID: commandThreadID,
           projectID: options.projectID || null,
           text: options.text || null,
-          approvalRequestID: options.approvalRequestID || null,
-          approvalDecision: options.approvalDecision || null
+          runtimeRequestID: options.runtimeRequestID || null,
+          runtimeRequestKind: options.runtimeRequestKind || null,
+          runtimeRequestResponse: options.runtimeRequestResponse || null
         }
       }
     };
@@ -1504,7 +1532,7 @@ class RemoteClient {
         return false;
       }
 
-      const queueableCommand = name === 'thread.send_message' || name === 'approval.respond';
+      const queueableCommand = name === 'thread.send_message' || name === 'runtime_request.respond';
       if (!queueableCommand) {
         if (socketIsOpen && !latest.isAuthenticated) {
           this.setStatus('Connecting to relay. Try again in a moment.', 'warn');
@@ -1725,10 +1753,13 @@ class RemoteClient {
     return true;
   }
 
-  respondApproval(approvalRequestID: string, approvalDecision: ApprovalDecision) {
-    this.sendCommand('approval.respond', {
-      approvalRequestID,
-      approvalDecision
+  respondToRuntimeRequest(request: RuntimeRequest, optionID: string) {
+    const runtimeRequestResponse = buildRuntimeRequestResponseForOption(request, optionID);
+
+    this.sendCommand('runtime_request.respond', {
+      runtimeRequestID: request.requestID,
+      runtimeRequestKind: request.kind,
+      runtimeRequestResponse
     });
   }
 

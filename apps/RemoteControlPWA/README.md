@@ -78,7 +78,7 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 - Disconnected mode uses a single pairing surface (`Pair this phone`) with `Scan QR`, `Paste Pair Link`, and `Pair Device`.
 - Project selector on home uses a fixed 2-row mobile grid (`All` + top projects + `View all`) with per-project chat filtering and no horizontal swipe dependency.
 - Account sheet is diagnostics/maintenance only (session metadata, reconnect/snapshot/forget).
-- Inline approval indicators on chat rows and in-chat approval tray actions.
+- Inline runtime-request indicators on chat rows and in-chat request tray actions.
 - User-facing transcript hides system transport events by default.
 - Message wrapping and long-message collapse/expand in transcript view.
 - Smart transcript anchoring: auto-follow only when already near the bottom.
@@ -106,7 +106,7 @@ This keeps browser/hardware back behavior aligned with home/detail navigation.
 - Manual + automatic snapshot requests on reconnect.
 - Live delta event handling for message appends and turn status updates.
 - Composer does not optimistically append outbound user messages; transcript updates render only after relay-confirmed events/snapshots.
-- Outbound `thread.send_message` and `approval.respond` commands queue while offline and flush only after websocket re-auth succeeds.
+- Outbound `thread.send_message` and `runtime_request.respond` commands queue while offline and flush only after websocket re-auth succeeds.
 - Reconnect backoff when backgrounding or network drops.
 - Saved paired-device credentials auto-restore on launch and trigger reconnect without rescanning QR.
 - `Forget This Device` clears locally saved pairing credentials.

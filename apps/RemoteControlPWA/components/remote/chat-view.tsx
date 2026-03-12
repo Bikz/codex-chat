@@ -31,7 +31,7 @@ export function ChatView({ hidden }: { hidden: boolean }) {
     threads,
     messagesByThreadID,
     expandedMessageIDs,
-    approvalsExpanded,
+    runtimeRequestsExpanded,
     turnStateByThreadID,
     isSyncStale,
     visibleMessageLimit,
@@ -47,7 +47,7 @@ export function ChatView({ hidden }: { hidden: boolean }) {
       threads: state.threads,
       messagesByThreadID: state.messagesByThreadID,
       expandedMessageIDs: state.expandedMessageIDs,
-      approvalsExpanded: state.approvalsExpanded,
+      runtimeRequestsExpanded: state.runtimeRequestsExpanded,
       turnStateByThreadID: state.turnStateByThreadID,
       isSyncStale: state.isSyncStale,
       visibleMessageLimit: state.visibleMessageLimit,
@@ -245,19 +245,19 @@ export function ChatView({ hidden }: { hidden: boolean }) {
 
       <section className="panel approvals-panel" aria-labelledby="approvalsHeading">
         <div className="section-head">
-          <h3 id="approvalsHeading">Approvals</h3>
+          <h3 id="approvalsHeading">Runtime requests</h3>
           <button
             id="toggleApprovalsButton"
             className="ghost"
             type="button"
-            aria-expanded={approvalsExpanded}
+            aria-expanded={runtimeRequestsExpanded}
             aria-controls="approvalTray"
             onClick={() => client.toggleApprovalsExpanded()}
           >
-            {approvalsExpanded ? 'Hide' : 'Show'}
+            {runtimeRequestsExpanded ? 'Hide' : 'Show'}
           </button>
         </div>
-        <div hidden={!approvalsExpanded}>
+        <div hidden={!runtimeRequestsExpanded}>
           <ApprovalsTray />
         </div>
       </section>

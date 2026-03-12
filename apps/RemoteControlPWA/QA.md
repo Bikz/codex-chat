@@ -64,7 +64,7 @@ Use this checklist before cutting a release for the mobile web client.
   - queued commands
   - revoked/stopped session
 - Confirm `Request Snapshot` recovers stale state without full re-pair.
-- Confirm chat rows show `Running` / `New` / approval badges when corresponding state exists.
+- Confirm chat rows show `Running` / `New` / runtime-request badges when corresponding state exists.
 - Confirm chat row previews use user-visible content only (no raw IDs or transport payload text).
 - Confirm transcript hides system transport events by default.
 - Confirm long transcript messages (>8 lines or >480 chars) collapse by default and can be expanded/collapsed.

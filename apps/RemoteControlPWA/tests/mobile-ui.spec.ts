@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const longMessage = Array.from({ length: 12 }, (_, index) => `line ${index + 1} with verbose mobile text`).join("\n");
 const longToken = "A".repeat(200);
+const approvalResponseOptions = [
+  { id: "accept", label: "Approve once" },
+  { id: "acceptForSession", label: "Approve session" },
+  { id: "decline", label: "Decline" }
+];
 
 const snapshotPayload = {
   projects: [
@@ -19,10 +24,28 @@ const snapshotPayload = {
     { id: "m1", threadID: "t1", role: "assistant", text: "Short summary", createdAt: "2026-02-28T15:00:00.000Z" },
     { id: "m2", threadID: "t2", role: "assistant", text: longMessage, createdAt: "2026-02-28T15:01:00.000Z" }
   ],
-  turnState: { threadID: "t1", isTurnInProgress: true, isAwaitingApproval: false },
-  pendingApprovals: [
-    { requestID: "a1", threadID: "t1", summary: "Allow command execution?" },
-    { requestID: "a2", threadID: null, summary: "Allow session-level action?" }
+  turnState: { threadID: "t1", isTurnInProgress: true, isAwaitingRuntimeRequest: false },
+  pendingRuntimeRequests: [
+    {
+      requestID: "a1",
+      kind: "approval",
+      threadID: "t1",
+      title: "Command approval",
+      summary: "Allow command execution?",
+      responseOptions: approvalResponseOptions,
+      permissions: [],
+      options: []
+    },
+    {
+      requestID: "a2",
+      kind: "approval",
+      threadID: null,
+      title: "Session approval",
+      summary: "Allow session-level action?",
+      responseOptions: approvalResponseOptions,
+      permissions: [],
+      options: []
+    }
   ]
 };
 
@@ -50,7 +73,7 @@ function createLargeProjectPayload() {
         createdAt: "2026-02-28T15:00:00.000Z"
       }
     ],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   };
 }
 
@@ -81,7 +104,7 @@ function createLongTokenOverflowPayload() {
         createdAt: "2026-02-28T15:00:00.000Z"
       }
     ],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   };
 }
 
@@ -122,7 +145,7 @@ function createSystemHeavyPayload(reasoningStatus: "started" | "completed" = "st
         createdAt: "2026-02-28T15:00:03.000Z"
       }
     ],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   };
 }
 
@@ -144,7 +167,7 @@ function createSystemPolicyPayload() {
         id: "m-approval",
         threadID: "t1",
         role: "system",
-        text: "Approval required: Allow command execution?",
+        text: "Runtime request required: Allow command execution?",
         createdAt: "2026-02-28T15:00:01.000Z"
       },
       {
@@ -155,7 +178,7 @@ function createSystemPolicyPayload() {
         createdAt: "2026-02-28T15:00:02.000Z"
       }
     ],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   };
 }
 
@@ -243,7 +266,7 @@ function createLongThreadPayload(messageCount: number) {
       text: `message ${index + 1}`,
       createdAt: `2026-02-28T15:${String(index % 59).padStart(2, "0")}:00.000Z`
     })),
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   };
 }
 
@@ -275,7 +298,7 @@ test("mobile-no-horizontal-overflow-thread", async ({ page }) => {
         createdAt: "2026-02-28T15:00:00.000Z"
       }
     ],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   });
   await page.locator("#chatList .chat-row").first().click();
   await expectNoPageHorizontalOverflow(page);
@@ -410,7 +433,7 @@ test("mobile-transcript-default-shows-user-relevant-system-notices", async ({ pa
   await seedCustom(page, createSystemPolicyPayload());
   await page.locator("#chatList .chat-row").first().click();
 
-  await expect(page.getByText("Approval required: Allow command execution?")).toBeVisible();
+  await expect(page.getByText("Runtime request required: Allow command execution?")).toBeVisible();
   await expect(page.getByText("Turn failed to start")).toBeVisible();
   await expect(page.getByText("Started userMessage")).toHaveCount(0);
 });
@@ -434,13 +457,13 @@ test("mobile-event-injection-updates-transcript-immediately", async ({ page }) =
     selectedProjectID: "p1",
     selectedThreadID: "t1",
     messages: [],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   });
   await page.getByRole("button", { name: "Open chat Latency thread" }).click();
 
   const start = Date.now();
   await injectEnvelope(page, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionID: "e2e-session",
     seq: 1,
     timestamp: new Date().toISOString(),
@@ -618,12 +641,12 @@ test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
     messages: [
       { id: "m1", threadID: "t1", role: "assistant", text: "First", createdAt: "2026-02-28T15:00:00.000Z" }
     ],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   });
   await page.getByRole("button", { name: "Open chat Dedupe thread" }).click();
 
   await injectEnvelope(page, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionID: "e2e-session",
     seq: 1,
     timestamp: new Date().toISOString(),
@@ -640,7 +663,7 @@ test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
     }
   });
   await injectEnvelope(page, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionID: "e2e-session",
     seq: 2,
     timestamp: new Date().toISOString(),
@@ -658,7 +681,7 @@ test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
   });
 
   await injectEnvelope(page, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionID: "e2e-session",
     seq: 3,
     timestamp: new Date().toISOString(),
@@ -673,7 +696,7 @@ test("mobile-dedupes-message-on-reconnect-resync", async ({ page }) => {
           { id: "m1", threadID: "t1", role: "assistant", text: "First", createdAt: "2026-02-28T15:00:00.000Z" },
           { id: "m2", threadID: "t1", role: "assistant", text: "Second", createdAt: "2026-02-28T15:00:01.000Z" }
         ],
-        pendingApprovals: []
+        pendingRuntimeRequests: []
       }
     }
   });
@@ -690,7 +713,7 @@ test("mobile-command-ack-rejection-surfaces-status-immediately", async ({ page }
   const transcript = page.getByLabel("Transcript");
 
   await injectEnvelope(page, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionID: "e2e-session",
     seq: 10,
     timestamp: new Date().toISOString(),
@@ -723,7 +746,7 @@ test("mobile-command-ack-rejection-without-threadid-stays-on-origin-thread", asy
     selectedProjectID: "p1",
     selectedThreadID: "t1",
     messages: [],
-    pendingApprovals: []
+    pendingRuntimeRequests: []
   });
 
   await page.evaluate(() => {
@@ -744,7 +767,7 @@ test("mobile-command-ack-rejection-without-threadid-stays-on-origin-thread", asy
   await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().selectedThreadID)).toBe("t2");
 
   await injectEnvelope(page, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionID: "e2e-session",
     seq: 10,
     timestamp: new Date().toISOString(),
@@ -798,7 +821,7 @@ test("mobile-account-sheet-focus-trap", async ({ page }) => {
   await expect(page.locator("#accountSheet")).toBeHidden();
 });
 
-test("mobile-approvals-tray", async ({ page }) => {
+test("mobile-runtime-requests-tray", async ({ page }) => {
   await seedDemo(page);
 
   await page.getByRole("button", { name: "Open chat Daily sync" }).click();
@@ -810,10 +833,10 @@ test("mobile-approvals-tray", async ({ page }) => {
   await expect(page.getByText("Allow command execution?")).toBeVisible();
 });
 
-test("mobile-approvals-long-unbroken-content-no-overflow", async ({ page }) => {
+test("mobile-runtime-requests-long-unbroken-content-no-overflow", async ({ page }) => {
   await seedCustom(page, {
     projects: [{ id: "p1", name: "General" }],
-    threads: [{ id: "t1", projectID: "p1", title: "Approval stress thread", isPinned: false }],
+    threads: [{ id: "t1", projectID: "p1", title: "Runtime request stress thread", isPinned: false }],
     selectedProjectID: "p1",
     selectedThreadID: "t1",
     messages: [
@@ -821,20 +844,25 @@ test("mobile-approvals-long-unbroken-content-no-overflow", async ({ page }) => {
         id: "m1",
         threadID: "t1",
         role: "assistant",
-        text: "Approval queue check",
+        text: "Runtime request queue check",
         createdAt: "2026-02-28T15:00:00.000Z"
       }
     ],
-    pendingApprovals: [
+    pendingRuntimeRequests: [
       {
         requestID: `req_${"R".repeat(140)}`,
+        kind: "approval",
         threadID: "t1",
-        summary: `summary_${"S".repeat(900)}`
+        title: "Runtime request approval",
+        summary: `summary_${"S".repeat(900)}`,
+        responseOptions: approvalResponseOptions,
+        permissions: [],
+        options: []
       }
     ]
   });
 
-  await page.getByRole("button", { name: "Open chat Approval stress thread" }).click();
+  await page.getByRole("button", { name: "Open chat Runtime request stress thread" }).click();
   await page.locator("#toggleApprovalsButton").click();
   await expect(page.locator("#approvalTray")).toBeVisible();
   await expectNoPageHorizontalOverflow(page);

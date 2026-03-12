@@ -7,7 +7,7 @@ import { remoteStoreApi } from '@/lib/remote/store';
 declare global {
   interface Window {
     __codexRemotePWAHarness?: {
-      seed: (snapshot: RemoteSnapshot, options?: { authenticated?: boolean; expandApprovals?: boolean }) => void;
+      seed: (snapshot: RemoteSnapshot, options?: { authenticated?: boolean; expandRuntimeRequests?: boolean; expandApprovals?: boolean }) => void;
       openThread: (threadID: string) => void;
       openAccountSheet: () => void;
       closeAccountSheet: () => void;
@@ -31,7 +31,7 @@ declare global {
         currentView: string;
         selectedProjectFilterID: string;
         selectedThreadID: string | null;
-        approvalsExpanded: boolean;
+        runtimeRequestsExpanded: boolean;
         showAllSystemMessages: boolean;
         isChatAtBottom: boolean;
         showJumpToLatest: boolean;
@@ -50,7 +50,7 @@ declare global {
 export function exposeE2EHarness() {
   const client = getRemoteClient();
   const harness = {
-    seed(snapshot: RemoteSnapshot, options: { authenticated?: boolean; expandApprovals?: boolean } = {}) {
+    seed(snapshot: RemoteSnapshot, options: { authenticated?: boolean; expandRuntimeRequests?: boolean; expandApprovals?: boolean } = {}) {
       if (options.authenticated !== false) {
         remoteStoreApi.setState((state) => ({
           isAuthenticated: true,
@@ -59,8 +59,8 @@ export function exposeE2EHarness() {
         }));
       }
       client.applySnapshot(snapshot || {});
-      if (options.expandApprovals) {
-        remoteStoreApi.setState({ approvalsExpanded: true });
+      if (options.expandRuntimeRequests || options.expandApprovals) {
+        remoteStoreApi.setState({ runtimeRequestsExpanded: true });
       }
     },
     openThread(threadID: string) {
@@ -91,7 +91,7 @@ export function exposeE2EHarness() {
       remoteStoreApi.setState({ isStandaloneMode: Boolean(enabled) });
     },
     setApprovalsExpanded(expanded: boolean) {
-      remoteStoreApi.setState({ approvalsExpanded: Boolean(expanded) });
+      remoteStoreApi.setState({ runtimeRequestsExpanded: Boolean(expanded) });
     },
     setChatDetached(detached: boolean) {
       remoteStoreApi.setState({
@@ -124,7 +124,7 @@ export function exposeE2EHarness() {
         currentView: state.currentView,
         selectedProjectFilterID: state.selectedProjectFilterID,
         selectedThreadID: state.selectedThreadID,
-        approvalsExpanded: state.approvalsExpanded,
+        runtimeRequestsExpanded: state.runtimeRequestsExpanded,
         showAllSystemMessages: state.showAllSystemMessages,
         isChatAtBottom: state.isChatAtBottom,
         showJumpToLatest: state.showJumpToLatest,

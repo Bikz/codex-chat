@@ -6,44 +6,45 @@ import { useShallow } from 'zustand/react/shallow';
 
 export function ApprovalsTray() {
   const client = getRemoteClient();
-  const { selectedThreadID, pendingApprovals, canApproveRemotely } = useRemoteStore(
+  const { selectedThreadID, pendingRuntimeRequests, canRespondToRuntimeRequests } = useRemoteStore(
     useShallow((state) => ({
       selectedThreadID: state.selectedThreadID,
-      pendingApprovals: state.pendingApprovals,
-      canApproveRemotely: state.canApproveRemotely
+      pendingRuntimeRequests: state.pendingRuntimeRequests,
+      canRespondToRuntimeRequests: state.canRespondToRuntimeRequests
     }))
   );
 
-  const threadApprovals = pendingApprovals.filter((approval) => approval.threadID === selectedThreadID);
-  const globalApprovals = pendingApprovals.filter((approval) => !approval.threadID);
-  const allVisibleApprovals = [...threadApprovals, ...globalApprovals];
+  const threadRuntimeRequests = pendingRuntimeRequests.filter((runtimeRequest) => runtimeRequest.threadID === selectedThreadID);
+  const globalRuntimeRequests = pendingRuntimeRequests.filter((runtimeRequest) => !runtimeRequest.threadID);
+  const allVisibleRuntimeRequests = [...threadRuntimeRequests, ...globalRuntimeRequests];
 
   return (
     <>
-      <div id="approvalGlobalSummary" className="approval-summary-line" hidden={globalApprovals.length === 0}>
-        {globalApprovals.length === 1
-          ? '1 session approval is pending outside this chat.'
-          : `${globalApprovals.length} session approvals are pending outside this chat.`}
+      <div id="approvalGlobalSummary" className="approval-summary-line" hidden={globalRuntimeRequests.length === 0}>
+        {globalRuntimeRequests.length === 1
+          ? '1 runtime request is pending outside this chat.'
+          : `${globalRuntimeRequests.length} runtime requests are pending outside this chat.`}
       </div>
       <div id="approvalTray" className="approval-tray" hidden={false}>
-        {allVisibleApprovals.length === 0 ? (
-          <div className="approval-summary-line">No pending approvals.</div>
+        {allVisibleRuntimeRequests.length === 0 ? (
+          <div className="approval-summary-line">No pending runtime requests.</div>
         ) : (
-          allVisibleApprovals.map((approval) => (
-            <article key={approval.requestID} className="approval-card">
-              <div className="approval-title">#{approval.requestID || '?'}</div>
-              <div className="approval-text">{approval.summary || 'Pending approval request'}</div>
-              {canApproveRemotely ? (
+          allVisibleRuntimeRequests.map((runtimeRequest) => (
+            <article key={runtimeRequest.requestID} className="approval-card">
+              <div className="approval-title">{runtimeRequest.title || `#${runtimeRequest.requestID || '?'}`}</div>
+              <div className="approval-text">{runtimeRequest.summary || 'Pending runtime request'}</div>
+              {canRespondToRuntimeRequests && runtimeRequest.responseOptions.length > 0 ? (
                 <div className="approval-actions">
-                  <button className="primary" type="button" onClick={() => client.respondApproval(approval.requestID, 'approve_once')}>
-                    Approve once
-                  </button>
-                  <button type="button" onClick={() => client.respondApproval(approval.requestID, 'approve_for_session')}>
-                    Approve session
-                  </button>
-                  <button type="button" onClick={() => client.respondApproval(approval.requestID, 'decline')}>
-                    Decline
-                  </button>
+                  {runtimeRequest.responseOptions.map((option, index) => (
+                    <button
+                      key={`${runtimeRequest.requestID}-${option.id}`}
+                      className={index === 0 ? 'primary' : undefined}
+                      type="button"
+                      onClick={() => client.respondToRuntimeRequest(runtimeRequest, option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               ) : null}
             </article>
