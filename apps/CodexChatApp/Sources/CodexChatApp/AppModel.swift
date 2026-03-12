@@ -1254,6 +1254,7 @@ final class AppModel: ObservableObject {
     var runtimeEventTask: Task<Void, Never>?
     var runtimeAutoRecoveryTask: Task<Void, Never>?
     var onboardingCompletionTask: Task<Void, Never>?
+    var runtimeHistoryImportTask: Task<Void, Never>?
     var runtimeHistoryImportCandidates: [RuntimeHistoryThreadSummary] = []
     var hasAttemptedAutomaticSharedAuthRefresh = false
     var didAttemptSharedAuthRuntimeRecovery = false

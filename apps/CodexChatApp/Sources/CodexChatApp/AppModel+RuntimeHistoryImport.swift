@@ -316,6 +316,123 @@ private enum RuntimeHistoryImportPreference: String {
     case empty
 }
 
+enum RuntimeHistoryImportError: LocalizedError {
+    case projectExistsWithoutMarker(String)
+    case noImportableThreadsWereParsed
+
+    var errorDescription: String? {
+        switch self {
+        case let .projectExistsWithoutMarker(path):
+            "A project already exists at \(path) without a CodexChat import marker."
+        case .noImportableThreadsWereParsed:
+            "CodexChat found Codex history, but couldn't parse any importable conversations."
+        }
+    }
+}
+
+struct RuntimeHistoryImportProjectMarker: Codable, Sendable {
+    static let fileName = ".codexchat-runtime-history-import.json"
+
+    let schemaVersion: Int
+    let createdAt: String
+}
+
+struct RuntimeHistoryImportManifest: Codable, Sendable {
+    static let fileName = ".codexchat-runtime-history-manifest.json"
+
+    let schemaVersion: Int
+    let createdAt: String
+    var updatedAt: String
+    var importedRuntimeThreadIDs: [String]
+}
+
+enum RuntimeHistoryImportStore {
+    static func projectMarkerURL(projectPath: String) -> URL {
+        URL(fileURLWithPath: projectPath, isDirectory: true)
+            .appendingPathComponent(RuntimeHistoryImportProjectMarker.fileName, isDirectory: false)
+    }
+
+    static func manifestURL(projectPath: String) -> URL {
+        URL(fileURLWithPath: projectPath, isDirectory: true)
+            .appendingPathComponent(RuntimeHistoryImportManifest.fileName, isDirectory: false)
+    }
+
+    static func isOwnedImportedProject(
+        projectPath: String,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        fileManager.fileExists(atPath: projectMarkerURL(projectPath: projectPath).path)
+    }
+
+    static func writeProjectMarker(
+        projectPath: String,
+        fileManager: FileManager = .default
+    ) throws {
+        let marker = RuntimeHistoryImportProjectMarker(
+            schemaVersion: 1,
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        let data = try JSONEncoder().encode(marker)
+        try fileManager.createDirectory(at: URL(fileURLWithPath: projectPath, isDirectory: true), withIntermediateDirectories: true)
+        try data.write(to: projectMarkerURL(projectPath: projectPath), options: [.atomic])
+    }
+
+    static func readManifest(
+        projectPath: String,
+        fileManager: FileManager = .default
+    ) throws -> RuntimeHistoryImportManifest? {
+        let url = manifestURL(projectPath: projectPath)
+        guard fileManager.fileExists(atPath: url.path) else {
+            return nil
+        }
+
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(RuntimeHistoryImportManifest.self, from: data)
+    }
+
+    static func writeManifest(
+        _ manifest: RuntimeHistoryImportManifest,
+        projectPath: String,
+        fileManager: FileManager = .default
+    ) throws {
+        let data = try JSONEncoder().encode(manifest)
+        try fileManager.createDirectory(at: URL(fileURLWithPath: projectPath, isDirectory: true), withIntermediateDirectories: true)
+        try data.write(to: manifestURL(projectPath: projectPath), options: [.atomic])
+    }
+
+    static func makeEmptyManifest() -> RuntimeHistoryImportManifest {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        return RuntimeHistoryImportManifest(
+            schemaVersion: 1,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            importedRuntimeThreadIDs: []
+        )
+    }
+
+    static func registerImportedRuntimeThreadID(
+        _ runtimeThreadID: String,
+        projectPath: String,
+        fileManager: FileManager = .default
+    ) throws {
+        var manifest = try readManifest(projectPath: projectPath, fileManager: fileManager) ?? makeEmptyManifest()
+        guard !manifest.importedRuntimeThreadIDs.contains(runtimeThreadID) else {
+            return
+        }
+        manifest.importedRuntimeThreadIDs.append(runtimeThreadID)
+        manifest.importedRuntimeThreadIDs.sort()
+        manifest.updatedAt = ISO8601DateFormatter().string(from: Date())
+        try writeManifest(manifest, projectPath: projectPath, fileManager: fileManager)
+    }
+
+    static func importedRuntimeThreadIDs(
+        projectPath: String,
+        fileManager: FileManager = .default
+    ) throws -> Set<String> {
+        try Set(readManifest(projectPath: projectPath, fileManager: fileManager)?.importedRuntimeThreadIDs ?? [])
+    }
+}
+
 extension AppModel {
     private static let importedRuntimeHistoryProjectName = "Imported from Codex"
     private static let runtimeHistoryImportWorkerID = RuntimePoolWorkerID(0)
@@ -416,7 +533,13 @@ extension AppModel {
     }
 
     func importRuntimeHistory() {
-        Task {
+        guard runtimeHistoryImportTask == nil else {
+            return
+        }
+
+        runtimeHistoryImportTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { runtimeHistoryImportTask = nil }
             await performRuntimeHistoryImport()
         }
     }
@@ -462,9 +585,16 @@ extension AppModel {
             }
 
             let importedProject = try await ensureImportedRuntimeHistoryProject(projectRepository: projectRepository)
+            var alreadyImportedRuntimeThreadIDs = try RuntimeHistoryImportStore.importedRuntimeThreadIDs(
+                projectPath: importedProject.path
+            )
             var importedThreadCount = 0
 
             for candidate in candidates.sorted(by: RuntimeHistoryImportParser.sort) {
+                if alreadyImportedRuntimeThreadIDs.contains(candidate.runtimeThreadID) {
+                    continue
+                }
+
                 guard let importedThread = try await loadImportedRuntimeHistoryThread(
                     runtimePool: runtimePool,
                     candidate: candidate
@@ -477,13 +607,21 @@ extension AppModel {
                     title: importedThread.title
                 )
                 try await appendImportedTurns(importedThread, to: localThread, projectPath: importedProject.path)
+                try RuntimeHistoryImportStore.registerImportedRuntimeThreadID(
+                    candidate.runtimeThreadID,
+                    projectPath: importedProject.path
+                )
+                alreadyImportedRuntimeThreadIDs.insert(candidate.runtimeThreadID)
                 importedThreadCount += 1
             }
 
-            let preferenceValue: RuntimeHistoryImportPreference = importedThreadCount > 0 ? .imported : .empty
+            if importedThreadCount == 0 {
+                throw RuntimeHistoryImportError.noImportableThreadsWereParsed
+            }
+
             try await preferenceRepository.setPreference(
                 key: .runtimeThreadImportV1,
-                value: preferenceValue.rawValue
+                value: RuntimeHistoryImportPreference.imported.rawValue
             )
 
             runtimeHistoryImportCandidates = []
@@ -509,6 +647,7 @@ extension AppModel {
         var cursor: String?
         var collected: [RuntimeHistoryThreadSummary] = []
         var seenIDs: Set<String> = []
+        var seenCursors: Set<String> = []
 
         while true {
             let result = try await runtimePool.listThreads(cursor: cursor)
@@ -521,7 +660,8 @@ extension AppModel {
                 ?? runtimeImportString(runtimeImportValue(at: ["cursor"], in: result))
             guard let nextCursor,
                   !nextCursor.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty,
-                  nextCursor != cursor
+                  nextCursor != cursor,
+                  seenCursors.insert(nextCursor).inserted
             else {
                 break
             }
@@ -535,16 +675,40 @@ extension AppModel {
         projectRepository: any ProjectRepository
     ) async throws -> ProjectRecord {
         try storagePaths.ensureRootStructure()
-        let importedProjectURL = storagePaths.projectsURL
+        let canonicalProjectURL = storagePaths.projectsURL
             .appendingPathComponent(Self.importedRuntimeHistoryProjectName, isDirectory: true)
 
-        if let existing = projects.first(where: { $0.path == importedProjectURL.path }) {
-            try await prepareProjectFolderStructure(projectPath: existing.path)
-            return existing
+        let knownProjects = try await (projects.isEmpty ? projectRepository.listProjects() : projects)
+        if let ownedProject = knownProjects.first(where: {
+            RuntimeHistoryImportStore.isOwnedImportedProject(projectPath: $0.path)
+        }) {
+            try await prepareProjectFolderStructure(projectPath: ownedProject.path)
+            if try RuntimeHistoryImportStore.readManifest(projectPath: ownedProject.path) == nil {
+                try RuntimeHistoryImportStore.writeManifest(
+                    RuntimeHistoryImportStore.makeEmptyManifest(),
+                    projectPath: ownedProject.path
+                )
+            }
+            return ownedProject
         }
 
-        if let existing = try await projectRepository.getProject(path: importedProjectURL.path) {
+        if let existing = knownProjects.first(where: { $0.path == canonicalProjectURL.path }) {
+            throw RuntimeHistoryImportError.projectExistsWithoutMarker(existing.path)
+        }
+
+        if let existing = try await projectRepository.getProject(path: canonicalProjectURL.path) {
+            throw RuntimeHistoryImportError.projectExistsWithoutMarker(existing.path)
+        }
+
+        let importedProjectURL = storagePaths.uniqueProjectDirectoryURL(
+            requestedName: Self.importedRuntimeHistoryProjectName
+        )
+
+        if let existing = knownProjects.first(where: { $0.path == importedProjectURL.path }) {
             try await prepareProjectFolderStructure(projectPath: existing.path)
+            if !RuntimeHistoryImportStore.isOwnedImportedProject(projectPath: existing.path) {
+                throw RuntimeHistoryImportError.projectExistsWithoutMarker(existing.path)
+            }
             return existing
         }
 
@@ -557,6 +721,11 @@ extension AppModel {
         )
         try await applyGlobalSafetyDefaultsToProjectIfNeeded(projectID: project.id)
         try await prepareProjectFolderStructure(projectPath: project.path)
+        try RuntimeHistoryImportStore.writeProjectMarker(projectPath: project.path)
+        try RuntimeHistoryImportStore.writeManifest(
+            RuntimeHistoryImportStore.makeEmptyManifest(),
+            projectPath: project.path
+        )
         return project
     }
 

@@ -121,4 +121,41 @@ final class RuntimeHistoryImportTests: XCTestCase {
         model.runtimeHistoryImportState = .idle
         XCTAssertTrue(model.isOnboardingReadyToComplete)
     }
+
+    func testRuntimeHistoryImportManifestRegistersImportedThreadIDsIncrementally() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-runtime-history-manifest-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        XCTAssertEqual(
+            try RuntimeHistoryImportStore.importedRuntimeThreadIDs(projectPath: root.path),
+            Set<String>()
+        )
+
+        try RuntimeHistoryImportStore.registerImportedRuntimeThreadID("thr-2", projectPath: root.path)
+        try RuntimeHistoryImportStore.registerImportedRuntimeThreadID("thr-1", projectPath: root.path)
+        try RuntimeHistoryImportStore.registerImportedRuntimeThreadID("thr-2", projectPath: root.path)
+
+        let manifest = try XCTUnwrap(RuntimeHistoryImportStore.readManifest(projectPath: root.path))
+        XCTAssertEqual(manifest.importedRuntimeThreadIDs, ["thr-1", "thr-2"])
+    }
+
+    func testRuntimeHistoryImportProjectMarkerIdentifiesOwnedImportedProject() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-runtime-history-marker-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        XCTAssertFalse(RuntimeHistoryImportStore.isOwnedImportedProject(projectPath: root.path))
+        try RuntimeHistoryImportStore.writeProjectMarker(projectPath: root.path)
+        XCTAssertTrue(RuntimeHistoryImportStore.isOwnedImportedProject(projectPath: root.path))
+    }
+
+    func testRuntimeHistoryImportErrorReportsNoImportableThreadsFailure() {
+        XCTAssertEqual(
+            RuntimeHistoryImportError.noImportableThreadsWereParsed.errorDescription,
+            "CodexChat found Codex history, but couldn't parse any importable conversations."
+        )
+    }
 }

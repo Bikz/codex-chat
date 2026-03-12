@@ -4,6 +4,8 @@ extension AppModel {
     func enterOnboarding(reason: OnboardingReason) {
         onboardingCompletionTask?.cancel()
         onboardingCompletionTask = nil
+        runtimeHistoryImportTask?.cancel()
+        runtimeHistoryImportTask = nil
         onboardingMode = .active
         runtimeHistoryImportCandidates = []
         runtimeHistoryImportState = .idle
