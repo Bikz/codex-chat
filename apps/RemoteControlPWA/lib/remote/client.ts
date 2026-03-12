@@ -1143,7 +1143,7 @@ class RemoteClient {
       return;
     }
 
-    if (typeof message.schemaVersion === 'number' && message.schemaVersion !== 1 && message.schemaVersion !== 2) {
+    if (typeof message.schemaVersion === 'number' && message.schemaVersion !== 2) {
       this.setStatus('Ignored message with unsupported schema version.', 'warn');
       return;
     }
@@ -1256,7 +1256,6 @@ class RemoteClient {
     switch (reason) {
       case 'desktop_offline':
         return 'Desktop runtime is offline. Reconnect desktop and try again.';
-      case 'approval_required':
       case 'runtime_request_required':
         return 'Desktop is waiting for a runtime request response. Resolve it first.';
       case 'desktop_busy':
@@ -1270,18 +1269,12 @@ class RemoteClient {
         return 'Desktop could not resolve the target project for this command.';
       case 'empty_message':
         return 'Cannot send an empty message.';
-      case 'remote_approvals_disabled':
       case 'remote_runtime_requests_disabled':
         return 'Desktop has remote runtime requests disabled.';
-      case 'invalid_approval_decision':
       case 'invalid_runtime_request':
-      case 'invalid_runtime_request_decision':
-      case 'invalid_runtime_request_response':
         return 'Desktop rejected the runtime request response because the payload was invalid.';
-      case 'unknown_approval_request':
       case 'unknown_runtime_request':
         return 'Desktop could not find the pending runtime request.';
-      case 'approval_failed':
       case 'runtime_request_failed':
         return 'Desktop failed to apply the runtime request response.';
       default:

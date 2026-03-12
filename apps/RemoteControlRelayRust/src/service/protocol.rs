@@ -133,10 +133,10 @@ pub(super) fn validate_mobile_payload(
             code: "invalid_command",
             message: "schemaVersion is required for command envelopes.".to_string(),
         })?;
-    if schema_version != 1 && schema_version != 2 {
+    if schema_version != 2 {
         return Err(RelayValidationError {
             code: "unsupported_schema",
-            message: "Only schemaVersion 1 or 2 is supported.".to_string(),
+            message: "Only schemaVersion 2 is supported.".to_string(),
         });
     }
 

@@ -1,5 +1,4 @@
 import type {
-  LegacyApproval,
   RemoteSnapshot,
   RuntimeRequest,
   RuntimeRequestKind,
@@ -128,13 +127,8 @@ function normalizeRuntimeRequest(value: unknown): RuntimeRequest | null {
 }
 
 export function normalizeRuntimeRequests(snapshot: RemoteSnapshot): RuntimeRequest[] {
-  const nextRequests = Array.isArray(snapshot.pendingRuntimeRequests) ? snapshot.pendingRuntimeRequests : null;
-  if (nextRequests) {
-    return nextRequests.map((entry) => normalizeRuntimeRequest(entry)).filter((entry): entry is RuntimeRequest => entry !== null);
-  }
-
-  const legacyApprovals = Array.isArray(snapshot.pendingApprovals) ? snapshot.pendingApprovals : [];
-  return legacyApprovals.map((entry) => normalizeLegacyApproval(entry)).filter((entry): entry is RuntimeRequest => entry !== null);
+  const nextRequests = Array.isArray(snapshot.pendingRuntimeRequests) ? snapshot.pendingRuntimeRequests : [];
+  return nextRequests.map((entry) => normalizeRuntimeRequest(entry)).filter((entry): entry is RuntimeRequest => entry !== null);
 }
 
 export function normalizeCanRespondToRuntimeRequests(payload: Record<string, unknown> | undefined): boolean {
@@ -142,22 +136,11 @@ export function normalizeCanRespondToRuntimeRequests(payload: Record<string, unk
     return false;
   }
 
-  return (
-    payload.canRespondToRuntimeRequests === true ||
-    payload.supportsRuntimeRequests === true ||
-    payload.canApproveRemotely === true ||
-    payload.supportsApprovals === true
-  );
+  return payload.canRespondToRuntimeRequests === true || payload.supportsRuntimeRequests === true;
 }
 
 export function isRuntimeRequestEventName(name: string | null | undefined): boolean {
-  return (
-    name === 'runtime_request.requested' ||
-    name === 'runtime_request.resolved' ||
-    name === 'runtime_request.responded' ||
-    name === 'approval.requested' ||
-    name === 'approval.resolved'
-  );
+  return name === 'runtime_request.requested' || name === 'runtime_request.resolved' || name === 'runtime_request.responded';
 }
 
 export function normalizeRuntimeRequestDecision(decision: string | null | undefined): CanonicalRuntimeDecision | null {
@@ -182,33 +165,6 @@ export function normalizeRuntimeRequestDecision(decision: string | null | undefi
     default:
       return null;
   }
-}
-
-function normalizeLegacyApproval(value: LegacyApproval | unknown): RuntimeRequest | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const requestID = readString(value.requestID ?? value.requestId);
-  if (!requestID) {
-    return null;
-  }
-
-  const summary = readString(value.summary) ?? 'Pending runtime request';
-
-  return {
-    requestID,
-    kind: 'approval',
-    threadID: readString(value.threadID ?? value.threadId),
-    title: 'Approval request',
-    summary,
-    responseOptions: DEFAULT_APPROVAL_RESPONSE_OPTIONS.slice(),
-    permissions: [],
-    options: [],
-    scopeHint: null,
-    toolName: null,
-    serverName: null
-  };
 }
 
 function optionLooksAffirmative(optionID: string) {

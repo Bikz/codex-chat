@@ -68,7 +68,6 @@ export interface RemoteSnapshot {
   projects?: Project[];
   threads?: Thread[];
   pendingRuntimeRequests?: RuntimeRequest[];
-  pendingApprovals?: LegacyApproval[];
   selectedProjectID?: string | null;
   selectedThreadID?: string | null;
   messages?: RemoteMessage[];
@@ -76,7 +75,6 @@ export interface RemoteSnapshot {
     threadID?: string;
     isTurnInProgress?: boolean;
     isAwaitingRuntimeRequest?: boolean;
-    isAwaitingApproval?: boolean;
   };
 }
 
