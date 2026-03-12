@@ -1,5 +1,16 @@
 use super::*;
 
+fn validate_schema_version(schema_version: Option<u32>) -> Option<axum::response::Response> {
+    match schema_version {
+        Some(2) | None => None,
+        Some(_) => Some(error_response(
+            StatusCode::BAD_REQUEST,
+            "unsupported_schema_version",
+            "Only schemaVersion 2 is supported.",
+        )),
+    }
+}
+
 pub(super) async fn pair_options(
     State(state): State<SharedRelayState>,
     headers: HeaderMap,
@@ -20,6 +31,10 @@ pub(super) async fn pair_start(
     {
         let mut relay = state.inner.lock().await;
         relay.pair_start_requests = relay.pair_start_requests.saturating_add(1);
+    }
+
+    if let Some(response) = validate_schema_version(request.schema_version) {
+        return response;
     }
 
     if !origin_allowed(&state.config, &headers) {
@@ -538,6 +553,10 @@ pub(super) async fn pair_refresh(
         relay.pair_refresh_requests = relay.pair_refresh_requests.saturating_add(1);
     }
 
+    if let Some(response) = validate_schema_version(request.schema_version) {
+        return response;
+    }
+
     if !origin_allowed(&state.config, &headers) {
         return error_response(
             StatusCode::FORBIDDEN,
@@ -636,6 +655,10 @@ pub(super) async fn pair_stop(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<PairStopRequest>,
 ) -> axum::response::Response {
+    if let Some(response) = validate_schema_version(request.schema_version) {
+        return response;
+    }
+
     if !origin_allowed(&state.config, &headers) {
         return error_response(
             StatusCode::FORBIDDEN,
@@ -719,6 +742,10 @@ pub(super) async fn devices_list(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<DevicesListRequest>,
 ) -> axum::response::Response {
+    if let Some(response) = validate_schema_version(request.schema_version) {
+        return response;
+    }
+
     if !origin_allowed(&state.config, &headers) {
         return error_response(
             StatusCode::FORBIDDEN,
@@ -802,6 +829,10 @@ pub(super) async fn device_revoke(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<DeviceRevokeRequest>,
 ) -> axum::response::Response {
+    if let Some(response) = validate_schema_version(request.schema_version) {
+        return response;
+    }
+
     if !origin_allowed(&state.config, &headers) {
         return error_response(
             StatusCode::FORBIDDEN,

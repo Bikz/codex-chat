@@ -376,6 +376,7 @@ async fn pair_start_rejects_replacing_live_session_with_different_desktop_token(
     let first_start = client
         .post(format!("{base}/pair/start"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "joinToken": first_join_token,
             "desktopSessionToken": first_desktop_session_token,
@@ -412,6 +413,7 @@ async fn pair_start_rejects_replacing_live_session_with_different_desktop_token(
     let second_start = client
         .post(format!("{base}/pair/start"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "joinToken": random_token(32),
             "desktopSessionToken": random_token(32),
@@ -444,6 +446,7 @@ async fn pair_start_rejects_unknown_fields() {
     let response = client
         .post(format!("{base}/pair/start"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": random_token(16),
             "joinToken": random_token(32),
             "desktopSessionToken": random_token(32),
@@ -456,6 +459,38 @@ async fn pair_start_rejects_unknown_fields() {
         .expect("pair start with unexpected field");
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    task.abort();
+}
+
+#[tokio::test]
+async fn pair_start_rejects_unsupported_schema_version() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "schemaVersion": 1,
+            "sessionID": random_token(16),
+            "joinToken": random_token(32),
+            "desktopSessionToken": random_token(32),
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start with unsupported schema version");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let payload: Value = response
+        .json()
+        .await
+        .expect("pair start schema error payload");
+    assert_eq!(
+        payload.get("error").and_then(Value::as_str),
+        Some("unsupported_schema_version")
+    );
+
     task.abort();
 }
 
@@ -1369,6 +1404,7 @@ async fn pair_refresh_rotates_join_token_without_stopping_session() {
     let start_response = client
         .post(format!("{base}/pair/start"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "joinToken": original_join_token,
             "desktopSessionToken": desktop_session_token,
@@ -1404,6 +1440,7 @@ async fn pair_refresh_rotates_join_token_without_stopping_session() {
     let refresh_response = client
         .post(format!("{base}/pair/refresh"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "joinToken": refreshed_join_token,
             "desktopSessionToken": desktop_session_token,

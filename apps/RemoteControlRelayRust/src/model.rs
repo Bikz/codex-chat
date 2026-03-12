@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PairStartRequest {
+    #[serde(rename = "schemaVersion", default)]
+    pub schema_version: Option<u32>,
     #[serde(rename = "sessionID")]
     pub session_id: String,
     #[serde(rename = "joinToken")]
@@ -29,6 +31,8 @@ pub struct PairStartResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PairRefreshRequest {
+    #[serde(rename = "schemaVersion", default)]
+    pub schema_version: Option<u32>,
     #[serde(rename = "sessionID")]
     pub session_id: String,
     #[serde(rename = "joinToken")]
@@ -75,6 +79,8 @@ pub struct PairJoinResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PairStopRequest {
+    #[serde(rename = "schemaVersion", default)]
+    pub schema_version: Option<u32>,
     #[serde(rename = "sessionID")]
     pub session_id: String,
     #[serde(rename = "desktopSessionToken")]
@@ -91,6 +97,8 @@ pub struct PairStopResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DevicesListRequest {
+    #[serde(rename = "schemaVersion", default)]
+    pub schema_version: Option<u32>,
     #[serde(rename = "sessionID")]
     pub session_id: String,
     #[serde(rename = "desktopSessionToken")]
@@ -121,6 +129,8 @@ pub struct DevicesListResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceRevokeRequest {
+    #[serde(rename = "schemaVersion", default)]
+    pub schema_version: Option<u32>,
     #[serde(rename = "sessionID")]
     pub session_id: String,
     #[serde(rename = "desktopSessionToken")]
