@@ -51,6 +51,10 @@ enum LiveActivityTraceFormatter {
     }
 
     private static func traceLine(for action: ActionCard) -> Line {
+        if let lifecycleLine = lifecycleLine(for: action) {
+            return Line(id: action.id, text: lifecycleLine)
+        }
+
         let title = RuntimeVisualStateClassifier.conciseTitle(for: action)
         let detail = compactWhitespace(action.detail)
         let stateLabel = RuntimeVisualStateClassifier.classify(action).label
@@ -62,6 +66,31 @@ enum LiveActivityTraceFormatter {
         }
 
         return Line(id: action.id, text: text)
+    }
+
+    private static func lifecycleLine(for action: ActionCard) -> String? {
+        let method = action.method.lowercased()
+        guard method == "item/started" || method == "item/completed" else {
+            return nil
+        }
+
+        let started = method == "item/started"
+        switch RuntimeVisualStateClassifier.classify(action).kind {
+        case .reasoningActive:
+            return started ? "Thinking through the response" : "Reasoning complete"
+        case .webSearchActive:
+            return started ? "Searching for context" : "Search complete"
+        case .fileReadActive:
+            return started ? "Reviewing files" : "File review complete"
+        case .toolCallActive:
+            return started ? "Calling a tool" : "Tool call complete"
+        case .commandExecActive:
+            return started ? "Running a command" : "Command complete"
+        case .fileChangePreview:
+            return started ? "Preparing edits" : "Edits prepared"
+        default:
+            return nil
+        }
     }
 
     private static func hasRichTraceContent(_ action: ActionCard) -> Bool {

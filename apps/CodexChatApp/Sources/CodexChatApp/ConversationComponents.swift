@@ -38,6 +38,7 @@ struct MessageRow: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
+                .padding(.vertical, 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             messageText(message: message)
@@ -45,6 +46,7 @@ struct MessageRow: View {
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
+                .padding(.vertical, 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -280,19 +282,6 @@ struct LiveTurnActivityRow: View {
                     .truncationMode(.tail)
                     .opacity(compactStatusOpacity)
 
-                if activity.actions.isEmpty == false {
-                    Text(activity.actions.count == 1 ? "1 step" : "\(activity.actions.count) steps")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
-                }
-
-                if detailLevel == .balanced, activity.milestoneCounts.hasAny {
-                    TranscriptMilestoneChips(counts: activity.milestoneCounts)
-                }
-
                 Spacer(minLength: 8)
 
                 if canExpandDetails {
@@ -303,11 +292,11 @@ struct LiveTurnActivityRow: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(isExpanded ? "Hide details" : "Show details")
-                                .font(.caption2.weight(.semibold))
+                                .font(.caption2.weight(.medium))
                             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption2.weight(.semibold))
+                                .font(.caption2.weight(.medium))
                         }
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary.opacity(0.68))
                     }
                     .buttonStyle(.plain)
                 }
@@ -321,6 +310,23 @@ struct LiveTurnActivityRow: View {
                     .truncationMode(.tail)
             }
 
+            if !isExpanded, !collapsedTraceLines.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(collapsedTraceLines) { line in
+                        Text(line.text)
+                            .font(.caption)
+                            .foregroundStyle(.secondary.opacity(0.9))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+
+            if isExpanded, activity.milestoneCounts.hasAny {
+                TranscriptMilestoneChips(counts: activity.milestoneCounts)
+            }
+
             if isExpanded {
                 if let commandOutputPreview = activity.commandOutputPreview {
                     InlineTerminalPreview(preview: commandOutputPreview)
@@ -332,14 +338,14 @@ struct LiveTurnActivityRow: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.035))
+                .fill(Color.primary.opacity(0.025))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08))
+                .strokeBorder(Color.primary.opacity(0.06))
         )
         .onAppear {
             if detailLevel == .detailed {
@@ -388,6 +394,10 @@ struct LiveTurnActivityRow: View {
             return nil
         }
         return trimmedAssistant
+    }
+
+    private var collapsedTraceLines: [LiveActivityTraceFormatter.Line] {
+        Array(presentation.lines.suffix(2))
     }
 
     private var liveTraceBox: some View {
@@ -531,16 +541,11 @@ struct TurnSummaryRow: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Circle()
-                    .fill(summaryTint.opacity(0.9))
-                    .frame(width: 5, height: 5)
-                    .accessibilityHidden(true)
-
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
                 Text(summaryLine)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(summaryTint)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
@@ -554,11 +559,11 @@ struct TurnSummaryRow: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(isExpanded ? "Hide details" : "Show details")
-                            .font(.caption2.weight(.semibold))
+                            .font(.caption2.weight(.medium))
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2.weight(.semibold))
+                            .font(.caption2.weight(.medium))
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary.opacity(0.68))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Turn activity")
@@ -567,25 +572,42 @@ struct TurnSummaryRow: View {
             }
 
             if isExpanded {
+                if let detailOverviewLine {
+                    Text(detailOverviewLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if summary.milestoneCounts.hasAny {
+                    TranscriptMilestoneChips(counts: summary.milestoneCounts)
+                }
+
                 TurnSummaryDetailsList(actions: summary.actions, model: model)
             }
         }
     }
 
     private var summaryLine: String {
-        if let explorationSummaryLine {
-            return explorationSummaryLine
+        let durationLabel = formatDuration(summary.duration)
+        if summary.isFailure || summary.milestoneCounts.errors > 0 {
+            return "Worked for \(durationLabel) • issue"
         }
-
-        let base = summary.actionCount == 1 ? "1 step" : "\(summary.actionCount) steps"
-        if detailLevel == .balanced, summary.hiddenActionCount > 0 {
-            return "\(base) • \(summary.hiddenActionCount) compacted"
-        }
-        return base
+        return "Worked for \(durationLabel)"
     }
 
     private var summaryTint: Color {
-        summary.isFailure ? .red : .secondary
+        summary.isFailure ? .red : .secondary.opacity(0.92)
+    }
+
+    private var detailOverviewLine: String? {
+        var parts: [String] = []
+        if let explorationSummaryLine {
+            parts.append(explorationSummaryLine)
+        }
+        if summary.hiddenActionCount > 0, detailLevel == .balanced {
+            parts.append("\(summary.hiddenActionCount) compacted")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
     private var explorationSummaryLine: String? {
@@ -634,6 +656,20 @@ struct TurnSummaryRow: View {
             "turn/started",
             "turn/completed",
         ].contains(method)
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let totalSeconds = max(Int(duration.rounded()), 0)
+        if totalSeconds < 1 {
+            return "a moment"
+        }
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        }
+        return "\(seconds)s"
     }
 }
 
@@ -724,9 +760,9 @@ private struct TurnSummaryDetailsList: View {
         case .neutral:
             return .secondary.opacity(0.9)
         case .accent:
-            return .blue
+            return .primary.opacity(0.88)
         case .success:
-            return .green
+            return .primary.opacity(0.88)
         case .warning:
             return .orange
         case .error:

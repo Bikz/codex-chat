@@ -788,7 +788,7 @@ struct ChatsCanvasView: View {
                                     allowsExternalMarkdownContent: model.isSelectedProjectTrusted,
                                     projectPath: model.selectedProject?.path
                                 )
-                                .padding(.vertical, tokens.spacing.xSmall)
+                                .padding(.vertical, tokens.spacing.small)
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(
@@ -819,7 +819,7 @@ struct ChatsCanvasView: View {
                                         )
                                     }
                                 }
-                                .padding(.vertical, tokens.spacing.xSmall)
+                                .padding(.vertical, tokens.spacing.small)
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(
@@ -835,7 +835,7 @@ struct ChatsCanvasView: View {
                                     activity: activity,
                                     detailLevel: model.transcriptDetailLevel
                                 )
-                                .padding(.vertical, tokens.spacing.xSmall)
+                                .padding(.vertical, tokens.spacing.small)
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(
@@ -852,7 +852,7 @@ struct ChatsCanvasView: View {
                                     detailLevel: model.transcriptDetailLevel,
                                     model: model
                                 )
-                                .padding(.vertical, tokens.spacing.xSmall)
+                                .padding(.vertical, tokens.spacing.small)
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(

@@ -64,6 +64,7 @@ struct TurnSummaryPresentation: Identifiable, Hashable {
     let hiddenActionCount: Int
     let milestoneCounts: TranscriptMilestoneCounts
     let isFailure: Bool
+    let duration: TimeInterval
 }
 
 enum TranscriptActionClassification: Hashable {
@@ -630,8 +631,18 @@ enum TranscriptPresentationBuilder {
             actionCount: bucket.actions.count,
             hiddenActionCount: hiddenActions.count,
             milestoneCounts: milestones,
-            isFailure: hasFailure
+            isFailure: hasFailure,
+            duration: turnDuration(for: bucket.actions)
         )
+    }
+
+    private static func turnDuration(for actions: [ActionCard]) -> TimeInterval {
+        guard let first = actions.map(\.createdAt).min(),
+              let last = actions.map(\.createdAt).max()
+        else {
+            return 0
+        }
+        return max(0, last.timeIntervalSince(first))
     }
 
     private static func liveActivity(from context: AppModel.ActiveTurnContext) -> LiveTurnActivityPresentation {

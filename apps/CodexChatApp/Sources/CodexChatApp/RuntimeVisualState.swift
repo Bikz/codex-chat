@@ -9,6 +9,10 @@ enum RuntimeVisualStateKind: String, Hashable, Sendable {
     case commandExecActive
     case commandOutputStreaming
     case fileChangePreview
+    case planUpdate
+    case diffUpdate
+    case modelReroute
+    case threadStatusUpdate
     case approvalRequired
     case approvalResolved
     case warningStderr
@@ -47,9 +51,31 @@ enum RuntimeVisualStateClassifier {
     }
 
     static func conciseTitle(for action: ActionCard) -> String {
+        let method = action.method.lowercased()
         let title = compact(action.title)
         let state = classify(action)
         guard !title.isEmpty else { return state.label }
+
+        switch method {
+        case "runtime/stderr/coalesced":
+            return state.tone == .error ? "Repeated runtime issue" : "Repeated runtime warning"
+        case "runtime/stderr":
+            return state.tone == .error ? "Runtime issue" : "Runtime warning"
+        case "turn/start/error", "turn/error":
+            return "Turn failed"
+        case "turn/plan/updated":
+            return "Plan updated"
+        case "turn/diff/updated":
+            return "Diff updated"
+        case "model/rerouted":
+            return "Model rerouted"
+        case "thread/status/changed":
+            return "Thread status changed"
+        case "error":
+            return "Runtime issue"
+        default:
+            break
+        }
 
         let lowered = title.lowercased()
         if lowered.hasPrefix("started "), lowered.count > "started ".count {
@@ -103,6 +129,22 @@ enum RuntimeVisualStateClassifier {
 
         if method.contains("approval") || title.contains("approval") {
             return .approvalRequired
+        }
+
+        if method == "turn/plan/updated" {
+            return .planUpdate
+        }
+
+        if method == "turn/diff/updated" {
+            return .diffUpdate
+        }
+
+        if method == "model/rerouted" {
+            return .modelReroute
+        }
+
+        if method == "thread/status/changed" {
+            return .threadStatusUpdate
         }
 
         if method == "turn/completed" {
@@ -269,6 +311,14 @@ enum RuntimeVisualStateClassifier {
             "Streaming output"
         case .fileChangePreview:
             "Editing"
+        case .planUpdate:
+            "Updating plan"
+        case .diffUpdate:
+            "Updating changes"
+        case .modelReroute:
+            "Switching model"
+        case .threadStatusUpdate:
+            "Updating status"
         case .approvalRequired:
             "Waiting for approval"
         case .approvalResolved:
@@ -326,6 +376,14 @@ enum RuntimeVisualStateClassifier {
             RuntimeVisualStatePresentation(kind: kind, label: "Command output", iconName: "text.alignleft", tone: .accent)
         case .fileChangePreview:
             RuntimeVisualStatePresentation(kind: kind, label: "File changes", iconName: "doc.badge.gearshape", tone: .accent)
+        case .planUpdate:
+            RuntimeVisualStatePresentation(kind: kind, label: "Plan update", iconName: "list.bullet.clipboard", tone: .neutral)
+        case .diffUpdate:
+            RuntimeVisualStatePresentation(kind: kind, label: "Diff update", iconName: "text.append", tone: .neutral)
+        case .modelReroute:
+            RuntimeVisualStatePresentation(kind: kind, label: "Model reroute", iconName: "arrow.triangle.branch", tone: .warning)
+        case .threadStatusUpdate:
+            RuntimeVisualStatePresentation(kind: kind, label: "Thread status", iconName: "circle.dashed", tone: .neutral)
         case .approvalRequired:
             RuntimeVisualStatePresentation(kind: kind, label: "Approval required", iconName: "hand.raised.fill", tone: .warning)
         case .approvalResolved:

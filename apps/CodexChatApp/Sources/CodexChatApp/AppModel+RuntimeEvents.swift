@@ -653,6 +653,24 @@ extension AppModel {
 
     private func handleThreadStatusUpdate(_ update: RuntimeThreadStatusUpdate) {
         appendLog(.info, "Runtime thread status changed: \(update.status)")
+        guard let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: update.threadID,
+            itemID: nil,
+            runtimeTurnID: nil
+        ) else {
+            return
+        }
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: localThreadID,
+                    method: "thread/status/changed",
+                    title: "Thread status changed",
+                    detail: update.status
+                )
+            ),
+            to: localThreadID
+        )
     }
 
     private func handleTokenUsageUpdate(_ update: RuntimeTokenUsageUpdate) {
@@ -678,26 +696,108 @@ extension AppModel {
         else {
             return
         }
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: localThreadID,
+                    method: "turn/diff/updated",
+                    title: "Diff updated",
+                    detail: diff
+                )
+            ),
+            to: localThreadID
+        )
         enqueueThreadLog(level: .info, text: diff, to: localThreadID)
     }
 
     private func handleTurnPlanUpdate(_ update: RuntimeTurnPlanUpdate) {
-        guard let summary = update.summary, !summary.isEmpty else {
-            appendLog(.info, "Runtime plan updated")
+        guard let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: update.threadID,
+            itemID: nil,
+            runtimeTurnID: update.turnID
+        ) else {
+            if let summary = update.summary, !summary.isEmpty {
+                appendLog(.info, "Runtime plan updated: \(summary)")
+            } else {
+                appendLog(.info, "Runtime plan updated")
+            }
             return
         }
-        appendLog(.info, "Runtime plan updated: \(summary)")
+
+        let detail = if let summary = update.summary, !summary.isEmpty {
+            summary
+        } else {
+            "The runtime updated its plan."
+        }
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: localThreadID,
+                    method: "turn/plan/updated",
+                    title: "Plan updated",
+                    detail: detail
+                )
+            ),
+            to: localThreadID
+        )
+        if let summary = update.summary, !summary.isEmpty {
+            appendLog(.info, "Runtime plan updated: \(summary)")
+        } else {
+            appendLog(.info, "Runtime plan updated")
+        }
     }
 
     private func handleModelRerouted(_ update: RuntimeModelReroute) {
         let fromModel = update.fromModel ?? "unknown"
         let toModel = update.toModel ?? "unknown"
         appendLog(.warning, "Runtime rerouted model from \(fromModel) to \(toModel).")
+        guard let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: update.threadID,
+            itemID: nil,
+            runtimeTurnID: update.turnID
+        ) else {
+            return
+        }
+        let reason = update.reason?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = if let reason, !reason.isEmpty {
+            "\(fromModel) -> \(toModel) • \(reason)"
+        } else {
+            "\(fromModel) -> \(toModel)"
+        }
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: localThreadID,
+                    method: "model/rerouted",
+                    title: "Model rerouted",
+                    detail: detail
+                )
+            ),
+            to: localThreadID
+        )
     }
 
     private func handleRuntimeErrorNotice(_ update: RuntimeErrorNotice) {
         let detail = [update.code, update.message].compactMap(\.self).joined(separator: ": ")
         appendLog(.error, "Runtime error: \(detail)")
+        guard let localThreadID = resolveLocalThreadID(
+            runtimeThreadID: update.threadID,
+            itemID: update.itemID,
+            runtimeTurnID: update.turnID
+        ) else {
+            return
+        }
+        appendEntry(
+            .actionCard(
+                ActionCard(
+                    threadID: localThreadID,
+                    method: "error",
+                    title: "Runtime error",
+                    detail: detail
+                )
+            ),
+            to: localThreadID
+        )
     }
 
     private func handleApprovalRequest(_ request: RuntimeApprovalRequest) {

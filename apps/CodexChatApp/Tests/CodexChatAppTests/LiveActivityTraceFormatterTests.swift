@@ -43,7 +43,7 @@ final class LiveActivityTraceFormatterTests: XCTestCase {
         XCTAssertEqual(presentation.statusLabel, "Running")
         XCTAssertTrue(presentation.showTraceBox)
         XCTAssertEqual(presentation.lines.count, 1)
-        XCTAssertTrue(presentation.lines[0].text.contains("npm run build completed"))
+        XCTAssertEqual(presentation.lines[0].text, "Command complete")
     }
 
     func testDetailedModeAlwaysShowsTraceBox() {
@@ -61,6 +61,10 @@ final class LiveActivityTraceFormatterTests: XCTestCase {
 
         XCTAssertTrue(presentation.showTraceBox)
         XCTAssertEqual(presentation.lines.count, 2)
+        XCTAssertEqual(
+            presentation.lines.map(\.text),
+            ["Thinking through the response", "Reasoning complete"]
+        )
     }
 
     func testErrorStatusMapsToTroubleshooting() {
@@ -127,6 +131,29 @@ final class LiveActivityTraceFormatterTests: XCTestCase {
         XCTAssertEqual(presentation.statusLabel, "Thinking")
         XCTAssertFalse(presentation.showTraceBox)
         XCTAssertTrue(presentation.lines.isEmpty)
+    }
+
+    func testPlanUpdateAndModelRerouteUseHumanReadableStates() {
+        let threadID = UUID()
+        let actions = [
+            action(threadID: threadID, method: "turn/plan/updated", title: "Plan updated", detail: "Review auth flow"),
+            action(threadID: threadID, method: "model/rerouted", title: "Model rerouted", detail: "gpt-5 -> gpt-5.2"),
+        ]
+
+        let planPresentation = LiveActivityTraceFormatter.buildPresentation(
+            actions: [actions[0]],
+            fallbackTitle: "Plan updated",
+            detailLevel: .chat
+        )
+        XCTAssertEqual(planPresentation.statusLabel, "Updating plan")
+
+        let reroutePresentation = LiveActivityTraceFormatter.buildPresentation(
+            actions: actions,
+            fallbackTitle: "Model rerouted",
+            detailLevel: .chat
+        )
+        XCTAssertEqual(reroutePresentation.statusLabel, "Switching model")
+        XCTAssertTrue(reroutePresentation.showTraceBox)
     }
 
     private func action(
