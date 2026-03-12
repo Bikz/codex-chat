@@ -5,6 +5,7 @@ import { getRemoteClient } from '@/lib/remote/client';
 import { useRemoteStore } from '@/lib/remote/store';
 import type { RuntimeRequest } from '@/lib/remote/types';
 import { useShallow } from 'zustand/react/shallow';
+import { Button } from '@/components/ui/button';
 
 export function ApprovalsTray() {
   const client = getRemoteClient();
@@ -21,15 +22,15 @@ export function ApprovalsTray() {
   const allVisibleRuntimeRequests = [...threadRuntimeRequests, ...globalRuntimeRequests];
 
   return (
-    <>
-      <div id="approvalGlobalSummary" className="approval-summary-line" hidden={globalRuntimeRequests.length === 0}>
+    <div className="flex flex-col gap-3">
+      <div id="approvalGlobalSummary" className="text-sm text-warning font-medium px-1" hidden={globalRuntimeRequests.length === 0}>
         {globalRuntimeRequests.length === 1
           ? '1 runtime request is pending outside this chat.'
           : `${globalRuntimeRequests.length} runtime requests are pending outside this chat.`}
       </div>
-      <div id="approvalTray" className="approval-tray" hidden={false}>
+      <div id="approvalTray" className="flex flex-col gap-3" hidden={false}>
         {allVisibleRuntimeRequests.length === 0 ? (
-          <div className="approval-summary-line">No pending runtime requests.</div>
+          <div className="text-sm text-muted px-1 italic">No pending runtime requests.</div>
         ) : (
           allVisibleRuntimeRequests.map((runtimeRequest) => (
             <RuntimeRequestCard
@@ -43,7 +44,7 @@ export function ApprovalsTray() {
           ))
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -65,21 +66,21 @@ function RuntimeRequestCard({
     runtimeRequest.options.find((option) => option.id === selectedOptionID)?.description ?? null;
 
   return (
-    <article className="approval-card">
-      <div className="approval-title">{runtimeRequest.title || `#${runtimeRequest.requestID || '?'}`}</div>
-      <div className="approval-text">{runtimeRequest.summary || 'Pending runtime request'}</div>
+    <article className="bg-surface-alt border border-line rounded-2xl p-4 flex flex-col gap-3 shadow-sm">
+      <div className="font-bold text-[15px] break-words text-fg">{runtimeRequest.title || `#${runtimeRequest.requestID || '?'}`}</div>
+      <div className="text-sm text-muted break-words leading-relaxed">{runtimeRequest.summary || 'Pending runtime request'}</div>
 
       {runtimeRequest.permissions.length > 0 ? (
-        <div className="approval-meta">
-          Permissions: {runtimeRequest.permissions.join(', ')}
+        <div className="text-xs text-muted break-words bg-surface rounded-lg p-2 border border-line/50">
+          <span className="font-semibold text-fg">Permissions:</span> {runtimeRequest.permissions.join(', ')}
         </div>
       ) : null}
 
       {showsChoicePicker ? (
-        <label className="approval-field">
-          <span className="approval-field-label">Choice</span>
+        <label className="flex flex-col gap-1.5 mt-1">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-muted px-1">Choice</span>
           <select
-            className="approval-select"
+            className="w-full bg-surface text-fg border border-line rounded-xl px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={`Choice for ${runtimeRequest.title || runtimeRequest.requestID}`}
             value={selectedOptionID}
             onChange={(event) => setSelectedOptionID(event.target.value)}
@@ -91,15 +92,15 @@ function RuntimeRequestCard({
               </option>
             ))}
           </select>
-          {selectedOptionDescription ? <div className="approval-meta">{selectedOptionDescription}</div> : null}
+          {selectedOptionDescription ? <div className="text-xs text-muted px-1">{selectedOptionDescription}</div> : null}
         </label>
       ) : null}
 
       {showsTextInput ? (
-        <label className="approval-field">
-          <span className="approval-field-label">Response</span>
+        <label className="flex flex-col gap-1.5 mt-1">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-muted px-1">Response</span>
           <textarea
-            className="approval-input"
+            className="w-full bg-surface text-fg border border-line rounded-xl px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent resize-y"
             aria-label={`Response for ${runtimeRequest.title || runtimeRequest.requestID}`}
             value={text}
             rows={runtimeRequest.kind === 'mcpElicitation' ? 3 : 4}
@@ -110,22 +111,24 @@ function RuntimeRequestCard({
       ) : null}
 
       {canRespondToRuntimeRequests && runtimeRequest.responseOptions.length > 0 ? (
-        <div className="approval-actions">
-          {runtimeRequest.responseOptions.map((option, index) => (
-            <button
-              key={`${runtimeRequest.requestID}-${option.id}`}
-              className={index === 0 ? 'primary' : undefined}
-              type="button"
-              onClick={() =>
-                onRespond(option.id, {
-                  text,
-                  optionID: selectedOptionID || null
-                })
-              }
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-2 mt-2">
+            {runtimeRequest.responseOptions.map((option, index) => (
+              <Button
+                key={`${runtimeRequest.requestID}-${option.id}`}
+                variant={index === 0 ? 'primary' : 'default'}
+                size="sm"
+                type="button"
+                className="flex-1"
+                onClick={() =>
+                  onRespond(option.id, {
+                    text,
+                    optionID: selectedOptionID || null
+                  })
+                }
+              >
+                {option.label}
+              </Button>
+            ))}
         </div>
       ) : null}
     </article>

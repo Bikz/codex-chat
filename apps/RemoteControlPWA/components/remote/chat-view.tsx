@@ -11,12 +11,14 @@ import { getVisibleMessageWindow, getVisibleTranscriptMessages, messageIsCollaps
 import { remoteStoreApi, useRemoteStore } from '@/lib/remote/store';
 import { isNearBottom } from '@/lib/remote/scroll-anchor';
 import { useShallow } from 'zustand/react/shallow';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 const REVEAL_CHUNK_SIZE = 80;
 
 function roleClass(role: string | undefined) {
-  if (role === 'user') return 'role-user';
-  return 'role-assistant';
+  if (role === 'user') return 'justify-self-end bg-accent text-accent-fg rounded-[20px] rounded-br-sm border-0';
+  return 'justify-self-start bg-surface-alt text-fg rounded-[20px] rounded-bl-sm border border-line shadow-sm';
 }
 
 export function ChatView({ hidden }: { hidden: boolean }) {
@@ -221,21 +223,31 @@ export function ChatView({ hidden }: { hidden: boolean }) {
   const isRunning = thread ? turnStateByThreadID.get(thread.id) === true : false;
 
   return (
-    <section id="chatView" className="chat-view" aria-label="Chat detail" hidden={hidden}>
-      <div className="chat-topbar">
-        <button id="chatBackButton" className="ghost back-button" type="button" aria-label="Back to chats" onClick={() => client.navigateHome()}>
+    <section 
+      id="chatView" 
+      className="flex flex-col min-h-[calc(var(--vvh)-10.5rem-var(--safe-top))] md:min-h-[calc(var(--vvh)-8.5rem-var(--safe-top))] w-full max-w-[760px] mx-auto gap-3 h-full relative" 
+      aria-label="Chat detail" 
+      hidden={hidden}
+    >
+      <div className="flex items-center justify-between gap-3 min-w-0">
+        <Button id="chatBackButton" variant="ghost" size="sm" type="button" aria-label="Back to chats" onClick={() => client.navigateHome()}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="m15 18-6-6 6-6"/></svg>
           Back
-        </button>
-        <h2 id="threadTitle" className="truncate-1">
+        </Button>
+        <h2 id="threadTitle" className="flex-1 font-semibold text-[15px] text-center truncate text-fg">
           {thread ? thread.title : 'Thread'}
         </h2>
-        <span id="threadStatusChip" className="thread-status" hidden={!thread || (!isRunning && !isSyncStale)}>
+        <span id="threadStatusChip" className="inline-flex items-center justify-center h-7 px-3 rounded-full text-[11px] font-bold uppercase tracking-wider bg-surface-alt border border-line text-muted" hidden={!thread || (!isRunning && !isSyncStale)}>
           {isRunning ? 'Running' : 'Sync stale'}
         </span>
       </div>
+
       <div
         id="reasoningRail"
-        className={`reasoning-rail ${reasoningState}`}
+        className={cn(
+          "min-h-[30px] rounded-full px-4 inline-flex items-center text-xs font-medium border w-fit mx-auto transition-colors",
+          reasoningState === 'started' ? "border-warning/50 bg-warning/10 text-warning" : "border-success/50 bg-success/10 text-success"
+        )}
         hidden={!thread || reasoningState === 'idle'}
         aria-live="polite"
         aria-label={reasoningState === 'started' ? 'Reasoning in progress' : 'Reasoning completed'}
@@ -243,32 +255,34 @@ export function ChatView({ hidden }: { hidden: boolean }) {
         {reasoningState === 'started' ? 'Reasoning in progress…' : 'Reasoning complete'}
       </div>
 
-      <section className="panel approvals-panel" aria-labelledby="approvalsHeading">
-        <div className="section-head">
-          <h3 id="approvalsHeading">Runtime requests</h3>
-          <button
+      <section className="bg-surface rounded-[24px] border border-line shadow-sm p-4 flex flex-col gap-3" aria-labelledby="approvalsHeading">
+        <div className="flex items-center justify-between">
+          <h3 id="approvalsHeading" className="text-[13px] uppercase tracking-wider font-bold text-muted px-1">Runtime requests</h3>
+          <Button
             id="toggleApprovalsButton"
-            className="ghost"
+            variant="ghost"
+            size="sm"
             type="button"
             aria-expanded={runtimeRequestsExpanded}
             aria-controls="approvalTray"
             onClick={() => client.toggleApprovalsExpanded()}
           >
             {runtimeRequestsExpanded ? 'Hide' : 'Show'}
-          </button>
+          </Button>
         </div>
         <div hidden={!runtimeRequestsExpanded}>
           <ApprovalsTray />
         </div>
       </section>
 
-      <section className="panel transcript-panel" aria-label="Transcript">
-        <div id="messageList" ref={messageListRef} className="messages" aria-live="polite" onScroll={onMessageScroll}>
+      <section className="bg-surface rounded-[24px] border border-line shadow-sm overflow-hidden flex-1 relative min-h-0 flex flex-col" aria-label="Transcript">
+        <div id="messageList" ref={messageListRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 flex flex-col gap-3 min-h-[min(40svh,360px)] relative" aria-live="polite" onScroll={onMessageScroll}>
           {selectedThreadID && visibleWindow.hiddenCount > 0 ? (
-            <button
+            <Button
               id="showOlderMessagesButton"
-              type="button"
-              className="ghost show-older-button"
+              variant="default"
+              size="sm"
+              className="sticky top-0 z-10 self-center mx-auto mb-2 shadow-sm rounded-full backdrop-blur-xl bg-surface/80"
               onClick={() => {
                 const list = messageListRef.current;
                 if (list) {
@@ -283,11 +297,11 @@ export function ChatView({ hidden }: { hidden: boolean }) {
               }}
             >
               Show older messages ({visibleWindow.hiddenCount})
-            </button>
+            </Button>
           ) : null}
 
-          {!selectedThreadID ? <div className="empty-state">Select a chat to view conversation updates.</div> : null}
-          {selectedThreadID && messages.length === 0 ? <div className="empty-state">No user-visible messages yet.</div> : null}
+          {!selectedThreadID ? <div className="my-8 rounded-xl border border-dashed border-line text-muted p-6 text-center text-sm">Select a chat to view conversation updates.</div> : null}
+          {selectedThreadID && messages.length === 0 ? <div className="my-8 rounded-xl border border-dashed border-line text-muted p-6 text-center text-sm">No messages yet.</div> : null}
 
           {visibleWindow.items.map((message) => {
             const messageID = message.id || `${message.threadID}-${message.createdAt}-${message.role}`;
@@ -300,16 +314,21 @@ export function ChatView({ hidden }: { hidden: boolean }) {
             const shouldShowToggle = cardCollapsible || longTextCollapsible;
             const expanded = expandedMessageIDs.has(messageID);
             const collapsed = shouldShowToggle && !expanded;
+            const isUser = message.role === 'user';
 
             return (
-              <article key={messageID} className={`message ${roleClass(message.role)}`}>
-                <div className="message-meta">{new Date(message.createdAt || Date.now()).toLocaleTimeString()}</div>
+              <article key={messageID} className={cn("message max-w-[88%] w-fit flex flex-col gap-1 p-3.5", roleClass(message.role))}>
+                <div className={cn("text-[10px] font-medium tracking-wide uppercase opacity-70", isUser ? "text-accent-fg/70" : "text-muted")}>
+                  {new Date(message.createdAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                </div>
 
                 {parsedMessage.mode === 'plain' ? (
                   <>
-                    <div className={`message-body ${collapsed ? 'collapsed' : ''}`}>{message.text || ''}</div>
+                    <div className={cn("message-body whitespace-pre-wrap break-words leading-relaxed text-[15px]", collapsed && "line-clamp-6")}>
+                      {message.text || ''}
+                    </div>
                     {shouldShowToggle ? (
-                      <button className="expand-toggle" type="button" onClick={() => client.toggleMessageExpanded(messageID)}>
+                      <button className={cn("text-xs font-semibold self-start mt-1 hover:underline", isUser ? "text-accent-fg/90" : "text-accent")} type="button" onClick={() => client.toggleMessageExpanded(messageID)}>
                         {expanded ? 'Show less' : 'Show more'}
                       </button>
                     ) : null}
@@ -341,11 +360,14 @@ export function ChatView({ hidden }: { hidden: boolean }) {
           })}
         </div>
 
-        <button
+        <Button
           id="jumpToLatestButton"
-          type="button"
-          className={`primary jump-to-latest ${showJumpToLatest ? 'visible' : ''}`}
-          hidden={!showJumpToLatest}
+          variant="primary"
+          size="sm"
+          className={cn(
+            "absolute right-4 bottom-4 z-10 rounded-full shadow-md transition-all duration-200",
+            showJumpToLatest ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
+          )}
           onClick={() => {
             scrollToLatest('smooth');
             remoteStoreApi.setState({
@@ -356,10 +378,12 @@ export function ChatView({ hidden }: { hidden: boolean }) {
           }}
         >
           Jump to latest
-        </button>
+        </Button>
       </section>
 
-      <Composer />
+      <div className="sticky bottom-0 pb-[max(0.5rem,calc(0.5rem+var(--safe-bottom)))] bg-canvas/90 backdrop-blur-md pt-2">
+        <Composer />
+      </div>
     </section>
   );
 }

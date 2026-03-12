@@ -51,49 +51,49 @@ describe('selectors', () => {
     expect(windowed.hiddenCount).toBe(2);
   });
 
-  it('returns latest non-system, non-technical preview text', () => {
-    const messages = [
-      { id: 'm1', threadID: 't1', role: 'system', text: 'Started userMessage: {"id":"123"}', createdAt: '2026-01-01T00:00:00.000Z' },
-      { id: 'm2', threadID: 't1', role: 'assistant', text: 'Completed commandExecution: {"command":"echo hi"}', createdAt: '2026-01-01T00:00:01.000Z' },
-      { id: 'm3', threadID: 't1', role: 'assistant', text: 'Visible summary for users', createdAt: '2026-01-01T00:00:02.000Z' }
-    ];
+    it('returns latest non-system, non-technical preview text', () => {
+      const messages = [
+        { id: 'm1', threadID: 't1', role: 'system', text: 'Started userMessage: {"id":"123"}', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'm2', threadID: 't1', role: 'assistant', text: 'Completed commandExecution: {"command":"echo hi"}', createdAt: '2026-01-01T00:00:01.000Z' },
+        { id: 'm3', threadID: 't1', role: 'assistant', text: 'Visible summary for users', createdAt: '2026-01-01T00:00:02.000Z' }
+      ] as RemoteMessage[];
 
-    expect(getUserVisibleThreadPreview(messages)).toBe('Visible summary for users');
-  });
+      expect(getUserVisibleThreadPreview(messages)).toBe('Visible summary for users');
+    });
 
-  it('falls back when no user-visible messages exist', () => {
-    const messages = [
-      { id: 'm1', threadID: 't1', role: 'system', text: 'Completed reasoning: {"summary":[]}', createdAt: '2026-01-01T00:00:00.000Z' }
-    ];
-    expect(getUserVisibleThreadPreview(messages)).toBe('No user-visible messages yet');
-  });
+    it('falls back when no user-visible messages exist', () => {
+      const messages = [
+        { id: 'm1', threadID: 't1', role: 'system', text: 'Completed reasoning: {"summary":[]}', createdAt: '2026-01-01T00:00:00.000Z' }
+      ] as RemoteMessage[];
+      expect(getUserVisibleThreadPreview(messages)).toBe('No user-visible messages yet');
+    });
 
-  it('hides technical system messages but keeps user-relevant system notices', () => {
-    const messages = [
-      { id: 'm1', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:00.000Z' },
-      { id: 'm2', threadID: 't1', role: 'system', text: 'Started reasoning: {}', createdAt: '2026-01-01T00:00:01.000Z' },
-      {
-        id: 'm3',
-        threadID: 't1',
-        role: 'system',
-        text: 'Runtime request required: Allow command execution?',
-        createdAt: '2026-01-01T00:00:02.000Z'
-      },
-      { id: 'm4', threadID: 't1', role: 'system', text: 'Turn failed to start', createdAt: '2026-01-01T00:00:03.000Z' },
-      { id: 'm5', threadID: 't1', role: 'user', text: 'hey', createdAt: '2026-01-01T00:00:04.000Z' }
-    ];
+    it('hides technical system messages but keeps user-relevant system notices', () => {
+      const messages = [
+        { id: 'm1', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'm2', threadID: 't1', role: 'system', text: 'Started reasoning: {}', createdAt: '2026-01-01T00:00:01.000Z' },
+        {
+          id: 'm3',
+          threadID: 't1',
+          role: 'system',
+          text: 'Runtime request required: Allow command execution?',
+          createdAt: '2026-01-01T00:00:02.000Z'
+        },
+        { id: 'm4', threadID: 't1', role: 'system', text: 'Turn failed to start', createdAt: '2026-01-01T00:00:03.000Z' },
+        { id: 'm5', threadID: 't1', role: 'user', text: 'hey', createdAt: '2026-01-01T00:00:04.000Z' }
+      ] as RemoteMessage[];
 
-    expect(getVisibleTranscriptMessages(messages).map((message) => message.id)).toEqual(['m1', 'm3', 'm4', 'm5']);
-  });
+      expect(getVisibleTranscriptMessages(messages).map((message) => message.id)).toEqual(['m1', 'm3', 'm4', 'm5']);
+    });
 
-  it('shows every system message when debug toggle is enabled', () => {
-    const messages = [
-      { id: 'm1', threadID: 't1', role: 'system', text: 'Started reasoning: {}', createdAt: '2026-01-01T00:00:00.000Z' },
-      { id: 'm2', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:01.000Z' }
-    ];
+    it('shows every system message when debug toggle is enabled', () => {
+      const messages = [
+        { id: 'm1', threadID: 't1', role: 'system', text: 'Started reasoning: {}', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'm2', threadID: 't1', role: 'assistant', text: 'Hello', createdAt: '2026-01-01T00:00:01.000Z' }
+      ] as RemoteMessage[];
 
-    expect(getVisibleTranscriptMessages(messages, { showAllSystemMessages: true }).map((message) => message.id)).toEqual(['m1', 'm2']);
-  });
+      expect(getVisibleTranscriptMessages(messages, { showAllSystemMessages: true }).map((message) => message.id)).toEqual(['m1', 'm2']);
+    });
 
   it('shows system messages with explicit user-visible metadata even when text looks technical', () => {
     const messages: Array<RemoteMessage & { metadata?: { userVisible?: boolean } }> = [

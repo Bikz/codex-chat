@@ -5,6 +5,7 @@ import { getRemoteClient } from '@/lib/remote/client';
 import { isComposerSendShortcut } from '@/lib/remote/composer-shortcut';
 import { useRemoteStore } from '@/lib/remote/store';
 import { useShallow } from 'zustand/react/shallow';
+import { Button } from '@/components/ui/button';
 
 const MAX_COMPOSER_HEIGHT = 200;
 
@@ -80,16 +81,22 @@ export function Composer() {
   }, []);
 
   return (
-    <form id="composerForm" ref={formRef} className="composer panel" aria-label="Send instruction" onSubmit={onSubmit}>
+    <form 
+      id="composerForm" 
+      ref={formRef} 
+      className="bg-surface rounded-[24px] border border-line shadow-sm p-3 flex flex-col gap-2 relative transition-all" 
+      aria-label="Send instruction" 
+      onSubmit={onSubmit}
+    >
       <label htmlFor="composerInput" className="sr-only">
         Message
       </label>
-      <div className="composer-row">
+      <div className="flex items-end gap-2">
         <textarea
           id="composerInput"
           ref={textAreaRef}
-          className="composer-input"
-          placeholder="Send instruction to Codex Chat"
+          className="flex-1 min-w-0 min-h-[44px] max-h-[200px] resize-none bg-surface-alt text-fg rounded-[18px] px-4 py-3 border border-line focus-visible:outline-none focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent transition-all text-[15px] leading-relaxed"
+          placeholder="Send instruction..."
           rows={1}
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -99,25 +106,29 @@ export function Composer() {
             }, 120);
           }}
         />
-        <button type="submit" className="primary composer-send" disabled={!canSend} aria-label="Send message">
+        <Button 
+          type="submit" 
+          variant="primary" 
+          size="icon"
+          className="flex-shrink-0 h-[44px] w-[44px] rounded-full self-end shadow-sm" 
+          disabled={!canSend} 
+          aria-label="Send message"
+        >
           {isComposerDispatching ? (
-            <span className="sending-indicator">
-              <span className="spinner" aria-hidden="true" />
-              Sending
-            </span>
+            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />
           ) : (
-            'Send'
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           )}
-        </button>
+        </Button>
       </div>
-      <div className="composer-meta">
-        <p className="composer-hint">
+      <div className="flex items-center justify-between px-1">
+        <p className="text-[11px] text-muted font-medium tracking-wide">
           {isDesktopOffline ? 'Mac offline. Reconnect desktop to send commands.' : 'Enter for newline. Cmd/Ctrl+Enter sends.'}
         </p>
         {isDesktopOffline ? (
-          <button id="composerReconnectButton" type="button" className="ghost" onClick={() => client.reconnect()}>
+          <Button id="composerReconnectButton" type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => client.reconnect()}>
             Try reconnect
-          </button>
+          </Button>
         ) : null}
       </div>
     </form>

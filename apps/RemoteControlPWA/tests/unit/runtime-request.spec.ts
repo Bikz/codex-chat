@@ -21,25 +21,25 @@ describe('runtime-request helpers', () => {
           permissions: ['workspace.write'],
           options: [],
           scopeHint: 'session',
-          toolName: 'shell'
+          toolName: 'shell', serverName: null
         }
       ]
     });
 
     expect(requests).toEqual([
-      {
-        requestID: '42',
-        kind: 'approval',
-        threadID: 'thread-1',
-        title: 'Command approval',
-        summary: 'Allow command execution?',
-        responseOptions: [{ id: 'accept', label: 'Approve once' }],
-        permissions: ['workspace.write'],
-        options: [],
-        scopeHint: 'session',
-        toolName: 'shell',
-        serverName: null
-      }
+        {
+          requestID: '42',
+          kind: 'approval',
+          threadID: 'thread-1',
+          title: 'Command approval',
+          summary: 'Allow command execution?',
+          responseOptions: [{ id: 'accept', label: 'Approve once' }],
+          permissions: ['workspace.write'],
+          options: [],
+          scopeHint: 'session',
+          toolName: 'shell',
+          serverName: null
+        }
     ]);
   });
 

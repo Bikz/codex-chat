@@ -4,6 +4,7 @@ import { getRemoteClient } from '@/lib/remote/client';
 import { getUserVisibleThreadPreview, getVisibleThreads, pendingRuntimeRequestsByThread } from '@/lib/remote/selectors';
 import { useRemoteStore } from '@/lib/remote/store';
 import { useShallow } from 'zustand/react/shallow';
+import { cn } from '@/lib/utils';
 
 export function ChatList() {
   const client = getRemoteClient();
@@ -35,10 +36,10 @@ export function ChatList() {
 
   return (
     <>
-      <div id="chatListEmpty" className="empty-state" hidden={!emptyMessage}>
+      <div id="chatListEmpty" className="mt-2 rounded-xl border border-dashed border-line text-muted p-6 text-center text-sm" hidden={!emptyMessage}>
         {emptyMessage}
       </div>
-      <ul id="chatList" className="chat-list" aria-label="Chats" hidden={Boolean(emptyMessage)}>
+      <ul id="chatList" className="mt-2 flex flex-col gap-2" aria-label="Chats" hidden={Boolean(emptyMessage)}>
         {visibleThreads.map((thread) => {
           const running = turnStateByThreadID.get(thread.id) === true;
           const runtimeRequests = runtimeRequestsByThread.get(thread.id) || 0;
@@ -49,21 +50,25 @@ export function ChatList() {
             <li key={thread.id}>
               <button
                 type="button"
-                className={`chat-row ${thread.id === selectedThreadID ? 'active' : ''}`}
+                className={cn(
+                  "chat-row w-full text-left p-3 rounded-2xl min-w-0 flex flex-col gap-1 active:scale-[0.98] transition-all",
+                  "bg-surface-alt hover:bg-surface-subtle border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                  thread.id === selectedThreadID ? "border-accent shadow-sm" : "border-transparent"
+                )}
                 aria-label={`Open chat ${thread.title}`}
                 onClick={() => client.navigateToThread(thread.id)}
               >
-                <div className="chat-main">
-                  <span className="chat-title">{thread.title}</span>
-                  <span className="chat-badges">
-                    {running ? <span className="mini-badge running">Running</span> : null}
+                <div className="flex items-center justify-between gap-2 w-full">
+                  <span className="font-semibold text-[15px] truncate text-fg flex-1">{thread.title}</span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {running ? <span className="inline-flex items-center h-5 px-2 text-[10px] font-bold uppercase tracking-wider text-success bg-success/10 rounded-full">Running</span> : null}
                     {runtimeRequests > 0 ? (
-                      <span className="mini-badge approval">{runtimeRequests === 1 ? '1 request' : `${runtimeRequests} requests`}</span>
+                      <span className="inline-flex items-center h-5 px-2 text-[10px] font-bold uppercase tracking-wider text-danger bg-danger/10 rounded-full">{runtimeRequests === 1 ? '1 request' : `${runtimeRequests} requests`}</span>
                     ) : null}
-                    {hasUnread ? <span className="mini-badge unread">New</span> : null}
-                  </span>
+                    {hasUnread ? <div className="w-2.5 h-2.5 bg-accent rounded-full shadow-[0_0_8px_rgba(10,132,255,0.6)]"></div> : null}
+                  </div>
                 </div>
-                <div className="chat-preview">{previewText}</div>
+                <div className="chat-preview text-[13px] text-muted line-clamp-1 leading-snug">{previewText || "Say hello..."}</div>
               </button>
             </li>
           );

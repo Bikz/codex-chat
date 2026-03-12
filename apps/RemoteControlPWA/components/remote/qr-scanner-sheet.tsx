@@ -5,6 +5,7 @@ import jsQR from 'jsqr';
 import { useEffect, useRef, useState } from 'react';
 import { getRemoteClient } from '@/lib/remote/client';
 import { useRemoteStore } from '@/lib/remote/store';
+import { Button } from '@/components/ui/button';
 
 type BarcodeDetectorLike = {
   detect: (image: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
@@ -171,30 +172,32 @@ export function QRScannerSheet() {
     <Dialog.Root open={isOpen} onOpenChange={(open) => (open ? client.openQRScanner() : client.closeQRScanner())}>
       <Dialog.Portal>
         <Dialog.Overlay className="sheet-backdrop" />
-        <Dialog.Content id="qrScannerSheet" className="sheet-card scanner-sheet" aria-labelledby="qrScannerTitle">
-          <div className="sheet-head">
+        <Dialog.Content id="qrScannerSheet" className="sheet-card flex flex-col gap-4" aria-labelledby="qrScannerTitle">
+          <div className="flex items-center justify-between mb-2">
             <Dialog.Title asChild>
-              <h2 id="qrScannerTitle">Scan QR code</h2>
+              <h2 id="qrScannerTitle" className="text-xl font-bold tracking-tight text-fg truncate">Scan QR code</h2>
             </Dialog.Title>
             <Dialog.Close asChild>
-              <button id="closeQRScannerButton" className="ghost" type="button" aria-label="Close QR scanner">
-                Close
-              </button>
+              <Button id="closeQRScannerButton" variant="ghost" size="sm" type="button" aria-label="Close QR scanner" className="h-8 px-3 rounded-full text-[13px] bg-surface-alt">
+                Cancel
+              </Button>
             </Dialog.Close>
           </div>
 
-          <p className="pairing-hint">{statusText}</p>
-          <div className="scanner-preview" aria-live="polite">
-            <video ref={videoRef} className="scanner-video" autoPlay muted playsInline />
+          <p className="text-sm text-muted leading-relaxed px-1">{statusText}</p>
+          
+          <div className="w-full bg-surface-alt border border-line rounded-3xl overflow-hidden aspect-[4/3] min-h-[220px] relative shadow-inner" aria-live="polite">
+            <video ref={videoRef} className="w-full h-full object-cover absolute inset-0" autoPlay muted playsInline />
           </div>
-          <canvas ref={canvasRef} className="scanner-canvas" aria-hidden="true" />
+          <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
 
-          {errorText ? <p className="status warn">{errorText}</p> : null}
+          {errorText ? <p className="text-[13px] text-danger font-medium px-1 bg-danger/10 border border-danger/20 p-2 rounded-lg">{errorText}</p> : null}
 
-          <div className="actions">
-            <button
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <Button
               id="pastePairLinkButton"
               type="button"
+              className="w-full"
               onClick={async () => {
                 const imported = await client.pasteJoinLinkFromClipboard();
                 if (imported) {
@@ -202,36 +205,41 @@ export function QRScannerSheet() {
                 }
               }}
             >
-              Paste Pair Link
-            </button>
-            <button id="retryScannerButton" type="button" onClick={() => client.closeQRScanner()}>
+              Paste Link
+            </Button>
+            <Button id="retryScannerButton" type="button" className="w-full" onClick={() => client.closeQRScanner()}>
               Close Scanner
-            </button>
+            </Button>
           </div>
 
-          <label className="sr-only" htmlFor="manualPairLinkInput">
-            Pair link
-          </label>
-          <textarea
-            id="manualPairLinkInput"
-            className="manual-pair-input"
-            rows={3}
-            placeholder="Or paste a full pair link here"
-            value={manualText}
-            onChange={(event) => setManualText(event.target.value)}
-          />
-          <button
-            id="importManualPairLinkButton"
-            type="button"
-            onClick={() => {
-              const imported = client.importJoinLink(manualText, 'manual');
-              if (imported) {
-                client.closeQRScanner();
-              }
-            }}
-          >
-            Import Pair Link
-          </button>
+          <div className="bg-surface-alt rounded-2xl p-3 border border-line flex flex-col gap-2 mt-2">
+            <label className="sr-only" htmlFor="manualPairLinkInput">
+              Pair link
+            </label>
+            <textarea
+              id="manualPairLinkInput"
+              className="w-full min-h-[72px] resize-y bg-surface text-fg border border-line rounded-xl px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent leading-relaxed break-all font-mono"
+              rows={3}
+              placeholder="Or paste a full pair link here"
+              value={manualText}
+              onChange={(event) => setManualText(event.target.value)}
+            />
+            <Button
+              id="importManualPairLinkButton"
+              type="button"
+              variant="primary"
+              className="w-full"
+              disabled={!manualText.trim()}
+              onClick={() => {
+                const imported = client.importJoinLink(manualText, 'manual');
+                if (imported) {
+                  client.closeQRScanner();
+                }
+              }}
+            >
+              Import Link
+            </Button>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

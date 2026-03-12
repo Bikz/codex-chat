@@ -182,7 +182,7 @@ function createSystemPolicyPayload() {
   };
 }
 
-async function seedDemo(page: Parameters<typeof test>[0]["page"]) {
+async function seedDemo(page: import("@playwright/test").Page) {
   await page.goto("/?e2e=1#view=home&pid=all");
   await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
   await page.evaluate((payload) => {
@@ -194,7 +194,7 @@ async function seedDemo(page: Parameters<typeof test>[0]["page"]) {
 }
 
 async function seedCustom(
-  page: Parameters<typeof test>[0]["page"],
+  page: import("@playwright/test").Page,
   payload: unknown,
   options: { canRespondToRuntimeRequests?: boolean } = {}
 ) {
@@ -221,13 +221,13 @@ async function seedCustom(
   }
 }
 
-async function injectEnvelope(page: Parameters<typeof test>[0]["page"], message: unknown) {
+async function injectEnvelope(page: import("@playwright/test").Page, message: unknown) {
   await page.evaluate((nextMessage) => {
     (window as any).__codexRemotePWAHarness.injectMessage(nextMessage as Record<string, unknown>);
   }, message);
 }
 
-async function expectNoPageHorizontalOverflow(page: Parameters<typeof test>[0]["page"]) {
+async function expectNoPageHorizontalOverflow(page: import("@playwright/test").Page) {
   const dimensions = await page.evaluate(() => ({
     htmlScrollWidth: document.documentElement.scrollWidth,
     htmlClientWidth: document.documentElement.clientWidth,
