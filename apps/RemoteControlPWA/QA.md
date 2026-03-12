@@ -35,6 +35,10 @@ Use this checklist before cutting a release for the mobile web client.
 - Disconnect network on phone, send a message, and confirm UI reports queued command.
 - Restore network and confirm queued command is flushed after websocket re-auth.
 - Verify thread/project select actions do not queue while offline and show reconnect guidance.
+- With remote runtime requests enabled on desktop, confirm a permission request shows explicit `Grant` and `Decline` actions and that `Decline` does not grant the requested permission set.
+- Confirm a user-input runtime request allows both typed text and preset choice selection before sending `Submit`.
+- Confirm an MCP elicitation runtime request allows typed text entry and `Submit` sends the typed response.
+- Confirm a dynamic tool-call runtime request supports explicit approve/decline actions.
 
 ## Background/resume (iOS + mobile browsers)
 
@@ -54,6 +58,7 @@ Use this checklist before cutting a release for the mobile web client.
 - Connect, then reconnect with old token and confirm relay rejects stale token.
 - Confirm fresh token from `auth_ok` is accepted for subsequent reconnect.
 - Send duplicate command sequence IDs and confirm relay returns replay rejection.
+- After a desktop or relay rollout that changes remote protocol shape, hard-refresh the PWA and confirm it resumes with `schemaVersion = 2` instead of silently reusing a stale browser tab.
 
 ## UX and status messaging
 

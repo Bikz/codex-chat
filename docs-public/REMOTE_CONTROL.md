@@ -1,10 +1,10 @@
-# Remote Control (MVP)
+# Remote Control
 
 Remote Control lets a phone/web companion drive a local Codex Chat session without exposing Codex/OpenAI credentials outside the desktop boundary.
 
 ## Scope
 
-This MVP delivers:
+Current release surface includes:
 
 - Desktop remote-session surface (toolbar + sheet + QR link + stop session)
 - In-session `Add Device` action that rotates join token without ending active remote session
@@ -112,8 +112,15 @@ Set environment variables before launching Codex Chat:
 
 - The remote-control wire contract is now approval-agnostic: `supportsRuntimeRequests`, `canRespondToRuntimeRequests`, `isAwaitingRuntimeRequest`, `pendingRuntimeRequests`, and `runtime_request.respond` replace the old approval-specific names.
 - Remote snapshots carry typed runtime-request metadata so support surfaces can render request-family-specific summaries and allowed response options without guessing from freeform text.
+- Remote runtime-request responses now support:
+  - approvals (`accept`, `acceptForSession`, `decline`, `cancel`)
+  - permission grant/decline responses
+  - user-input prompts with typed text plus an optional selected choice
+  - MCP elicitation prompts with typed text
+  - dynamic tool-call approve/decline responses
+- `schemaVersion = 2` is now required across desktop, relay, and PWA. After a desktop or relay upgrade that changes the schema, stale browser tabs should be hard-refreshed before reusing the session. If auth or sync still looks stale after refresh, re-pair the device.
 
-## Next hardening steps
+## Post-launch hardening backlog
 
 - Protocol compatibility gate now runs via `make remote-control-compat` (`apps/RemoteControlRelay/test/relay.compat.test.mjs`) and compares normalized pairing/auth/forwarding behavior between Node and Rust relays.
 - Multi-instance soak/load tests with Redis + NATS under reconnect churn.

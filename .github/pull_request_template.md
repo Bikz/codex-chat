@@ -5,6 +5,7 @@ Describe the change and why it exists.
 ## Testing
 
 - [ ] `make quick`
+- [ ] `make prepush-local`
 - [ ] `pnpm -s run check` (if applicable)
 - [ ] `make oss-smoke`
 - [ ] Host app builds in canonical path:

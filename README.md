@@ -11,6 +11,17 @@ Core differentiators:
 - Safety controls are explicit and legible (approvals, diff review, guardrails).
 - Contributor tooling is built in (`CodexChatCLI`) for reproducible diagnostics and smoke tests.
 
+## Release Status
+
+- Current direct-download release target: macOS 14+ on Apple Silicon (`arm64`)
+- Requires a local `codex` CLI install with `codex app-server` available on `PATH`
+- Runtime compatibility window:
+  - Validated: `codex 0.114.x`
+  - Grace: `codex 0.113.x`
+  - Outside that window: CodexChat starts in degraded mode and surfaces compatibility warnings in Settings and Diagnostics
+- Download the latest signed DMG from [GitHub Releases](https://github.com/Bikz/codex-chat/releases)
+- For install help, bug-report guidance, and support channels, see `SUPPORT.md`
+
 ## Features
 
 - Native SwiftUI macOS experience for the Codex runtime with a chat-first flow.
@@ -24,6 +35,14 @@ Core differentiators:
 - Chat archive persistence with searchable local metadata.
 - Keychain-backed secret handling for API keys.
 - Deterministic contributor workflows via CLI diagnostics and fixtures.
+
+## Install From Release
+
+1. Download the latest DMG from [GitHub Releases](https://github.com/Bikz/codex-chat/releases).
+2. Install or update the local `codex` CLI so `codex app-server` is available on `PATH`.
+3. Launch CodexChat and confirm the detected runtime support level in Settings or Diagnostics.
+
+If you prefer to build from source, use the contributor path below.
 
 ## Screenshots
 
@@ -52,7 +71,7 @@ Core differentiators:
 - `skills/first-party`: tracked first-party skill templates (including personal-action playbooks for macOS workflows).
 - `tests/fixtures`: shared fake runtime fixtures used by smoke/integration paths.
 
-## Requirements
+## Source Build Requirements
 
 - macOS 14+
 - Xcode 16+ (Swift tools `6.0`)
@@ -60,7 +79,7 @@ Core differentiators:
 - Homebrew
 - SwiftFormat, SwiftLint, gitleaks
 
-## Quick Start
+## Source Build Quick Start
 
 ```sh
 bash scripts/bootstrap.sh
@@ -199,6 +218,9 @@ Set `USE_GITHUB_RELEASE_WORKFLOW=1` to opt into the manual GitHub-hosted release
 
 ## Documentation
 
+- `SUPPORT.md`
+- `SECURITY.md`
+- `CHANGELOG.md`
 - `CONTRIBUTING.md`
 - `docs-public/README.md`
 - `docs-public/INSTALL.md`
@@ -218,6 +240,8 @@ make quick
 make oss-smoke
 make reliability-local
 make reliability-scorecard
+make prepush-local
+pnpm -s run check
 make reliability-bundle
 pnpm -s run check
 ```

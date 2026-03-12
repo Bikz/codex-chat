@@ -350,6 +350,35 @@ async function runScenario(relayKind) {
       `${relayKind}:forwarded-command`
     );
 
+    mobileSocket.send(
+      JSON.stringify({
+        schemaVersion: 2,
+        sessionID,
+        seq: 2,
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: "command",
+          payload: {
+            name: "runtime_request.respond",
+            commandID: "cmd-2",
+            runtimeRequestID: "42",
+            runtimeRequestKind: "userInput",
+            runtimeRequestResponse: {
+              text: "Use the safer path.",
+              optionID: "choice-b"
+            }
+          }
+        }
+      })
+    );
+
+    const forwardedRuntimeRequest = await nextMatchingJSONMessage(
+      desktopSocket,
+      (message) => message?.payload?.type === "command" && message?.payload?.payload?.commandID === "cmd-2",
+      5000,
+      `${relayKind}:forwarded-runtime-request-command`
+    );
+
     await closeSocket(mobileSocket);
     await wait(200);
 
@@ -378,6 +407,11 @@ async function runScenario(relayKind) {
         forwarded.relayConnectionID !== "spoofed-connection",
       spoofedDeviceRejected:
         forwarded?.relayDeviceID === joinPayload.deviceID && forwarded?.relayDeviceID !== "spoofed-device",
+      runtimeRequestForwarded:
+        forwardedRuntimeRequest?.payload?.payload?.name === "runtime_request.respond" &&
+        forwardedRuntimeRequest?.payload?.payload?.runtimeRequestID === "42" &&
+        forwardedRuntimeRequest?.payload?.payload?.runtimeRequestResponse?.text === "Use the safer path." &&
+        forwardedRuntimeRequest?.payload?.payload?.runtimeRequestResponse?.optionID === "choice-b",
       firstTokenRejected,
       rotatedTokenAccepted: secondAuth?.type === "auth_ok" && secondAuth?.role === "mobile"
     };
