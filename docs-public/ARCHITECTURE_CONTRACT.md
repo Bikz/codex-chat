@@ -90,6 +90,7 @@ Codex runtime ownership under the active shared Codex home:
 - CodexChat must not migrate runtime internals across homes as user data.
 - CodexChat must not repair, quarantine, or delete entries inside the live shared Codex home.
 - CodexChat project archives (`projects/<project>/chats/threads/*.md`) remain independent from Codex runtime session caches.
+- When runtime-native history import is offered, it must be a one-time copy into CodexChat-owned archives, not a live mount of the shared Codex session store.
 
 ## Reset Rules
 

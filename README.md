@@ -48,6 +48,8 @@ CodexChat uses the shared Codex homes that other Codex clients use:
 - Active agents home: `~/.agents`
 - `~/CodexChat` remains app-owned storage for projects, metadata, diagnostics, and project-scoped `.agents/skills`
 
+On first launch after connecting to a signed-in runtime, CodexChat can offer a one-time import of existing Codex conversations. Imported history is copied into a separate local project named `Imported from Codex`; new CodexChat conversations remain app-owned and separate from the live Codex runtime store.
+
 Legacy `~/CodexChat/global/codex-home` and `~/CodexChat/global/agents-home` directories are migration inputs only and can be archived from Settings after handoff completes.
 
 If you prefer to build from source, use the contributor path below.

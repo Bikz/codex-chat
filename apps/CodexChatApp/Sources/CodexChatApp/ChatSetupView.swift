@@ -13,6 +13,9 @@ struct OnboardingView: View {
             VStack(spacing: tokens.spacing.medium) {
                 accountCard
                 runtimeCard
+                if model.shouldShowRuntimeHistoryImportCard {
+                    runtimeHistoryImportCard
+                }
             }
             .frame(maxWidth: 560)
 
@@ -181,6 +184,70 @@ struct OnboardingView: View {
                 }
             } else if model.runtimeStatus == .connected, model.runtimeIssue == nil {
                 SetupSuccessRow(text: "Runtime ready")
+            }
+        }
+    }
+
+    private var runtimeHistoryImportCard: some View {
+        SetupCard(
+            title: "Existing Codex Chats",
+            subtitle: model.runtimeHistoryImportSubtitle
+        ) {
+            switch model.runtimeHistoryImportState {
+            case .checking:
+                HStack(spacing: 10) {
+                    ActivityIndicatorGlyph(size: .small)
+                    Text("Looking for conversations from your shared Codex home…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+            case let .available(threadCount):
+                HStack {
+                    Button("Import \(threadCount == 1 ? "Conversation" : "Conversations")") {
+                        model.importRuntimeHistory()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.white)
+                    .foregroundStyle(.black)
+
+                    Button("Not Now") {
+                        model.skipRuntimeHistoryImport()
+                    }
+                    .buttonStyle(.bordered)
+
+                    Spacer()
+                }
+
+                Text(model.runtimeHistoryImportCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+            case .importing:
+                HStack(spacing: 10) {
+                    ActivityIndicatorGlyph(size: .small)
+                    Text("Importing your old Codex conversations into a separate CodexChat project…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+            case .failed:
+                HStack {
+                    Button("Skip for Now") {
+                        model.skipRuntimeHistoryImport()
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer()
+                }
+
+                Text(model.runtimeHistoryImportCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+            case .idle:
+                EmptyView()
             }
         }
     }

@@ -12,6 +12,14 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
+    enum RuntimeHistoryImportState: Equatable {
+        case idle
+        case checking
+        case available(threadCount: Int)
+        case importing
+        case failed(String)
+    }
+
     enum DetailDestination: Equatable {
         case thread
         case skillsAndMods
@@ -1009,6 +1017,7 @@ final class AppModel: ObservableObject {
     @Published var draftChatProjectID: UUID?
     @Published var detailDestination: DetailDestination = .none
     @Published var onboardingMode: OnboardingMode = .inactive
+    @Published var runtimeHistoryImportState: RuntimeHistoryImportState = .idle
     @Published var expandedProjectIDs: Set<UUID> = []
     @Published var showAllProjects: Bool = false
     @Published var sidebarToggleRequestID = 0
@@ -1245,6 +1254,7 @@ final class AppModel: ObservableObject {
     var runtimeEventTask: Task<Void, Never>?
     var runtimeAutoRecoveryTask: Task<Void, Never>?
     var onboardingCompletionTask: Task<Void, Never>?
+    var runtimeHistoryImportCandidates: [RuntimeHistoryThreadSummary] = []
     var chatGPTLoginPollingTask: Task<Void, Never>?
     var pendingChatGPTLoginID: String?
     var searchTask: Task<Void, Never>?
@@ -1829,10 +1839,20 @@ final class AppModel: ObservableObject {
         onboardingMode == .active
     }
 
+    var hasPendingRuntimeHistoryImportDecision: Bool {
+        switch runtimeHistoryImportState {
+        case .checking, .available, .importing, .failed:
+            true
+        case .idle:
+            false
+        }
+    }
+
     var isOnboardingReadyToComplete: Bool {
         isSignedInForRuntime
             && runtimeStatus == .connected
             && runtimeIssue == nil
+            && !hasPendingRuntimeHistoryImportDecision
     }
 
     var selectedProject: ProjectRecord? {
@@ -1992,6 +2012,7 @@ final class AppModel: ObservableObject {
         }
 
         accountState = try await runtimePool.readAccount(refreshToken: refreshToken)
+        await refreshRuntimeHistoryImportAvailabilityIfNeeded()
         completeOnboardingIfReady()
     }
 

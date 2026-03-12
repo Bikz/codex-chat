@@ -75,6 +75,8 @@ CodexChat now uses the same active Codex home as the rest of the Codex ecosystem
 - Active agents home: `~/.agents`
 - CodexChat project chat archives under `projects/<project>/chats/threads/` remain separate from Codex runtime session caches.
 
+If CodexChat detects existing Codex conversations after the runtime connects, onboarding can offer a one-time import. Imported history is copied into a separate local project named `Imported from Codex`; it is not a live view into the shared Codex session store, and new CodexChat conversations remain separate.
+
 On startup, CodexChat performs a one-time safe handoff from legacy managed homes under `<storage-root>/global/` into the active shared homes:
 
 - Legacy managed Codex home: `<storage-root>/global/codex-home`

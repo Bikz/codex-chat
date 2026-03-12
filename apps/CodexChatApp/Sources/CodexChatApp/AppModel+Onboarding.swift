@@ -5,6 +5,8 @@ extension AppModel {
         onboardingCompletionTask?.cancel()
         onboardingCompletionTask = nil
         onboardingMode = .active
+        runtimeHistoryImportCandidates = []
+        runtimeHistoryImportState = .idle
         detailDestination = .none
 
         if reason == .signedOut {
