@@ -256,7 +256,10 @@ main() {
 
   local final_dmg="$DIST_DIR/$DMG_NAME"
   cp "$DMG_PATH" "$final_dmg"
-  shasum -a 256 "$final_dmg" > "$final_dmg.sha256"
+  (
+    cd "$DIST_DIR"
+    shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
+  )
 
   if [[ "$SKIP_NOTARIZATION" != "1" ]]; then
     validate_notarized_item "$final_dmg" "dmg"
