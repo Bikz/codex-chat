@@ -277,12 +277,14 @@ struct LiveTurnActivityRow: View {
     let activity: LiveTurnActivityPresentation
     let detailLevel: TranscriptDetailLevel
 
+    @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var compactStatusPulse = false
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 10) {
                 Circle()
                     .fill(Color.primary.opacity(compactStatusOpacity))
@@ -290,9 +292,9 @@ struct LiveTurnActivityRow: View {
                     .scaleEffect(compactStatusScale)
                     .accessibilityHidden(true)
 
-                Text("\(presentation.statusLabel)…")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary.opacity(0.9))
+                Text(presentation.statusLabel)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .opacity(compactStatusOpacity)
@@ -311,7 +313,13 @@ struct LiveTurnActivityRow: View {
                             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                                 .font(.caption2.weight(.medium))
                         }
-                        .foregroundStyle(.secondary.opacity(0.68))
+                        .foregroundStyle(.secondary.opacity(0.58))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(Color.primary.opacity(colorScheme == .dark ? 0.055 : 0.04))
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -345,15 +353,24 @@ struct LiveTurnActivityRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.025))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.primary.opacity(colorScheme == .dark ? 0.055 : 0.032),
+                            Color(hex: tokens.palette.panelHex).opacity(colorScheme == .dark ? 0.9 : 0.96),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.06))
         )
         .onAppear {
             if detailLevel == .detailed {
@@ -459,6 +476,12 @@ struct LiveTurnActivityRow: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.045 : 0.03))
+        )
     }
 
     private func emphasis(for tone: RuntimeVisualStateTone) -> CollapsedActivityItem.Emphasis {
@@ -652,6 +675,7 @@ struct TurnSummaryRow: View {
     let summary: TurnSummaryPresentation
     let detailLevel: TranscriptDetailLevel
     let model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded = false
 
     var body: some View {
@@ -714,7 +738,7 @@ struct TurnSummaryRow: View {
 
     private var dividerLine: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.08))
+            .fill(Color.primary.opacity(colorScheme == .dark ? 0.1 : 0.07))
             .frame(height: 1)
     }
 
