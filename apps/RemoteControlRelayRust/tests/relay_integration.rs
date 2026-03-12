@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::Message;
 
 type TestSocket =
@@ -77,9 +78,46 @@ async fn next_matching_json_message(
     }
 }
 
+async fn expect_disconnect_with_reason(
+    socket: &mut TestSocket,
+    timeout_ms: u64,
+    expected_reason: &str,
+) {
+    let disconnect = next_matching_json_message(socket, timeout_ms, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("disconnect")
+    })
+    .await;
+    assert_eq!(
+        disconnect.get("reason").and_then(Value::as_str),
+        Some(expected_reason)
+    );
+}
+
+async fn expect_policy_close(socket: &mut TestSocket, timeout_ms: u64) {
+    let frame = tokio::time::timeout(Duration::from_millis(timeout_ms), socket.next())
+        .await
+        .expect("expected websocket close frame before timeout")
+        .expect("expected websocket close frame")
+        .expect("expected websocket close message");
+    match frame {
+        Message::Close(Some(frame)) => {
+            assert_eq!(frame.code, CloseCode::Policy);
+        }
+        other => panic!("expected policy close frame, got {other:?}"),
+    }
+}
+
 async fn pair_connected_mobile(
     configure: impl FnOnce(&mut RelayConfig),
-) -> (String, JoinHandle<()>, TestSocket, TestSocket, String) {
+) -> (
+    String,
+    JoinHandle<()>,
+    TestSocket,
+    TestSocket,
+    String,
+    String,
+    String,
+) {
     let (base, task) = spawn_test_server_with_config(configure).await;
     let client = reqwest::Client::new();
 
@@ -201,18 +239,34 @@ async fn pair_connected_mobile(
         .await
         .expect("mobile auth send");
 
-    let _mobile_auth = mobile_socket
+    let mobile_auth = mobile_socket
         .next()
         .await
         .expect("mobile auth frame")
         .expect("mobile auth message");
+    let mobile_auth_json: Value =
+        serde_json::from_str(mobile_auth.to_text().expect("mobile auth text"))
+            .expect("mobile auth json");
+    let rotated_device_token = mobile_auth_json
+        .get("nextDeviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("rotated device token")
+        .to_string();
 
     // Drain any relay bookkeeping events before assertions.
     while let Ok(Some(Ok(_))) =
         tokio::time::timeout(Duration::from_millis(50), desktop_socket.next()).await
     {}
 
-    (base, task, desktop_socket, mobile_socket, session_id)
+    (
+        base,
+        task,
+        desktop_socket,
+        mobile_socket,
+        session_id,
+        device_token,
+        rotated_device_token,
+    )
 }
 
 #[tokio::test]
@@ -235,7 +289,15 @@ async fn healthz_reports_ok() {
 
 #[tokio::test]
 async fn metricsz_reports_runtime_counters_for_connected_devices() {
-    let (base, task, _desktop_socket, _mobile_socket, _session_id) =
+    let (
+        base,
+        task,
+        _desktop_socket,
+        _mobile_socket,
+        _session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|config| {
             config.token_rotation_grace_ms = 0;
         })
@@ -935,7 +997,15 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
 
 #[tokio::test]
 async fn mobile_receives_desktop_offline_status_and_command_rejection() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|_| {}).await;
 
     desktop_socket
@@ -1157,6 +1227,51 @@ async fn trusted_mobile_reauths_while_desktop_offline_without_repairing() {
         .close(None)
         .await
         .expect("mobile reconnect close");
+    task.abort();
+}
+
+#[tokio::test]
+async fn stale_mobile_device_token_emits_session_expired_disconnect_and_policy_close() {
+    let (
+        base,
+        task,
+        _desktop_socket,
+        mut mobile_socket,
+        _session_id,
+        first_device_token,
+        _rotated_device_token,
+    ) = pair_connected_mobile(|config| {
+        config.token_rotation_grace_ms = 0;
+    })
+    .await;
+
+    mobile_socket
+        .close(None)
+        .await
+        .expect("mobile socket close");
+
+    let ws_url = format!("{base}/ws").replace("http://", "ws://");
+    let mut stale_reconnect_request = ws_url
+        .into_client_request()
+        .expect("stale reconnect request");
+    stale_reconnect_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut stale_reconnect_socket, _) =
+        tokio_tungstenite::connect_async(stale_reconnect_request)
+            .await
+            .expect("stale reconnect websocket");
+    stale_reconnect_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": first_device_token }).to_string(),
+        ))
+        .await
+        .expect("stale reconnect auth send");
+
+    expect_disconnect_with_reason(&mut stale_reconnect_socket, 1_000, "session_expired").await;
+    expect_policy_close(&mut stale_reconnect_socket, 1_000).await;
+
     task.abort();
 }
 
@@ -1390,6 +1505,64 @@ async fn pair_stop_forces_repair_by_rejecting_trusted_device_reauth() {
         reconnect_rejected,
         "stopped session should require re-pair and reject trusted-device reauth"
     );
+
+    task.abort();
+}
+
+#[tokio::test]
+async fn stale_desktop_session_token_emits_session_expired_disconnect_and_policy_close() {
+    let (base, task) = spawn_test_server().await;
+    let client = reqwest::Client::new();
+
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let start_response = client
+        .post(format!("{base}/pair/start"))
+        .json(&json!({
+            "schemaVersion": 2,
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let stop_response = client
+        .post(format!("{base}/pair/stop"))
+        .json(&json!({
+            "schemaVersion": 2,
+            "sessionID": session_id,
+            "desktopSessionToken": desktop_session_token,
+        }))
+        .send()
+        .await
+        .expect("pair stop request");
+    assert_eq!(stop_response.status(), StatusCode::OK);
+
+    let (mut stale_desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("stale desktop websocket");
+    stale_desktop_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": desktop_session_token }).to_string(),
+        ))
+        .await
+        .expect("stale desktop auth send");
+
+    expect_disconnect_with_reason(&mut stale_desktop_socket, 1_000, "session_expired").await;
+    expect_policy_close(&mut stale_desktop_socket, 1_000).await;
 
     task.abort();
 }
@@ -1833,7 +2006,15 @@ async fn devices_list_and_revoke_remove_trusted_device() {
 
 #[tokio::test]
 async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|_| {}).await;
 
     mobile_socket
@@ -1886,7 +2067,15 @@ async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
 
 #[tokio::test]
 async fn mobile_command_with_unexpected_field_is_rejected_and_not_forwarded() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|_| {}).await;
 
     mobile_socket
@@ -1939,7 +2128,15 @@ async fn mobile_command_with_unexpected_field_is_rejected_and_not_forwarded() {
 
 #[tokio::test]
 async fn mobile_command_ignores_spoofed_relay_metadata_and_forwards() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|_| {}).await;
 
     mobile_socket
@@ -1994,7 +2191,15 @@ async fn mobile_command_ignores_spoofed_relay_metadata_and_forwards() {
 
 #[tokio::test]
 async fn invalid_snapshot_request_with_negative_last_seq_is_rejected() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|_| {}).await;
 
     mobile_socket
@@ -2039,7 +2244,15 @@ async fn invalid_snapshot_request_with_negative_last_seq_is_rejected() {
 
 #[tokio::test]
 async fn snapshot_request_accepts_numeric_string_last_seq_for_backward_compatibility() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|_| {}).await;
 
     mobile_socket
@@ -2078,7 +2291,15 @@ async fn snapshot_request_accepts_numeric_string_last_seq_for_backward_compatibi
 
 #[tokio::test]
 async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|config| {
             config.max_remote_commands_per_minute = 2;
         })
@@ -2152,7 +2373,15 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
 
 #[tokio::test]
 async fn per_session_command_rate_limit_blocks_excess_mobile_commands() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|config| {
             config.max_remote_commands_per_minute = 10;
             config.max_remote_session_commands_per_minute = 2;
@@ -2227,7 +2456,15 @@ async fn per_session_command_rate_limit_blocks_excess_mobile_commands() {
 
 #[tokio::test]
 async fn per_device_snapshot_request_rate_limit_blocks_excess_requests() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|config| {
             config.max_snapshot_requests_per_minute = 2;
         })
@@ -2292,7 +2529,15 @@ async fn per_device_snapshot_request_rate_limit_blocks_excess_requests() {
 
 #[tokio::test]
 async fn replayed_mobile_command_sequence_is_rejected() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|_| {}).await;
 
     let command_payload = json!({
@@ -2363,7 +2608,15 @@ async fn replayed_mobile_command_sequence_is_rejected() {
 
 #[tokio::test]
 async fn per_socket_websocket_message_rate_limit_disconnects_abusive_client() {
-    let (_base, task, mut desktop_socket, mut mobile_socket, session_id) =
+    let (
+        _base,
+        task,
+        mut desktop_socket,
+        mut mobile_socket,
+        session_id,
+        _device_token,
+        _rotated_device_token,
+    ) =
         pair_connected_mobile(|config| {
             config.max_ws_messages_per_minute = 2;
             config.max_remote_commands_per_minute = 10_000;

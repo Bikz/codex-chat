@@ -13,6 +13,11 @@ pub(super) struct AuthenticatedSocket {
     pub(super) auth: SocketAuth,
 }
 
+pub(super) enum SocketAuthFailure {
+    Rejected,
+    SessionExpired,
+}
+
 impl AuthenticatedSocket {
     pub(super) fn session_id(&self) -> &str {
         &self.session_id
@@ -25,7 +30,7 @@ pub(super) async fn authenticate_socket(
     origin: Option<&str>,
     tx: &mpsc::Sender<Message>,
     shutdown_tx: &watch::Sender<bool>,
-) -> Option<AuthenticatedSocket> {
+) -> Result<AuthenticatedSocket, SocketAuthFailure> {
     let auth_context = {
         let relay = state.inner.lock().await;
         resolve_auth_context(&relay, token)
@@ -40,7 +45,7 @@ pub(super) async fn authenticate_socket(
         if refreshed.is_none() {
             warn!("[relay-rs] ws_auth_failure reason=token_not_found");
         }
-        refreshed?
+        refreshed.ok_or(SocketAuthFailure::SessionExpired)?
     };
 
     let mut relay = state.inner.lock().await;
@@ -74,7 +79,7 @@ pub(super) async fn authenticate_socket(
         ) {
             relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
         }
-        return None;
+        return Err(SocketAuthFailure::Rejected);
     }
 
     match auth_context {
@@ -87,7 +92,7 @@ pub(super) async fn authenticate_socket(
             ) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
                     warn!("[relay-rs] ws_auth_failure reason=desktop_session_missing");
-                    return None;
+                    return Err(SocketAuthFailure::SessionExpired);
                 };
                 session.last_activity_at_ms = now_ms();
 
@@ -125,7 +130,7 @@ pub(super) async fn authenticate_socket(
                 serde_json::to_string(&auth_payload).unwrap_or_else(|_| "{}".to_string()),
             ) {
                 relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
-                return None;
+                return Err(SocketAuthFailure::Rejected);
             }
             relay.outbound_send_failures = relay
                 .outbound_send_failures
@@ -149,7 +154,7 @@ pub(super) async fn authenticate_socket(
             );
             persist_session_if_needed(state, &session_id).await;
             sync_session_bus_subscription(state, &session_id).await;
-            Some(AuthenticatedSocket {
+            Ok(AuthenticatedSocket {
                 session_id,
                 auth: SocketAuth::Desktop,
             })
@@ -160,7 +165,7 @@ pub(super) async fn authenticate_socket(
         } => {
             if !is_allowed_origin(&state.config.allowed_origins, origin) {
                 warn!("[relay-rs] ws_auth_failure reason=mobile_origin_not_allowed");
-                return None;
+                return Err(SocketAuthFailure::Rejected);
             }
 
             let connection_id = random_token(10);
@@ -170,25 +175,25 @@ pub(super) async fn authenticate_socket(
             let (old_token, connected_device_count, device_count_event, desktop_connected) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
                     warn!("[relay-rs] ws_auth_failure reason=mobile_session_missing");
-                    return None;
+                    return Err(SocketAuthFailure::SessionExpired);
                 };
                 session.last_activity_at_ms = now;
 
                 if !session.devices.contains_key(&device_id) {
                     warn!("[relay-rs] ws_auth_failure reason=device_not_registered");
-                    return None;
+                    return Err(SocketAuthFailure::SessionExpired);
                 }
 
                 close_existing_mobile_socket_for_device(session, &device_id, "device_reconnected");
 
                 if session.mobile_sockets.len() >= state.config.max_devices_per_session {
                     warn!("[relay-rs] ws_auth_failure reason=device_cap_reached");
-                    return None;
+                    return Err(SocketAuthFailure::Rejected);
                 }
 
                 let Some(device) = session.devices.get_mut(&device_id) else {
                     warn!("[relay-rs] ws_auth_failure reason=device_record_missing");
-                    return None;
+                    return Err(SocketAuthFailure::SessionExpired);
                 };
                 let old_token = device.current_session_token.clone();
                 device.current_session_token = next_token.clone();
@@ -249,7 +254,7 @@ pub(super) async fn authenticate_socket(
                 serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
             ) {
                 relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
-                return None;
+                return Err(SocketAuthFailure::Rejected);
             }
             relay.ws_auth_successes = relay.ws_auth_successes.saturating_add(1);
 
@@ -263,7 +268,7 @@ pub(super) async fn authenticate_socket(
             persist_session_if_needed(state, &session_id).await;
             sync_session_bus_subscription(state, &session_id).await;
 
-            Some(AuthenticatedSocket {
+            Ok(AuthenticatedSocket {
                 session_id,
                 auth: SocketAuth::Mobile {
                     device_id,

@@ -88,10 +88,16 @@ pub(super) async fn handle_socket(
         &shutdown_tx,
     )
     .await;
-    let Some(auth) = auth else {
-        warn!("[relay-rs] ws_auth_failure reason=invalid_or_rejected_token");
-        close_writer_task(writer_task, tx).await;
-        return;
+    let auth = match auth {
+        Ok(auth) => auth,
+        Err(SocketAuthFailure::SessionExpired) => {
+            close_writer_task_with_policy_violation(writer_task, tx, "session_expired").await;
+            return;
+        }
+        Err(SocketAuthFailure::Rejected) => {
+            close_writer_task(writer_task, tx).await;
+            return;
+        }
     };
 
     let mut ws_message_rate_bucket = RateBucket {
@@ -373,6 +379,29 @@ pub(super) async fn close_writer_task(
     {
         writer_task.abort();
     }
+}
+
+async fn close_writer_task_with_policy_violation(
+    writer_task: tokio::task::JoinHandle<()>,
+    tx: mpsc::Sender<Message>,
+    reason: &'static str,
+) {
+    let _ = try_send_payload(
+        &tx,
+        json!({
+            "type": "disconnect",
+            "reason": reason,
+        })
+        .to_string(),
+    );
+    let _ = try_send_message(
+        &tx,
+        Message::Close(Some(CloseFrame {
+            code: axum::extract::ws::close_code::POLICY,
+            reason: reason.into(),
+        })),
+    );
+    close_writer_task(writer_task, tx).await;
 }
 
 fn socket_matches_active_registration(
