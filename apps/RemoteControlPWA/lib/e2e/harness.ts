@@ -7,7 +7,15 @@ import { remoteStoreApi } from '@/lib/remote/store';
 declare global {
   interface Window {
     __codexRemotePWAHarness?: {
-      seed: (snapshot: RemoteSnapshot, options?: { authenticated?: boolean; expandRuntimeRequests?: boolean; expandApprovals?: boolean }) => void;
+      seed: (
+        snapshot: RemoteSnapshot,
+        options?: {
+          authenticated?: boolean;
+          expandRuntimeRequests?: boolean;
+          expandApprovals?: boolean;
+          canRespondToRuntimeRequests?: boolean;
+        }
+      ) => void;
       openThread: (threadID: string) => void;
       openAccountSheet: () => void;
       closeAccountSheet: () => void;
@@ -36,12 +44,14 @@ declare global {
         isChatAtBottom: boolean;
         showJumpToLatest: boolean;
         queuedCommandsCount: number;
+        queuedCommands: unknown[];
         joinToken: string | null;
         sessionID: string | null;
         deviceSessionToken: string | null;
         wsURL: string | null;
         isAuthenticated: boolean;
         desktopConnected: boolean | null;
+        canRespondToRuntimeRequests: boolean;
       };
     };
   }
@@ -50,15 +60,27 @@ declare global {
 export function exposeE2EHarness() {
   const client = getRemoteClient();
   const harness = {
-    seed(snapshot: RemoteSnapshot, options: { authenticated?: boolean; expandRuntimeRequests?: boolean; expandApprovals?: boolean } = {}) {
+    seed(
+      snapshot: RemoteSnapshot,
+      options: {
+        authenticated?: boolean;
+        expandRuntimeRequests?: boolean;
+        expandApprovals?: boolean;
+        canRespondToRuntimeRequests?: boolean;
+      } = {}
+    ) {
       if (options.authenticated !== false) {
         remoteStoreApi.setState((state) => ({
           isAuthenticated: true,
           desktopConnected: true,
-          sessionID: state.sessionID || 'e2e-session'
+          sessionID: state.sessionID || 'e2e-session',
+          canRespondToRuntimeRequests: options.canRespondToRuntimeRequests ?? state.canRespondToRuntimeRequests
         }));
       }
       client.applySnapshot(snapshot || {});
+      if (options.canRespondToRuntimeRequests === true) {
+        remoteStoreApi.setState({ canRespondToRuntimeRequests: true });
+      }
       if (options.expandRuntimeRequests || options.expandApprovals) {
         remoteStoreApi.setState({ runtimeRequestsExpanded: true });
       }
@@ -129,12 +151,14 @@ export function exposeE2EHarness() {
         isChatAtBottom: state.isChatAtBottom,
         showJumpToLatest: state.showJumpToLatest,
         queuedCommandsCount: state.queuedCommands.length,
+        queuedCommands: state.queuedCommands.map((entry) => entry.envelope),
         joinToken: state.joinToken,
         sessionID: state.sessionID,
         deviceSessionToken: state.deviceSessionToken,
         wsURL: state.wsURL,
         isAuthenticated: state.isAuthenticated,
-        desktopConnected: state.desktopConnected
+        desktopConnected: state.desktopConnected,
+        canRespondToRuntimeRequests: state.canRespondToRuntimeRequests
       };
     }
   };

@@ -110,7 +110,8 @@ h3 {
 }
 
 button,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -141,6 +142,7 @@ button.ghost {
 
 button:focus-visible,
 textarea:focus-visible,
+select:focus-visible,
 .chat-row:focus-visible,
 .project-circle:focus-visible,
 .sheet-list button:focus-visible {
@@ -642,6 +644,41 @@ textarea:focus-visible,
   color: var(--muted);
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.approval-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.approval-field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.approval-field-label {
+  font-size: 0.72rem;
+  font-weight: 620;
+  color: var(--muted);
+}
+
+.approval-input,
+.approval-select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0.55rem 0.68rem;
+}
+
+.approval-input {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.35;
 }
 
 .approval-actions {

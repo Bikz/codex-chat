@@ -193,13 +193,20 @@ async function seedDemo(page: Parameters<typeof test>[0]["page"]) {
   await expect.poll(async () => page.locator("#chatList .chat-row").count()).toBeGreaterThan(0);
 }
 
-async function seedCustom(page: Parameters<typeof test>[0]["page"], payload: unknown) {
+async function seedCustom(
+  page: Parameters<typeof test>[0]["page"],
+  payload: unknown,
+  options: { canRespondToRuntimeRequests?: boolean } = {}
+) {
   await page.goto("/?e2e=1#view=home&pid=all");
   await expect.poll(async () => page.evaluate(() => Boolean((window as any).__codexRemotePWAHarness))).toBe(true);
-  await page.evaluate((nextPayload) => {
+  await page.evaluate(({ nextPayload, nextOptions }) => {
     (window as any).__codexRemotePWAHarness.resetStorage();
-    (window as any).__codexRemotePWAHarness.seed(nextPayload, { authenticated: true });
-  }, payload);
+    (window as any).__codexRemotePWAHarness.seed(nextPayload, {
+      authenticated: true,
+      canRespondToRuntimeRequests: nextOptions.canRespondToRuntimeRequests === true
+    });
+  }, { nextPayload: payload, nextOptions: options });
   await expect(page.locator("#workspacePanel")).toBeVisible();
 
   const hasThreads = await page.evaluate((nextPayload) => {
@@ -299,7 +306,7 @@ test("mobile-no-horizontal-overflow-thread", async ({ page }) => {
       }
     ],
     pendingRuntimeRequests: []
-  });
+  }, { canRespondToRuntimeRequests: true });
   await page.locator("#chatList .chat-row").first().click();
   await expectNoPageHorizontalOverflow(page);
 });
@@ -458,7 +465,7 @@ test("mobile-event-injection-updates-transcript-immediately", async ({ page }) =
     selectedThreadID: "t1",
     messages: [],
     pendingRuntimeRequests: []
-  });
+  }, { canRespondToRuntimeRequests: true });
   await page.getByRole("button", { name: "Open chat Latency thread" }).click();
 
   const start = Date.now();
@@ -831,6 +838,99 @@ test("mobile-runtime-requests-tray", async ({ page }) => {
   await expect(page.locator("#toggleApprovalsButton")).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator("#approvalTray")).toBeVisible();
   await expect(page.getByText("Allow command execution?")).toBeVisible();
+});
+
+test("mobile-runtime-request-permission-decline-queues-deny-payload", async ({ page }) => {
+  await seedCustom(page, {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Permission thread", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [],
+    pendingRuntimeRequests: [
+      {
+        requestID: "perm-1",
+        kind: "permissionsApproval",
+        threadID: "t1",
+        title: "Permission request pending",
+        summary: "Need project.write",
+        responseOptions: [
+          { id: "grant", label: "Grant" },
+          { id: "decline", label: "Decline" }
+        ],
+        permissions: ["project.write"],
+        options: [],
+        scopeHint: "workspace"
+      }
+    ]
+  }, { canRespondToRuntimeRequests: true });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().canRespondToRuntimeRequests)).toBe(true);
+
+  await page.getByRole("button", { name: "Open chat Permission thread" }).click();
+  await page.locator("#toggleApprovalsButton").click();
+  await page.getByRole("button", { name: "Decline" }).click();
+
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().queuedCommandsCount)).toBe(1);
+
+  const command = await page.evaluate(() => {
+    const state = (window as any).__codexRemotePWAHarness.getState();
+    return state.queuedCommands[0];
+  });
+
+  expect(command.payload.payload.runtimeRequestKind).toBe("permissionsApproval");
+  expect(command.payload.payload.runtimeRequestResponse).toEqual({
+    optionID: "decline",
+    approved: false,
+    permissions: []
+  });
+});
+
+test("mobile-runtime-request-user-input-submit-queues-text-and-choice", async ({ page }) => {
+  await seedCustom(page, {
+    projects: [{ id: "p1", name: "General" }],
+    threads: [{ id: "t1", projectID: "p1", title: "Question thread", isPinned: false }],
+    selectedProjectID: "p1",
+    selectedThreadID: "t1",
+    messages: [],
+    pendingRuntimeRequests: [
+      {
+        requestID: "input-1",
+        kind: "userInput",
+        threadID: "t1",
+        title: "Input request pending",
+        summary: "Choose one option and explain why.",
+        responseOptions: [
+          { id: "submit", label: "Submit" },
+          { id: "dismiss", label: "Dismiss" }
+        ],
+        permissions: [],
+        options: [
+          { id: "choice-a", label: "Choice A", description: "First path" },
+          { id: "choice-b", label: "Choice B", description: "Safer path" }
+        ]
+      }
+    ]
+  }, { canRespondToRuntimeRequests: true });
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().canRespondToRuntimeRequests)).toBe(true);
+
+  await page.getByRole("button", { name: "Open chat Question thread" }).click();
+  await page.locator("#toggleApprovalsButton").click();
+  await page.getByLabel("Choice for Input request pending").selectOption("choice-b");
+  await page.getByLabel("Response for Input request pending").fill("Choice B keeps the rollout safer.");
+  await page.getByRole("button", { name: "Submit" }).click();
+
+  await expect.poll(async () => page.evaluate(() => (window as any).__codexRemotePWAHarness.getState().queuedCommandsCount)).toBe(1);
+
+  const command = await page.evaluate(() => {
+    const state = (window as any).__codexRemotePWAHarness.getState();
+    return state.queuedCommands[0];
+  });
+
+  expect(command.payload.payload.runtimeRequestKind).toBe("userInput");
+  expect(command.payload.payload.runtimeRequestResponse).toEqual({
+    text: "Choice B keeps the rollout safer.",
+    optionID: "choice-b"
+  });
 });
 
 test("mobile-runtime-requests-long-unbroken-content-no-overflow", async ({ page }) => {

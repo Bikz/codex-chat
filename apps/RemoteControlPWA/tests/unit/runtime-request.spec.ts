@@ -85,4 +85,95 @@ describe('runtime-request helpers', () => {
       optionID: 'accept'
     });
   });
+
+  it('builds permission declines without granting requested permissions', () => {
+    const response = buildRuntimeRequestResponseForOption(
+      {
+        requestID: '10',
+        kind: 'permissionsApproval',
+        threadID: 'thread-1',
+        title: 'Permissions',
+        summary: 'Need project.write',
+        responseOptions: [
+          { id: 'grant', label: 'Grant' },
+          { id: 'decline', label: 'Decline' }
+        ],
+        permissions: ['project.write'],
+        options: [],
+        scopeHint: 'workspace',
+        toolName: null,
+        serverName: null
+      },
+      'decline'
+    );
+
+    expect(response).toEqual({
+      optionID: 'decline',
+      approved: false,
+      permissions: [],
+      scope: undefined
+    });
+  });
+
+  it('builds user-input responses from draft text and selected choice', () => {
+    const response = buildRuntimeRequestResponseForOption(
+      {
+        requestID: '11',
+        kind: 'userInput',
+        threadID: 'thread-1',
+        title: 'Question',
+        summary: 'Choose and explain',
+        responseOptions: [
+          { id: 'submit', label: 'Submit' },
+          { id: 'dismiss', label: 'Dismiss' }
+        ],
+        permissions: [],
+        options: [
+          { id: 'choice-a', label: 'Choice A', description: null }
+        ],
+        scopeHint: null,
+        toolName: null,
+        serverName: null
+      },
+      'submit',
+      {
+        text: 'Because it is safer.',
+        optionID: 'choice-a'
+      }
+    );
+
+    expect(response).toEqual({
+      text: 'Because it is safer.',
+      optionID: 'choice-a'
+    });
+  });
+
+  it('builds MCP elicitation responses from typed text', () => {
+    const response = buildRuntimeRequestResponseForOption(
+      {
+        requestID: '12',
+        kind: 'mcpElicitation',
+        threadID: 'thread-1',
+        title: 'MCP',
+        summary: 'Provide input',
+        responseOptions: [
+          { id: 'submit', label: 'Submit' },
+          { id: 'dismiss', label: 'Dismiss' }
+        ],
+        permissions: [],
+        options: [],
+        scopeHint: null,
+        toolName: null,
+        serverName: 'filesystem'
+      },
+      'submit',
+      {
+        text: 'Use the cached token.'
+      }
+    );
+
+    expect(response).toEqual({
+      text: 'Use the cached token.'
+    });
+  });
 });

@@ -669,26 +669,36 @@ extension AppModel {
             }
             try await submitRemoteApprovalDecision(decision, requestID: approval.id)
         case let .permissions(permission):
-            let response = command.runtimeRequestResponse ?? RemoteControlRuntimeRequestResponse()
+            let response = try RemoteRuntimeRequestResponseInterpreter.permissionsResponse(
+                for: permission,
+                payload: command.runtimeRequestResponse
+            )
             try await submitRemotePermissionsRequestResponse(
                 requestID: permission.id,
-                permissions: Set(response.permissions ?? []),
+                permissions: response.permissions,
                 scope: response.scope
             )
         case let .userInput(userInput):
-            let response = command.runtimeRequestResponse ?? RemoteControlRuntimeRequestResponse()
+            let response = RemoteRuntimeRequestResponseInterpreter.userInputResponse(
+                for: userInput,
+                payload: command.runtimeRequestResponse
+            )
             try await submitRemoteUserInputRequestResponse(
                 requestID: userInput.id,
                 text: response.text,
                 optionID: response.optionID
             )
         case let .mcpElicitation(mcp):
-            let response = command.runtimeRequestResponse ?? RemoteControlRuntimeRequestResponse()
-            try await submitRemoteMCPElicitationResponse(requestID: mcp.id, text: response.text)
+            try await submitRemoteMCPElicitationResponse(
+                requestID: mcp.id,
+                text: RemoteRuntimeRequestResponseInterpreter.mcpElicitationText(
+                    payload: command.runtimeRequestResponse
+                )
+            )
         case let .dynamicToolCall(tool):
-            guard let approved = command.runtimeRequestResponse?.approved else {
-                throw RemoteRuntimeRequestCommandError.invalidPayload
-            }
+            let approved = try RemoteRuntimeRequestResponseInterpreter.dynamicToolCallApproval(
+                payload: command.runtimeRequestResponse
+            )
             try await submitRemoteDynamicToolCallResponse(requestID: tool.id, approved: approved)
         }
     }
@@ -729,6 +739,6 @@ extension AppModel {
     }
 }
 
-private enum RemoteRuntimeRequestCommandError: Error {
+enum RemoteRuntimeRequestCommandError: Error {
     case invalidPayload
 }

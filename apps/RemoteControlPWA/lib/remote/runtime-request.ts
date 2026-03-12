@@ -7,6 +7,10 @@ import type {
 } from '@/lib/remote/types';
 
 export type CanonicalRuntimeDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel';
+export interface RuntimeRequestResponseDraft {
+  text?: string | null;
+  optionID?: string | null;
+}
 
 const DEFAULT_APPROVAL_RESPONSE_OPTIONS: RuntimeRequestResponseOption[] = [
   { id: 'accept', label: 'Approve once' },
@@ -175,29 +179,79 @@ function optionLooksNegative(optionID: string) {
   return /^(decline|deny|reject|cancel|no|stop|dismiss)/i.test(optionID);
 }
 
-export function buildRuntimeRequestResponseForOption(request: RuntimeRequest, optionID: string): RuntimeRequestResponse {
-  const canonicalDecision = normalizeRuntimeRequestDecision(optionID);
-  if (canonicalDecision) {
-    return {
-      decision: canonicalDecision,
-      optionID
-    };
+function normalizeResponseText(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
   }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
+function normalizeSelectedRequestOptionID(request: RuntimeRequest, candidate: string | null | undefined): string | null {
+  const normalizedCandidate = readString(candidate);
+  if (!normalizedCandidate) {
+    return null;
+  }
+  return request.options.some((option) => option.id === normalizedCandidate) ? normalizedCandidate : null;
+}
+
+export function buildRuntimeRequestResponseForOption(
+  request: RuntimeRequest,
+  responseOptionID: string,
+  draft: RuntimeRequestResponseDraft = {}
+): RuntimeRequestResponse {
   switch (request.kind) {
+    case 'approval': {
+      const canonicalDecision = normalizeRuntimeRequestDecision(responseOptionID);
+      if (canonicalDecision) {
+        return {
+          decision: canonicalDecision,
+          optionID: responseOptionID
+        };
+      }
+      return { optionID: responseOptionID };
+    }
     case 'permissionsApproval':
+      if (optionLooksNegative(responseOptionID)) {
+        return {
+          optionID: responseOptionID,
+          approved: false,
+          permissions: [],
+          scope: undefined
+        };
+      }
       return {
-        optionID,
-        approved: optionLooksAffirmative(optionID) ? true : optionLooksNegative(optionID) ? false : null,
+        optionID: responseOptionID,
+        approved: optionLooksAffirmative(responseOptionID) ? true : optionLooksNegative(responseOptionID) ? false : null,
         permissions: request.permissions.length > 0 ? request.permissions : undefined,
         scope: request.scopeHint ?? undefined
       };
+    case 'userInput':
+      if (optionLooksNegative(responseOptionID)) {
+        return {
+          text: null,
+          optionID: null
+        };
+      }
+      return {
+        text: normalizeResponseText(draft.text),
+        optionID: normalizeSelectedRequestOptionID(request, draft.optionID)
+      };
+    case 'mcpElicitation':
+      if (optionLooksNegative(responseOptionID)) {
+        return {
+          text: null
+        };
+      }
+      return {
+        text: normalizeResponseText(draft.text)
+      };
     case 'dynamicToolCall':
       return {
-        optionID,
-        approved: optionLooksAffirmative(optionID) ? true : optionLooksNegative(optionID) ? false : null
+        optionID: responseOptionID,
+        approved: optionLooksAffirmative(responseOptionID) ? true : optionLooksNegative(responseOptionID) ? false : null
       };
     default:
-      return { optionID };
+      return { optionID: responseOptionID };
   }
 }

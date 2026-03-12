@@ -8,7 +8,8 @@ import {
   buildRuntimeRequestResponseForOption,
   isRuntimeRequestEventName,
   normalizeCanRespondToRuntimeRequests,
-  normalizeRuntimeRequests
+  normalizeRuntimeRequests,
+  type RuntimeRequestResponseDraft
 } from '@/lib/remote/runtime-request';
 import { getUserVisibleThreadPreview, messageIsCollapsible } from '@/lib/remote/selectors';
 import { createInitialState, remoteStoreApi } from '@/lib/remote/store';
@@ -1746,8 +1747,8 @@ class RemoteClient {
     return true;
   }
 
-  respondToRuntimeRequest(request: RuntimeRequest, optionID: string) {
-    const runtimeRequestResponse = buildRuntimeRequestResponseForOption(request, optionID);
+  respondToRuntimeRequest(request: RuntimeRequest, optionID: string, draft: RuntimeRequestResponseDraft = {}) {
+    const runtimeRequestResponse = buildRuntimeRequestResponseForOption(request, optionID, draft);
 
     this.sendCommand('runtime_request.respond', {
       runtimeRequestID: request.requestID,
