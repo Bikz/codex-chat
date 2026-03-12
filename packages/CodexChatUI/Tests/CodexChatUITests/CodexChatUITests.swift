@@ -33,10 +33,14 @@ final class CodexChatUITests: XCTestCase {
     func testSystemBaselinesExposeExpectedPaletteAndBubbleDefaults() {
         XCTAssertEqual(DesignTokens.systemLight.palette.backgroundHex, "#F9F9F9")
         XCTAssertEqual(DesignTokens.systemLight.palette.panelHex, "#FFFFFF")
+        XCTAssertEqual(DesignTokens.systemLight.palette.accentHex, "#111111")
+        XCTAssertEqual(DesignTokens.systemLight.bubbles.userBackgroundHex, "#111111")
         XCTAssertEqual(DesignTokens.systemLight.bubbles.assistantBackgroundHex, "#FFFFFF")
 
         XCTAssertEqual(DesignTokens.systemDark.palette.backgroundHex, "#000000")
         XCTAssertEqual(DesignTokens.systemDark.palette.panelHex, "#121212")
+        XCTAssertEqual(DesignTokens.systemDark.palette.accentHex, "#F5F5F5")
+        XCTAssertEqual(DesignTokens.systemDark.bubbles.userBackgroundHex, "#1A1A1A")
         XCTAssertEqual(DesignTokens.systemDark.bubbles.assistantBackgroundHex, "#1C1C1E")
     }
 

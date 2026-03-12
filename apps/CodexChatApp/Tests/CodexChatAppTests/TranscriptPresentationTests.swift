@@ -432,7 +432,7 @@ final class TranscriptPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testActiveTurnShowsProgressMessagesInlineWhileRunning() {
+    func testActiveTurnKeepsProgressMessagesOutOfSettledTranscriptWhileRunning() {
         let threadID = UUID()
         let turnID = UUID()
         let entries: [TranscriptEntry] = [
@@ -473,13 +473,41 @@ final class TranscriptPresentationTests: XCTestCase {
             return message
         }
 
-        XCTAssertEqual(
-            progressMessages.map(\.text),
-            [
-                "Planning: I will map modules first.",
-                "Running: I am checking build scripts now.",
-            ]
+        XCTAssertTrue(progressMessages.isEmpty)
+        XCTAssertTrue(rows.contains {
+            if case .liveActivity = $0 { return true }
+            return false
+        })
+    }
+
+    func testCompletedTurnHidesProgressMessagesInChatMode() {
+        let threadID = UUID()
+        let entries: [TranscriptEntry] = [
+            .message(userMessage(threadID: threadID, text: "Review the repo")),
+            .message(ChatMessage(threadId: threadID, role: .system, text: "Planning: I will map modules first.")),
+            .message(ChatMessage(threadId: threadID, role: .system, text: "Running: I am checking build scripts now.")),
+            .actionCard(action(threadID: threadID, method: "item/started", title: "Started reasoning")),
+            .actionCard(action(threadID: threadID, method: "turn/completed", title: "Turn completed")),
+            .message(ChatMessage(threadId: threadID, role: .assistant, text: "Here are the findings.")),
+        ]
+
+        let rows = TranscriptPresentationBuilder.rows(
+            entries: entries,
+            detailLevel: .chat,
+            activeTurnContext: nil
         )
+
+        let progressMessages = rows.compactMap { row -> ChatMessage? in
+            guard case let .message(message) = row,
+                  message.role == .system
+            else {
+                return nil
+            }
+            return message
+        }
+
+        XCTAssertTrue(progressMessages.isEmpty)
+        XCTAssertEqual(rows.turnSummaryCount, 1)
     }
 
     func testCompletedTurnShowsSummaryWithoutLiveActivity() {

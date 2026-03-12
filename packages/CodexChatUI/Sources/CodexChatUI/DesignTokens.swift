@@ -47,7 +47,7 @@ public struct DesignTokens: Hashable, Sendable {
         public var sidebarHex: String
 
         public init(
-            accentHex: String = "#10A37F",
+            accentHex: String = "#111111",
             backgroundHex: String = "#F9F9F9",
             panelHex: String = "#FFFFFF",
             sidebarHex: String = "#F5F5F5"
@@ -126,10 +126,13 @@ public struct DesignTokens: Hashable, Sendable {
         self.iconography = iconography
     }
 
-    public static let systemLight = DesignTokens()
+    public static let systemLight = DesignTokens(
+        palette: Palette(accentHex: "#111111", backgroundHex: "#F9F9F9", panelHex: "#FFFFFF", sidebarHex: "#F5F5F5"),
+        bubbles: Bubbles(style: .glass, userBackgroundHex: "#111111", assistantBackgroundHex: "#FFFFFF")
+    )
     public static let systemDark = DesignTokens(
-        palette: Palette(accentHex: "#10A37F", backgroundHex: "#000000", panelHex: "#121212", sidebarHex: "#0A0A0A"),
-        bubbles: Bubbles(style: .glass, userBackgroundHex: "#10A37F", assistantBackgroundHex: "#1C1C1E")
+        palette: Palette(accentHex: "#F5F5F5", backgroundHex: "#000000", panelHex: "#121212", sidebarHex: "#0A0A0A"),
+        bubbles: Bubbles(style: .glass, userBackgroundHex: "#1A1A1A", assistantBackgroundHex: "#1C1C1E")
     )
     public static let `default` = systemLight
 
@@ -261,7 +264,7 @@ public extension DesignTokens {
 
         public init(
             style: BubbleStyle = .glass,
-            userBackgroundHex: String = "#10A37F",
+            userBackgroundHex: String = "#111111",
             assistantBackgroundHex: String = "#FFFFFF"
         ) {
             self.style = style

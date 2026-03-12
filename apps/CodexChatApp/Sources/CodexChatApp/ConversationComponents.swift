@@ -63,8 +63,8 @@ struct MessageRow: View {
     }
 
     private func bubbleForeground(isUser: Bool, style: DesignTokens.BubbleStyle) -> Color {
-        if isUser, style == .solid {
-            return .white
+        if isUser {
+            return style == .plain ? .primary : Color.white.opacity(0.96)
         }
         return .primary
     }
@@ -156,9 +156,9 @@ struct ActionCardRow: View {
         case .neutral:
             .secondary
         case .accent:
-            Color(hex: tokens.palette.accentHex)
+            .primary
         case .success:
-            .green
+            .primary
         case .warning:
             .orange
         case .error:
@@ -215,9 +215,9 @@ struct InlineActionNoticeRow: View {
         case .neutral:
             .secondary.opacity(0.85)
         case .accent:
-            .secondary
+            .primary.opacity(0.85)
         case .success:
-            .green
+            .primary.opacity(0.85)
         case .warning:
             .orange
         case .error:
@@ -235,7 +235,7 @@ private struct TranscriptMilestoneChips: View {
                 chip(title: "Reasoning", value: counts.reasoning, tint: .secondary)
             }
             if counts.commandExecution > 0 {
-                chip(title: "Commands", value: counts.commandExecution, tint: .blue)
+                chip(title: "Commands", value: counts.commandExecution, tint: .primary)
             }
             if counts.warnings > 0 {
                 chip(title: "Warnings", value: counts.warnings, tint: .orange)
@@ -262,71 +262,98 @@ struct LiveTurnActivityRow: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var compactStatusPulse = false
+    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Circle()
+                    .fill(Color.primary.opacity(compactStatusOpacity))
+                    .frame(width: 6, height: 6)
+                    .scaleEffect(compactStatusScale)
+                    .accessibilityHidden(true)
+
                 Text("\(presentation.statusLabel)…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.9))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .opacity(compactStatusOpacity)
-                    .scaleEffect(compactStatusScale)
-                Spacer(minLength: 8)
-            }
 
-            if presentation.showTraceBox, detailLevel == .balanced, activity.milestoneCounts.hasAny {
-                TranscriptMilestoneChips(counts: activity.milestoneCounts)
-            }
-
-            if let commandOutputPreview = activity.commandOutputPreview {
-                InlineTerminalPreview(preview: commandOutputPreview)
-            }
-
-            if presentation.showTraceBox {
-                Group {
-                    if presentation.lines.isEmpty {
-                        Text("Waiting for trace events…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                LazyVStack(alignment: .leading, spacing: 6) {
-                                    ForEach(presentation.lines) { line in
-                                        Text(line.text)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .id(line.id)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .onAppear {
-                                if let lastID = presentation.lines.last?.id {
-                                    proxy.scrollTo(lastID, anchor: .bottom)
-                                }
-                            }
-                            .onChange(of: presentation.lines.count) { _, _ in
-                                guard let lastID = presentation.lines.last?.id else { return }
-                                DispatchQueue.main.async {
-                                    proxy.scrollTo(lastID, anchor: .bottom)
-                                }
-                            }
-                        }
-                    }
+                if activity.actions.isEmpty == false {
+                    Text(activity.actions.count == 1 ? "1 step" : "\(activity.actions.count) steps")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
                 }
-                .frame(minHeight: 52, idealHeight: 86, maxHeight: 120)
+
+                if detailLevel == .balanced, activity.milestoneCounts.hasAny {
+                    TranscriptMilestoneChips(counts: activity.milestoneCounts)
+                }
+
+                Spacer(minLength: 8)
+
+                if canExpandDetails {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(isExpanded ? "Hide details" : "Show details")
+                                .font(.caption2.weight(.semibold))
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption2.weight(.semibold))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let preview = livePreviewText {
+                Text(preview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+
+            if isExpanded {
+                if let commandOutputPreview = activity.commandOutputPreview {
+                    InlineTerminalPreview(preview: commandOutputPreview)
+                }
+
+                if presentation.showTraceBox {
+                    liveTraceBox
+                }
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08))
+        )
         .onAppear {
+            if detailLevel == .detailed {
+                isExpanded = true
+            }
             updateCompactStatusPulse()
         }
         .onChange(of: presentation.showTraceBox) { _, _ in
             updateCompactStatusPulse()
+        }
+        .onChange(of: detailLevel) { _, newValue in
+            if newValue == .detailed {
+                isExpanded = true
+            }
         }
         .onChange(of: reduceMotion) { _, _ in
             updateCompactStatusPulse()
@@ -342,19 +369,67 @@ struct LiveTurnActivityRow: View {
     }
 
     private var compactStatusOpacity: Double {
-        guard !presentation.showTraceBox else { return 1 }
         guard !reduceMotion else { return 1 }
         return compactStatusPulse ? 0.72 : 1
     }
 
     private var compactStatusScale: CGFloat {
-        guard !presentation.showTraceBox else { return 1 }
         guard !reduceMotion else { return 1 }
         return compactStatusPulse ? 0.99 : 1
     }
 
+    private var canExpandDetails: Bool {
+        detailLevel == .detailed || presentation.showTraceBox || activity.commandOutputPreview != nil
+    }
+
+    private var livePreviewText: String? {
+        let trimmedAssistant = activity.assistantPreview.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedAssistant.isEmpty else {
+            return nil
+        }
+        return trimmedAssistant
+    }
+
+    private var liveTraceBox: some View {
+        Group {
+            if presentation.lines.isEmpty {
+                Text("Waiting for trace events…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 6) {
+                            ForEach(presentation.lines) { line in
+                                Text(line.text)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id(line.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onAppear {
+                        if let lastID = presentation.lines.last?.id {
+                            proxy.scrollTo(lastID, anchor: .bottom)
+                        }
+                    }
+                    .onChange(of: presentation.lines.count) { _, _ in
+                        guard let lastID = presentation.lines.last?.id else { return }
+                        DispatchQueue.main.async {
+                            proxy.scrollTo(lastID, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(minHeight: 52, idealHeight: 86, maxHeight: 120)
+    }
+
     private func updateCompactStatusPulse() {
-        guard !presentation.showTraceBox, !reduceMotion else {
+        guard !reduceMotion else {
             compactStatusPulse = false
             return
         }
@@ -440,7 +515,7 @@ private struct InlineTerminalPreview: View {
         case .debug:
             .secondary
         case .info:
-            .green
+            .primary.opacity(0.82)
         case .warning:
             .orange
         case .error:

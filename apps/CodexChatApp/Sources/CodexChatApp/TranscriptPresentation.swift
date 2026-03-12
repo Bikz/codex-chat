@@ -260,12 +260,14 @@ enum TranscriptPresentationBuilder {
             }
 
             let isActiveBucket = bucket.id == activeBucketID
-            for progress in progressMessagesForDisplay(
-                in: bucket,
-                detailLevel: detailLevel,
-                isActiveBucket: isActiveBucket
-            ) {
-                rows.append(.message(progress))
+            if !isActiveBucket || detailLevel == .detailed {
+                for progress in progressMessagesForDisplay(
+                    in: bucket,
+                    detailLevel: detailLevel,
+                    isActiveBucket: isActiveBucket
+                ) {
+                    rows.append(.message(progress))
+                }
             }
             if isActiveBucket {
                 continue
@@ -406,32 +408,10 @@ enum TranscriptPresentationBuilder {
             return sourceMessages
         }
 
-        if isActiveBucket {
-            return Array(sourceMessages.suffix(8))
-        }
-
-        let maxVisible = detailLevel == .chat ? 2 : 4
-        guard sourceMessages.count > maxVisible else {
-            return sourceMessages
-        }
-
-        let hiddenCount = sourceMessages.count - maxVisible
-        let threadID = sourceMessages.first?.threadId
-            ?? bucket.userMessage?.threadId
-            ?? UUID()
-        let summaryID = deterministicSyntheticMessageID(
-            seed: "\(bucket.id.uuidString)|progress-hidden|\(hiddenCount)|\(detailLevel.rawValue)"
-        )
-        let hiddenSummary = ChatMessage(
-            id: summaryID,
-            threadId: threadID,
-            role: .system,
-            text: "\(hiddenCount) earlier progress updates hidden."
-        )
-
-        var visible = Array(sourceMessages.suffix(maxVisible))
-        visible.insert(hiddenSummary, at: 0)
-        return visible
+        // Compact and balanced modes keep reasoning/progress updates out of the settled
+        // transcript so the final chat reads cleanly. Active turns surface this state via
+        // the dedicated live activity row instead.
+        return []
     }
 
     private static func synthesizedProgressMessages(from bucket: TurnBucket) -> [ChatMessage] {
