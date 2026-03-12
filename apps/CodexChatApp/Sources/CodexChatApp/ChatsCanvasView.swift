@@ -292,18 +292,23 @@ struct ChatsCanvasView: View {
                 Button {
                     model.submitComposerWithQueuePolicy()
                 } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(
-                            Circle()
-                                .fill(
-                                    model.canSubmitComposerInput
-                                        ? Color(hex: tokens.palette.accentHex).opacity(0.9)
-                                        : Color(hex: tokens.palette.accentHex).opacity(0.28)
-                                )
-                        )
+                    ZStack {
+                        Circle()
+                            .fill(sendButtonFillColor)
+                        Circle()
+                            .strokeBorder(sendButtonStrokeColor, lineWidth: 1)
+
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 13, weight: .black))
+                            .foregroundStyle(sendButtonIconColor)
+                            .offset(y: -0.5)
+                    }
+                    .frame(width: 38, height: 38)
+                    .shadow(
+                        color: sendButtonShadowColor,
+                        radius: model.canSubmitComposerInput ? 10 : 0,
+                        y: model.canSubmitComposerInput ? 4 : 0
+                    )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Send message")
@@ -522,6 +527,36 @@ struct ChatsCanvasView: View {
         case .idle, .failed:
             "Start voice capture"
         }
+    }
+
+    private var sendButtonFillColor: Color {
+        if model.canSubmitComposerInput {
+            return Color.primary.opacity(colorScheme == .dark ? 0.94 : 0.88)
+        }
+        return Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08)
+    }
+
+    private var sendButtonStrokeColor: Color {
+        if model.canSubmitComposerInput {
+            return Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08)
+        }
+        return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
+    }
+
+    private var sendButtonIconColor: Color {
+        if model.canSubmitComposerInput {
+            return colorScheme == .dark ? .black.opacity(0.92) : .white.opacity(0.96)
+        }
+        return Color.primary.opacity(colorScheme == .dark ? 0.48 : 0.4)
+    }
+
+    private var sendButtonShadowColor: Color {
+        if !model.canSubmitComposerInput {
+            return .clear
+        }
+        return colorScheme == .dark
+            ? .white.opacity(0.08)
+            : .black.opacity(0.08)
     }
 
     private var composerPlaceholder: String {

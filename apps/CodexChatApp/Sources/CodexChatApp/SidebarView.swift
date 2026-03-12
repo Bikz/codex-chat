@@ -140,6 +140,20 @@ struct SidebarView: View {
         return sidebarControlIconColor
     }
 
+    private var searchFilterChipFillColor: Color {
+        if activeThreadFilter != .all {
+            return Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08)
+        }
+        return Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.04)
+    }
+
+    private var searchFilterChipStrokeColor: Color {
+        if activeThreadFilter != .all {
+            return Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.12)
+        }
+        return Color.primary.opacity(colorScheme == .dark ? 0.1 : 0.07)
+    }
+
     private var sidebarAccountDisplayName: String {
         AccountDisplayNamePreference.resolvedDisplayName(
             preferredName: preferredAccountDisplayName,
@@ -321,11 +335,24 @@ struct SidebarView: View {
                     }
                 }
             } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(sidebarMetaIconFont)
-                    .foregroundStyle(searchFilterIconColor)
-                    .frame(width: SidebarLayoutSpec.controlButtonSize, height: SidebarLayoutSpec.controlButtonSize)
-                    .contentShape(Rectangle())
+                HStack(spacing: 3) {
+                    Image(systemName: activeThreadFilter == .all ? "slider.horizontal.3" : "line.3.horizontal.decrease.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .opacity(0.72)
+                }
+                .foregroundStyle(searchFilterIconColor)
+                .frame(width: SidebarLayoutSpec.controlButtonSize + 4, height: SidebarLayoutSpec.controlButtonSize)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(searchFilterChipFillColor)
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(searchFilterChipStrokeColor, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .accessibilityLabel("Filter threads")
