@@ -42,6 +42,14 @@ Core differentiators:
 2. Install or update the local `codex` CLI so `codex app-server` is available on `PATH`.
 3. Launch CodexChat and confirm the detected runtime support level in Settings or Diagnostics.
 
+CodexChat uses the shared Codex homes that other Codex clients use:
+
+- Active Codex home: `CODEX_HOME` from the environment when set, otherwise `~/.codex`
+- Active agents home: `~/.agents`
+- `~/CodexChat` remains app-owned storage for projects, metadata, diagnostics, and project-scoped `.agents/skills`
+
+Legacy `~/CodexChat/global/codex-home` and `~/CodexChat/global/agents-home` directories are migration inputs only and can be archived from Settings after handoff completes.
+
 If you prefer to build from source, use the contributor path below.
 
 ## Screenshots

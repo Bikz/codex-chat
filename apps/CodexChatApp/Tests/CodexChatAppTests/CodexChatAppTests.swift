@@ -1372,6 +1372,7 @@ final class CodexChatAppTests: XCTestCase {
         let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
         defer { try? FileManager.default.removeItem(at: root) }
 
+        try FileManager.default.createDirectory(at: resolvedCodexHomes.activeCodexHomeURL, withIntermediateDirectories: true)
         try "model = [".write(to: resolvedCodexHomes.activeCodexConfigURL, atomically: true, encoding: .utf8)
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)

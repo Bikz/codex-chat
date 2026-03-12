@@ -49,14 +49,21 @@ Default root: `~/CodexChat`
         skills/
   global/
     mods/
-    codex-home/
-    agents-home/
   system/
     metadata.sqlite
     metadata.sqlite-wal
     metadata.sqlite-shm
     mod-snapshots/
+    legacy-managed-homes-archive/
+    shared-codex-home-handoff-report.json
 ```
+
+Active shared runtime homes live outside the CodexChat storage root:
+
+- Active Codex home: `CODEX_HOME` from process environment when set, otherwise `~/.codex`
+- Active agents home: `~/.agents`
+
+Legacy managed homes under `<storage-root>/global/codex-home` and `<storage-root>/global/agents-home` remain migration inputs only and are not active runtime homes.
 
 ## Ownership Rules
 
@@ -71,16 +78,17 @@ Internal/system-managed artifacts:
 
 - `system/metadata.sqlite*`
 - `system/mod-snapshots/`
-- `system/codex-home-quarantine/`
+- `system/shared-codex-home-handoff-report.json`
+- `system/legacy-managed-homes-archive/`
 - `projects/<project>/.agents/skills/`
-- `global/codex-home/`
-- `global/agents-home/`
+- `global/codex-home/` (legacy managed migration source only)
+- `global/agents-home/` (legacy managed migration source only)
 
-Codex runtime ownership under `global/codex-home/`:
+Codex runtime ownership under the active shared Codex home:
 
 - Runtime internals are Codex-owned caches/state (for example `sessions/`, `archived_sessions/`, `shell_snapshots/`, `sqlite/`, `log/`, `tmp/`, `vendor_imports/`, `worktrees/`).
 - CodexChat must not migrate runtime internals across homes as user data.
-- CodexChat startup repair may quarantine stale runtime internals into `system/codex-home-quarantine/<timestamp>/`.
+- CodexChat must not repair, quarantine, or delete entries inside the live shared Codex home.
 - CodexChat project archives (`projects/<project>/chats/threads/*.md`) remain independent from Codex runtime session caches.
 
 ## Reset Rules
@@ -100,6 +108,7 @@ Schema/layout changes must include:
 
 Codex home migration policy:
 
-- Initial import from legacy `~/.codex` and `~/.agents` is selective and copy-if-missing only.
+- Active shared homes are `CODEX_HOME` or `~/.codex` for Codex and `~/.agents` for agents.
+- One-time handoff from legacy managed homes under `<storage-root>/global/` is selective and copy-if-missing only.
 - Importable user artifacts: config/auth/history/credentials/instructions/memory/skills.
-- Runtime internals are excluded from import and can be quarantined by normalization.
+- Runtime internals are excluded from handoff and remain in place until the user archives the legacy managed copies.

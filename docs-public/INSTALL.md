@@ -65,15 +65,32 @@ CodexChat targets the current app-server protocol (`approvalPolicy` values like 
 
 Settings and Diagnostics surface the detected `codex` version plus the current support level. See `ADR-RUNTIME-CONTRACT-VERSIONING.md` for the checked-in compatibility policy.
 
-## Managed `CODEX_HOME` Behavior
+## Shared Codex Home Behavior
 
-CodexChat manages runtime home at `<storage-root>/global/codex-home`.
+CodexChat now uses the same active Codex home as the rest of the Codex ecosystem instead of maintaining its own runtime copy under `~/CodexChat`.
 
-- Codex-owned runtime internals (`sessions/`, `archived_sessions/`, `shell_snapshots/`, runtime sqlite/log/tmp caches) are treated as disposable runtime state.
-- Startup migration imports only user artifacts from legacy homes: `config.toml`, auth/history files, credentials, instruction files, memory, and skills.
-- Existing installs are auto-normalized once; stale runtime internals are moved to `<storage-root>/system/codex-home-quarantine/<timestamp>/`.
-- Use Settings > Storage > `Repair Codex Home` to run forced repair (stop runtime, quarantine stale state, restart runtime).
-- CodexChat project chat archives under `projects/<project>/chats/threads/` are separate from Codex runtime session caches.
+- Active Codex home:
+  - `CODEX_HOME` from the launch environment when set
+  - otherwise `~/.codex`
+- Active agents home: `~/.agents`
+- CodexChat project chat archives under `projects/<project>/chats/threads/` remain separate from Codex runtime session caches.
+
+On startup, CodexChat performs a one-time safe handoff from legacy managed homes under `<storage-root>/global/` into the active shared homes:
+
+- Legacy managed Codex home: `<storage-root>/global/codex-home`
+- Legacy managed agents home: `<storage-root>/global/agents-home`
+- Imported Codex artifacts: `config.toml`, `auth.json`, `history.jsonl`, `.credentials.json`, `AGENTS.md`, `AGENTS.override.md`, `memory.md`, and `skills/`
+- Imported agents artifacts: `skills/`
+- Handoff is copy-if-missing only and never overwrites files already present in the active shared homes
+
+CodexChat does not normalize, quarantine, or delete the live shared `~/.codex` runtime caches. Settings > Storage shows:
+
+- the active shared Codex and agents home paths
+- whether the active Codex home came from `CODEX_HOME` or the default user home
+- the latest handoff report path
+- actions to reveal the active shared home or archive the old legacy managed copies
+
+If you previously authenticated through another Codex client, CodexChat should pick up that login automatically from the active shared home.
 
 ## Voice Input Permissions
 

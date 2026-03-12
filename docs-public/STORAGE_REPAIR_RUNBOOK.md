@@ -1,11 +1,11 @@
-# Storage Repair Runbook
+# Storage Handoff And Legacy Cleanup Runbook
 
-Date: 2026-02-23  
+Date: 2026-03-11  
 Owner: Team A (Runtime Reliability + Data Foundation)
 
 ## Purpose
 
-Provide operator guidance for CodexChat managed-storage repair flows, focused on Codex Home normalization/quarantine behavior and storage-root safety.
+Provide operator guidance for CodexChat shared-home handoff and legacy managed-home cleanup flows.
 
 Primary evidence:
 - `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:10`
@@ -15,92 +15,107 @@ Primary evidence:
 - `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:59`
 - `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:67`
 
-## Managed Paths
+## Active And Legacy Paths
 
 CodexChat storage root layout (default `~/CodexChat`):
 - Projects: `<root>/projects`
 - Global: `<root>/global`
 - System: `<root>/system`
 
-Repair-related paths:
-- Codex Home runtime cache root: `<root>/global/codex-home`
-- Quarantine root: `<root>/system/codex-home-quarantine`
-- Normalization marker: `<root>/system/.codex-home-normalization-v1`
-- Last repair report: `<root>/system/codex-home-last-repair-report.json`
+Shared-home paths:
+- Active Codex home: `CODEX_HOME` from environment when present, otherwise `~/.codex`
+- Active agents home: `~/.agents`
 
-Evidence: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:31`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:59`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:63`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:67`.
+Legacy managed paths:
+- Legacy managed Codex home: `<root>/global/codex-home`
+- Legacy managed agents home: `<root>/global/agents-home`
+- Shared-home handoff marker: `<root>/system/.shared-codex-home-handoff-v1`
+- Shared-home handoff report: `<root>/system/shared-codex-home-handoff-report.json`
+- Legacy managed homes archive root: `<root>/system/legacy-managed-homes-archive/`
+- Last legacy archive report: `<root>/system/legacy-managed-homes-last-archive-report.json`
 
-## When To Run Repair
+Evidence: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:31`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:51`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:59`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStoragePaths.swift:67`.
 
-Run Codex Home repair when:
-- Runtime cache corruption or stale runtime-state symptoms are suspected.
-- Startup normalization logged warnings for codex-home entries.
-- User reports repeated runtime boot instability that survives restart.
+## When To Use These Flows
 
-Do not run repair while a turn is active.
-- The app blocks manual repair during active turns.
-- Runtime is intentionally stopped before forced normalization.
+Run shared-home handoff review when:
+- A user expects CodexChat to pick up an existing login from another Codex client.
+- Support needs to confirm which active Codex home the app is using.
+- Legacy managed `~/CodexChat/global/codex-home` or `agents-home` contents still exist after upgrade.
 
-Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:79`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:267`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:273`.
+Run legacy managed-home archive when:
+- Handoff already completed successfully.
+- The user wants to stop carrying the stale managed copies under `~/CodexChat/global/`.
+- Support wants to remove confusion about which home is authoritative.
+
+Do not modify the live shared `~/.codex` runtime caches as part of a CodexChat storage operation.
+
+Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:82`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:90`.
 
 ## Normal Operation Flows
 
-### Startup (non-forced) fixups
+### Startup fixups
 
-1. Run codex-home normalization if marker is missing.
-2. Repair legacy general-project path and global-mod preferences.
-3. Refresh projects and run legacy chat archive migration.
+1. Repair legacy general-project path and global-mod preferences.
+2. Repair legacy managed skill symlinks inside the old managed Codex home if needed.
+3. Perform shared-home handoff from legacy managed homes into the active shared homes when the last handoff report does not already match the resolved active homes.
+4. Refresh projects and run legacy chat archive migration.
 
-Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:10`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:17`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:47`.
+Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:10`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:18`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:45`.
 
-### Manual repair flow
+### Manual legacy cleanup flow
 
-1. User invokes repair from storage settings.
-2. App validates no in-flight turn and sets repair-in-progress state.
+1. User invokes `Archive Legacy Managed Homes` from Storage settings.
+2. App validates no in-flight turn and sets archive-in-progress state.
 3. Runtime pool stops.
-4. Forced normalization executes and writes report/marker.
-5. Runtime restarts.
+4. Legacy managed `codex-home` and `agents-home` directories are moved into a timestamped archive folder under `system/legacy-managed-homes-archive/`.
+5. An archive report is written and runtime restarts.
 
-Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:75`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:260`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:277`.
+Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:77`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:263`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:281`.
 
 ## Report Interpretation
 
-Repair writes `codex-home-last-repair-report.json` with fields:
-- `reason`: startup vs manual-repair trigger.
-- `forced`: whether forced normalization was used.
-- `quarantinePath`: destination for moved runtime cache entries.
-- `movedEntries`: entries moved out of managed codex-home runtime cache.
-- `failedEntries`: entries that could not be moved.
+Shared-home handoff writes `shared-codex-home-handoff-report.json` with fields:
+- `source`: whether the active Codex home came from `CODEX_HOME` or the default user home.
+- `activeCodexHomePath` and `activeAgentsHomePath`
+- `legacyManagedCodexHomePath` and `legacyManagedAgentsHomePath`
+- `copiedEntries`: artifacts copied into the shared homes because the destination was missing.
+- `skippedEntries`: missing-source or already-present artifacts.
+- `failedEntries`: artifacts that could not be copied.
 
-Evidence: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:36`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:180`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:210`.
+Legacy cleanup writes `legacy-managed-homes-last-archive-report.json` with fields:
+- `archiveRootPath`: timestamped archive directory under `system/legacy-managed-homes-archive/`
+- `archivedEntries`: legacy home directories that were moved successfully
+- `skippedEntries`: missing legacy roots
+- `failedEntries`: legacy roots that could not be moved
 
 Operator guidance:
-- `executed=false` with marker present is expected during stable startup.
-- `movedEntries` non-empty indicates successful quarantine of stale runtime artifacts.
-- Non-empty `failedEntries` means partial repair; inspect permissions/locks and retry manual repair.
+- A handoff report with `copiedEntries` populated means CodexChat imported missing user artifacts into the shared homes.
+- A handoff report with only `skippedEntries` is expected when the shared homes already contained the needed artifacts.
+- Non-empty `failedEntries` means partial handoff or archive; inspect permissions and retry.
 
-Evidence: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:135`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:293`, `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:307`.
+Evidence: `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:95`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:177`, `apps/CodexChatApp/Sources/CodexChatApp/CodexChatStorageMigrationCoordinator.swift:217`.
 
 ## Recovery Actions
 
-### Case A: Repair succeeded with moved entries
+### Case A: Handoff succeeded with copied entries
 
-1. Capture report file and quarantine path.
-2. Validate runtime reconnect and thread operations.
-3. Keep quarantine artifacts until stability is confirmed.
+1. Capture the handoff report path.
+2. Validate runtime reconnect, account state, and thread operations.
+3. Confirm the active shared Codex home path in Settings or Diagnostics.
 
-### Case B: Repair completed with warnings (`failedEntries`)
+### Case B: Handoff completed with warnings (`failedEntries`)
 
 1. Inspect app logs for per-entry warning lines.
-2. Confirm filesystem ownership/permissions for codex-home and quarantine paths.
-3. Retry manual repair.
+2. Confirm filesystem ownership/permissions for the active shared home and the legacy managed roots.
+3. Retry startup or reopen the app to rerun handoff.
 4. If repeated, escalate with report + diagnostics bundle.
 
-### Case C: No quarantine path available
+### Case C: User wants to retire stale managed homes
 
-1. Verify whether normalization executed with no moved entries.
-2. Confirm marker/report existence under `<root>/system`.
-3. If startup path still fails, run manual repair once.
+1. Confirm handoff completed and that the shared-home path already contains the needed artifacts.
+2. Run `Archive Legacy Managed Homes` once from Storage settings.
+3. Capture the last archive report if support needs the final archive location.
 
 ## Storage Root Migration Safety Notes
 
@@ -113,10 +128,11 @@ Evidence: `apps/CodexChatApp/Sources/CodexChatApp/AppModel+Storage.swift:120`, `
 
 ## Escalation Checklist
 
-Attach these artifacts when escalating a repair incident:
-1. `<root>/system/codex-home-last-repair-report.json`
-2. Quarantine folder contents path (if any)
-3. Relevant `AppModel` storage log lines around repair execution
-4. Exact timestamp and whether repair was startup or manual
+Attach these artifacts when escalating a storage incident:
+1. `<root>/system/shared-codex-home-handoff-report.json`
+2. `<root>/system/legacy-managed-homes-last-archive-report.json` if archive was run
+3. Active shared Codex home path and source from Settings or Diagnostics
+4. Relevant `AppModel` storage log lines around handoff or archive execution
+5. Exact timestamp and whether the issue happened during startup or manual cleanup
 
-Assumption: Operators have local filesystem access to the managed root and can inspect quarantine/report artifacts directly.
+Assumption: Operators have local filesystem access to the storage root and can inspect both the shared-home report artifacts and the active shared home path directly.

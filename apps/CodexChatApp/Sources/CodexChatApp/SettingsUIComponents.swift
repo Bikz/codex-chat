@@ -76,7 +76,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
         case .diagnostics:
             "Support bundle and troubleshooting exports."
         case .storage:
-            "Managed paths, migration, and repair tools."
+            "Storage paths, shared-home migration, and legacy cleanup tools."
         }
     }
 }
