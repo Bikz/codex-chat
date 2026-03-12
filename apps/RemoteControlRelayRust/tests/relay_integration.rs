@@ -90,6 +90,7 @@ async fn pair_connected_mobile(
     let start_response = client
         .post(format!("{base}/pair/start"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "joinToken": join_token,
             "desktopSessionToken": desktop_session_token,
@@ -1185,6 +1186,7 @@ async fn pair_stop_closes_session_and_invalidates_join() {
     let stop_response = client
         .post(format!("{base}/pair/stop"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "desktopSessionToken": desktop_session_token,
         }))
@@ -1220,6 +1222,7 @@ async fn pair_stop_forces_repair_by_rejecting_trusted_device_reauth() {
     let start_response = client
         .post(format!("{base}/pair/start"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "joinToken": join_token,
             "desktopSessionToken": desktop_session_token,
@@ -1676,6 +1679,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .post(format!("{base}/devices/list"))
         .header("Origin", "https://evil.example")
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "desktopSessionToken": desktop_session_token,
         }))
@@ -1695,6 +1699,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
     let list_response = client
         .post(format!("{base}/devices/list"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "desktopSessionToken": desktop_session_token,
         }))
@@ -1721,6 +1726,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
         .post(format!("{base}/devices/revoke"))
         .header("Origin", "https://evil.example")
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "desktopSessionToken": desktop_session_token,
             "deviceID": device_id,
@@ -1741,6 +1747,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
     let revoke_response = client
         .post(format!("{base}/devices/revoke"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "desktopSessionToken": desktop_session_token,
             "deviceID": device_id,
@@ -1761,6 +1768,7 @@ async fn devices_list_and_revoke_remove_trusted_device() {
     let list_after_revoke = client
         .post(format!("{base}/devices/list"))
         .json(&json!({
+            "schemaVersion": 2,
             "sessionID": session_id,
             "desktopSessionToken": desktop_session_token,
         }))
