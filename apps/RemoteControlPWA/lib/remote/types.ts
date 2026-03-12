@@ -39,12 +39,6 @@ export interface RuntimeRequest {
   serverName: string | null;
 }
 
-export interface LegacyApproval {
-  requestID: string;
-  threadID: string | null;
-  summary: string;
-}
-
 export interface RuntimeRequestResponse {
   decision?: string | null;
   permissions?: string[] | null;
