@@ -31,6 +31,7 @@ describe('remote logic', () => {
 
 describe('remote client lifecycle', () => {
   const OriginalWebSocket = globalThis.WebSocket;
+  const storageState = new Map<string, string>();
 
   class FakeWebSocket {
     static readonly CONNECTING = 0;
@@ -60,7 +61,25 @@ describe('remote client lifecycle', () => {
     vi.useFakeTimers();
     remoteStoreApi.setState(createInitialState());
     (globalThis as { WebSocket: typeof WebSocket }).WebSocket = FakeWebSocket as unknown as typeof WebSocket;
-    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    if (typeof window !== 'undefined') {
+      const localStorageStub = window.localStorage as Storage | undefined;
+      if (!localStorageStub || typeof localStorageStub.getItem !== 'function' || typeof localStorageStub.setItem !== 'function') {
+        Object.defineProperty(window, 'localStorage', {
+          configurable: true,
+          value: {
+            getItem: (key: string) => storageState.get(key) ?? null,
+            setItem: (key: string, value: string) => {
+              storageState.set(key, String(value));
+            },
+            removeItem: (key: string) => {
+              storageState.delete(key);
+            },
+            clear: () => {
+              storageState.clear();
+            }
+          } satisfies Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'clear'>
+        });
+      }
       window.localStorage.clear();
     }
   });
@@ -71,7 +90,7 @@ describe('remote client lifecycle', () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
     (globalThis as { WebSocket: typeof WebSocket }).WebSocket = OriginalWebSocket;
-    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.clear === 'function') {
       window.localStorage.clear();
     }
   });
