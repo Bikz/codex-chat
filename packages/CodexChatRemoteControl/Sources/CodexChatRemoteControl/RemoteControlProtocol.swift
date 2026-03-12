@@ -1,7 +1,7 @@
 import Foundation
 
 public enum RemoteControlProtocol {
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
 }
 
 public enum RemoteControlPeerRole: String, Codable, Sendable {
@@ -13,7 +13,7 @@ public enum RemoteControlCommandName: String, Codable, Sendable {
     case threadSendMessage = "thread.send_message"
     case threadSelect = "thread.select"
     case projectSelect = "project.select"
-    case approvalRespond = "approval.respond"
+    case runtimeRequestRespond = "runtime_request.respond"
 }
 
 public enum RemoteControlCommandAckStatus: String, Codable, Sendable {
@@ -46,24 +46,24 @@ public struct RemoteControlEnvelope: Codable, Sendable, Equatable {
 public struct RemoteControlHelloPayload: Codable, Sendable, Equatable {
     public var role: RemoteControlPeerRole
     public var clientName: String
-    public var supportsApprovals: Bool
+    public var supportsRuntimeRequests: Bool
 
-    public init(role: RemoteControlPeerRole, clientName: String, supportsApprovals: Bool) {
+    public init(role: RemoteControlPeerRole, clientName: String, supportsRuntimeRequests: Bool) {
         self.role = role
         self.clientName = clientName
-        self.supportsApprovals = supportsApprovals
+        self.supportsRuntimeRequests = supportsRuntimeRequests
     }
 }
 
 public struct RemoteControlAuthOKPayload: Codable, Sendable, Equatable {
     public var connectionID: String
     public var role: RemoteControlPeerRole
-    public var canApproveRemotely: Bool
+    public var canRespondToRuntimeRequests: Bool
 
-    public init(connectionID: String, role: RemoteControlPeerRole, canApproveRemotely: Bool) {
+    public init(connectionID: String, role: RemoteControlPeerRole, canRespondToRuntimeRequests: Bool) {
         self.connectionID = connectionID
         self.role = role
-        self.canApproveRemotely = canApproveRemotely
+        self.canRespondToRuntimeRequests = canRespondToRuntimeRequests
     }
 }
 
@@ -110,24 +110,82 @@ public struct RemoteControlMessageSnapshot: Codable, Sendable, Equatable {
 public struct RemoteControlTurnStateSnapshot: Codable, Sendable, Equatable {
     public var threadID: String
     public var isTurnInProgress: Bool
-    public var isAwaitingApproval: Bool
+    public var isAwaitingRuntimeRequest: Bool
 
-    public init(threadID: String, isTurnInProgress: Bool, isAwaitingApproval: Bool) {
+    public init(threadID: String, isTurnInProgress: Bool, isAwaitingRuntimeRequest: Bool) {
         self.threadID = threadID
         self.isTurnInProgress = isTurnInProgress
-        self.isAwaitingApproval = isAwaitingApproval
+        self.isAwaitingRuntimeRequest = isAwaitingRuntimeRequest
     }
 }
 
-public struct RemoteControlApprovalSnapshot: Codable, Sendable, Equatable {
-    public var requestID: String
-    public var threadID: String?
-    public var summary: String
+public enum RemoteControlRuntimeRequestKind: String, Codable, Sendable, Equatable {
+    case approval
+    case permissionsApproval
+    case userInput
+    case mcpElicitation
+    case dynamicToolCall
+}
 
-    public init(requestID: String, threadID: String?, summary: String) {
+public struct RemoteControlRuntimeRequestResponseOption: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var label: String
+
+    public init(id: String, label: String) {
+        self.id = id
+        self.label = label
+    }
+}
+
+public struct RemoteControlRuntimeRequestOption: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var label: String
+    public var description: String?
+
+    public init(id: String, label: String, description: String? = nil) {
+        self.id = id
+        self.label = label
+        self.description = description
+    }
+}
+
+public struct RemoteControlRuntimeRequestSnapshot: Codable, Sendable, Equatable {
+    public var requestID: String
+    public var kind: RemoteControlRuntimeRequestKind
+    public var threadID: String?
+    public var title: String
+    public var summary: String
+    public var responseOptions: [RemoteControlRuntimeRequestResponseOption]
+    public var permissions: [String]
+    public var options: [RemoteControlRuntimeRequestOption]
+    public var scopeHint: String?
+    public var toolName: String?
+    public var serverName: String?
+
+    public init(
+        requestID: String,
+        kind: RemoteControlRuntimeRequestKind,
+        threadID: String?,
+        title: String,
+        summary: String,
+        responseOptions: [RemoteControlRuntimeRequestResponseOption],
+        permissions: [String] = [],
+        options: [RemoteControlRuntimeRequestOption] = [],
+        scopeHint: String? = nil,
+        toolName: String? = nil,
+        serverName: String? = nil
+    ) {
         self.requestID = requestID
+        self.kind = kind
         self.threadID = threadID
+        self.title = title
         self.summary = summary
+        self.responseOptions = responseOptions
+        self.permissions = permissions
+        self.options = options
+        self.scopeHint = scopeHint
+        self.toolName = toolName
+        self.serverName = serverName
     }
 }
 
@@ -138,7 +196,7 @@ public struct RemoteControlSnapshotPayload: Codable, Sendable, Equatable {
     public var selectedThreadID: String?
     public var messages: [RemoteControlMessageSnapshot]
     public var turnState: RemoteControlTurnStateSnapshot?
-    public var pendingApprovals: [RemoteControlApprovalSnapshot]
+    public var pendingRuntimeRequests: [RemoteControlRuntimeRequestSnapshot]
 
     public init(
         projects: [RemoteControlProjectSnapshot],
@@ -147,7 +205,7 @@ public struct RemoteControlSnapshotPayload: Codable, Sendable, Equatable {
         selectedThreadID: String?,
         messages: [RemoteControlMessageSnapshot],
         turnState: RemoteControlTurnStateSnapshot?,
-        pendingApprovals: [RemoteControlApprovalSnapshot]
+        pendingRuntimeRequests: [RemoteControlRuntimeRequestSnapshot]
     ) {
         self.projects = projects
         self.threads = threads
@@ -155,7 +213,7 @@ public struct RemoteControlSnapshotPayload: Codable, Sendable, Equatable {
         self.selectedThreadID = selectedThreadID
         self.messages = messages
         self.turnState = turnState
-        self.pendingApprovals = pendingApprovals
+        self.pendingRuntimeRequests = pendingRuntimeRequests
     }
 }
 
@@ -184,14 +242,40 @@ public struct RemoteControlEventPayload: Codable, Sendable, Equatable {
     }
 }
 
+public struct RemoteControlRuntimeRequestResponse: Codable, Sendable, Equatable {
+    public var decision: String?
+    public var permissions: [String]?
+    public var scope: String?
+    public var text: String?
+    public var optionID: String?
+    public var approved: Bool?
+
+    public init(
+        decision: String? = nil,
+        permissions: [String]? = nil,
+        scope: String? = nil,
+        text: String? = nil,
+        optionID: String? = nil,
+        approved: Bool? = nil
+    ) {
+        self.decision = decision
+        self.permissions = permissions
+        self.scope = scope
+        self.text = text
+        self.optionID = optionID
+        self.approved = approved
+    }
+}
+
 public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
     public var name: RemoteControlCommandName
     public var commandID: String
     public var threadID: String?
     public var projectID: String?
     public var text: String?
-    public var approvalRequestID: String?
-    public var approvalDecision: String?
+    public var runtimeRequestID: String?
+    public var runtimeRequestKind: RemoteControlRuntimeRequestKind?
+    public var runtimeRequestResponse: RemoteControlRuntimeRequestResponse?
 
     public init(
         name: RemoteControlCommandName,
@@ -199,16 +283,18 @@ public struct RemoteControlCommandPayload: Codable, Sendable, Equatable {
         threadID: String? = nil,
         projectID: String? = nil,
         text: String? = nil,
-        approvalRequestID: String? = nil,
-        approvalDecision: String? = nil
+        runtimeRequestID: String? = nil,
+        runtimeRequestKind: RemoteControlRuntimeRequestKind? = nil,
+        runtimeRequestResponse: RemoteControlRuntimeRequestResponse? = nil
     ) {
         self.name = name
         self.commandID = commandID
         self.threadID = threadID
         self.projectID = projectID
         self.text = text
-        self.approvalRequestID = approvalRequestID
-        self.approvalDecision = approvalDecision
+        self.runtimeRequestID = runtimeRequestID
+        self.runtimeRequestKind = runtimeRequestKind
+        self.runtimeRequestResponse = runtimeRequestResponse
     }
 }
 

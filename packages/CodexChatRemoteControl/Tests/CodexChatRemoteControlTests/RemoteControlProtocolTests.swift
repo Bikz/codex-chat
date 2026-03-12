@@ -10,11 +10,13 @@ final class RemoteControlProtocolTests: XCTestCase {
             timestamp: Date(timeIntervalSince1970: 1_700_000_100),
             payload: .command(
                 RemoteControlCommandPayload(
-                    name: .threadSendMessage,
+                    name: .runtimeRequestRespond,
                     commandID: "cmd-42",
-                    threadID: "thread-1",
-                    projectID: "project-1",
-                    text: "Run tests"
+                    runtimeRequestID: "41",
+                    runtimeRequestKind: .approval,
+                    runtimeRequestResponse: RemoteControlRuntimeRequestResponse(
+                        decision: "approve_once"
+                    )
                 )
             )
         )
@@ -41,8 +43,22 @@ final class RemoteControlProtocolTests: XCTestCase {
                     createdAt: Date(timeIntervalSince1970: 1_700_000_200)
                 ),
             ],
-            turnState: .init(threadID: "thread-1", isTurnInProgress: true, isAwaitingApproval: false),
-            pendingApprovals: []
+            turnState: .init(threadID: "thread-1", isTurnInProgress: true, isAwaitingRuntimeRequest: false),
+            pendingRuntimeRequests: [
+                .init(
+                    requestID: "17",
+                    kind: .permissionsApproval,
+                    threadID: "thread-1",
+                    title: "Permission request pending",
+                    summary: "Need project.write access",
+                    responseOptions: [
+                        .init(id: "grant", label: "Grant"),
+                        .init(id: "decline", label: "Decline"),
+                    ],
+                    permissions: ["project.write"],
+                    scopeHint: "workspace"
+                ),
+            ]
         )
 
         let original = RemoteControlEnvelope(
@@ -83,7 +99,7 @@ final class RemoteControlProtocolTests: XCTestCase {
     func testEnvelopeDecodesLegacyEventPayloadWithoutOptionalMessageMetadata() throws {
         let rawJSON = """
         {
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "sessionID": "session-1",
           "seq": 10,
           "timestamp": "2023-11-14T22:18:20Z",
@@ -141,7 +157,7 @@ final class RemoteControlProtocolTests: XCTestCase {
     func testCommandEnvelopeDecodeFailsWithoutCommandID() {
         let rawJSON = """
         {
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "sessionID": "session-1",
           "seq": 12,
           "timestamp": "2023-11-14T22:18:20Z",
