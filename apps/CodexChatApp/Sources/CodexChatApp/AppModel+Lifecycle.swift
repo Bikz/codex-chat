@@ -88,6 +88,15 @@ extension AppModel {
         await reloadCodexConfigSchema()
         try ensureCurrentStartupGeneration(generation)
 
+        await migrateExistingSkillInstallRecordsIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
+        await migrateLegacySkillInstallsIfNeeded()
+        try ensureCurrentStartupGeneration(generation)
+
+        await pruneLegacyManagedHomesIfPossible()
+        try ensureCurrentStartupGeneration(generation)
+
         try await ensureGeneralProject()
         try ensureCurrentStartupGeneration(generation)
 

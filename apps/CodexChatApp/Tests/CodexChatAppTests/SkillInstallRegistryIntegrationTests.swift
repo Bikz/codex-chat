@@ -252,6 +252,77 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         XCTAssertEqual(archiveReport.archivedEntries, ["agents-home"])
     }
 
+    func testApplyAllProjectsSkillLinksNormalizesLegacyAllProjectsRecordBeforeLinking() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-skill-link-normalization-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: paths)
+
+        let legacySharedSkillURL = paths.legacyManagedSharedSkillsStoreURL
+            .appendingPathComponent("legacy-shared-guidelines", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacySharedSkillURL, withIntermediateDirectories: true)
+        try """
+        # Shared Legacy Skill
+
+        General-project migration fixture.
+        """.write(
+            to: legacySharedSkillURL.appendingPathComponent("SKILL.md", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let generalProjectPath = paths.generalProjectURL
+        try FileManager.default.createDirectory(at: generalProjectPath, withIntermediateDirectories: true)
+
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let generalProject = try await repositories.projectRepository.createProject(
+            named: "General",
+            path: generalProjectPath.path,
+            trustState: .trusted,
+            isGeneralProject: true
+        )
+
+        _ = try await repositories.skillInstallRegistryRepository.upsert(
+            SkillInstallRecord(
+                skillID: "legacy-all-projects-record",
+                source: "https://github.com/openai/web-design-guidelines.git",
+                installer: .git,
+                sharedPath: legacySharedSkillURL.path,
+                mode: .all,
+                projectIDs: []
+            )
+        )
+
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            storagePaths: paths,
+            resolvedCodexHomes: resolvedCodexHomes
+        )
+        model.projectsState = .loaded([generalProject])
+
+        try await model.applyAllProjectsSkillLinksIfNeeded(to: generalProject)
+
+        let installs = try await repositories.skillInstallRegistryRepository.list()
+        let install = try XCTUnwrap(installs.first)
+        XCTAssertTrue(CodexChatStoragePaths.isPath(install.sharedPath, insideRoot: resolvedCodexHomes.activeGlobalSkillsURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacySharedSkillURL.path))
+
+        let folderName = URL(fileURLWithPath: install.sharedPath, isDirectory: true).lastPathComponent
+        let linkedPath = generalProjectPath
+            .appendingPathComponent(".agents/skills", isDirectory: true)
+            .appendingPathComponent(folderName, isDirectory: true)
+            .path
+        XCTAssertTrue(FileManager.default.fileExists(atPath: linkedPath))
+        let linkDestination = try FileManager.default.destinationOfSymbolicLink(atPath: linkedPath)
+        XCTAssertEqual(linkDestination, install.sharedPath)
+    }
+
     func testRefreshSkillsKeepsMigrationMarkerUnsetWhenCandidateMigrationFails() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-skill-legacy-migration-failure-\(UUID().uuidString)", isDirectory: true)

@@ -298,6 +298,7 @@ extension AppModel {
             return
         }
 
+        let allProjects = try await projectRepository?.listProjects() ?? projects
         let allProjectRecords = try await skillInstallRegistryRepository.list()
             .filter { $0.mode == .all }
         guard !allProjectRecords.isEmpty else {
@@ -307,7 +308,8 @@ extension AppModel {
         let linkManager = SkillLinkManager(sharedStoreRootURL: resolvedCodexHomes.activeGlobalSkillsURL)
         let projectRootURL = URL(fileURLWithPath: project.path, isDirectory: true)
         for record in allProjectRecords {
-            let sharedSkillURL = URL(fileURLWithPath: record.sharedPath, isDirectory: true)
+            let normalizedRecord = try await normalizedSharedSkillInstallRecord(record, allProjects: allProjects)
+            let sharedSkillURL = URL(fileURLWithPath: normalizedRecord.sharedPath, isDirectory: true)
             guard FileManager.default.fileExists(atPath: sharedSkillURL.path) else {
                 continue
             }
@@ -319,6 +321,64 @@ extension AppModel {
                 projectRootURL: projectRootURL
             )
         }
+    }
+
+    private func normalizedSharedSkillInstallRecord(
+        _ record: SkillInstallRecord,
+        allProjects: [ProjectRecord]
+    ) async throws -> SkillInstallRecord {
+        let resolvedSharedPath = resolvedSkillPath(record.sharedPath)
+        guard !isStrictlyInsideSharedSkillsStore(resolvedSharedPath),
+              isLegacyManagedSkillPath(resolvedSharedPath, projects: allProjects)
+        else {
+            guard resolvedSharedPath != record.sharedPath else {
+                return record
+            }
+
+            let normalizedRecord = SkillInstallRecord(
+                skillID: record.skillID,
+                source: record.source,
+                installer: record.installer,
+                sharedPath: resolvedSharedPath,
+                mode: record.mode,
+                projectIDs: record.projectIDs,
+                createdAt: record.createdAt,
+                updatedAt: Date()
+            )
+            if let skillInstallRegistryRepository {
+                _ = try await skillInstallRegistryRepository.upsert(normalizedRecord)
+            }
+            return normalizedRecord
+        }
+
+        let legacySkillURL = URL(fileURLWithPath: resolvedSharedPath, isDirectory: true).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: legacySkillURL.path) else {
+            return record
+        }
+
+        let migratedSharedSkillURL = try ensureLegacySkillIsInSharedStore(
+            legacySkillURL: legacySkillURL,
+            source: record.source,
+            projects: allProjects
+        )
+        let updatedRecord = SkillInstallRecord(
+            skillID: record.skillID,
+            source: record.source,
+            installer: record.installer,
+            sharedPath: migratedSharedSkillURL.standardizedFileURL.path,
+            mode: record.mode,
+            projectIDs: record.projectIDs,
+            createdAt: record.createdAt,
+            updatedAt: Date()
+        )
+        if let skillInstallRegistryRepository {
+            _ = try await skillInstallRegistryRepository.upsert(updatedRecord)
+        }
+        appendLog(
+            .info,
+            "Normalized legacy skill install record \(record.skillID) into shared store before project link reconciliation."
+        )
+        return updatedRecord
     }
 
     func migrateExistingSkillInstallRecordsIfNeeded() async {
