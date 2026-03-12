@@ -96,6 +96,7 @@ struct ActionCardRow: View {
     var onShowWorkerTrace: (() -> Void)?
     @State private var isExpanded = false
     @Environment(\.designTokens) private var tokens
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let state = RuntimeVisualStateClassifier.classify(card)
@@ -106,6 +107,7 @@ struct ActionCardRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(RuntimeVisualStateClassifier.detailPreview(for: card, maxLength: 800))
                     .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary.opacity(0.94))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 4)
@@ -132,25 +134,29 @@ struct ActionCardRow: View {
                         Text(RuntimeVisualStateClassifier.conciseTitle(for: card))
                             .font(.callout.weight(.semibold))
                         Text(state.label)
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(tint.opacity(0.14), in: Capsule())
-                            .foregroundStyle(tint)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(tint.opacity(0.88))
                     }
                     Text(card.method)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary.opacity(0.8))
                 }
             }
             .accessibilityLabel("\(card.title) — \(card.method)")
         }
-        .padding(10)
+        .padding(12)
         .background(
-            Color(hex: tokens.palette.panelHex).opacity(0.94),
+            LinearGradient(
+                colors: [
+                    tint.opacity(state.tone == .error ? 0.08 : 0.045),
+                    Color(hex: tokens.palette.panelHex).opacity(colorScheme == .dark ? 0.92 : 0.97),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
             in: shape
         )
-        .overlay(shape.strokeBorder(tint.opacity(0.32)))
+        .overlay(shape.strokeBorder(tint.opacity(state.tone == .error ? 0.18 : 0.1)))
     }
 
     private func toneColor(_ tone: RuntimeVisualStateTone) -> Color {
@@ -174,12 +180,13 @@ struct InlineActionNoticeRow: View {
     let card: ActionCard
     var onShowWorkerTrace: (() -> Void)?
     @State private var isExpanded = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let state = RuntimeVisualStateClassifier.classify(card)
         let tint = toneColor(state.tone)
-        let backgroundTint = tint.opacity(state.tone == .error ? 0.08 : 0.05)
-        let borderTint = tint.opacity(state.tone == .error ? 0.18 : 0.1)
+        let backgroundTint = tint.opacity(state.tone == .error ? 0.075 : 0.04)
+        let borderTint = tint.opacity(state.tone == .error ? 0.16 : 0.08)
 
         DisclosureGroup(isExpanded: $isExpanded) {
             InlineActionDetailsList(
@@ -195,30 +202,48 @@ struct InlineActionNoticeRow: View {
                     .frame(width: 12)
                     .accessibilityHidden(true)
 
-                Text(state.label)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(tint.opacity(0.1), in: Capsule())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(RuntimeVisualStateClassifier.conciseTitle(for: card))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary.opacity(0.92))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
-                Text(RuntimeVisualStateClassifier.conciseTitle(for: card))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary.opacity(0.92))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    Text(state.label)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(tint.opacity(0.88))
+                }
 
                 Spacer(minLength: 8)
-                Text(isExpanded ? "Hide" : "Show")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary.opacity(0.66))
+                HStack(spacing: 4) {
+                    Text(isExpanded ? "Hide" : "Show")
+                        .font(.caption2.weight(.medium))
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2.weight(.medium))
+                }
+                .foregroundStyle(.secondary.opacity(0.58))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.035))
+                )
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(backgroundTint)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            backgroundTint,
+                            Color.primary.opacity(colorScheme == .dark ? 0.018 : 0.012),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
