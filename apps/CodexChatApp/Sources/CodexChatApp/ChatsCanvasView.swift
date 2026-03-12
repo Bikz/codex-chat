@@ -122,6 +122,14 @@ struct ChatsCanvasView: View {
             return nil
         }
 
+        let quietMessages = [
+            "Queued follow-up. It will auto-send when the runtime is idle.",
+            "Steer is unavailable while busy. Queued this follow-up to send next.",
+        ]
+        if quietMessages.contains(trimmed) {
+            return nil
+        }
+
         let lowered = trimmed.lowercased()
         let errorMarkers = [
             "failed",

@@ -94,14 +94,18 @@ final class ChatsCanvasViewStyleTests: XCTestCase {
         XCTAssertNil(presentation)
     }
 
-    func testFollowUpStatusPresentationTreatsQueuedCopyAsInfo() {
+    func testFollowUpStatusPresentationSuppressesQueuedCopy() {
         let presentation = ChatsCanvasView.followUpStatusPresentation(
             for: "Queued follow-up. It will auto-send when the runtime is idle."
         )
-        XCTAssertEqual(
-            presentation,
-            .info("Queued follow-up. It will auto-send when the runtime is idle.")
+        XCTAssertNil(presentation)
+    }
+
+    func testFollowUpStatusPresentationSuppressesQueuedSteerCopy() {
+        let presentation = ChatsCanvasView.followUpStatusPresentation(
+            for: "Steer is unavailable while busy. Queued this follow-up to send next."
         )
+        XCTAssertNil(presentation)
     }
 
     func testFollowUpStatusPresentationDropsEmptyMessages() {
