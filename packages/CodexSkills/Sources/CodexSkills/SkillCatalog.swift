@@ -766,9 +766,10 @@ public final class SkillCatalogService: @unchecked Sendable {
         var roots: [(URL, SkillScope)] = []
         if let sharedSkillsStoreURL {
             roots.append((sharedSkillsStoreURL, .global))
+        } else {
+            roots.append((codexHomeURL.appendingPathComponent("skills", isDirectory: true), .global))
+            roots.append((agentsHomeURL.appendingPathComponent("skills", isDirectory: true), .global))
         }
-        roots.append((codexHomeURL.appendingPathComponent("skills", isDirectory: true), .global))
-        roots.append((agentsHomeURL.appendingPathComponent("skills", isDirectory: true), .global))
 
         if let projectPath {
             let projectURL = URL(fileURLWithPath: projectPath, isDirectory: true)

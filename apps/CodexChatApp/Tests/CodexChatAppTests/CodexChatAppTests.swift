@@ -1107,6 +1107,7 @@ final class CodexChatAppTests: XCTestCase {
             .appendingPathComponent("codexchat-runtime-defaults-\(UUID().uuidString)", isDirectory: true)
         let storagePaths = CodexChatStoragePaths(rootURL: root)
         try storagePaths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
@@ -1140,7 +1141,8 @@ final class CodexChatAppTests: XCTestCase {
             repositories: repositories,
             runtime: nil,
             bootError: nil,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         try await model.loadCodexConfig()
 
@@ -1160,7 +1162,7 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(migrationMarker, "1")
 
         let migratedDocument = try CodexConfigDocument.parse(
-            rawText: String(contentsOf: storagePaths.codexConfigURL, encoding: .utf8)
+            rawText: String(contentsOf: resolvedCodexHomes.activeCodexConfigURL, encoding: .utf8)
         )
         XCTAssertEqual(migratedDocument.value(at: [.key("model")])?.stringValue, "gpt-5")
         XCTAssertEqual(migratedDocument.value(at: [.key("model_reasoning_effort")])?.stringValue, "high")
@@ -1179,6 +1181,7 @@ final class CodexChatAppTests: XCTestCase {
             .appendingPathComponent("codexchat-runtime-defaults-fallback-\(UUID().uuidString)", isDirectory: true)
         let storagePaths = CodexChatStoragePaths(rootURL: root)
         try storagePaths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
@@ -1208,7 +1211,8 @@ final class CodexChatAppTests: XCTestCase {
             repositories: repositories,
             runtime: nil,
             bootError: nil,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         try await model.loadCodexConfig()
 
@@ -1218,7 +1222,7 @@ final class CodexChatAppTests: XCTestCase {
         XCTAssertEqual(model.defaultSafetySettings, safety)
 
         let migratedDocument = try CodexConfigDocument.parse(
-            rawText: String(contentsOf: storagePaths.codexConfigURL, encoding: .utf8)
+            rawText: String(contentsOf: resolvedCodexHomes.activeCodexConfigURL, encoding: .utf8)
         )
         XCTAssertEqual(migratedDocument.value(at: [.key("web_search")])?.stringValue, "live")
     }
@@ -1229,20 +1233,22 @@ final class CodexChatAppTests: XCTestCase {
             .appendingPathComponent("codexchat-save-config-\(UUID().uuidString)", isDirectory: true)
         let storagePaths = CodexChatStoragePaths(rootURL: root)
         try storagePaths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let model = AppModel(
             repositories: nil,
             runtime: nil,
             bootError: nil,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         model.updateCodexConfigValue(path: [.key("model")], value: .string("custom-model"))
 
         await model.saveCodexConfigAndRestartRuntime()
 
         XCTAssertEqual(model.codexConfigStatusMessage, "Saved config.toml. Changes apply on next runtime start.")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: storagePaths.codexConfigURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: resolvedCodexHomes.activeCodexConfigURL.path))
     }
 
     @MainActor
@@ -1363,9 +1369,10 @@ final class CodexChatAppTests: XCTestCase {
             .appendingPathComponent("codexchat-invalid-config-\(UUID().uuidString)", isDirectory: true)
         let storagePaths = CodexChatStoragePaths(rootURL: root)
         try storagePaths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try "model = [".write(to: storagePaths.codexConfigURL, atomically: true, encoding: .utf8)
+        try "model = [".write(to: resolvedCodexHomes.activeCodexConfigURL, atomically: true, encoding: .utf8)
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
         let repositories = MetadataRepositories(database: database)
@@ -1373,7 +1380,8 @@ final class CodexChatAppTests: XCTestCase {
             repositories: repositories,
             runtime: nil,
             bootError: nil,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
 
         await model.loadInitialData()

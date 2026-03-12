@@ -14,6 +14,7 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
 
         let paths = CodexChatStoragePaths(rootURL: root)
         try paths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: paths)
         let projectPath = root.appendingPathComponent("project-alpha", isDirectory: true)
         try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
 
@@ -27,9 +28,9 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         )
 
         let catalogService = SkillCatalogService(
-            codexHomeURL: paths.codexHomeURL,
-            agentsHomeURL: paths.agentsHomeURL,
-            sharedSkillsStoreURL: paths.sharedSkillsStoreURL,
+            codexHomeURL: resolvedCodexHomes.activeCodexHomeURL,
+            agentsHomeURL: resolvedCodexHomes.activeAgentsHomeURL,
+            sharedSkillsStoreURL: resolvedCodexHomes.activeGlobalSkillsURL,
             processRunner: { argv, _ in
                 if argv.prefix(4) == ["git", "clone", "--depth", "1"], let destination = argv.last {
                     let destinationURL = URL(fileURLWithPath: destination, isDirectory: true)
@@ -53,7 +54,8 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
             runtime: nil,
             bootError: nil,
             skillCatalogService: catalogService,
-            storagePaths: paths
+            storagePaths: paths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         model.projectsState = .loaded([project])
         model.selectedProjectID = project.id
@@ -92,6 +94,7 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
 
         let paths = CodexChatStoragePaths(rootURL: root)
         try paths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: paths)
 
         let projectPath = root.appendingPathComponent("project-beta", isDirectory: true)
         let legacySkillPath = projectPath
@@ -122,16 +125,17 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         )
 
         let catalogService = SkillCatalogService(
-            codexHomeURL: paths.codexHomeURL,
-            agentsHomeURL: paths.agentsHomeURL,
-            sharedSkillsStoreURL: paths.sharedSkillsStoreURL
+            codexHomeURL: resolvedCodexHomes.activeCodexHomeURL,
+            agentsHomeURL: resolvedCodexHomes.activeAgentsHomeURL,
+            sharedSkillsStoreURL: resolvedCodexHomes.activeGlobalSkillsURL
         )
         let model = AppModel(
             repositories: repositories,
             runtime: nil,
             bootError: nil,
             skillCatalogService: catalogService,
-            storagePaths: paths
+            storagePaths: paths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         model.projectsState = .loaded([project])
         model.selectedProjectID = project.id
@@ -143,7 +147,7 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         let install = try XCTUnwrap(installs.first)
         XCTAssertEqual(install.mode, .selected)
         XCTAssertEqual(install.projectIDs, [project.id])
-        XCTAssertTrue(CodexChatStoragePaths.isPath(install.sharedPath, insideRoot: paths.sharedSkillsStoreURL.path))
+        XCTAssertTrue(CodexChatStoragePaths.isPath(install.sharedPath, insideRoot: resolvedCodexHomes.activeGlobalSkillsURL.path))
 
         let projectLinkPath = projectPath
             .appendingPathComponent(".agents/skills", isDirectory: true)
@@ -167,6 +171,8 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
 
         let paths = CodexChatStoragePaths(rootURL: root)
         try paths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: paths)
+        try FileManager.default.createDirectory(at: resolvedCodexHomes.activeGlobalSkillsURL, withIntermediateDirectories: true)
 
         let projectPath = root.appendingPathComponent("project-delta", isDirectory: true)
         let legacySkillPath = projectPath
@@ -199,26 +205,27 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         // Remove write permissions from the destination root so moving into shared store fails.
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o555],
-            ofItemAtPath: paths.sharedSkillsStoreURL.path
+            ofItemAtPath: resolvedCodexHomes.activeGlobalSkillsURL.path
         )
         defer {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o755],
-                ofItemAtPath: paths.sharedSkillsStoreURL.path
+                ofItemAtPath: resolvedCodexHomes.activeGlobalSkillsURL.path
             )
         }
 
         let catalogService = SkillCatalogService(
-            codexHomeURL: paths.codexHomeURL,
-            agentsHomeURL: paths.agentsHomeURL,
-            sharedSkillsStoreURL: paths.sharedSkillsStoreURL
+            codexHomeURL: resolvedCodexHomes.activeCodexHomeURL,
+            agentsHomeURL: resolvedCodexHomes.activeAgentsHomeURL,
+            sharedSkillsStoreURL: resolvedCodexHomes.activeGlobalSkillsURL
         )
         let model = AppModel(
             repositories: repositories,
             runtime: nil,
             bootError: nil,
             skillCatalogService: catalogService,
-            storagePaths: paths
+            storagePaths: paths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         model.projectsState = .loaded([project])
         model.selectedProjectID = project.id
@@ -240,6 +247,8 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
 
         let paths = CodexChatStoragePaths(rootURL: root)
         try paths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: paths)
+        try FileManager.default.createDirectory(at: resolvedCodexHomes.activeGlobalSkillsURL, withIntermediateDirectories: true)
         let projectPath = root.appendingPathComponent("project-gamma", isDirectory: true)
         try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
 
@@ -256,7 +265,7 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
                 skillID: "dangerous-root-record",
                 source: "local:dangerous-root",
                 installer: .git,
-                sharedPath: paths.sharedSkillsStoreURL.path,
+                sharedPath: resolvedCodexHomes.activeGlobalSkillsURL.path,
                 mode: .selected,
                 projectIDs: [project.id]
             )
@@ -266,7 +275,8 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
             repositories: repositories,
             runtime: nil,
             bootError: nil,
-            storagePaths: paths
+            storagePaths: paths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         model.projectsState = .loaded([project])
         model.selectedProjectID = project.id
@@ -275,8 +285,8 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
             name: "Dangerous Root Skill",
             description: "Synthetic skill for uninstall safety test.",
             scope: .global,
-            skillPath: paths.sharedSkillsStoreURL.path,
-            skillDefinitionPath: paths.sharedSkillsStoreURL.appendingPathComponent("SKILL.md", isDirectory: false).path,
+            skillPath: resolvedCodexHomes.activeGlobalSkillsURL.path,
+            skillDefinitionPath: resolvedCodexHomes.activeGlobalSkillsURL.appendingPathComponent("SKILL.md", isDirectory: false).path,
             hasScripts: false,
             sourceURL: nil,
             optionalMetadata: [:],
@@ -304,7 +314,7 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         let installs = try await repositories.skillInstallRegistryRepository.list()
         XCTAssertEqual(installs.count, 1)
         XCTAssertEqual(installs.first?.skillID, "dangerous-root-record")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.sharedSkillsStoreURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: resolvedCodexHomes.activeGlobalSkillsURL.path))
     }
 
     private func waitUntil(

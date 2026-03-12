@@ -41,7 +41,7 @@ struct CodexConfigSettingsSection: View {
     var body: some View {
         SettingsSectionCard(
             title: "Codex Config",
-            subtitle: "User-level config from `config.toml` is the source of truth for defaults and flags."
+            subtitle: "The shared active `config.toml` in \(model.resolvedCodexHomes.activeCodexHomeURL.path) is the source of truth for defaults and flags."
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -242,7 +242,7 @@ struct CodexConfigSettingsSection: View {
     private var roleProfileBuilderView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Generate profile + role entries and scaffold `.codex/agents/*.toml` role files.")
+                Text("Generate profile + role entries and scaffold role files in the active shared Codex home under `agents/*.toml`.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -276,7 +276,7 @@ struct CodexConfigSettingsSection: View {
                             .textFieldStyle(.roundedBorder)
                         TextField("Role Description", text: $roleBuilderDraft.roleDescription)
                             .textFieldStyle(.roundedBorder)
-                        TextField("Role Config Filename (for `.codex/agents/`)", text: $roleBuilderDraft.roleConfigFilename)
+                        TextField("Role Config Filename (for shared `agents/`)", text: $roleBuilderDraft.roleConfigFilename)
                             .textFieldStyle(.roundedBorder)
 
                         VStack(alignment: .leading, spacing: 6) {
@@ -321,7 +321,7 @@ struct CodexConfigSettingsSection: View {
             let output = try CodexRoleProfileBuilder.build(
                 input: roleBuilderDraft,
                 root: draftRoot,
-                codexHomeURL: model.storagePaths.codexHomeURL
+                codexHomeURL: model.resolvedCodexHomes.activeCodexHomeURL
             )
 
             draftRoot = output.updatedRoot

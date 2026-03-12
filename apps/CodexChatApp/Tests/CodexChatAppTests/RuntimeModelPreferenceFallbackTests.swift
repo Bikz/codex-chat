@@ -12,6 +12,7 @@ final class RuntimeModelPreferenceFallbackTests: XCTestCase {
 
         let storagePaths = CodexChatStoragePaths(rootURL: root)
         try storagePaths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
         let repositories = MetadataRepositories(database: database)
@@ -22,7 +23,8 @@ final class RuntimeModelPreferenceFallbackTests: XCTestCase {
             repositories: repositories,
             runtime: nil,
             bootError: nil,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
 
         try await model.loadCodexConfig()
@@ -39,6 +41,7 @@ final class RuntimeModelPreferenceFallbackTests: XCTestCase {
 
         let storagePaths = CodexChatStoragePaths(rootURL: root)
         try storagePaths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
         let repositories = MetadataRepositories(database: database)
@@ -49,7 +52,8 @@ final class RuntimeModelPreferenceFallbackTests: XCTestCase {
             repositories: repositories,
             runtime: nil,
             bootError: nil,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
         try await model.loadCodexConfig()
         XCTAssertEqual(model.defaultModel, "gpt-5.3-codex")
@@ -72,9 +76,14 @@ final class RuntimeModelPreferenceFallbackTests: XCTestCase {
 
         let storagePaths = CodexChatStoragePaths(rootURL: root)
         try storagePaths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: storagePaths)
+        try FileManager.default.createDirectory(
+            at: resolvedCodexHomes.activeCodexHomeURL,
+            withIntermediateDirectories: true
+        )
         try """
         model = "gpt-4o"
-        """.write(to: storagePaths.codexConfigURL, atomically: true, encoding: .utf8)
+        """.write(to: resolvedCodexHomes.activeCodexConfigURL, atomically: true, encoding: .utf8)
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
         let repositories = MetadataRepositories(database: database)
@@ -85,7 +94,8 @@ final class RuntimeModelPreferenceFallbackTests: XCTestCase {
             repositories: repositories,
             runtime: nil,
             bootError: nil,
-            storagePaths: storagePaths
+            storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes
         )
 
         try await model.loadCodexConfig()

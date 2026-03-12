@@ -51,9 +51,13 @@ public enum CodexChatBootstrap {
     @MainActor
     static func bootstrapModel() -> AppModel {
         let storagePaths = CodexChatStoragePaths.current()
+        let resolvedCodexHomes = ResolvedCodexHomes.current(storagePaths: storagePaths)
 
         do {
-            let dependencies = try bootstrapDependencies(storagePaths: storagePaths)
+            let dependencies = try bootstrapDependencies(
+                storagePaths: storagePaths,
+                resolvedCodexHomes: resolvedCodexHomes
+            )
             return AppModel(
                 repositories: dependencies.repositories,
                 runtime: dependencies.runtime,
@@ -61,6 +65,7 @@ public enum CodexChatBootstrap {
                 skillCatalogService: dependencies.skillCatalogService,
                 skillCatalogProvider: dependencies.skillCatalogProvider,
                 storagePaths: dependencies.storagePaths,
+                resolvedCodexHomes: dependencies.resolvedCodexHomes,
                 harnessEnvironment: dependencies.harnessEnvironment
             )
         } catch {
@@ -68,7 +73,8 @@ public enum CodexChatBootstrap {
                 repositories: nil,
                 runtime: nil,
                 bootError: error.localizedDescription,
-                storagePaths: storagePaths
+                storagePaths: storagePaths,
+                resolvedCodexHomes: resolvedCodexHomes
             )
         }
     }
@@ -197,22 +203,34 @@ public enum CodexChatBootstrap {
 
     private static func bootstrapDependencies(
         storagePaths: CodexChatStoragePaths,
+        resolvedCodexHomes: ResolvedCodexHomes? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
     ) throws -> BootstrapDependencies {
         try storagePaths.ensureRootStructure(fileManager: fileManager)
+        let resolvedCodexHomes = resolvedCodexHomes
+            ?? ResolvedCodexHomes.current(
+                storagePaths: storagePaths,
+                environment: environment,
+                fileManager: fileManager
+            )
         try CodexChatStorageMigrationCoordinator.performInitialMigrationIfNeeded(paths: storagePaths, fileManager: fileManager)
         _ = try? CodexChatStorageMigrationCoordinator.repairManagedCodexHomeSkillSymlinksIfNeeded(
             paths: storagePaths,
+            fileManager: fileManager
+        )
+        _ = try CodexChatStorageMigrationCoordinator.performSharedHomeHandoffIfNeeded(
+            paths: storagePaths,
+            homes: resolvedCodexHomes,
             fileManager: fileManager
         )
 
         let database = try MetadataDatabase(databaseURL: storagePaths.metadataDatabaseURL)
         let repositories = MetadataRepositories(database: database)
         let skillCatalogService = SkillCatalogService(
-            codexHomeURL: storagePaths.codexHomeURL,
-            agentsHomeURL: storagePaths.agentsHomeURL,
-            sharedSkillsStoreURL: storagePaths.sharedSkillsStoreURL
+            codexHomeURL: resolvedCodexHomes.activeCodexHomeURL,
+            agentsHomeURL: resolvedCodexHomes.activeAgentsHomeURL,
+            sharedSkillsStoreURL: resolvedCodexHomes.activeGlobalSkillsURL
         )
         let skillCatalogProvider = RemoteJSONSkillCatalogProvider()
         let harnessEnvironment = try makeHarnessEnvironment(
@@ -229,7 +247,7 @@ public enum CodexChatBootstrap {
         )
         let runtime = CodexRuntime(
             environmentOverrides: [
-                "CODEX_HOME": storagePaths.codexHomeURL.path,
+                "CODEX_HOME": resolvedCodexHomes.activeCodexHomeURL.path,
                 "CODEXCHAT_HARNESS_SOCKET": harnessEnvironment.socketPath,
                 "CODEXCHAT_HARNESS_SESSION_TOKEN": harnessEnvironment.sessionToken,
                 "CODEXCHAT_HARNESS_WRAPPER_PATH": harnessEnvironment.wrapperPath,
@@ -243,6 +261,7 @@ public enum CodexChatBootstrap {
             skillCatalogService: skillCatalogService,
             skillCatalogProvider: skillCatalogProvider,
             storagePaths: storagePaths,
+            resolvedCodexHomes: resolvedCodexHomes,
             harnessEnvironment: harnessEnvironment
         )
     }
@@ -489,6 +508,7 @@ private extension CodexChatBootstrap {
         let skillCatalogService: SkillCatalogService
         let skillCatalogProvider: any SkillCatalogProvider
         let storagePaths: CodexChatStoragePaths
+        let resolvedCodexHomes: ResolvedCodexHomes
         let harnessEnvironment: ComputerActionHarnessEnvironment
     }
 

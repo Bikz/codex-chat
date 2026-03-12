@@ -15,32 +15,44 @@ enum CodexChatStorageMigrationError: LocalizedError {
     }
 }
 
-struct CodexHomeNormalizationResult: Sendable {
+struct SharedCodexHomeHandoffResult: Sendable {
     let executed: Bool
-    let forced: Bool
-    let reason: String
-    let movedEntries: [String]
+    let copiedEntries: [String]
+    let skippedEntries: [String]
     let failedEntries: [String]
-    let quarantineURL: URL?
     let reportURL: URL
-
-    var movedItemCount: Int {
-        movedEntries.count
-    }
-
-    var hasChanges: Bool {
-        movedItemCount > 0
-    }
 }
 
-struct CodexHomeNormalizationReport: Codable, Sendable {
+struct SharedCodexHomeHandoffReport: Codable, Sendable {
     let schemaVersion: Int
     let generatedAt: String
-    let reason: String
-    let forced: Bool
-    let codexHomePath: String
-    let quarantinePath: String?
-    let movedEntries: [String]
+    let source: String
+    let activeCodexHomePath: String
+    let activeAgentsHomePath: String
+    let legacyManagedCodexHomePath: String
+    let legacyManagedAgentsHomePath: String
+    let copiedEntries: [String]
+    let skippedEntries: [String]
+    let failedEntries: [String]
+}
+
+struct LegacyManagedHomesArchiveResult: Sendable {
+    let executed: Bool
+    let archivedEntries: [String]
+    let skippedEntries: [String]
+    let failedEntries: [String]
+    let archiveRootURL: URL?
+    let reportURL: URL
+}
+
+struct LegacyManagedHomesArchiveReport: Codable, Sendable {
+    let schemaVersion: Int
+    let generatedAt: String
+    let archiveRootPath: String?
+    let legacyManagedCodexHomePath: String
+    let legacyManagedAgentsHomePath: String
+    let archivedEntries: [String]
+    let skippedEntries: [String]
     let failedEntries: [String]
 }
 
@@ -54,7 +66,7 @@ struct CodexHomeSkillsSymlinkRepairResult: Sendable, Equatable {
 }
 
 enum CodexChatStorageMigrationCoordinator {
-    private static let codexHomeImportFiles = [
+    private static let codexArtifactEntries = [
         "config.toml",
         "auth.json",
         "history.jsonl",
@@ -62,31 +74,18 @@ enum CodexChatStorageMigrationCoordinator {
         "AGENTS.md",
         "AGENTS.override.md",
         "memory.md",
+        "skills",
     ]
 
-    private static let codexHomeRuntimeDirectories = [
-        "sessions",
-        "archived_sessions",
-        "shell_snapshots",
-        "sqlite",
-        "log",
-        "tmp",
-        "vendor_imports",
-        "worktrees",
-    ]
-
-    private static let codexHomeRuntimeFiles = [
-        ".codex-global-state.json",
-        "models_cache.json",
-        ".personality_migration",
-        "version.json",
+    private static let agentsArtifactEntries = [
+        "skills",
     ]
 
     static func performInitialMigrationIfNeeded(
         paths: CodexChatStoragePaths,
         fileManager: FileManager = .default,
-        legacyCodexHomeURL: URL? = nil,
-        legacyAgentsHomeURL: URL? = nil
+        legacyCodexHomeURL _: URL? = nil,
+        legacyAgentsHomeURL _: URL? = nil
     ) throws {
         try paths.ensureRootStructure(fileManager: fileManager)
 
@@ -105,125 +104,187 @@ enum CodexChatStorageMigrationCoordinator {
             )
         }
 
-        let home = fileManager.homeDirectoryForCurrentUser
-        let codexSource = legacyCodexHomeURL ?? home.appendingPathComponent(".codex", isDirectory: true)
-        let agentsSource = legacyAgentsHomeURL ?? home.appendingPathComponent(".agents", isDirectory: true)
-
-        try importLegacyCodexHomeArtifactsIfNeeded(
-            source: codexSource,
-            destination: paths.codexHomeURL,
-            fileManager: fileManager
-        )
-        try importLegacyAgentsHomeArtifactsIfNeeded(
-            source: agentsSource,
-            destination: paths.agentsHomeURL,
-            fileManager: fileManager
-        )
-
         let stamp = "migration=1\ndate=\(ISO8601DateFormatter().string(from: Date()))\n"
         try stamp.write(to: paths.migrationMarkerURL, atomically: true, encoding: .utf8)
     }
 
-    static func normalizeManagedCodexHome(
+    static func performSharedHomeHandoffIfNeeded(
         paths: CodexChatStoragePaths,
-        force: Bool,
-        reason: String,
+        homes: ResolvedCodexHomes,
         fileManager: FileManager = .default
-    ) throws -> CodexHomeNormalizationResult {
+    ) throws -> SharedCodexHomeHandoffResult {
         try paths.ensureRootStructure(fileManager: fileManager)
+        try fileManager.createDirectory(at: homes.activeCodexHomeURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: homes.activeAgentsHomeURL, withIntermediateDirectories: true)
 
-        if !force, fileManager.fileExists(atPath: paths.codexHomeNormalizationMarkerURL.path) {
-            let previousReport = try? readLastCodexHomeNormalizationReport(paths: paths, fileManager: fileManager)
-            return CodexHomeNormalizationResult(
+        if let previous = try readLastSharedCodexHomeHandoffReport(paths: paths, fileManager: fileManager),
+           previous.source == homes.source.rawValue,
+           previous.activeCodexHomePath == homes.activeCodexHomeURL.path,
+           previous.activeAgentsHomePath == homes.activeAgentsHomeURL.path
+        {
+            return SharedCodexHomeHandoffResult(
                 executed: false,
-                forced: false,
-                reason: "already-normalized",
-                movedEntries: [],
-                failedEntries: [],
-                quarantineURL: previousReport.flatMap { report in
-                    guard let path = report.quarantinePath else { return nil }
-                    return URL(fileURLWithPath: path, isDirectory: true)
-                },
-                reportURL: paths.codexHomeLastRepairReportURL
+                copiedEntries: [],
+                skippedEntries: previous.skippedEntries,
+                failedEntries: previous.failedEntries,
+                reportURL: paths.sharedCodexHomeHandoffReportURL
             )
         }
 
-        var movedEntries: [String] = []
+        var copiedEntries: [String] = []
+        var skippedEntries: [String] = []
         var failedEntries: [String] = []
-        var quarantineURL: URL?
-        let timestamp = quarantineTimestamp()
 
-        for directory in codexHomeRuntimeDirectories {
-            moveCodexHomeEntryIfPresent(
-                entryName: directory,
-                paths: paths,
-                timestamp: timestamp,
-                quarantineURL: &quarantineURL,
-                movedEntries: &movedEntries,
-                failedEntries: &failedEntries,
-                fileManager: fileManager
-            )
-        }
-
-        for file in codexHomeRuntimeFiles {
-            moveCodexHomeEntryIfPresent(
-                entryName: file,
-                paths: paths,
-                timestamp: timestamp,
-                quarantineURL: &quarantineURL,
-                movedEntries: &movedEntries,
-                failedEntries: &failedEntries,
-                fileManager: fileManager
-            )
-        }
-
-        let report = CodexHomeNormalizationReport(
-            schemaVersion: 1,
-            generatedAt: ISO8601DateFormatter().string(from: Date()),
-            reason: reason,
-            forced: force,
-            codexHomePath: paths.codexHomeURL.path,
-            quarantinePath: quarantineURL?.path,
-            movedEntries: movedEntries,
-            failedEntries: failedEntries
+        try importArtifactsIfMissing(
+            entryNames: codexArtifactEntries,
+            sourceRoot: homes.legacyManagedCodexHomeURL,
+            destinationRoot: homes.activeCodexHomeURL,
+            fileManager: fileManager,
+            copiedEntries: &copiedEntries,
+            skippedEntries: &skippedEntries,
+            failedEntries: &failedEntries
         )
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let reportData = try encoder.encode(report)
-        try reportData.write(to: paths.codexHomeLastRepairReportURL, options: .atomic)
+        try importArtifactsIfMissing(
+            entryNames: agentsArtifactEntries,
+            sourceRoot: homes.legacyManagedAgentsHomeURL,
+            destinationRoot: homes.activeAgentsHomeURL,
+            fileManager: fileManager,
+            copiedEntries: &copiedEntries,
+            skippedEntries: &skippedEntries,
+            failedEntries: &failedEntries
+        )
 
-        let marker = "version=1\ndate=\(ISO8601DateFormatter().string(from: Date()))\nreason=\(reason)\nforced=\(force)\nmoved=\(movedEntries.count)\n"
-        try marker.write(to: paths.codexHomeNormalizationMarkerURL, atomically: true, encoding: .utf8)
+        let report = SharedCodexHomeHandoffReport(
+            schemaVersion: 1,
+            generatedAt: ISO8601DateFormatter().string(from: Date()),
+            source: homes.source.rawValue,
+            activeCodexHomePath: homes.activeCodexHomeURL.path,
+            activeAgentsHomePath: homes.activeAgentsHomeURL.path,
+            legacyManagedCodexHomePath: homes.legacyManagedCodexHomeURL.path,
+            legacyManagedAgentsHomePath: homes.legacyManagedAgentsHomeURL.path,
+            copiedEntries: copiedEntries.sorted(),
+            skippedEntries: skippedEntries.sorted(),
+            failedEntries: failedEntries.sorted()
+        )
+        try write(report: report, to: paths.sharedCodexHomeHandoffReportURL)
 
-        return CodexHomeNormalizationResult(
+        let marker = """
+        version=1
+        date=\(report.generatedAt)
+        source=\(homes.source.rawValue)
+        active_codex_home=\(homes.activeCodexHomeURL.path)
+        active_agents_home=\(homes.activeAgentsHomeURL.path)
+        copied=\(copiedEntries.count)
+        skipped=\(skippedEntries.count)
+        failed=\(failedEntries.count)
+        """
+        try marker.write(to: paths.sharedCodexHomeHandoffMarkerURL, atomically: true, encoding: .utf8)
+
+        return SharedCodexHomeHandoffResult(
             executed: true,
-            forced: force,
-            reason: reason,
-            movedEntries: movedEntries,
-            failedEntries: failedEntries,
-            quarantineURL: quarantineURL,
-            reportURL: paths.codexHomeLastRepairReportURL
+            copiedEntries: copiedEntries.sorted(),
+            skippedEntries: skippedEntries.sorted(),
+            failedEntries: failedEntries.sorted(),
+            reportURL: paths.sharedCodexHomeHandoffReportURL
         )
     }
 
-    static func readLastCodexHomeNormalizationReport(
+    static func readLastSharedCodexHomeHandoffReport(
         paths: CodexChatStoragePaths,
         fileManager: FileManager = .default
-    ) throws -> CodexHomeNormalizationReport? {
-        guard fileManager.fileExists(atPath: paths.codexHomeLastRepairReportURL.path) else {
+    ) throws -> SharedCodexHomeHandoffReport? {
+        guard fileManager.fileExists(atPath: paths.sharedCodexHomeHandoffReportURL.path) else {
             return nil
         }
 
-        let data = try Data(contentsOf: paths.codexHomeLastRepairReportURL)
-        return try JSONDecoder().decode(CodexHomeNormalizationReport.self, from: data)
+        let data = try Data(contentsOf: paths.sharedCodexHomeHandoffReportURL)
+        return try JSONDecoder().decode(SharedCodexHomeHandoffReport.self, from: data)
+    }
+
+    static func archiveLegacyManagedHomes(
+        paths: CodexChatStoragePaths,
+        fileManager: FileManager = .default
+    ) throws -> LegacyManagedHomesArchiveResult {
+        try paths.ensureRootStructure(fileManager: fileManager)
+
+        let sources: [(label: String, url: URL)] = [
+            ("codex-home", paths.legacyManagedCodexHomeURL),
+            ("agents-home", paths.legacyManagedAgentsHomeURL),
+        ]
+
+        var archivedEntries: [String] = []
+        var skippedEntries: [String] = []
+        var failedEntries: [String] = []
+        var archiveRootURL: URL?
+
+        for source in sources {
+            guard fileManager.fileExists(atPath: source.url.path) else {
+                skippedEntries.append("\(source.label):missing")
+                continue
+            }
+
+            if archiveRootURL == nil {
+                let timestamp = archiveTimestamp()
+                let root = paths.legacyManagedHomesArchiveRootURL.appendingPathComponent(timestamp, isDirectory: true)
+                try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+                archiveRootURL = root
+            }
+
+            guard let archiveRootURL else { continue }
+            let destinationURL = uniqueArchiveDestination(
+                named: source.label,
+                archiveRootURL: archiveRootURL,
+                fileManager: fileManager
+            )
+
+            do {
+                try fileManager.moveItem(at: source.url, to: destinationURL)
+                archivedEntries.append(source.label)
+            } catch {
+                failedEntries.append("\(source.label): \(error.localizedDescription)")
+            }
+        }
+
+        let report = LegacyManagedHomesArchiveReport(
+            schemaVersion: 1,
+            generatedAt: ISO8601DateFormatter().string(from: Date()),
+            archiveRootPath: archiveRootURL?.path,
+            legacyManagedCodexHomePath: paths.legacyManagedCodexHomeURL.path,
+            legacyManagedAgentsHomePath: paths.legacyManagedAgentsHomeURL.path,
+            archivedEntries: archivedEntries.sorted(),
+            skippedEntries: skippedEntries.sorted(),
+            failedEntries: failedEntries.sorted()
+        )
+        try write(report: report, to: paths.legacyManagedHomesLastArchiveReportURL)
+
+        return LegacyManagedHomesArchiveResult(
+            executed: archiveRootURL != nil,
+            archivedEntries: archivedEntries.sorted(),
+            skippedEntries: skippedEntries.sorted(),
+            failedEntries: failedEntries.sorted(),
+            archiveRootURL: archiveRootURL,
+            reportURL: paths.legacyManagedHomesLastArchiveReportURL
+        )
+    }
+
+    static func readLastLegacyManagedHomesArchiveReport(
+        paths: CodexChatStoragePaths,
+        fileManager: FileManager = .default
+    ) throws -> LegacyManagedHomesArchiveReport? {
+        guard fileManager.fileExists(atPath: paths.legacyManagedHomesLastArchiveReportURL.path) else {
+            return nil
+        }
+
+        let data = try Data(contentsOf: paths.legacyManagedHomesLastArchiveReportURL)
+        return try JSONDecoder().decode(LegacyManagedHomesArchiveReport.self, from: data)
     }
 
     static func repairManagedCodexHomeSkillSymlinksIfNeeded(
         paths: CodexChatStoragePaths,
         fileManager: FileManager = .default
     ) throws -> CodexHomeSkillsSymlinkRepairResult {
-        let skillsRoot = paths.codexHomeURL.appendingPathComponent("skills", isDirectory: true)
+        let skillsRoot = paths.legacyManagedCodexHomeURL.appendingPathComponent("skills", isDirectory: true)
         guard fileManager.fileExists(atPath: skillsRoot.path) else {
             return CodexHomeSkillsSymlinkRepairResult(relinkedEntries: [], removedEntries: [])
         }
@@ -243,13 +304,12 @@ enum CodexChatStorageMigrationCoordinator {
                 continue
             }
 
-            // fileExists resolves symlinks; false means the link target is stale.
             guard !fileManager.fileExists(atPath: entry.path) else {
                 continue
             }
 
             let skillName = entry.lastPathComponent
-            let managedTarget = paths.agentsHomeURL
+            let managedTarget = paths.legacyManagedAgentsHomeURL
                 .appendingPathComponent("skills", isDirectory: true)
                 .appendingPathComponent(skillName, isDirectory: true)
 
@@ -427,142 +487,127 @@ enum CodexChatStorageMigrationCoordinator {
         }
     }
 
-    private static func importLegacyCodexHomeArtifactsIfNeeded(
-        source: URL,
-        destination: URL,
-        fileManager: FileManager
-    ) throws {
-        guard fileManager.fileExists(atPath: source.path) else {
-            return
-        }
-
-        try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-
-        for fileName in codexHomeImportFiles {
-            let sourceURL = source.appendingPathComponent(fileName, isDirectory: false)
-            let destinationURL = destination.appendingPathComponent(fileName, isDirectory: false)
-            try copyFileIfMissing(source: sourceURL, destination: destinationURL, fileManager: fileManager)
-        }
-
-        let sourceSkills = source.appendingPathComponent("skills", isDirectory: true)
-        let destinationSkills = destination.appendingPathComponent("skills", isDirectory: true)
-        if fileManager.fileExists(atPath: sourceSkills.path) {
-            try copyDirectoryContents(
-                from: sourceSkills,
-                to: destinationSkills,
-                overwriteFiles: false,
-                fileManager: fileManager
-            )
-        }
-    }
-
-    private static func importLegacyAgentsHomeArtifactsIfNeeded(
-        source: URL,
-        destination: URL,
-        fileManager: FileManager
-    ) throws {
-        guard fileManager.fileExists(atPath: source.path) else {
-            return
-        }
-
-        let sourceSkills = source.appendingPathComponent("skills", isDirectory: true)
-        let destinationSkills = destination.appendingPathComponent("skills", isDirectory: true)
-        if fileManager.fileExists(atPath: sourceSkills.path) {
-            try copyDirectoryContents(
-                from: sourceSkills,
-                to: destinationSkills,
-                overwriteFiles: false,
-                fileManager: fileManager
-            )
-        }
-    }
-
-    private static func copyFileIfMissing(
-        source: URL,
-        destination: URL,
-        fileManager: FileManager
-    ) throws {
-        guard fileManager.fileExists(atPath: source.path) else {
-            return
-        }
-
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-            return
-        }
-
-        guard !fileManager.fileExists(atPath: destination.path) else {
-            return
-        }
-
-        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fileManager.copyItem(at: source, to: destination)
-    }
-
-    private static func moveCodexHomeEntryIfPresent(
-        entryName: String,
-        paths: CodexChatStoragePaths,
-        timestamp: String,
-        quarantineURL: inout URL?,
-        movedEntries: inout [String],
-        failedEntries: inout [String],
-        fileManager: FileManager
-    ) {
-        let sourceURL = paths.codexHomeURL.appendingPathComponent(entryName, isDirectory: false)
-        guard fileManager.fileExists(atPath: sourceURL.path) else {
-            return
-        }
-
-        do {
-            let destinationRoot = try ensureQuarantineDirectoryIfNeeded(
-                existingURL: quarantineURL,
-                quarantineRootURL: paths.codexHomeQuarantineRootURL,
-                timestamp: timestamp,
-                fileManager: fileManager
-            )
-            quarantineURL = destinationRoot
-            let destinationURL = uniqueQuarantineDestination(
-                for: entryName,
-                destinationRoot: destinationRoot,
-                fileManager: fileManager
-            )
-            try fileManager.moveItem(at: sourceURL, to: destinationURL)
-            movedEntries.append(entryName)
-        } catch {
-            failedEntries.append("\(entryName): \(error.localizedDescription)")
-        }
-    }
-
-    private static func ensureQuarantineDirectoryIfNeeded(
-        existingURL: URL?,
-        quarantineRootURL: URL,
-        timestamp: String,
-        fileManager: FileManager
-    ) throws -> URL {
-        if let existingURL {
-            return existingURL
-        }
-
-        try fileManager.createDirectory(at: quarantineRootURL, withIntermediateDirectories: true)
-        let destination = quarantineRootURL.appendingPathComponent(timestamp, isDirectory: true)
-        try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-        return destination
-    }
-
-    private static func uniqueQuarantineDestination(
-        for entryName: String,
+    private static func importArtifactsIfMissing(
+        entryNames: [String],
+        sourceRoot: URL,
         destinationRoot: URL,
+        fileManager: FileManager,
+        copiedEntries: inout [String],
+        skippedEntries: inout [String],
+        failedEntries: inout [String]
+    ) throws {
+        guard fileManager.fileExists(atPath: sourceRoot.path) else {
+            skippedEntries.append("\(sourceRoot.lastPathComponent):missing-source")
+            return
+        }
+
+        for entryName in entryNames {
+            let sourceURL = sourceRoot.appendingPathComponent(entryName, isDirectory: false)
+            guard fileManager.fileExists(atPath: sourceURL.path) else {
+                skippedEntries.append("\(entryName):missing")
+                continue
+            }
+
+            let destinationURL = destinationRoot.appendingPathComponent(entryName, isDirectory: false)
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory) else {
+                skippedEntries.append("\(entryName):missing")
+                continue
+            }
+
+            if isDirectory.boolValue {
+                let report = try copyDirectoryEntriesIfMissing(
+                    from: sourceURL,
+                    to: destinationURL,
+                    fileManager: fileManager
+                )
+                copiedEntries.append(contentsOf: report.copied.map { "\(entryName)/\($0)" })
+                skippedEntries.append(contentsOf: report.skipped.map { "\(entryName)/\($0)" })
+                failedEntries.append(contentsOf: report.failed.map { "\(entryName)/\($0)" })
+            } else if fileManager.fileExists(atPath: destinationURL.path) {
+                skippedEntries.append("\(entryName):exists")
+            } else {
+                do {
+                    try fileManager.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                    copiedEntries.append(entryName)
+                } catch {
+                    failedEntries.append("\(entryName): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private static func copyDirectoryEntriesIfMissing(
+        from sourceRoot: URL,
+        to destinationRoot: URL,
+        fileManager: FileManager
+    ) throws -> (copied: [String], skipped: [String], failed: [String]) {
+        var copied: [String] = []
+        var skipped: [String] = []
+        var failed: [String] = []
+
+        guard fileManager.fileExists(atPath: sourceRoot.path) else {
+            return (copied, skipped, failed)
+        }
+
+        try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
+        let enumerator = fileManager.enumerator(
+            at: sourceRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [],
+            errorHandler: nil
+        )
+        let prefix = sourceRoot.standardizedFileURL.path + "/"
+
+        while let entry = enumerator?.nextObject() as? URL {
+            let normalizedPath = entry.standardizedFileURL.path
+            guard normalizedPath.hasPrefix(prefix) else {
+                continue
+            }
+
+            let relativePath = String(normalizedPath.dropFirst(prefix.count))
+            guard !relativePath.isEmpty else {
+                continue
+            }
+
+            let destinationURL = destinationRoot.appendingPathComponent(relativePath, isDirectory: false)
+            let values = try entry.resourceValues(forKeys: [.isDirectoryKey])
+
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                skipped.append("\(relativePath):exists")
+                continue
+            }
+
+            do {
+                if values.isDirectory == true {
+                    try fileManager.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+                } else {
+                    try fileManager.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fileManager.copyItem(at: entry, to: destinationURL)
+                }
+                copied.append(relativePath)
+            } catch {
+                failed.append("\(relativePath): \(error.localizedDescription)")
+            }
+        }
+
+        return (copied, skipped, failed)
+    }
+
+    private static func uniqueArchiveDestination(
+        named name: String,
+        archiveRootURL: URL,
         fileManager: FileManager
     ) -> URL {
-        var candidate = destinationRoot.appendingPathComponent(entryName, isDirectory: false)
+        var candidate = archiveRootURL.appendingPathComponent(name, isDirectory: true)
         if !fileManager.fileExists(atPath: candidate.path) {
             return candidate
         }
 
         var suffix = 2
         while true {
-            let nextName = "\(entryName)-\(suffix)"
-            candidate = destinationRoot.appendingPathComponent(nextName, isDirectory: false)
+            candidate = archiveRootURL.appendingPathComponent("\(name)-\(suffix)", isDirectory: true)
             if !fileManager.fileExists(atPath: candidate.path) {
                 return candidate
             }
@@ -570,7 +615,7 @@ enum CodexChatStorageMigrationCoordinator {
         }
     }
 
-    private static func quarantineTimestamp(date: Date = Date()) -> String {
+    private static func archiveTimestamp(date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -647,5 +692,12 @@ enum CodexChatStorageMigrationCoordinator {
 
             try fileManager.copyItem(at: entry, to: destination)
         }
+    }
+
+    private static func write(report: some Encodable, to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(report)
+        try data.write(to: url, options: .atomic)
     }
 }

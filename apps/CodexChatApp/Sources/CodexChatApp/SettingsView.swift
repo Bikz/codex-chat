@@ -1260,7 +1260,7 @@ struct SettingsView: View {
     private var storageCard: some View {
         SettingsSectionCard(
             title: "Storage",
-            subtitle: "Storage root and managed metadata location."
+            subtitle: "CodexChat-managed storage plus the active shared Codex and Agents homes."
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 SettingsFieldRow(label: "Root") {
@@ -1268,6 +1268,42 @@ struct SettingsView: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                }
+
+                SettingsFieldRow(label: "Active Codex Home") {
+                    Text(model.resolvedCodexHomes.activeCodexHomeURL.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                SettingsFieldRow(label: "Active Agents Home") {
+                    Text(model.resolvedCodexHomes.activeAgentsHomeURL.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                SettingsFieldRow(label: "Home Source") {
+                    Text(model.resolvedCodexHomes.source.displayLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                SettingsFieldRow(label: "Legacy Managed Codex Home") {
+                    Text(model.storagePaths.legacyManagedCodexHomeURL.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                if let handoffReportPath = model.lastSharedCodexHomeHandoffReportPath {
+                    SettingsFieldRow(label: "Handoff Report") {
+                        Text(handoffReportPath)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                 }
 
                 HStack(spacing: 10) {
@@ -1284,19 +1320,25 @@ struct SettingsView: View {
                     }
 
                     Button {
-                        model.repairCodexHome()
+                        model.revealActiveCodexHome()
                     } label: {
-                        Label("Repair Codex Home", systemImage: "wrench.and.screwdriver")
+                        Label("Reveal Active Codex Home", systemImage: "externaldrive.badge.person.crop")
                     }
-                    .disabled(model.isTurnInProgress || model.isStorageRepairInProgress)
+
+                    Button {
+                        model.archiveLegacyManagedHomes()
+                    } label: {
+                        Label("Archive Legacy Managed Homes", systemImage: "archivebox")
+                    }
+                    .disabled(model.isLegacyManagedHomesArchiveInProgress)
                 }
                 .buttonStyle(.bordered)
 
-                if model.lastCodexHomeQuarantinePath != nil {
+                if model.lastLegacyManagedHomesArchivePath != nil {
                     Button {
-                        model.revealLastCodexHomeQuarantine()
+                        model.revealLastLegacyManagedHomesArchive()
                     } label: {
-                        Label("Reveal Last Quarantine", systemImage: "archivebox")
+                        Label("Reveal Last Legacy Archive", systemImage: "archivebox")
                     }
                     .buttonStyle(.bordered)
                 }
@@ -1305,7 +1347,11 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("Codex Home repair quarantines stale runtime session/index cache and keeps config, auth, history, skills, and instructions intact.")
+                Text("CodexChat now uses the active shared Codex home directly. It does not repair, normalize, or delete runtime caches inside that shared home.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("Legacy managed homes under `~/CodexChat/global/` are migration sources only. Archive them after the shared-home handoff if you no longer need the old copies.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

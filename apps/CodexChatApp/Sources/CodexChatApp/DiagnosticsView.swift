@@ -5,6 +5,13 @@ import SwiftUI
 struct DiagnosticsView: View {
     let runtimeStatus: RuntimeStatus
     let runtimeHandshake: RuntimeHandshake?
+    let activeCodexHomePath: String
+    let activeAgentsHomePath: String
+    let activeCodexHomeSource: String
+    let legacyManagedCodexHomePath: String
+    let legacyManagedAgentsHomePath: String
+    let sharedCodexHomeHandoffReportPath: String?
+    let legacyManagedHomesArchivePath: String?
     let runtimePoolSnapshot: RuntimePoolSnapshot
     let adaptiveTurnConcurrencyLimit: Int
     let rollingTTFTP95MS: Double?
@@ -100,6 +107,37 @@ struct DiagnosticsView: View {
                             Text("Negotiated capabilities")
                             Text(capabilitiesSummary(handshake.negotiatedCapabilities))
                                 .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Active homes")
+                        Text("Codex: \(activeCodexHomePath)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Agents: \(activeAgentsHomePath)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Source: \(activeCodexHomeSource)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Legacy managed homes")
+                        Text("Codex: \(legacyManagedCodexHomePath)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Agents: \(legacyManagedAgentsHomePath)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let sharedCodexHomeHandoffReportPath, !sharedCodexHomeHandoffReportPath.isEmpty {
+                            Text("Handoff report: \(sharedCodexHomeHandoffReportPath)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let legacyManagedHomesArchivePath, !legacyManagedHomesArchivePath.isEmpty {
+                            Text("Legacy archive: \(legacyManagedHomesArchivePath)")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }

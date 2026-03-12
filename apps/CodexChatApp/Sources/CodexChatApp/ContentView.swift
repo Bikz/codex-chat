@@ -126,6 +126,13 @@ struct ContentView: View {
             DiagnosticsView(
                 runtimeStatus: model.runtimeStatus,
                 runtimeHandshake: model.runtimeHandshake,
+                activeCodexHomePath: model.resolvedCodexHomes.activeCodexHomeURL.path,
+                activeAgentsHomePath: model.resolvedCodexHomes.activeAgentsHomeURL.path,
+                activeCodexHomeSource: model.resolvedCodexHomes.source.displayLabel,
+                legacyManagedCodexHomePath: model.storagePaths.legacyManagedCodexHomeURL.path,
+                legacyManagedAgentsHomePath: model.storagePaths.legacyManagedAgentsHomeURL.path,
+                sharedCodexHomeHandoffReportPath: model.lastSharedCodexHomeHandoffReportPath,
+                legacyManagedHomesArchivePath: model.lastLegacyManagedHomesArchivePath,
                 runtimePoolSnapshot: model.runtimePoolSnapshot,
                 adaptiveTurnConcurrencyLimit: model.adaptiveTurnConcurrencyLimit,
                 rollingTTFTP95MS: model.rollingTTFTP95MS,

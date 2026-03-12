@@ -8,7 +8,8 @@ struct StorageRootMigrationResult {
 
 extension AppModel {
     func applyStartupStorageFixups() async throws {
-        await runCodexHomeNormalizationIfNeeded(force: false, reason: "startup")
+        await runSharedCodexHomeHandoffIfNeeded()
+        refreshSharedHomeStorageState()
 
         guard let projectRepository else {
             return
@@ -72,37 +73,41 @@ extension AppModel {
         NSWorkspace.shared.activateFileViewerSelecting([storagePaths.rootURL])
     }
 
-    func repairCodexHome() {
-        guard !isStorageRepairInProgress else {
-            return
-        }
-        guard !isTurnInProgress else {
-            storageStatusMessage = "Wait for the active turn to finish before running Codex Home repair."
+    func revealActiveCodexHome() {
+        NSWorkspace.shared.activateFileViewerSelecting([resolvedCodexHomes.activeCodexHomeURL])
+    }
+
+    func revealActiveAgentsHome() {
+        NSWorkspace.shared.activateFileViewerSelecting([resolvedCodexHomes.activeAgentsHomeURL])
+    }
+
+    func archiveLegacyManagedHomes() {
+        guard !isLegacyManagedHomesArchiveInProgress else {
             return
         }
 
         Task { [weak self] in
             guard let self else { return }
-            await runCodexHomeRepairFlow()
+            await runLegacyManagedHomesArchiveFlow()
         }
     }
 
-    func revealLastCodexHomeQuarantine() {
-        guard let report = try? CodexChatStorageMigrationCoordinator.readLastCodexHomeNormalizationReport(paths: storagePaths),
-              let quarantinePath = report.quarantinePath,
-              !quarantinePath.isEmpty
+    func revealLastLegacyManagedHomesArchive() {
+        guard let report = try? CodexChatStorageMigrationCoordinator.readLastLegacyManagedHomesArchiveReport(paths: storagePaths),
+              let archivePath = report.archiveRootPath,
+              !archivePath.isEmpty
         else {
-            storageStatusMessage = "No Codex Home quarantine location is currently available."
+            storageStatusMessage = "No legacy managed-home archive is currently available."
             return
         }
 
-        let quarantineURL = URL(fileURLWithPath: quarantinePath, isDirectory: true)
-        guard FileManager.default.fileExists(atPath: quarantineURL.path) else {
-            storageStatusMessage = "Last quarantine folder no longer exists on disk."
+        let archiveURL = URL(fileURLWithPath: archivePath, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: archiveURL.path) else {
+            storageStatusMessage = "Last legacy managed-home archive no longer exists on disk."
             return
         }
 
-        NSWorkspace.shared.activateFileViewerSelecting([quarantineURL])
+        NSWorkspace.shared.activateFileViewerSelecting([archiveURL])
     }
 
     private func applyStorageRootChange(to newRootURL: URL) async {
@@ -257,76 +262,86 @@ extension AppModel {
         NSApp.terminate(nil)
     }
 
-    private func runCodexHomeRepairFlow() async {
-        isStorageRepairInProgress = true
-        storageStatusMessage = "Repairing Codex Home runtime cache…"
-        defer {
-            isStorageRepairInProgress = false
-        }
-
-        if let runtimePool {
-            await runtimePool.stop()
-            runtimeStatus = .starting
-            appendLog(.info, "Stopped runtime for Codex Home repair.")
-        }
-
-        await runCodexHomeNormalizationIfNeeded(force: true, reason: "manual-repair")
-        await restartRuntimeSession()
-    }
-
-    private func runCodexHomeNormalizationIfNeeded(force: Bool, reason: String) async {
+    private func runSharedCodexHomeHandoffIfNeeded() async {
         do {
-            let result = try CodexChatStorageMigrationCoordinator.normalizeManagedCodexHome(
+            let result = try CodexChatStorageMigrationCoordinator.performSharedHomeHandoffIfNeeded(
                 paths: storagePaths,
-                force: force,
-                reason: reason
+                homes: resolvedCodexHomes
             )
-            applyCodexHomeNormalizationResult(result)
+            applySharedCodexHomeHandoffResult(result)
         } catch {
-            storageStatusMessage = "Codex Home repair warning: \(error.localizedDescription)"
-            appendLog(.warning, "Codex Home normalization failed (\(reason)): \(error.localizedDescription)")
-            refreshLastCodexHomeRepairLocation()
+            storageStatusMessage = "Shared Codex home handoff warning: \(error.localizedDescription)"
+            appendLog(.warning, "Shared Codex home handoff failed: \(error.localizedDescription)")
+            refreshSharedHomeStorageState()
         }
     }
 
-    private func applyCodexHomeNormalizationResult(_ result: CodexHomeNormalizationResult) {
+    private func applySharedCodexHomeHandoffResult(_ result: SharedCodexHomeHandoffResult) {
         if result.executed {
-            if result.hasChanges {
-                let quarantinePath = result.quarantineURL?.path ?? "unknown location"
-                storageStatusMessage = "Codex Home repaired: moved \(result.movedItemCount) runtime item(s) to \(quarantinePath)."
-                appendLog(.warning, "Codex Home normalization moved \(result.movedItemCount) runtime item(s) into quarantine at \(quarantinePath).")
+            if !result.copiedEntries.isEmpty {
+                storageStatusMessage = "Imported \(result.copiedEntries.count) legacy managed-home artifact(s) into the shared Codex homes."
+                appendLog(
+                    .info,
+                    "Shared Codex home handoff copied \(result.copiedEntries.count) artifact(s) into active shared homes."
+                )
             } else if result.failedEntries.isEmpty {
-                if result.forced {
-                    storageStatusMessage = "Codex Home repair complete. No stale runtime cache entries were found."
-                }
-                appendLog(.debug, "Codex Home normalization completed with no stale runtime cache entries.")
+                appendLog(.debug, "Shared Codex home handoff completed with no missing artifacts to import.")
             } else {
-                storageStatusMessage = "Codex Home repair completed with warnings. See logs for details."
+                storageStatusMessage = "Shared Codex home handoff completed with warnings. See logs for details."
             }
 
             if !result.failedEntries.isEmpty {
                 for failure in result.failedEntries {
-                    appendLog(.warning, "Codex Home normalization warning: \(failure)")
+                    appendLog(.warning, "Shared Codex home handoff warning: \(failure)")
                 }
             }
         }
 
-        refreshLastCodexHomeRepairLocation()
+        refreshSharedHomeStorageState()
     }
 
-    private func refreshLastCodexHomeRepairLocation() {
+    private func runLegacyManagedHomesArchiveFlow() async {
+        isLegacyManagedHomesArchiveInProgress = true
+        storageStatusMessage = "Archiving legacy managed CodexChat home copies…"
+        defer {
+            isLegacyManagedHomesArchiveInProgress = false
+        }
+
         do {
-            if let report = try CodexChatStorageMigrationCoordinator.readLastCodexHomeNormalizationReport(paths: storagePaths),
-               let quarantinePath = report.quarantinePath,
-               !quarantinePath.isEmpty
-            {
-                lastCodexHomeQuarantinePath = quarantinePath
+            let result = try CodexChatStorageMigrationCoordinator.archiveLegacyManagedHomes(paths: storagePaths)
+            if result.executed, let archiveRootURL = result.archiveRootURL {
+                storageStatusMessage = "Archived legacy managed homes to \(archiveRootURL.path)."
+                appendLog(.info, "Archived legacy managed homes to \(archiveRootURL.path)")
+            } else if result.failedEntries.isEmpty {
+                storageStatusMessage = "No legacy managed home copies were available to archive."
             } else {
-                lastCodexHomeQuarantinePath = nil
+                storageStatusMessage = "Legacy managed-home archive completed with warnings. See logs for details."
+            }
+
+            for failure in result.failedEntries {
+                appendLog(.warning, "Legacy managed-home archive warning: \(failure)")
             }
         } catch {
-            lastCodexHomeQuarantinePath = nil
-            appendLog(.warning, "Failed to load Codex Home repair report: \(error.localizedDescription)")
+            storageStatusMessage = "Legacy managed-home archive failed: \(error.localizedDescription)"
+            appendLog(.warning, "Legacy managed-home archive failed: \(error.localizedDescription)")
+        }
+
+        refreshSharedHomeStorageState()
+    }
+
+    private func refreshSharedHomeStorageState() {
+        do {
+            lastSharedCodexHomeHandoffReportPath =
+                try CodexChatStorageMigrationCoordinator.readLastSharedCodexHomeHandoffReport(paths: storagePaths) == nil ?
+                nil :
+                storagePaths.sharedCodexHomeHandoffReportURL.path
+            lastLegacyManagedHomesArchivePath =
+                try CodexChatStorageMigrationCoordinator.readLastLegacyManagedHomesArchiveReport(paths: storagePaths)?
+                    .archiveRootPath
+        } catch {
+            lastSharedCodexHomeHandoffReportPath = nil
+            lastLegacyManagedHomesArchivePath = nil
+            appendLog(.warning, "Failed to load shared-home storage report: \(error.localizedDescription)")
         }
     }
 

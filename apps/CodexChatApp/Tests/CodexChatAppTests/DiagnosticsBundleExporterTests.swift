@@ -45,6 +45,13 @@ final class DiagnosticsBundleExporterTests: XCTestCase {
             runtimeStatus: .connected,
             runtimeIssue: nil,
             runtimeHandshake: handshake,
+            activeCodexHomePath: "/Users/test/.codex",
+            activeAgentsHomePath: "/Users/test/.agents",
+            activeCodexHomeSource: "environmentOverride",
+            legacyManagedCodexHomePath: "/Users/test/CodexChat/global/codex-home",
+            legacyManagedAgentsHomePath: "/Users/test/CodexChat/global/agents-home",
+            sharedCodexHomeHandoffReportPath: "/Users/test/CodexChat/system/shared-codex-home-handoff-report.json",
+            legacyManagedHomesArchivePath: "/Users/test/CodexChat/system/legacy-managed-homes-archive/20260311-100000",
             accountSummary: "Signed in",
             approvalStatusMessage: "Approval sent",
             serverRequestStatusMessage: "Runtime request answered",
@@ -93,6 +100,8 @@ final class DiagnosticsBundleExporterTests: XCTestCase {
         XCTAssertEqual(decoded.runtimeHandshake?.compatibility.supportLevel, .validated)
         XCTAssertEqual(decoded.runtimeHandshake?.negotiatedCapabilities.supportsServerRequestResolution, true)
         XCTAssertEqual(decoded.runtimeHandshake?.sentCapabilities.optOutNotificationMethods, ["experimental/ignored"])
+        XCTAssertEqual(decoded.activeCodexHomePath, "/Users/test/.codex")
+        XCTAssertEqual(decoded.legacyManagedHomesArchivePath, "/Users/test/CodexChat/system/legacy-managed-homes-archive/20260311-100000")
         XCTAssertEqual(decoded.pendingRuntimeRequests.first?.permissions, ["project.write"])
         XCTAssertEqual(decoded.runtimeRequestSupportEvents.first?.phase, .requested)
     }

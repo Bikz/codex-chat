@@ -351,7 +351,7 @@ extension AppModel {
         clearActiveTurnState()
         resetRuntimeThreadCaches()
         runtimeRepairSuggestedThreadIDs.removeAll()
-        try await refreshAccountState(refreshToken: true)
+        try await refreshAccountState(refreshToken: false)
         try await restorePersistedAPIKeyIfNeeded()
         await refreshRuntimeModelCatalog()
         refreshConversationState()

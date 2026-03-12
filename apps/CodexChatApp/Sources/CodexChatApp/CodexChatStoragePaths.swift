@@ -3,8 +3,9 @@ import Foundation
 struct CodexChatStoragePaths: Hashable, Sendable {
     static let rootPreferenceKey = "codexchat.storage.root.path"
     static let migrationMarkerFileName = ".storage-migration-v1"
-    static let codexHomeNormalizationMarkerFileName = ".codex-home-normalization-v1"
-    static let codexHomeLastRepairReportFileName = "codex-home-last-repair-report.json"
+    static let sharedCodexHomeHandoffMarkerFileName = ".shared-codex-home-handoff-v1"
+    static let sharedCodexHomeHandoffReportFileName = "shared-codex-home-handoff-report.json"
+    static let legacyManagedHomesLastArchiveReportFileName = "legacy-managed-homes-last-archive-report.json"
 
     let rootURL: URL
 
@@ -28,20 +29,20 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         globalURL.appendingPathComponent("mods", isDirectory: true)
     }
 
-    var codexHomeURL: URL {
+    var legacyManagedCodexHomeURL: URL {
         globalURL.appendingPathComponent("codex-home", isDirectory: true)
     }
 
-    var codexConfigURL: URL {
-        codexHomeURL.appendingPathComponent("config.toml", isDirectory: false)
+    var legacyManagedCodexConfigURL: URL {
+        legacyManagedCodexHomeURL.appendingPathComponent("config.toml", isDirectory: false)
     }
 
-    var agentsHomeURL: URL {
+    var legacyManagedAgentsHomeURL: URL {
         globalURL.appendingPathComponent("agents-home", isDirectory: true)
     }
 
-    var sharedSkillsStoreURL: URL {
-        agentsHomeURL.appendingPathComponent("skills-store", isDirectory: true)
+    var legacyManagedSharedSkillsStoreURL: URL {
+        legacyManagedAgentsHomeURL.appendingPathComponent("skills-store", isDirectory: true)
     }
 
     var systemURL: URL {
@@ -60,16 +61,20 @@ struct CodexChatStoragePaths: Hashable, Sendable {
         systemURL.appendingPathComponent(Self.migrationMarkerFileName, isDirectory: false)
     }
 
-    var codexHomeQuarantineRootURL: URL {
-        systemURL.appendingPathComponent("codex-home-quarantine", isDirectory: true)
+    var legacyManagedHomesArchiveRootURL: URL {
+        systemURL.appendingPathComponent("legacy-managed-homes-archive", isDirectory: true)
     }
 
-    var codexHomeNormalizationMarkerURL: URL {
-        systemURL.appendingPathComponent(Self.codexHomeNormalizationMarkerFileName, isDirectory: false)
+    var sharedCodexHomeHandoffMarkerURL: URL {
+        systemURL.appendingPathComponent(Self.sharedCodexHomeHandoffMarkerFileName, isDirectory: false)
     }
 
-    var codexHomeLastRepairReportURL: URL {
-        systemURL.appendingPathComponent(Self.codexHomeLastRepairReportFileName, isDirectory: false)
+    var sharedCodexHomeHandoffReportURL: URL {
+        systemURL.appendingPathComponent(Self.sharedCodexHomeHandoffReportFileName, isDirectory: false)
+    }
+
+    var legacyManagedHomesLastArchiveReportURL: URL {
+        systemURL.appendingPathComponent(Self.legacyManagedHomesLastArchiveReportFileName, isDirectory: false)
     }
 
     static func current(
@@ -107,13 +112,11 @@ struct CodexChatStoragePaths: Hashable, Sendable {
     func ensureRootStructure(fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: projectsURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: globalURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: globalModsURL, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: codexHomeURL, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: agentsHomeURL, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: sharedSkillsStoreURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: systemURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: modSnapshotsURL, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: codexHomeQuarantineRootURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: legacyManagedHomesArchiveRootURL, withIntermediateDirectories: true)
     }
 
     func uniqueProjectDirectoryURL(

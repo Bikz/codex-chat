@@ -1070,8 +1070,8 @@ extension AppModel {
                 ActionCard(
                     threadID: threadID,
                     method: "runtime/repair-suggested",
-                    title: "Repair Codex Home",
-                    detail: "Runtime reported missing rollout path metadata. Open Settings > Storage and run Repair Codex Home."
+                    title: "Inspect Shared Codex Home",
+                    detail: "Runtime reported missing rollout path metadata. Open Settings > Storage to inspect the active shared Codex home path."
                 )
             ),
             to: threadID

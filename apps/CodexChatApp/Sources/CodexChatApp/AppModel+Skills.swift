@@ -304,7 +304,7 @@ extension AppModel {
             return
         }
 
-        let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
+        let linkManager = SkillLinkManager(sharedStoreRootURL: resolvedCodexHomes.activeGlobalSkillsURL)
         let projectRootURL = URL(fileURLWithPath: project.path, isDirectory: true)
         for record in allProjectRecords {
             let sharedSkillURL = URL(fileURLWithPath: record.sharedPath, isDirectory: true)
@@ -352,7 +352,7 @@ extension AppModel {
             }
 
             let enablementSnapshot = try await legacySkillEnablementSnapshot(projects: allProjects)
-            let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
+            let linkManager = SkillLinkManager(sharedStoreRootURL: resolvedCodexHomes.activeGlobalSkillsURL)
             let fileManager = FileManager.default
             var migratedCount = 0
             var hadCandidateFailures = false
@@ -484,7 +484,7 @@ extension AppModel {
 
                 let isSharedStoreSkill = CodexChatStoragePaths.isPath(
                     resolvedPath,
-                    insideRoot: storagePaths.sharedSkillsStoreURL.path
+                    insideRoot: resolvedCodexHomes.activeGlobalSkillsURL.path
                 )
                 if skill.scope == .global, !isSharedStoreSkill {
                     candidate.discoveredGlobally = true
@@ -545,7 +545,7 @@ extension AppModel {
         projects: [ProjectRecord]
     ) throws -> URL {
         let fileManager = FileManager.default
-        let sharedStoreRootURL = storagePaths.sharedSkillsStoreURL.standardizedFileURL
+        let sharedStoreRootURL = resolvedCodexHomes.activeGlobalSkillsURL.standardizedFileURL
         try fileManager.createDirectory(at: sharedStoreRootURL, withIntermediateDirectories: true)
 
         let legacySkillURL = URL(fileURLWithPath: candidate.resolvedPath, isDirectory: true).standardizedFileURL
@@ -591,9 +591,9 @@ extension AppModel {
 
     private func legacyManagedSkillRoots(projects: [ProjectRecord]) -> [String] {
         var roots = [
-            storagePaths.sharedSkillsStoreURL.path,
-            storagePaths.codexHomeURL.appendingPathComponent("skills", isDirectory: true).path,
-            storagePaths.agentsHomeURL.appendingPathComponent("skills", isDirectory: true).path,
+            storagePaths.legacyManagedSharedSkillsStoreURL.path,
+            storagePaths.legacyManagedCodexHomeURL.appendingPathComponent("skills", isDirectory: true).path,
+            storagePaths.legacyManagedAgentsHomeURL.appendingPathComponent("skills", isDirectory: true).path,
         ]
 
         for project in projects {
@@ -621,7 +621,7 @@ extension AppModel {
     }
 
     private func isStrictlyInsideSharedSkillsStore(_ path: String) -> Bool {
-        let normalizedRoot = storagePaths.sharedSkillsStoreURL
+        let normalizedRoot = resolvedCodexHomes.activeGlobalSkillsURL
             .resolvingSymlinksInPath()
             .standardizedFileURL
             .path
@@ -720,7 +720,7 @@ extension AppModel {
             targetProjects = resolvedProjects
         }
 
-        let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
+        let linkManager = SkillLinkManager(sharedStoreRootURL: resolvedCodexHomes.activeGlobalSkillsURL)
         for project in targetProjects {
             _ = try linkManager.ensureProjectSkillLink(
                 folderName: folderName,
@@ -776,7 +776,7 @@ extension AppModel {
         let sharedSkillURL = URL(fileURLWithPath: record.sharedPath, isDirectory: true)
         let folderName = sharedSkillURL.lastPathComponent
         let allProjects = try await projectRepository?.listProjects() ?? projects
-        let linkManager = SkillLinkManager(sharedStoreRootURL: storagePaths.sharedSkillsStoreURL)
+        let linkManager = SkillLinkManager(sharedStoreRootURL: resolvedCodexHomes.activeGlobalSkillsURL)
 
         if let limitToProjectID {
             let project = allProjects.first(where: { $0.id == limitToProjectID })

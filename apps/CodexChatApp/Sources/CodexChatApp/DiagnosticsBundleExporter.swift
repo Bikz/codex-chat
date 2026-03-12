@@ -22,6 +22,13 @@ struct DiagnosticsBundleSnapshot: Codable {
     let runtimeStatus: RuntimeStatus
     let runtimeIssue: String?
     let runtimeHandshake: RuntimeHandshake?
+    let activeCodexHomePath: String
+    let activeAgentsHomePath: String
+    let activeCodexHomeSource: String
+    let legacyManagedCodexHomePath: String
+    let legacyManagedAgentsHomePath: String
+    let sharedCodexHomeHandoffReportPath: String?
+    let legacyManagedHomesArchivePath: String?
     let accountSummary: String
     let approvalStatusMessage: String?
     let serverRequestStatusMessage: String?
@@ -54,6 +61,13 @@ enum DiagnosticsBundleExporter {
             runtimeStatus: snapshot.runtimeStatus,
             runtimeIssue: snapshot.runtimeIssue,
             runtimeHandshake: snapshot.runtimeHandshake,
+            activeCodexHomePath: snapshot.activeCodexHomePath,
+            activeAgentsHomePath: snapshot.activeAgentsHomePath,
+            activeCodexHomeSource: snapshot.activeCodexHomeSource,
+            legacyManagedCodexHomePath: snapshot.legacyManagedCodexHomePath,
+            legacyManagedAgentsHomePath: snapshot.legacyManagedAgentsHomePath,
+            sharedCodexHomeHandoffReportPath: snapshot.sharedCodexHomeHandoffReportPath,
+            legacyManagedHomesArchivePath: snapshot.legacyManagedHomesArchivePath,
             accountSummary: snapshot.accountSummary,
             approvalStatusMessage: snapshot.approvalStatusMessage.map(redactSensitiveText(in:)),
             serverRequestStatusMessage: snapshot.serverRequestStatusMessage.map(redactSensitiveText(in:)),

@@ -1076,8 +1076,9 @@ final class AppModel: ObservableObject {
     @Published var voiceCaptureState: VoiceCaptureState = .idle
     @Published var voiceCaptureElapsedText: String?
     @Published var storageRootPath: String
-    @Published var isStorageRepairInProgress = false
-    @Published var lastCodexHomeQuarantinePath: String?
+    @Published var isLegacyManagedHomesArchiveInProgress = false
+    @Published var lastSharedCodexHomeHandoffReportPath: String?
+    @Published var lastLegacyManagedHomesArchivePath: String?
     @Published var isAccountOperationInProgress = false
     @Published var isApprovalDecisionInProgress = false
     @Published var isSkillOperationInProgress = false
@@ -1183,6 +1184,7 @@ final class AppModel: ObservableObject {
     let keychainStore: APIKeychainStore
     let remoteControlSessionCredentialStore: any RemoteControlSessionCredentialStoring
     let storagePaths: CodexChatStoragePaths
+    let resolvedCodexHomes: ResolvedCodexHomes
     let voiceCaptureService: any VoiceCaptureService
     let codexConfigFileStore: CodexConfigFileStore
     let codexConfigSchemaLoader: CodexConfigSchemaLoader
@@ -1330,6 +1332,7 @@ final class AppModel: ObservableObject {
         modCatalogProvider: any ModCatalogProvider = EmptyModCatalogProvider(),
         voiceCaptureService: (any VoiceCaptureService)? = nil,
         storagePaths: CodexChatStoragePaths = .current(),
+        resolvedCodexHomes: ResolvedCodexHomes? = nil,
         harnessEnvironment: ComputerActionHarnessEnvironment? = nil,
         remoteControlBroker: RemoteControlBroker? = nil,
         remoteControlSessionCredentialStore: (any RemoteControlSessionCredentialStoring)? = nil
@@ -1359,6 +1362,7 @@ final class AppModel: ObservableObject {
         self.modDiscoveryService = modDiscoveryService
         self.modCatalogProvider = modCatalogProvider
         self.storagePaths = storagePaths
+        self.resolvedCodexHomes = resolvedCodexHomes ?? ResolvedCodexHomes.current(storagePaths: storagePaths)
         computerActionHarnessEnvironment = harnessEnvironment
         self.voiceCaptureService = voiceCaptureService ?? AppleSpeechVoiceCaptureService()
         storageRootPath = storagePaths.rootURL.path
@@ -1366,7 +1370,7 @@ final class AppModel: ObservableObject {
         self.remoteControlSessionCredentialStore =
             remoteControlSessionCredentialStore ?? RemoteControlSessionCredentialStore(secrets: keychainStore)
         isNodeSkillInstallerAvailable = skillCatalogService.isNodeInstallerAvailable()
-        codexConfigFileStore = CodexConfigFileStore(fileURL: storagePaths.codexConfigURL)
+        codexConfigFileStore = CodexConfigFileStore(fileURL: self.resolvedCodexHomes.activeCodexConfigURL)
         let bundledSchemaURL = Bundle.module.url(forResource: "codex-config-schema", withExtension: "json")
             ?? Bundle.module.url(
                 forResource: "codex-config-schema",
