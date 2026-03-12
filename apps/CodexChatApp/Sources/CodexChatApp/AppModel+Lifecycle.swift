@@ -58,6 +58,11 @@ extension AppModel {
             return
         }
 
+        await attemptAutomaticSharedAuthRuntimeRecoveryIfNeeded()
+        guard isCurrentStartupGeneration(startupGeneration) else {
+            return
+        }
+
         if isOnboardingReadyToComplete {
             completeOnboardingIfReady()
         } else {

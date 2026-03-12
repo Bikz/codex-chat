@@ -308,6 +308,33 @@ extension AppModel {
         }
     }
 
+    func shouldAttemptAutomaticSharedAuthRuntimeRecovery() -> Bool {
+        guard hasDetectedSharedAuthCredential,
+              !didAttemptSharedAuthRuntimeRecovery,
+              runtimePool != nil,
+              runtimeStatus == .error,
+              runtimeIssue != nil
+        else {
+            return false
+        }
+
+        if case .installCodex? = runtimeIssue {
+            return false
+        }
+
+        return true
+    }
+
+    func attemptAutomaticSharedAuthRuntimeRecoveryIfNeeded() async {
+        guard shouldAttemptAutomaticSharedAuthRuntimeRecovery() else {
+            return
+        }
+
+        didAttemptSharedAuthRuntimeRecovery = true
+        appendLog(.info, "Attempting automatic runtime recovery because shared auth was detected")
+        await restartRuntimeSession()
+    }
+
     private func startRuntimeEventLoopIfNeeded() async {
         guard runtimeEventTask == nil,
               let runtimePool

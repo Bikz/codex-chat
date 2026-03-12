@@ -21,11 +21,22 @@ extension AppModel {
         """
     }
 
+    var shouldOfferManualChatGPTSignIn: Bool {
+        !hasDetectedSharedAuthCredential
+    }
+
     var isSignedInWithChatGPT: Bool {
         isChatGPTSignedIn(accountState)
     }
 
     func signInWithChatGPT() {
+        if hasDetectedSharedAuthCredential {
+            Task {
+                await recoverSharedAuthSessionIfNeeded(trigger: "manual sign-in button")
+            }
+            return
+        }
+
         if case .installCodex? = runtimeIssue {
             accountStatusMessage = "Install Codex and restart runtime to complete ChatGPT sign-in."
             return
@@ -255,7 +266,50 @@ extension AppModel {
         return account.type.caseInsensitiveCompare("chatgpt") == .orderedSame
     }
 
-    private var hasDetectedSharedAuthCredential: Bool {
+    func shouldAttemptAutomaticSharedAuthRefresh(
+        after state: RuntimeAccountState,
+        refreshToken: Bool
+    ) -> Bool {
+        !refreshToken
+            && !hasAttemptedAutomaticSharedAuthRefresh
+            && hasDetectedSharedAuthCredential
+            && state.account == nil
+            && state.requiresOpenAIAuth
+            && runtimeStatus == .connected
+            && runtimeIssue == nil
+    }
+
+    func recoverSharedAuthSessionIfNeeded(trigger: String) async {
+        guard let runtimePool else {
+            return
+        }
+
+        guard hasDetectedSharedAuthCredential else {
+            return
+        }
+
+        guard !isSignedInForRuntime else {
+            return
+        }
+
+        hasAttemptedAutomaticSharedAuthRefresh = true
+        appendLog(.info, "Attempting shared auth recovery (\(trigger))")
+
+        do {
+            accountState = try await runtimePool.readAccount(refreshToken: true)
+            await refreshRuntimeHistoryImportAvailabilityIfNeeded()
+            completeOnboardingIfReady()
+
+            if isSignedInForRuntime {
+                accountStatusMessage = "Using your existing Codex login."
+                appendLog(.info, "Recovered shared auth session")
+            }
+        } catch {
+            appendLog(.warning, "Shared auth recovery failed: \(error.localizedDescription)")
+        }
+    }
+
+    var hasDetectedSharedAuthCredential: Bool {
         let authURL = resolvedCodexHomes.activeCodexHomeURL
             .appendingPathComponent("auth.json", isDirectory: false)
         guard let data = try? Data(contentsOf: authURL), !data.isEmpty else {

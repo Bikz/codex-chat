@@ -7,6 +7,8 @@ extension AppModel {
         onboardingMode = .active
         runtimeHistoryImportCandidates = []
         runtimeHistoryImportState = .idle
+        hasAttemptedAutomaticSharedAuthRefresh = false
+        didAttemptSharedAuthRuntimeRecovery = false
         detailDestination = .none
 
         if reason == .signedOut {

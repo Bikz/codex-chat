@@ -78,15 +78,17 @@ struct OnboardingView: View {
                 }
 
                 HStack {
-                    Button("Sign in with ChatGPT") {
-                        model.signInWithChatGPT()
+                    if model.shouldOfferManualChatGPTSignIn {
+                        Button("Sign in with ChatGPT") {
+                            model.signInWithChatGPT()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.white)
+                        .foregroundStyle(.black)
+                        .disabled(model.isAccountOperationInProgress)
+                        .accessibilityHint("Opens your browser to sign in with ChatGPT")
+                        .controlSize(.large)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.white)
-                    .foregroundStyle(.black)
-                    .disabled(model.isAccountOperationInProgress)
-                    .accessibilityHint("Opens your browser to sign in with ChatGPT")
-                    .controlSize(.large)
 
                     Button("Use API Key…") {
                         model.presentAPIKeyPrompt()

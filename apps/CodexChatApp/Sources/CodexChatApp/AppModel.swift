@@ -1255,6 +1255,8 @@ final class AppModel: ObservableObject {
     var runtimeAutoRecoveryTask: Task<Void, Never>?
     var onboardingCompletionTask: Task<Void, Never>?
     var runtimeHistoryImportCandidates: [RuntimeHistoryThreadSummary] = []
+    var hasAttemptedAutomaticSharedAuthRefresh = false
+    var didAttemptSharedAuthRuntimeRecovery = false
     var chatGPTLoginPollingTask: Task<Void, Never>?
     var pendingChatGPTLoginID: String?
     var searchTask: Task<Void, Never>?
@@ -2012,6 +2014,9 @@ final class AppModel: ObservableObject {
         }
 
         accountState = try await runtimePool.readAccount(refreshToken: refreshToken)
+        if shouldAttemptAutomaticSharedAuthRefresh(after: accountState, refreshToken: refreshToken) {
+            await recoverSharedAuthSessionIfNeeded(trigger: "startup account refresh")
+        }
         await refreshRuntimeHistoryImportAvailabilityIfNeeded()
         completeOnboardingIfReady()
     }
