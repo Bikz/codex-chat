@@ -329,7 +329,7 @@ extension AppModel {
         refreshSharedHomeStorageState()
     }
 
-    private func refreshSharedHomeStorageState() {
+    func refreshSharedHomeStorageState() {
         do {
             lastSharedCodexHomeHandoffReportPath =
                 try CodexChatStorageMigrationCoordinator.readLastSharedCodexHomeHandoffReport(paths: storagePaths) == nil ?

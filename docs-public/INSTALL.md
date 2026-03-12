@@ -88,7 +88,9 @@ CodexChat does not normalize, quarantine, or delete the live shared `~/.codex` r
 - the active shared Codex and agents home paths
 - whether the active Codex home came from `CODEX_HOME` or the default user home
 - the latest handoff report path
-- actions to reveal the active shared home or archive the old legacy managed copies
+- the latest legacy archive path after automatic cleanup runs
+
+After shared-home handoff succeeds and no install records still point into the old managed skill roots, CodexChat automatically archives the old managed `global/codex-home` and `global/agents-home` copies under `<storage-root>/system/legacy-managed-homes-archive/`.
 
 If you previously authenticated through another Codex client, CodexChat should pick up that login automatically from the active shared home.
 

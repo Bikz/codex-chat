@@ -205,6 +205,10 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
                 projectIDs: [project.id]
             )
         )
+        _ = try CodexChatStorageMigrationCoordinator.performSharedHomeHandoffIfNeeded(
+            paths: paths,
+            homes: resolvedCodexHomes
+        )
 
         let catalogService = SkillCatalogService(
             codexHomeURL: resolvedCodexHomes.activeCodexHomeURL,
@@ -239,6 +243,13 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: migratedProjectLinkPath))
         let migratedLinkDestination = try FileManager.default.destinationOfSymbolicLink(atPath: migratedProjectLinkPath)
         XCTAssertEqual(migratedLinkDestination, install.sharedPath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.legacyManagedAgentsHomeURL.path))
+
+        let archiveReport = try XCTUnwrap(
+            CodexChatStorageMigrationCoordinator.readLastLegacyManagedHomesArchiveReport(paths: paths)
+        )
+        XCTAssertNotNil(archiveReport.archiveRootPath)
+        XCTAssertEqual(archiveReport.archivedEntries, ["agents-home"])
     }
 
     func testRefreshSkillsKeepsMigrationMarkerUnsetWhenCandidateMigrationFails() async throws {

@@ -2147,6 +2147,7 @@ final class AppModel: ObservableObject {
         skillsState = .loading
         await migrateExistingSkillInstallRecordsIfNeeded()
         await migrateLegacySkillInstallsIfNeeded()
+        await pruneLegacyManagedHomesIfPossible()
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
         var discoveredByResolvedPath: [String: DiscoveredSkill] = [:]

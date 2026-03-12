@@ -524,6 +524,59 @@ extension AppModel {
         }
     }
 
+    func pruneLegacyManagedHomesIfPossible() async {
+        let fileManager = FileManager.default
+        let legacyRoots = [
+            storagePaths.legacyManagedCodexHomeURL,
+            storagePaths.legacyManagedAgentsHomeURL,
+        ]
+        guard legacyRoots.contains(where: { fileManager.fileExists(atPath: $0.path) }) else {
+            return
+        }
+
+        do {
+            guard let handoffReport = try CodexChatStorageMigrationCoordinator.readLastSharedCodexHomeHandoffReport(
+                paths: storagePaths,
+                fileManager: fileManager
+            ),
+                handoffReport.failedEntries.isEmpty,
+                handoffReport.source == resolvedCodexHomes.source.rawValue,
+                handoffReport.activeCodexHomePath == resolvedCodexHomes.activeCodexHomeURL.path,
+                handoffReport.activeAgentsHomePath == resolvedCodexHomes.activeAgentsHomeURL.path
+            else {
+                return
+            }
+
+            let allProjects = try await projectRepository?.listProjects() ?? projects
+            let existingRecords = try await skillInstallRegistryRepository?.list() ?? []
+            let hasLegacySkillReferences = existingRecords.contains { record in
+                isLegacyManagedSkillPath(resolvedSkillPath(record.sharedPath), projects: allProjects)
+            }
+            guard !hasLegacySkillReferences else {
+                return
+            }
+
+            let archiveResult = try CodexChatStorageMigrationCoordinator.archiveLegacyManagedHomes(
+                paths: storagePaths,
+                fileManager: fileManager
+            )
+            guard archiveResult.executed else {
+                return
+            }
+
+            refreshSharedHomeStorageState()
+            storageStatusMessage = "Archived legacy managed homes after shared-home migration."
+            if archiveResult.archivedEntries.isEmpty {
+                appendLog(.info, "Archived legacy managed homes after shared-home migration.")
+            } else {
+                let archivedList = archiveResult.archivedEntries.joined(separator: ", ")
+                appendLog(.info, "Archived legacy managed homes after shared-home migration: \(archivedList)")
+            }
+        } catch {
+            appendLog(.warning, "Automatic legacy managed-home cleanup skipped: \(error.localizedDescription)")
+        }
+    }
+
     private struct LegacySkillCandidate {
         var skill: DiscoveredSkill
         var resolvedPath: String

@@ -1347,13 +1347,19 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("CodexChat now uses the active shared Codex home directly. It does not repair, normalize, or delete runtime caches inside that shared home.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "CodexChat now uses the active shared Codex home directly. It does not repair, normalize, or delete runtime caches inside that shared home."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-                Text("Legacy managed homes under `~/CodexChat/global/` are migration sources only. Archive them after the shared-home handoff if you no longer need the old copies.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Legacy managed homes under `~/CodexChat/global/` are migration sources only. "
+                        + "CodexChat now archives them automatically once handoff succeeds and nothing "
+                        + "still references the old managed roots."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
                 if let storageStatusMessage = model.storageStatusMessage {
                     Text(storageStatusMessage)
