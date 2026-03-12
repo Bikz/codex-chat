@@ -1,3 +1,4 @@
+import AppKit
 import CodexChatUI
 import SwiftUI
 
@@ -23,10 +24,15 @@ struct OnboardingView: View {
 
     private var header: some View {
         VStack(spacing: 12) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(Color(hex: tokens.palette.accentHex))
-                .symbolRenderingMode(.hierarchical)
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08))
+                )
 
             Text("Welcome to CodexChat")
                 .font(.system(size: 30, weight: .bold))
@@ -42,7 +48,7 @@ struct OnboardingView: View {
     private var accountCard: some View {
         SetupCard(
             title: "Account",
-            subtitle: model.isSignedInForRuntime ? model.accountSummaryText : "Sign in to use Codex runtime"
+            subtitle: model.isSignedInForRuntime ? model.accountSummaryText : (model.sharedAuthDetectionHint ?? "Sign in to use Codex runtime")
         ) {
             if model.isSignedInForRuntime {
                 HStack {
@@ -57,12 +63,24 @@ struct OnboardingView: View {
                     .accessibilityHint("Signs out of the current account")
                 }
             } else {
+                if let sharedAuthDetectionHint = model.sharedAuthDetectionHint {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .foregroundStyle(.primary)
+                            .padding(.top, 2)
+                        Text(sharedAuthDetectionHint)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 HStack {
                     Button("Sign in with ChatGPT") {
                         model.signInWithChatGPT()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color(hex: tokens.palette.accentHex))
+                    .tint(.white)
+                    .foregroundStyle(.black)
                     .disabled(model.isAccountOperationInProgress)
                     .accessibilityHint("Opens your browser to sign in with ChatGPT")
                     .controlSize(.large)
@@ -123,7 +141,8 @@ struct OnboardingView: View {
                         model.installCodexWithHomebrew()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color(hex: tokens.palette.accentHex))
+                    .tint(.white)
+                    .foregroundStyle(.black)
 
                     Button("Copy Command") {
                         model.copyCodexInstallCommand()
@@ -156,7 +175,8 @@ struct OnboardingView: View {
                         model.restartRuntime()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color(hex: tokens.palette.accentHex))
+                    .tint(.white)
+                    .foregroundStyle(.black)
                     Spacer()
                 }
             } else if model.runtimeStatus == .connected, model.runtimeIssue == nil {
@@ -211,7 +231,7 @@ private struct SetupSuccessRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(.primary)
                 .accessibilityLabel("Ready")
             Text(text)
                 .font(.callout)

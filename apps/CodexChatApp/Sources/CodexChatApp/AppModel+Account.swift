@@ -7,6 +7,20 @@ extension AppModel {
         prepareForTeardown()
     }
 
+    var sharedAuthDetectionHint: String? {
+        guard accountState.account == nil,
+              accountState.requiresOpenAIAuth,
+              runtimeStatus != .connected || runtimeIssue != nil,
+              hasDetectedSharedAuthCredential
+        else {
+            return nil
+        }
+
+        return """
+        Detected shared Codex login in \(resolvedCodexHomes.activeCodexHomeURL.path). Once the runtime reconnects, CodexChat should use it automatically.
+        """
+    }
+
     var isSignedInWithChatGPT: Bool {
         isChatGPTSignedIn(accountState)
     }
@@ -239,5 +253,52 @@ extension AppModel {
         }
 
         return account.type.caseInsensitiveCompare("chatgpt") == .orderedSame
+    }
+
+    private var hasDetectedSharedAuthCredential: Bool {
+        let authURL = resolvedCodexHomes.activeCodexHomeURL
+            .appendingPathComponent("auth.json", isDirectory: false)
+        guard let data = try? Data(contentsOf: authURL), !data.isEmpty else {
+            return false
+        }
+
+        if let jsonObject = try? JSONSerialization.jsonObject(with: data),
+           sharedAuthCredentialExists(in: jsonObject)
+        {
+            return true
+        }
+
+        guard let fallbackText = String(data: data, encoding: .utf8)?.lowercased() else {
+            return false
+        }
+
+        return fallbackText.contains("refresh_token")
+            || fallbackText.contains("access_token")
+            || fallbackText.contains("bearer_token")
+            || fallbackText.contains("api_key")
+    }
+
+    private func sharedAuthCredentialExists(in value: Any) -> Bool {
+        switch value {
+        case let dictionary as [String: Any]:
+            for (key, nestedValue) in dictionary {
+                let normalizedKey = key.lowercased()
+                if normalizedKey.contains("token") || normalizedKey.contains("key"),
+                   let stringValue = nestedValue as? String,
+                   !stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    return true
+                }
+
+                if sharedAuthCredentialExists(in: nestedValue) {
+                    return true
+                }
+            }
+            return false
+        case let array as [Any]:
+            return array.contains { sharedAuthCredentialExists(in: $0) }
+        default:
+            return false
+        }
     }
 }

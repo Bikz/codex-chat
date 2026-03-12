@@ -161,6 +161,86 @@ final class SkillInstallRegistryIntegrationTests: XCTestCase {
         XCTAssertEqual(migrationMarker, "1")
     }
 
+    func testRefreshSkillsMigratesExistingLegacyRegistryRecordIntoActiveSharedStore() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexchat-skill-record-migration-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = CodexChatStoragePaths(rootURL: root)
+        try paths.ensureRootStructure()
+        let resolvedCodexHomes = makeTestResolvedCodexHomes(root: root, storagePaths: paths)
+
+        let projectPath = root.appendingPathComponent("project-record-migration", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
+
+        let legacySharedSkillURL = paths.legacyManagedSharedSkillsStoreURL
+            .appendingPathComponent("legacy-web-guidelines", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacySharedSkillURL, withIntermediateDirectories: true)
+        try """
+        # Legacy Web Guidelines
+
+        Migrated from the old shared store.
+        """.write(
+            to: legacySharedSkillURL.appendingPathComponent("SKILL.md", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let database = try MetadataDatabase(databaseURL: paths.metadataDatabaseURL)
+        let repositories = MetadataRepositories(database: database)
+        let project = try await repositories.projectRepository.createProject(
+            named: "Record Migration",
+            path: projectPath.path,
+            trustState: .trusted,
+            isGeneralProject: false
+        )
+        try await repositories.preferenceRepository.setPreference(key: .skillsInstallMigrationV1, value: "1")
+        _ = try await repositories.skillInstallRegistryRepository.upsert(
+            SkillInstallRecord(
+                skillID: "legacy-record",
+                source: "https://github.com/openai/web-design-guidelines.git",
+                installer: .git,
+                sharedPath: legacySharedSkillURL.path,
+                mode: .selected,
+                projectIDs: [project.id]
+            )
+        )
+
+        let catalogService = SkillCatalogService(
+            codexHomeURL: resolvedCodexHomes.activeCodexHomeURL,
+            agentsHomeURL: resolvedCodexHomes.activeAgentsHomeURL,
+            sharedSkillsStoreURL: resolvedCodexHomes.activeGlobalSkillsURL
+        )
+        let model = AppModel(
+            repositories: repositories,
+            runtime: nil,
+            bootError: nil,
+            skillCatalogService: catalogService,
+            storagePaths: paths,
+            resolvedCodexHomes: resolvedCodexHomes
+        )
+        model.projectsState = .loaded([project])
+        model.selectedProjectID = project.id
+
+        try await model.refreshSkills()
+
+        let installs = try await repositories.skillInstallRegistryRepository.list()
+        XCTAssertEqual(installs.count, 1)
+        let install = try XCTUnwrap(installs.first)
+        XCTAssertTrue(CodexChatStoragePaths.isPath(install.sharedPath, insideRoot: resolvedCodexHomes.activeGlobalSkillsURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: install.sharedPath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacySharedSkillURL.path))
+
+        let migratedFolderName = URL(fileURLWithPath: install.sharedPath, isDirectory: true).lastPathComponent
+        let migratedProjectLinkPath = projectPath
+            .appendingPathComponent(".agents/skills", isDirectory: true)
+            .appendingPathComponent(migratedFolderName, isDirectory: true)
+            .path
+        XCTAssertTrue(FileManager.default.fileExists(atPath: migratedProjectLinkPath))
+        let migratedLinkDestination = try FileManager.default.destinationOfSymbolicLink(atPath: migratedProjectLinkPath)
+        XCTAssertEqual(migratedLinkDestination, install.sharedPath)
+    }
+
     func testRefreshSkillsKeepsMigrationMarkerUnsetWhenCandidateMigrationFails() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexchat-skill-legacy-migration-failure-\(UUID().uuidString)", isDirectory: true)

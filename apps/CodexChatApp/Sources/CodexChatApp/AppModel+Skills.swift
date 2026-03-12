@@ -321,6 +321,81 @@ extension AppModel {
         }
     }
 
+    func migrateExistingSkillInstallRecordsIfNeeded() async {
+        guard let skillInstallRegistryRepository else {
+            return
+        }
+
+        do {
+            let allProjects = try await projectRepository?.listProjects() ?? projects
+            let existingRecords = try await skillInstallRegistryRepository.list()
+            guard !existingRecords.isEmpty else {
+                return
+            }
+
+            let linkManager = SkillLinkManager(sharedStoreRootURL: resolvedCodexHomes.activeGlobalSkillsURL)
+            var migratedCount = 0
+
+            for record in existingRecords {
+                let legacySharedPath = resolvedSkillPath(record.sharedPath)
+                guard !isStrictlyInsideSharedSkillsStore(legacySharedPath),
+                      isLegacyManagedSkillPath(legacySharedPath, projects: allProjects)
+                else {
+                    continue
+                }
+
+                let legacySkillURL = URL(fileURLWithPath: legacySharedPath, isDirectory: true).standardizedFileURL
+                guard FileManager.default.fileExists(atPath: legacySkillURL.path) else {
+                    appendLog(.warning, "Legacy shared skill path is missing: \(legacySkillURL.path)")
+                    continue
+                }
+
+                let migratedSharedSkillURL = try ensureLegacySkillIsInSharedStore(
+                    legacySkillURL: legacySkillURL,
+                    source: record.source,
+                    projects: allProjects
+                )
+                let migratedSharedPath = migratedSharedSkillURL.standardizedFileURL.path
+                let updatedRecord = SkillInstallRecord(
+                    skillID: record.skillID,
+                    source: record.source,
+                    installer: record.installer,
+                    sharedPath: migratedSharedPath,
+                    mode: record.mode,
+                    projectIDs: record.projectIDs,
+                    createdAt: record.createdAt,
+                    updatedAt: Date()
+                )
+                _ = try await skillInstallRegistryRepository.upsert(updatedRecord)
+
+                let legacyFolderName = legacySkillURL.lastPathComponent
+                let migratedFolderName = migratedSharedSkillURL.lastPathComponent
+                for project in targetProjects(for: record, allProjects: allProjects) {
+                    let projectRootURL = URL(fileURLWithPath: project.path, isDirectory: true)
+                    if legacyFolderName != migratedFolderName {
+                        try? linkManager.removeProjectSkillLink(
+                            folderName: legacyFolderName,
+                            projectRootURL: projectRootURL
+                        )
+                    }
+                    _ = try linkManager.reconcileProjectSkillLink(
+                        folderName: migratedFolderName,
+                        sharedSkillDirectoryURL: migratedSharedSkillURL,
+                        projectRootURL: projectRootURL
+                    )
+                }
+
+                migratedCount += 1
+            }
+
+            if migratedCount > 0 {
+                appendLog(.info, "Migrated \(migratedCount) existing skill install record(s) into shared store.")
+            }
+        } catch {
+            appendLog(.warning, "Existing skill install record migration failed: \(error.localizedDescription)")
+        }
+    }
+
     func migrateLegacySkillInstallsIfNeeded() async {
         guard let preferenceRepository,
               let skillInstallRegistryRepository
@@ -384,7 +459,7 @@ extension AppModel {
                         ?? candidate.skill.sourceURL
                         ?? "local:\(candidate.skill.name)"
                     let sharedSkillURL = try ensureLegacySkillIsInSharedStore(
-                        candidate: candidate,
+                        legacySkillURL: URL(fileURLWithPath: candidate.resolvedPath, isDirectory: true).standardizedFileURL,
                         source: source,
                         projects: allProjects
                     )
@@ -540,7 +615,7 @@ extension AppModel {
     }
 
     private func ensureLegacySkillIsInSharedStore(
-        candidate: LegacySkillCandidate,
+        legacySkillURL: URL,
         source: String,
         projects: [ProjectRecord]
     ) throws -> URL {
@@ -548,7 +623,6 @@ extension AppModel {
         let sharedStoreRootURL = resolvedCodexHomes.activeGlobalSkillsURL.standardizedFileURL
         try fileManager.createDirectory(at: sharedStoreRootURL, withIntermediateDirectories: true)
 
-        let legacySkillURL = URL(fileURLWithPath: candidate.resolvedPath, isDirectory: true).standardizedFileURL
         if CodexChatStoragePaths.isPath(legacySkillURL.path, insideRoot: sharedStoreRootURL.path) {
             return legacySkillURL
         }
@@ -561,8 +635,7 @@ extension AppModel {
             )
         }
 
-        let allowedRoots = legacyManagedSkillRoots(projects: projects)
-        guard allowedRoots.contains(where: { CodexChatStoragePaths.isPath(legacySkillURL.path, insideRoot: $0) }) else {
+        guard isLegacyManagedSkillPath(legacySkillURL.path, projects: projects) else {
             throw NSError(
                 domain: "CodexChatApp.SkillInstallMigration",
                 code: 2,
@@ -589,6 +662,15 @@ extension AppModel {
         return destinationURL
     }
 
+    private func targetProjects(for record: SkillInstallRecord, allProjects: [ProjectRecord]) -> [ProjectRecord] {
+        switch record.mode {
+        case .all:
+            allProjects
+        case .selected:
+            allProjects.filter { record.projectIDs.contains($0.id) }
+        }
+    }
+
     private func legacyManagedSkillRoots(projects: [ProjectRecord]) -> [String] {
         var roots = [
             storagePaths.legacyManagedSharedSkillsStoreURL.path,
@@ -611,6 +693,12 @@ extension AppModel {
             }
         }
         return unique
+    }
+
+    private func isLegacyManagedSkillPath(_ path: String, projects: [ProjectRecord]) -> Bool {
+        legacyManagedSkillRoots(projects: projects).contains { root in
+            CodexChatStoragePaths.isPath(path, insideRoot: root)
+        }
     }
 
     private func resolvedSkillPath(_ path: String) -> String {

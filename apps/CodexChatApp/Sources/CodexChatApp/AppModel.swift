@@ -2145,6 +2145,7 @@ final class AppModel: ObservableObject {
 
     func refreshSkills() async throws {
         skillsState = .loading
+        await migrateExistingSkillInstallRecordsIfNeeded()
         await migrateLegacySkillInstallsIfNeeded()
 
         let discovered = try skillCatalogService.discoverSkills(projectPath: selectedProject?.path)
