@@ -133,10 +133,10 @@ pub(super) fn validate_mobile_payload(
             code: "invalid_command",
             message: "schemaVersion is required for command envelopes.".to_string(),
         })?;
-    if schema_version != 1 {
+    if schema_version != 1 && schema_version != 2 {
         return Err(RelayValidationError {
             code: "unsupported_schema",
-            message: "Only schemaVersion 1 is supported.".to_string(),
+            message: "Only schemaVersion 1 or 2 is supported.".to_string(),
         });
     }
 
@@ -182,8 +182,9 @@ pub(super) fn validate_mobile_payload(
             "threadID",
             "projectID",
             "text",
-            "approvalRequestID",
-            "approvalDecision",
+            "runtimeRequestID",
+            "runtimeRequestKind",
+            "runtimeRequestResponse",
         ],
         "invalid_command",
         "command payload",
@@ -308,38 +309,43 @@ pub(super) fn validate_mobile_payload(
                 });
             }
         }
-        "approval.respond" => {
-            let approval_request_id = command_payload
-                .get("approvalRequestID")
+        "runtime_request.respond" => {
+            let runtime_request_id = command_payload
+                .get("runtimeRequestID")
                 .and_then(Value::as_str)
                 .ok_or_else(|| RelayValidationError {
                     code: "invalid_command",
-                    message: "approval.respond requires approvalRequestID.".to_string(),
+                    message: "runtime_request.respond requires runtimeRequestID.".to_string(),
                 })?;
-            if !approval_request_id
-                .chars()
-                .all(|char| char.is_ascii_digit())
-                || approval_request_id.len() > 32
+            if !runtime_request_id.bytes().all(|byte| byte.is_ascii_digit())
+                || runtime_request_id.len() > 32
             {
                 return Err(RelayValidationError {
                     code: "invalid_command",
-                    message: "approvalRequestID must be numeric.".to_string(),
+                    message: "runtimeRequestID must be numeric.".to_string(),
                 });
             }
 
-            let decision = command_payload
-                .get("approvalDecision")
+            if let Some(kind) = command_payload
+                .get("runtimeRequestKind")
                 .and_then(Value::as_str)
-                .ok_or_else(|| RelayValidationError {
-                    code: "invalid_command",
-                    message: "approval.respond requires approvalDecision.".to_string(),
-                })?;
-            if !matches!(decision, "approve_once" | "approve_for_session" | "decline") {
-                return Err(RelayValidationError {
-                    code: "invalid_command",
-                    message: "approvalDecision is not recognized.".to_string(),
-                });
+            {
+                if !matches!(
+                    kind,
+                    "approval"
+                        | "permissionsApproval"
+                        | "userInput"
+                        | "mcpElicitation"
+                        | "dynamicToolCall"
+                ) {
+                    return Err(RelayValidationError {
+                        code: "invalid_command",
+                        message: "runtimeRequestKind is not recognized.".to_string(),
+                    });
+                }
             }
+
+            validate_runtime_request_response(command_payload, config)?;
         }
         _ => {
             return Err(RelayValidationError {
@@ -350,6 +356,157 @@ pub(super) fn validate_mobile_payload(
     }
 
     Ok(())
+}
+
+fn validate_runtime_request_response(
+    command_payload: &serde_json::Map<String, Value>,
+    config: &RelayConfig,
+) -> Result<(), RelayValidationError> {
+    let runtime_response = command_payload.get("runtimeRequestResponse");
+
+    if runtime_response.is_none() {
+        return Err(RelayValidationError {
+            code: "invalid_command",
+            message: "runtime_request.respond requires runtimeRequestResponse.".to_string(),
+        });
+    }
+
+    let Some(runtime_response) = runtime_response else {
+        return Ok(());
+    };
+    let Some(runtime_response_object) = runtime_response.as_object() else {
+        return Err(RelayValidationError {
+            code: "invalid_command",
+            message: "runtimeRequestResponse must be an object.".to_string(),
+        });
+    };
+    ensure_only_allowed_fields(
+        runtime_response_object,
+        &["decision", "permissions", "scope", "text", "optionID", "approved"],
+        "invalid_command",
+        "runtimeRequestResponse",
+    )?;
+
+    let has_known_field = runtime_response_object.contains_key("decision")
+        || runtime_response_object.contains_key("permissions")
+        || runtime_response_object.contains_key("scope")
+        || runtime_response_object.contains_key("text")
+        || runtime_response_object.contains_key("optionID")
+        || runtime_response_object.contains_key("approved");
+    if !has_known_field {
+        return Err(RelayValidationError {
+            code: "invalid_command",
+            message: "runtimeRequestResponse must include at least one response field."
+                .to_string(),
+        });
+    }
+
+    if let Some(decision) = runtime_response_object
+        .get("decision")
+        .and_then(Value::as_str)
+    {
+        validate_runtime_request_decision(decision)?;
+    }
+
+    if let Some(permissions) = runtime_response_object.get("permissions") {
+        let Some(entries) = permissions.as_array() else {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "runtimeRequestResponse.permissions must be an array.".to_string(),
+            });
+        };
+
+        for entry in entries {
+            let Some(permission) = entry.as_str() else {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "runtimeRequestResponse.permissions must contain strings."
+                        .to_string(),
+                });
+            };
+            if permission.trim().is_empty() || permission.len() > 256 {
+                return Err(RelayValidationError {
+                    code: "invalid_command",
+                    message: "runtimeRequestResponse.permissions contains an invalid value."
+                        .to_string(),
+                });
+            }
+        }
+    }
+
+    if let Some(scope) = runtime_response_object.get("scope") {
+        let Some(scope_value) = scope.as_str() else {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "runtimeRequestResponse.scope must be a string.".to_string(),
+            });
+        };
+        if scope_value.trim().is_empty() || scope_value.len() > 128 {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "runtimeRequestResponse.scope is not valid.".to_string(),
+            });
+        }
+    }
+
+    if let Some(text) = runtime_response_object.get("text") {
+        let Some(text_value) = text.as_str() else {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "runtimeRequestResponse.text must be a string.".to_string(),
+            });
+        };
+        if text_value.len() > config.max_remote_command_text_bytes {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: format!(
+                    "runtimeRequestResponse.text exceeds {} bytes.",
+                    config.max_remote_command_text_bytes
+                ),
+            });
+        }
+    }
+
+    if let Some(option_id) = runtime_response_object.get("optionID") {
+        let Some(option_id_value) = option_id.as_str() else {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "runtimeRequestResponse.optionID must be a string.".to_string(),
+            });
+        };
+        if !is_small_identifier(option_id_value) {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "runtimeRequestResponse.optionID must be a compact identifier."
+                    .to_string(),
+            });
+        }
+    }
+
+    if let Some(approved) = runtime_response_object.get("approved") {
+        if !approved.is_boolean() {
+            return Err(RelayValidationError {
+                code: "invalid_command",
+                message: "runtimeRequestResponse.approved must be a boolean.".to_string(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_runtime_request_decision(decision: &str) -> Result<(), RelayValidationError> {
+    if matches!(
+        decision,
+        "accept" | "acceptForSession" | "decline" | "cancel"
+    ) {
+        return Ok(());
+    }
+
+    Err(RelayValidationError {
+        code: "invalid_command",
+        message: "runtimeRequestResponse.decision is not recognized.".to_string(),
+    })
 }
 
 fn ensure_only_allowed_fields(

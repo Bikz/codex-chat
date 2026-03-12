@@ -421,7 +421,7 @@ fn make_protocol_validation_config() -> RelayConfig {
 
 fn make_valid_command_payload(session_id: &str, sequence: u64) -> Value {
     json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sessionID": session_id,
         "seq": sequence,
         "payload": {
@@ -527,7 +527,7 @@ fn protocol_invariant_rejects_missing_command_id() {
     let config = make_protocol_validation_config();
     let mut session = make_test_session("session-1", "device-1", "token-1");
     let payload = json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sessionID": "session-1",
         "seq": 7,
         "payload": {
@@ -535,6 +535,103 @@ fn protocol_invariant_rejects_missing_command_id() {
             "payload": {
                 "name": "thread.select",
                 "threadID": "thread-1"
+            }
+        }
+    });
+
+    let result = validate_mobile_payload(
+        &mut session,
+        Some(&payload),
+        "session-1",
+        "conn-1",
+        "device-1",
+        &config,
+    );
+    assert_eq!(
+        result.err().map(|error| error.code),
+        Some("invalid_command")
+    );
+}
+
+#[test]
+fn protocol_invariant_accepts_runtime_request_response_commands() {
+    let config = make_protocol_validation_config();
+    let mut session = make_test_session("session-1", "device-1", "token-1");
+    let payload = json!({
+        "schemaVersion": 2,
+        "sessionID": "session-1",
+        "seq": 8,
+        "payload": {
+            "type": "command",
+            "payload": {
+                "name": "runtime_request.respond",
+                "commandID": "cmd-8",
+                "runtimeRequestID": "42",
+                "runtimeRequestKind": "approval",
+                "runtimeRequestResponse": {
+                    "decision": "accept",
+                    "optionID": "accept"
+                }
+            }
+        }
+    });
+
+    let result = validate_mobile_payload(
+        &mut session,
+        Some(&payload),
+        "session-1",
+        "conn-1",
+        "device-1",
+        &config,
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn protocol_invariant_rejects_legacy_approval_response_commands() {
+    let config = make_protocol_validation_config();
+    let mut session = make_test_session("session-1", "device-1", "token-1");
+    let payload = json!({
+        "schemaVersion": 2,
+        "sessionID": "session-1",
+        "seq": 9,
+        "payload": {
+            "type": "command",
+            "payload": {
+                "name": "approval.respond",
+                "commandID": "cmd-9",
+                "approvalRequestID": "42",
+                "approvalDecision": "approve_once"
+            }
+        }
+    });
+
+    let result = validate_mobile_payload(
+        &mut session,
+        Some(&payload),
+        "session-1",
+        "conn-1",
+        "device-1",
+        &config,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn protocol_invariant_rejects_runtime_request_responses_without_fields() {
+    let config = make_protocol_validation_config();
+    let mut session = make_test_session("session-1", "device-1", "token-1");
+    let payload = json!({
+        "schemaVersion": 2,
+        "sessionID": "session-1",
+        "seq": 10,
+        "payload": {
+            "type": "command",
+            "payload": {
+                "name": "runtime_request.respond",
+                "commandID": "cmd-10",
+                "runtimeRequestID": "42",
+                "runtimeRequestResponse": {}
             }
         }
     });
