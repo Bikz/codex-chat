@@ -576,7 +576,7 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertTrue(snapshotIndices.isEmpty, "Rejected malformed commands should not force a snapshot.")
     }
 
-    func testApprovalRespondRejectsMissingCommandID() async throws {
+    func testRuntimeRequestRespondRejectsMissingCommandID() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-missing-command-id")
         let model = fixture.model
         model.allowRemoteApprovals = true
@@ -587,10 +587,11 @@ final class RemoteControlSyncTests: XCTestCase {
 
         let ack = await model.processRemoteControlCommand(
             RemoteControlCommandPayload(
-                name: .approvalRespond,
+                name: .runtimeRequestRespond,
                 commandID: "",
-                approvalRequestID: String(request.id),
-                approvalDecision: "approve_once"
+                runtimeRequestID: String(request.id),
+                runtimeRequestKind: .approval,
+                runtimeRequestResponse: .init(decision: "approve_once")
             ),
             inboundCommandSequence: 17
         )
@@ -600,44 +601,46 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
     }
 
-    func testApprovalRespondRejectsMissingApprovalRequestID() async throws {
+    func testRuntimeRequestRespondRejectsMissingRequestID() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-missing-request-id")
         let model = fixture.model
         model.allowRemoteApprovals = true
 
         let ack = await model.processRemoteControlCommand(
             RemoteControlCommandPayload(
-                name: .approvalRespond,
+                name: .runtimeRequestRespond,
                 commandID: "cmd-approval-missing-request",
-                approvalDecision: "approve_once"
+                runtimeRequestKind: .approval,
+                runtimeRequestResponse: .init(decision: "approve_once")
             ),
             inboundCommandSequence: 18
         )
 
         XCTAssertEqual(ack.status, .rejected)
-        XCTAssertEqual(ack.reason, "approval_request_required")
+        XCTAssertEqual(ack.reason, "runtime_request_required")
     }
 
-    func testApprovalRespondRejectsUnknownApprovalRequestID() async throws {
+    func testRuntimeRequestRespondRejectsUnknownRequestID() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-unknown-request-id")
         let model = fixture.model
         model.allowRemoteApprovals = true
 
         let ack = await model.processRemoteControlCommand(
             RemoteControlCommandPayload(
-                name: .approvalRespond,
+                name: .runtimeRequestRespond,
                 commandID: "cmd-approval-unknown-request",
-                approvalRequestID: "999",
-                approvalDecision: "approve_once"
+                runtimeRequestID: "999",
+                runtimeRequestKind: .approval,
+                runtimeRequestResponse: .init(decision: "approve_once")
             ),
             inboundCommandSequence: 19
         )
 
         XCTAssertEqual(ack.status, .rejected)
-        XCTAssertEqual(ack.reason, "unknown_approval_request")
+        XCTAssertEqual(ack.reason, "unknown_runtime_request")
     }
 
-    func testApprovalRespondRejectsWhenDesktopIsOffline() async {
+    func testRuntimeRequestRespondRejectsWhenDesktopIsOffline() async {
         let model = AppModel(repositories: nil, runtime: nil, bootError: nil)
         model.allowRemoteApprovals = true
 
@@ -649,10 +652,11 @@ final class RemoteControlSyncTests: XCTestCase {
 
         let ack = await model.processRemoteControlCommand(
             RemoteControlCommandPayload(
-                name: .approvalRespond,
+                name: .runtimeRequestRespond,
                 commandID: "cmd-approval-offline",
-                approvalRequestID: String(request.id),
-                approvalDecision: "approve_once"
+                runtimeRequestID: String(request.id),
+                runtimeRequestKind: .approval,
+                runtimeRequestResponse: .init(decision: "approve_once")
             ),
             inboundCommandSequence: 20
         )
@@ -662,7 +666,7 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
     }
 
-    func testApprovalRespondPreservesLegacyDecisionAliases() async {
+    func testRuntimeRequestRespondPreservesLegacyDecisionAliases() async {
         let legacyDecisions = ["approve", "approve-once", "approve-session", "approveforsession", "reject"]
 
         for decision in legacyDecisions {
@@ -677,10 +681,11 @@ final class RemoteControlSyncTests: XCTestCase {
 
             let ack = await model.processRemoteControlCommand(
                 RemoteControlCommandPayload(
-                    name: .approvalRespond,
+                    name: .runtimeRequestRespond,
                     commandID: "cmd-approval-legacy-\(decision)",
-                    approvalRequestID: String(request.id),
-                    approvalDecision: decision
+                    runtimeRequestID: String(request.id),
+                    runtimeRequestKind: .approval,
+                    runtimeRequestResponse: .init(decision: decision)
                 ),
                 inboundCommandSequence: 200
             )
@@ -691,7 +696,7 @@ final class RemoteControlSyncTests: XCTestCase {
         }
     }
 
-    func testApprovalRespondRejectsWhenRuntimeCanNotApplyPendingApproval() async throws {
+    func testRuntimeRequestRespondRejectsWhenRuntimeCanNotApplyPendingApproval() async throws {
         let fixture = try await makeRemoteCommandFixture(sessionID: "session-approval-stale-runtime-route")
         let model = fixture.model
         model.allowRemoteApprovals = true
@@ -702,17 +707,69 @@ final class RemoteControlSyncTests: XCTestCase {
 
         let ack = await model.processRemoteControlCommand(
             RemoteControlCommandPayload(
-                name: .approvalRespond,
+                name: .runtimeRequestRespond,
                 commandID: "cmd-approval-stale-runtime-route",
-                approvalRequestID: String(request.id),
-                approvalDecision: "approve_once"
+                runtimeRequestID: String(request.id),
+                runtimeRequestKind: .approval,
+                runtimeRequestResponse: .init(decision: "approve_once")
             ),
             inboundCommandSequence: 21
         )
 
         XCTAssertEqual(ack.status, .rejected)
-        XCTAssertEqual(ack.reason, "unknown_approval_request")
+        XCTAssertEqual(ack.reason, "unknown_runtime_request")
         XCTAssertEqual(model.activeApprovalRequest?.id, request.id)
+    }
+
+    func testRuntimeRequestRespondParsesPermissionsRequestBeforeDesktopOffline() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-runtime-request-permissions")
+        let model = fixture.model
+        model.allowRemoteApprovals = true
+
+        let request = makePermissionsRequest(id: 91, threadID: fixture.thread.id)
+        model.serverRequestStateMachine.enqueue(.permissions(request), threadID: fixture.thread.id)
+        model.syncApprovalPresentationState()
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .runtimeRequestRespond,
+                commandID: "cmd-runtime-request-permissions",
+                runtimeRequestID: String(request.id),
+                runtimeRequestKind: .permissionsApproval,
+                runtimeRequestResponse: .init(
+                    permissions: ["project.write"],
+                    scope: "workspace"
+                )
+            ),
+            inboundCommandSequence: 31
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "unknown_runtime_request")
+    }
+
+    func testRuntimeRequestRespondRejectsInvalidDynamicToolPayload() async throws {
+        let fixture = try await makeRemoteCommandFixture(sessionID: "session-runtime-request-tool-invalid")
+        let model = fixture.model
+        model.allowRemoteApprovals = true
+
+        let request = makeDynamicToolCallRequest(id: 92, threadID: fixture.thread.id)
+        model.serverRequestStateMachine.enqueue(.dynamicToolCall(request), threadID: fixture.thread.id)
+        model.syncApprovalPresentationState()
+
+        let ack = await model.processRemoteControlCommand(
+            RemoteControlCommandPayload(
+                name: .runtimeRequestRespond,
+                commandID: "cmd-runtime-request-tool-invalid",
+                runtimeRequestID: String(request.id),
+                runtimeRequestKind: .dynamicToolCall,
+                runtimeRequestResponse: .init()
+            ),
+            inboundCommandSequence: 32
+        )
+
+        XCTAssertEqual(ack.status, .rejected)
+        XCTAssertEqual(ack.reason, "invalid_runtime_request")
     }
 
     func testRestorePersistedRemoteControlSessionReconnectsWithoutPairRestart() async throws {
@@ -1011,6 +1068,34 @@ final class RemoteControlSyncTests: XCTestCase {
             command: ["/bin/echo", "hello"],
             changes: [],
             detail: "Approval detail"
+        )
+    }
+
+    private func makePermissionsRequest(id: Int, threadID: UUID) -> RuntimePermissionsRequest {
+        RuntimePermissionsRequest(
+            id: id,
+            method: "item/permissions/requestApproval",
+            threadID: threadID.uuidString,
+            turnID: nil,
+            itemID: nil,
+            reason: "Need write access",
+            cwd: "/tmp",
+            permissions: ["project.write"],
+            grantRoot: "workspace",
+            detail: "Need project.write"
+        )
+    }
+
+    private func makeDynamicToolCallRequest(id: Int, threadID: UUID) -> RuntimeDynamicToolCallRequest {
+        RuntimeDynamicToolCallRequest(
+            id: id,
+            method: "item/tool/call",
+            threadID: threadID.uuidString,
+            turnID: nil,
+            itemID: nil,
+            toolName: "browser.click",
+            arguments: nil,
+            detail: "Dynamic tool call"
         )
     }
 }

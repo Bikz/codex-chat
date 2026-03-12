@@ -291,7 +291,7 @@ extension AppModel {
         remoteControlLastSnapshotSignature = nil
         remoteControlLastEventEntryIDsByThreadID = [:]
         remoteControlLastTurnStateByThreadID = [:]
-        remoteControlLastPendingApprovalRequestIDs = []
+        remoteControlLastPendingRuntimeRequestIDs = []
     }
 
     private func startRemoteControlWebSocket(using descriptor: RemoteControlSessionDescriptor) {
@@ -335,7 +335,7 @@ extension AppModel {
         remoteControlLastSnapshotSignature = nil
         remoteControlLastEventEntryIDsByThreadID = [:]
         remoteControlLastTurnStateByThreadID = [:]
-        remoteControlLastPendingApprovalRequestIDs = []
+        remoteControlLastPendingRuntimeRequestIDs = []
         remoteControlImmediateSyncRequested = false
         remoteControlImmediateSyncForceSnapshot = false
         remoteControlSyncFlushInFlight = false
@@ -659,7 +659,7 @@ extension AppModel {
         let helloPayload = RemoteControlHelloPayload(
             role: .desktop,
             clientName: "CodexChat Desktop",
-            supportsApprovals: allowRemoteApprovals
+            supportsRuntimeRequests: allowRemoteApprovals
         )
         let envelope = RemoteControlEnvelope(
             sessionID: session.sessionID,
@@ -798,7 +798,7 @@ extension AppModel {
 
         await sendRemoteControlMessageEventsIfNeeded()
         await sendRemoteControlTurnStateEventIfNeeded()
-        await sendRemoteControlApprovalEventsIfNeeded()
+        await sendRemoteControlRuntimeRequestEventsIfNeeded()
     }
 
     private func sendRemoteControlMessageEventsIfNeeded() async {
@@ -863,9 +863,9 @@ extension AppModel {
         remoteControlLastTurnStateByThreadID = nextTurnStateByThreadID
     }
 
-    private func sendRemoteControlApprovalEventsIfNeeded() async {
-        let snapshots = buildRemoteApprovalSnapshots()
-        var currentByID: [Int: RemoteControlApprovalSnapshot] = [:]
+    private func sendRemoteControlRuntimeRequestEventsIfNeeded() async {
+        let snapshots = buildRemoteRuntimeRequestSnapshots()
+        var currentByID: [Int: RemoteControlRuntimeRequestSnapshot] = [:]
         for snapshot in snapshots {
             guard let requestID = Int(snapshot.requestID) else {
                 continue
@@ -874,7 +874,7 @@ extension AppModel {
         }
 
         let currentIDs = Set(currentByID.keys)
-        let previousIDs = remoteControlLastPendingApprovalRequestIDs
+        let previousIDs = remoteControlLastPendingRuntimeRequestIDs
 
         for requestID in currentIDs.subtracting(previousIDs).sorted() {
             guard let snapshot = currentByID[requestID] else {
@@ -882,9 +882,9 @@ extension AppModel {
             }
             await sendRemoteControlEvent(
                 RemoteControlEventPayload(
-                    name: "approval.requested",
+                    name: "runtime_request.requested",
                     threadID: snapshot.threadID,
-                    body: snapshot.summary
+                    body: "\(snapshot.title): \(snapshot.summary)"
                 )
             )
         }
@@ -892,14 +892,14 @@ extension AppModel {
         for requestID in previousIDs.subtracting(currentIDs).sorted() {
             await sendRemoteControlEvent(
                 RemoteControlEventPayload(
-                    name: "approval.resolved",
+                    name: "runtime_request.resolved",
                     threadID: nil,
-                    body: "Approval #\(requestID) resolved."
+                    body: "Runtime request #\(requestID) resolved."
                 )
             )
         }
 
-        remoteControlLastPendingApprovalRequestIDs = currentIDs
+        remoteControlLastPendingRuntimeRequestIDs = currentIDs
     }
 
     private func remoteControlEventPayload(for entry: TranscriptEntry) -> RemoteControlEventPayload? {
@@ -925,7 +925,7 @@ extension AppModel {
         }
     }
 
-    private func sendRemoteControlEvent(_ payload: RemoteControlEventPayload) async {
+    func sendRemoteControlEvent(_ payload: RemoteControlEventPayload) async {
         guard let session = remoteControlStatus.session else {
             return
         }
@@ -949,7 +949,7 @@ extension AppModel {
     private func primeRemoteControlEventBaselines() {
         remoteControlLastEventEntryIDsByThreadID = [:]
         remoteControlLastTurnStateByThreadID = [:]
-        remoteControlLastPendingApprovalRequestIDs = []
+        remoteControlLastPendingRuntimeRequestIDs = []
 
         for threadID in remoteControlSyncThreadIDs() {
             let messageLimit = remoteControlSnapshotLimit(for: threadID)
@@ -958,8 +958,8 @@ extension AppModel {
             remoteControlLastTurnStateByThreadID[threadID] = activeTurnThreadIDs.contains(threadID)
         }
 
-        let requestIDs = buildRemoteApprovalSnapshots().compactMap { Int($0.requestID) }
-        remoteControlLastPendingApprovalRequestIDs = Set(requestIDs)
+        let requestIDs = buildRemoteRuntimeRequestSnapshots().compactMap { Int($0.requestID) }
+        remoteControlLastPendingRuntimeRequestIDs = Set(requestIDs)
     }
 
     func nextRemoteControlOutboundSequence() -> UInt64 {
@@ -1030,7 +1030,7 @@ extension AppModel {
             "st:\(selectedThreadID?.uuidString ?? "nil")",
             "trs:\(revisionSignature)",
             "turn:\(isTurnInProgress)",
-            "approval:\(totalPendingApprovalCount)",
+            "runtimeRequests:\(pendingRuntimeRequestSupportSummaries().count)",
             "active:\(activeThreadSignature)",
         ].joined(separator: "|")
     }
@@ -1083,11 +1083,11 @@ extension AppModel {
             return RemoteControlTurnStateSnapshot(
                 threadID: selectedThreadID.uuidString,
                 isTurnInProgress: activeTurnThreadIDs.contains(selectedThreadID),
-                isAwaitingApproval: hasPendingApproval(for: selectedThreadID)
+                isAwaitingRuntimeRequest: hasPendingApproval(for: selectedThreadID)
             )
         }()
 
-        let approvalSnapshots = buildRemoteApprovalSnapshots()
+        let runtimeRequestSnapshots = buildRemoteRuntimeRequestSnapshots()
 
         return RemoteControlSnapshotPayload(
             projects: projectSnapshots,
@@ -1096,7 +1096,7 @@ extension AppModel {
             selectedThreadID: selectedThreadID?.uuidString,
             messages: messageSnapshots,
             turnState: turnState,
-            pendingApprovals: approvalSnapshots
+            pendingRuntimeRequests: runtimeRequestSnapshots
         )
     }
 
@@ -1117,7 +1117,7 @@ extension AppModel {
             appendThreadID(threadID)
         }
 
-        for threadID in remoteControlPendingApprovalThreadIDs() {
+        for threadID in remoteControlPendingRuntimeRequestThreadIDs() {
             appendThreadID(threadID)
         }
 
@@ -1134,13 +1134,21 @@ extension AppModel {
         return orderedThreadIDs
     }
 
-    private func remoteControlPendingApprovalThreadIDs() -> [UUID] {
+    private func remoteControlPendingRuntimeRequestThreadIDs() -> [UUID] {
         var pendingThreadIDs = Set<UUID>()
         for (threadID, requests) in approvalStateMachine.pendingByThreadID where !requests.isEmpty {
             pendingThreadIDs.insert(threadID)
         }
+        for (threadID, requests) in serverRequestStateMachine.pendingByThreadID where !requests.isEmpty {
+            pendingThreadIDs.insert(threadID)
+        }
         if let activeApprovalRequest,
            let threadID = approvalStateMachine.threadID(for: activeApprovalRequest.id)
+        {
+            pendingThreadIDs.insert(threadID)
+        }
+        if let activeServerRequest,
+           let threadID = serverRequestStateMachine.threadID(for: activeServerRequest.id)
         {
             pendingThreadIDs.insert(threadID)
         }
@@ -1295,68 +1303,47 @@ extension AppModel {
         }
     }
 
-    private func buildRemoteApprovalSnapshots() -> [RemoteControlApprovalSnapshot] {
-        var snapshots: [RemoteControlApprovalSnapshot] = []
-        var seenRequestIDs = Set<Int>()
-
-        for (threadID, requests) in approvalStateMachine.pendingByThreadID.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
-            for request in requests.sorted(by: { $0.id < $1.id }) {
-                guard seenRequestIDs.insert(request.id).inserted else {
-                    continue
-                }
-                snapshots.append(
-                    RemoteControlApprovalSnapshot(
-                        requestID: String(request.id),
-                        threadID: threadID.uuidString,
-                        summary: remoteApprovalSummary(for: request)
+    private func buildRemoteRuntimeRequestSnapshots() -> [RemoteControlRuntimeRequestSnapshot] {
+        pendingRuntimeRequestSupportSummaries().map { summary in
+            RemoteControlRuntimeRequestSnapshot(
+                requestID: summary.requestID,
+                kind: remoteRuntimeRequestKind(for: summary.kind),
+                threadID: summary.threadID,
+                title: summary.title,
+                summary: summary.summary,
+                responseOptions: summary.responseOptions.map {
+                    RemoteControlRuntimeRequestResponseOption(id: $0.id, label: $0.label)
+                },
+                permissions: summary.permissions,
+                options: summary.options.map {
+                    RemoteControlRuntimeRequestOption(
+                        id: $0.id,
+                        label: $0.label,
+                        description: $0.description
                     )
-                )
-            }
-        }
-
-        for request in unscopedApprovalRequests.sorted(by: { $0.id < $1.id }) {
-            guard seenRequestIDs.insert(request.id).inserted else {
-                continue
-            }
-            snapshots.append(
-                RemoteControlApprovalSnapshot(
-                    requestID: String(request.id),
-                    threadID: nil,
-                    summary: remoteApprovalSummary(for: request)
-                )
+                },
+                scopeHint: summary.scopeHint,
+                toolName: summary.toolName,
+                serverName: summary.serverName
             )
         }
-
-        if let activeApprovalRequest,
-           seenRequestIDs.insert(activeApprovalRequest.id).inserted
-        {
-            let threadID = approvalStateMachine.threadID(for: activeApprovalRequest.id)?.uuidString
-            snapshots.append(
-                RemoteControlApprovalSnapshot(
-                    requestID: String(activeApprovalRequest.id),
-                    threadID: threadID,
-                    summary: remoteApprovalSummary(for: activeApprovalRequest)
-                )
-            )
-        }
-
-        return snapshots
     }
 
-    private func remoteApprovalSummary(for request: RuntimeApprovalRequest) -> String {
-        if let reason = request.reason?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !reason.isEmpty
-        {
-            return reason
+    private func remoteRuntimeRequestKind(
+        for kind: RuntimeServerRequestKind
+    ) -> RemoteControlRuntimeRequestKind {
+        switch kind {
+        case .approval:
+            .approval
+        case .permissionsApproval:
+            .permissionsApproval
+        case .userInput:
+            .userInput
+        case .mcpElicitation:
+            .mcpElicitation
+        case .dynamicToolCall:
+            .dynamicToolCall
         }
-        if !request.command.isEmpty {
-            return request.command.joined(separator: " ")
-        }
-        let detail = request.detail.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !detail.isEmpty {
-            return detail
-        }
-        return request.method
     }
 
     private static func remoteTimestamp(_ date: Date) -> String {

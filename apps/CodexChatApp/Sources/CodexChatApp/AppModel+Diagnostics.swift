@@ -110,6 +110,10 @@ extension AppModel {
                 runtimeIssue: runtimeIssue?.message,
                 runtimeHandshake: runtimeHandshake,
                 accountSummary: accountSummaryText,
+                approvalStatusMessage: approvalStatusMessage,
+                serverRequestStatusMessage: serverRequestStatusMessage,
+                pendingRuntimeRequests: pendingRuntimeRequestSupportSummaries(),
+                runtimeRequestSupportEvents: runtimeRequestSupportEvents,
                 logs: logs
             )
             let bundleURL = try DiagnosticsBundleExporter.export(snapshot: snapshot)

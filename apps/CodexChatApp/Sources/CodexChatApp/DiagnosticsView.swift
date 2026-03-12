@@ -8,6 +8,10 @@ struct DiagnosticsView: View {
     let runtimePoolSnapshot: RuntimePoolSnapshot
     let adaptiveTurnConcurrencyLimit: Int
     let rollingTTFTP95MS: Double?
+    let approvalStatusMessage: String?
+    let serverRequestStatusMessage: String?
+    let pendingRuntimeRequests: [RuntimeRequestSupportSummary]
+    let runtimeRequestSupportEvents: [RuntimeRequestSupportEvent]
     let logs: [LogEntry]
     let extensibilityDiagnostics: [AppModel.ExtensibilityDiagnosticEvent]
     let selectedProjectID: UUID?
@@ -178,6 +182,87 @@ struct DiagnosticsView: View {
                             }
                         }
                     }
+                }
+            }
+
+            GroupBox("Runtime Requests") {
+                if pendingRuntimeRequests.isEmpty, runtimeRequestSupportEvents.isEmpty {
+                    Text("No pending runtime requests or recent lifecycle events")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Pending count")
+                            Spacer()
+                            Text("\(pendingRuntimeRequests.count)")
+                                .foregroundStyle(.secondary)
+                        }
+                        if !runtimeRequestBreakdown.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Breakdown")
+                                Text(runtimeRequestBreakdown)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if let approvalStatusMessage, !approvalStatusMessage.isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Approval status")
+                                Text(approvalStatusMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if let serverRequestStatusMessage, !serverRequestStatusMessage.isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Runtime request status")
+                                Text(serverRequestStatusMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if !pendingRuntimeRequests.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Pending")
+                                ForEach(pendingRuntimeRequests.prefix(6)) { request in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(request.title)
+                                            .font(.caption.weight(.semibold))
+                                        Text(request.summary)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        if !runtimeRequestSupportEvents.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Recent events")
+                                ForEach(runtimeRequestSupportEvents.prefix(8)) { event in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 8) {
+                                            Text(event.timestamp.formatted(.dateTime.hour().minute().second()))
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                            Text(event.phase.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                                                .font(.caption2.weight(.semibold))
+                                                .foregroundStyle(.secondary)
+                                            Text(runtimeRequestKindLabel(event.kind))
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Text(event.title)
+                                            .font(.caption.weight(.semibold))
+                                        Text(event.summary)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
@@ -542,6 +627,16 @@ struct DiagnosticsView: View {
         }
     }
 
+    private var runtimeRequestBreakdown: String {
+        let counts = pendingRuntimeRequests.reduce(into: [RuntimeServerRequestKind: Int]()) { partialResult, request in
+            partialResult[request.kind, default: 0] += 1
+        }
+
+        return counts.keys.sorted { $0.rawValue < $1.rawValue }.map { kind in
+            "\(runtimeRequestKindLabel(kind)): \(counts[kind, default: 0])"
+        }.joined(separator: ", ")
+    }
+
     private var emptyAutomationTimelineMessage: String {
         switch automationTimelineFocusFilter {
         case .all:
@@ -583,6 +678,21 @@ struct DiagnosticsView: View {
 
         let hours = minutes / 60
         return "Repeated \(rollup.occurrenceCount)x over \(hours)h"
+    }
+
+    private func runtimeRequestKindLabel(_ kind: RuntimeServerRequestKind) -> String {
+        switch kind {
+        case .approval:
+            "Approval"
+        case .permissionsApproval:
+            "Permissions"
+        case .userInput:
+            "User input"
+        case .mcpElicitation:
+            "MCP"
+        case .dynamicToolCall:
+            "Dynamic tool"
+        }
     }
 
     private func projectLabel(for projectID: UUID) -> String {

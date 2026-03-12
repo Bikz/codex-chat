@@ -20,8 +20,8 @@ struct RemoteControlSheet: View {
                 pendingPairRequestView(request: request)
             }
 
-            Toggle("Allow approvals from remote", isOn: $model.allowRemoteApprovals)
-                .help("When enabled, paired remote clients can approve or decline pending actions.")
+            Toggle("Allow runtime requests from remote", isOn: $model.allowRemoteApprovals)
+                .help("When enabled, paired remote clients can answer supported pending runtime requests.")
 
             if let message = model.remoteControlStatusMessage,
                !message.isEmpty

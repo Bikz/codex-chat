@@ -23,6 +23,10 @@ struct DiagnosticsBundleSnapshot: Codable {
     let runtimeIssue: String?
     let runtimeHandshake: RuntimeHandshake?
     let accountSummary: String
+    let approvalStatusMessage: String?
+    let serverRequestStatusMessage: String?
+    let pendingRuntimeRequests: [RuntimeRequestSupportSummary]
+    let runtimeRequestSupportEvents: [RuntimeRequestSupportEvent]
     let logs: [LogEntry]
 }
 
@@ -51,6 +55,41 @@ enum DiagnosticsBundleExporter {
             runtimeIssue: snapshot.runtimeIssue,
             runtimeHandshake: snapshot.runtimeHandshake,
             accountSummary: snapshot.accountSummary,
+            approvalStatusMessage: snapshot.approvalStatusMessage.map(redactSensitiveText(in:)),
+            serverRequestStatusMessage: snapshot.serverRequestStatusMessage.map(redactSensitiveText(in:)),
+            pendingRuntimeRequests: snapshot.pendingRuntimeRequests.map { request in
+                RuntimeRequestSupportSummary(
+                    requestID: request.requestID,
+                    kind: request.kind,
+                    threadID: request.threadID,
+                    title: redactSensitiveText(in: request.title),
+                    summary: redactSensitiveText(in: request.summary),
+                    responseOptions: request.responseOptions,
+                    permissions: request.permissions.map(redactSensitiveText(in:)),
+                    options: request.options.map { option in
+                        RuntimeRequestSupportChoice(
+                            id: option.id,
+                            label: redactSensitiveText(in: option.label),
+                            description: option.description.map(redactSensitiveText(in:))
+                        )
+                    },
+                    scopeHint: request.scopeHint.map(redactSensitiveText(in:)),
+                    toolName: request.toolName.map(redactSensitiveText(in:)),
+                    serverName: request.serverName.map(redactSensitiveText(in:))
+                )
+            },
+            runtimeRequestSupportEvents: snapshot.runtimeRequestSupportEvents.map { event in
+                RuntimeRequestSupportEvent(
+                    id: event.id,
+                    timestamp: event.timestamp,
+                    phase: event.phase,
+                    requestID: event.requestID,
+                    kind: event.kind,
+                    threadID: event.threadID,
+                    title: redactSensitiveText(in: event.title),
+                    summary: redactSensitiveText(in: event.summary)
+                )
+            },
             logs: snapshot.logs.map { entry in
                 LogEntry(
                     id: entry.id,

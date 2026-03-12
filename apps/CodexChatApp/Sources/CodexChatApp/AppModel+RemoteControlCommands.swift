@@ -69,8 +69,8 @@ extension AppModel {
             applyRemoteThreadSelectCommand(command, inboundCommandSequence: inboundCommandSequence)
         case .threadSendMessage:
             await applyRemoteThreadSendCommand(command, inboundCommandSequence: inboundCommandSequence)
-        case .approvalRespond:
-            await applyRemoteApprovalCommand(command, inboundCommandSequence: inboundCommandSequence)
+        case .runtimeRequestRespond:
+            await applyRemoteRuntimeRequestCommand(command, inboundCommandSequence: inboundCommandSequence)
         }
     }
 
@@ -198,8 +198,9 @@ extension AppModel {
             threadID: command.threadID,
             projectID: command.projectID,
             text: command.text,
-            approvalRequestID: command.approvalRequestID,
-            approvalDecision: command.approvalDecision
+            runtimeRequestID: command.runtimeRequestID,
+            runtimeRequestKind: command.runtimeRequestKind,
+            runtimeRequestResponse: command.runtimeRequestResponse
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -396,7 +397,7 @@ extension AppModel {
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
-                reason: "approval_required",
+                reason: "runtime_request_required",
                 threadID: selectedThreadID?.uuidString
             )
         }
@@ -477,7 +478,7 @@ extension AppModel {
         }
     }
 
-    private func applyRemoteApprovalCommand(
+    private func applyRemoteRuntimeRequestCommand(
         _ command: RemoteControlCommandPayload,
         inboundCommandSequence: UInt64
     ) async -> RemoteControlCommandAckPayload {
@@ -486,29 +487,18 @@ extension AppModel {
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
-                reason: "remote_approvals_disabled"
+                reason: "remote_runtime_requests_disabled"
             )
         }
 
-        guard let decisionRaw = command.approvalDecision?.lowercased(),
-              let decision = remoteApprovalDecision(from: decisionRaw)
-        else {
-            return remoteControlCommandAck(
-                command: command,
-                commandSequence: inboundCommandSequence,
-                status: .rejected,
-                reason: "invalid_approval_decision"
-            )
-        }
-
-        guard let requestIDRaw = command.approvalRequestID?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let requestIDRaw = command.runtimeRequestID?.trimmingCharacters(in: .whitespacesAndNewlines),
               !requestIDRaw.isEmpty
         else {
             return remoteControlCommandAck(
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
-                reason: "approval_request_required"
+                reason: "runtime_request_required"
             )
         }
         guard let requestID = Int(requestIDRaw) else {
@@ -516,37 +506,64 @@ extension AppModel {
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
-                reason: "invalid_approval_request"
+                reason: "invalid_runtime_request"
             )
         }
-        guard resolvePendingApprovalRequest(id: requestID) != nil else {
+        guard let pendingRequest = remoteControllableRuntimeRequest(id: requestID) else {
             return remoteControlCommandAck(
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
-                reason: "unknown_approval_request"
+                reason: "unknown_runtime_request"
+            )
+        }
+
+        if let claimedKind = command.runtimeRequestKind,
+           claimedKind != remoteControlRuntimeRequestKind(for: pendingRequest.kind)
+        {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "invalid_runtime_request"
             )
         }
 
         do {
-            try await submitRemoteApprovalDecision(decision, requestID: requestID)
+            try await respondToRemoteRuntimeRequest(pendingRequest, command: command)
+            let summary = remoteControlRuntimeRequestSummary(for: pendingRequest)
+            await sendRemoteControlEvent(
+                RemoteControlEventPayload(
+                    name: "runtime_request.responded",
+                    threadID: summary.threadID,
+                    body: "\(summary.title): \(summary.summary)"
+                )
+            )
             return remoteControlCommandAck(
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .accepted
             )
-        } catch let error as ApprovalDecisionSubmissionError {
-            let reason = switch error {
-            case .runtimeUnavailable:
-                "desktop_offline"
-            case .requestNotFound:
-                "unknown_approval_request"
-            }
+        } catch let error as ServerRequestSubmissionError {
             return remoteControlCommandAck(
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
-                reason: reason
+                reason: remoteRuntimeRequestReason(for: error)
+            )
+        } catch let error as ApprovalDecisionSubmissionError {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: remoteRuntimeRequestReason(for: error)
+            )
+        } catch RemoteRuntimeRequestCommandError.invalidPayload {
+            return remoteControlCommandAck(
+                command: command,
+                commandSequence: inboundCommandSequence,
+                status: .rejected,
+                reason: "invalid_runtime_request"
             )
         } catch let error as CodexRuntimeError {
             let reason = switch error {
@@ -554,12 +571,16 @@ extension AppModel {
                 "desktop_offline"
             case let .invalidResponse(detail)
                 where detail.contains("Unknown pooled approval request id")
-                || detail.contains("Unknown approval request id"):
-                "unknown_approval_request"
+                || detail.contains("Unknown approval request id")
+                || detail.contains("Unknown pooled server request id")
+                || detail.contains("Unknown server request id"):
+                "unknown_runtime_request"
             default:
-                "approval_failed"
+                "runtime_request_failed"
             }
-            appendLog(.warning, "Remote approval command failed for request \(requestID): \(error.localizedDescription)")
+            let summary = remoteControlRuntimeRequestSummary(for: pendingRequest)
+            recordRuntimeRequestSupportEvent(phase: .failed, summary: summary)
+            appendLog(.warning, "Remote runtime request command failed for request \(requestID): \(error.localizedDescription)")
             return remoteControlCommandAck(
                 command: command,
                 commandSequence: inboundCommandSequence,
@@ -567,12 +588,14 @@ extension AppModel {
                 reason: reason
             )
         } catch {
-            appendLog(.warning, "Remote approval command failed for request \(requestID): \(error.localizedDescription)")
+            let summary = remoteControlRuntimeRequestSummary(for: pendingRequest)
+            recordRuntimeRequestSupportEvent(phase: .failed, summary: summary)
+            appendLog(.warning, "Remote runtime request command failed for request \(requestID): \(error.localizedDescription)")
             return remoteControlCommandAck(
                 command: command,
                 commandSequence: inboundCommandSequence,
                 status: .rejected,
-                reason: "approval_failed"
+                reason: "runtime_request_failed"
             )
         }
     }
@@ -602,8 +625,110 @@ extension AppModel {
             .approveForSession
         case "decline", "reject":
             .decline
+        case "cancel":
+            .cancel
         default:
             nil
         }
     }
+
+    private func remoteControllableRuntimeRequest(id requestID: Int) -> RuntimeServerRequest? {
+        if let approval = resolvePendingApprovalRequest(id: requestID) {
+            return .approval(approval)
+        }
+        return resolvePendingServerRequest(id: requestID)
+    }
+
+    private func remoteControlRuntimeRequestKind(
+        for kind: RuntimeServerRequestKind
+    ) -> RemoteControlRuntimeRequestKind {
+        switch kind {
+        case .approval:
+            .approval
+        case .permissionsApproval:
+            .permissionsApproval
+        case .userInput:
+            .userInput
+        case .mcpElicitation:
+            .mcpElicitation
+        case .dynamicToolCall:
+            .dynamicToolCall
+        }
+    }
+
+    private func respondToRemoteRuntimeRequest(
+        _ request: RuntimeServerRequest,
+        command: RemoteControlCommandPayload
+    ) async throws {
+        switch request {
+        case let .approval(approval):
+            guard let decisionRaw = command.runtimeRequestResponse?.decision?.lowercased(),
+                  let decision = remoteApprovalDecision(from: decisionRaw)
+            else {
+                throw RemoteRuntimeRequestCommandError.invalidPayload
+            }
+            try await submitRemoteApprovalDecision(decision, requestID: approval.id)
+        case let .permissions(permission):
+            let response = command.runtimeRequestResponse ?? RemoteControlRuntimeRequestResponse()
+            try await submitRemotePermissionsRequestResponse(
+                requestID: permission.id,
+                permissions: Set(response.permissions ?? []),
+                scope: response.scope
+            )
+        case let .userInput(userInput):
+            let response = command.runtimeRequestResponse ?? RemoteControlRuntimeRequestResponse()
+            try await submitRemoteUserInputRequestResponse(
+                requestID: userInput.id,
+                text: response.text,
+                optionID: response.optionID
+            )
+        case let .mcpElicitation(mcp):
+            let response = command.runtimeRequestResponse ?? RemoteControlRuntimeRequestResponse()
+            try await submitRemoteMCPElicitationResponse(requestID: mcp.id, text: response.text)
+        case let .dynamicToolCall(tool):
+            guard let approved = command.runtimeRequestResponse?.approved else {
+                throw RemoteRuntimeRequestCommandError.invalidPayload
+            }
+            try await submitRemoteDynamicToolCallResponse(requestID: tool.id, approved: approved)
+        }
+    }
+
+    private func remoteControlRuntimeRequestSummary(
+        for request: RuntimeServerRequest
+    ) -> RuntimeRequestSupportSummary {
+        switch request {
+        case let .approval(approval):
+            let localThreadID = approvalStateMachine.threadID(for: approval.id)
+            return runtimeRequestSupportSummary(for: approval, localThreadID: localThreadID)
+        default:
+            let localThreadID = serverRequestStateMachine.threadID(for: request.id)
+            return runtimeRequestSupportSummary(for: request, localThreadID: localThreadID)
+        }
+    }
+
+    private func remoteRuntimeRequestReason(
+        for error: ApprovalDecisionSubmissionError
+    ) -> String {
+        switch error {
+        case .runtimeUnavailable:
+            "desktop_offline"
+        case .requestNotFound:
+            "unknown_runtime_request"
+        }
+    }
+
+    private func remoteRuntimeRequestReason(
+        for error: ServerRequestSubmissionError
+    ) -> String {
+        switch error {
+        case .runtimeUnavailable:
+            "desktop_offline"
+        case .requestNotFound:
+            "unknown_runtime_request"
+        }
+    }
+}
+
+private enum RemoteRuntimeRequestCommandError: Error {
+    case invalidPayload
 }

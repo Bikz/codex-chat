@@ -65,6 +65,48 @@ extension AppModel {
         )
     }
 
+    func submitRemotePermissionsRequestResponse(
+        requestID: Int,
+        permissions: Set<String>,
+        scope: String?
+    ) async throws {
+        try await submitRemoteServerRequestResponse(
+            requestID: requestID,
+            response: .permissions(
+                permissions: permissions.sorted(),
+                scope: normalizedServerRequestResponseText(scope)
+            )
+        )
+    }
+
+    func submitRemoteUserInputRequestResponse(
+        requestID: Int,
+        text: String?,
+        optionID: String?
+    ) async throws {
+        try await submitRemoteServerRequestResponse(
+            requestID: requestID,
+            response: .userInput(
+                text: normalizedServerRequestResponseText(text),
+                optionID: normalizedServerRequestResponseText(optionID)
+            )
+        )
+    }
+
+    func submitRemoteMCPElicitationResponse(requestID: Int, text: String?) async throws {
+        try await submitRemoteServerRequestResponse(
+            requestID: requestID,
+            response: .mcpElicitation(text: normalizedServerRequestResponseText(text))
+        )
+    }
+
+    func submitRemoteDynamicToolCallResponse(requestID: Int, approved: Bool) async throws {
+        try await submitRemoteServerRequestResponse(
+            requestID: requestID,
+            response: .dynamicToolCall(approved: approved)
+        )
+    }
+
     func resolvePendingServerRequest(id requestID: Int) -> RuntimeServerRequest? {
         if let activeServerRequest, activeServerRequest.id == requestID {
             return activeServerRequest
@@ -122,9 +164,27 @@ extension AppModel {
                 )
             } catch {
                 serverRequestStatusMessage = "Failed to answer runtime request: \(error.localizedDescription)"
+                recordRuntimeRequestSupportEvent(
+                    phase: .failed,
+                    summary: runtimeRequestSupportSummary(for: request)
+                )
                 appendLog(.error, "Server request response failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func submitRemoteServerRequestResponse(
+        requestID: Int,
+        response: RuntimeServerRequestResponse
+    ) async throws {
+        guard let request = resolvePendingServerRequest(id: requestID) else {
+            throw ServerRequestSubmissionError.requestNotFound(requestID)
+        }
+        guard let runtimePool else {
+            throw ServerRequestSubmissionError.runtimeUnavailable
+        }
+
+        try await performServerRequestResponse(response, request: request, runtimePool: runtimePool)
     }
 
     private func performServerRequestResponse(
@@ -142,6 +202,10 @@ extension AppModel {
         try await runtimePool.respondToServerRequest(requestID: request.id, response: response)
         let statusMessage = serverRequestResponseStatusMessage(for: request, response: response)
         serverRequestStatusMessage = statusMessage
+        recordRuntimeRequestSupportEvent(
+            phase: .responded,
+            summary: runtimeRequestSupportSummary(for: request)
+        )
         appendLog(.info, statusMessage)
         scheduleServerRequestResolutionFallback(
             requestID: request.id,

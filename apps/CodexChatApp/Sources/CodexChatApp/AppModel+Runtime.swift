@@ -868,6 +868,7 @@ extension AppModel {
     private func reconcileStaleApprovalState(reason: String) {
         let pendingRequest = unscopedApprovalRequests.first ?? approvalStateMachine.firstPendingRequest
         let pendingServerRequest = unscopedServerRequests.first ?? serverRequestStateMachine.firstPendingRequest
+        let pendingRuntimeRequestSummaries = pendingRuntimeRequestSupportSummaries()
         let pendingThreadID = approvalStateMachine.pendingThreadIDs.first
             ?? serverRequestStateMachine.pendingThreadIDs.first
         let hadApprovalRequests = approvalStateMachine.hasPendingApprovals
@@ -910,6 +911,9 @@ extension AppModel {
         approvalStatusMessage = message
         serverRequestStatusMessage = message
         appendLog(.warning, message)
+        for summary in pendingRuntimeRequestSummaries {
+            recordRuntimeRequestSupportEvent(phase: .reset, summary: summary)
+        }
 
         guard let localThreadID = pendingThreadID
             ?? localThreadIDForPendingApproval(pendingRequest)

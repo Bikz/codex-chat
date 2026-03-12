@@ -38,14 +38,16 @@ This MVP delivers:
 ## Architecture
 
 - `packages/CodexChatRemoteControl`
-  - Versioned message schema (`RemoteControlEnvelope` + payloads)
+  - Versioned message schema (`RemoteControlEnvelope` + payloads), currently `schemaVersion = 2`
+  - Runtime-request snapshots and `runtime_request.respond` command payloads for approvals, permissions requests, user-input prompts, MCP elicitation, and dynamic tool calls
   - Token/session descriptor generation and lease enforcement
   - Sequence tracker for gap/stale detection
   - Broker actor for session lifecycle and kill switch
 - `apps/CodexChatApp`
   - Remote control toolbar entry and command-menu shortcut
   - `RemoteControlSheet` with QR code, copy link, and stop controls
-  - `AppModel+RemoteControl` outbound websocket client, multi-thread snapshot + delta event streaming, and remote command ingestion
+  - `AppModel+RemoteControl` outbound websocket client, multi-thread snapshot + delta event streaming, remote runtime-request event emission, and remote command ingestion
+  - Diagnostics bundle exports include pending runtime requests plus recent requested/responded/resolved/reset/failure lifecycle events in redacted summary form
 - `apps/RemoteControlRelayRust`
   - `POST /pair/start`, `POST /pair/join`, `POST /pair/refresh`, `POST /pair/stop`, `POST /devices/list`, `POST /devices/revoke`
   - `GET /healthz`, `GET /metricsz`, `GET /ws` (then `relay.auth` websocket message)
@@ -63,7 +65,7 @@ This MVP delivers:
   - Hash navigation (`#view=home` and `#view=thread&tid=...&pid=...`) for browser back continuity
   - Mobile-safe layout hardening (`safe-area-inset` support + visual-viewport keyboard offset handling)
   - Reconnect with backoff and snapshot re-request
-  - Live event ingestion (`thread.message.append`, `turn.status.update`, approval refresh triggers)
+  - Live event ingestion (`thread.message.append`, `turn.status.update`, runtime-request refresh triggers)
   - Snapshot merge logic that preserves cached thread history and keeps per-thread memory bounded
   - Playwright mobile E2E coverage (`apps/RemoteControlPWA/tests/mobile-ui.spec.ts`) + Vitest unit coverage for route/selector/queue logic
 
@@ -102,9 +104,14 @@ Set environment variables before launching Codex Chat:
 
 ## Known limitations
 
-- Remote approvals are off by default and must be explicitly enabled in the desktop Remote Control sheet.
+- Remote runtime requests are off by default and must be explicitly enabled in the desktop Remote Control sheet.
 - iOS/PWA backgrounding can drop sockets; reconnect + snapshot is required.
 - Desktop snapshot payloads are size-bounded for relay safety, so very large transcripts stream incrementally instead of all-at-once.
+
+## Protocol notes
+
+- The remote-control wire contract is now approval-agnostic: `supportsRuntimeRequests`, `canRespondToRuntimeRequests`, `isAwaitingRuntimeRequest`, `pendingRuntimeRequests`, and `runtime_request.respond` replace the old approval-specific names.
+- Remote snapshots carry typed runtime-request metadata so support surfaces can render request-family-specific summaries and allowed response options without guessing from freeform text.
 
 ## Next hardening steps
 

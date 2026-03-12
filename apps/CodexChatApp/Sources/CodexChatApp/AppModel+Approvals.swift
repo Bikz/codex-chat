@@ -62,6 +62,10 @@ extension AppModel {
                 try await performApprovalDecision(decision, request: request, runtimePool: runtimePool)
             } catch {
                 approvalStatusMessage = "Failed to send approval decision: \(error.localizedDescription)"
+                recordRuntimeRequestSupportEvent(
+                    phase: .failed,
+                    summary: runtimeRequestSupportSummary(for: request)
+                )
                 appendLog(.error, "Approval decision failed: \(error.localizedDescription)")
             }
         }
@@ -118,6 +122,10 @@ extension AppModel {
 
         try await runtimePool.respondToApproval(requestID: request.id, decision: decision)
         approvalStatusMessage = "Sent decision: \(approvalDecisionLabel(decision))."
+        recordRuntimeRequestSupportEvent(
+            phase: .responded,
+            summary: runtimeRequestSupportSummary(for: request)
+        )
         appendLog(.info, "Approval decision sent for request \(request.id): \(approvalDecisionLabel(decision))")
         scheduleApprovalResolutionFallback(
             requestID: request.id,

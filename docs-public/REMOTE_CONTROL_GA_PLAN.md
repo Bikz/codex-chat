@@ -16,7 +16,7 @@ Launch Remote Control to GA with production reliability/security for 10k concurr
   - NATS JetStream: cross-instance routing and reliable event fanout.
 - Platform: GKE (Autopilot) on GCP.
 - Desktop remains trust boundary; no Codex/OpenAI auth material leaves desktop.
-- Protocol compatibility: keep `schemaVersion = 1` while migrating.
+- Protocol compatibility: keep the relay, desktop, and PWA aligned on `schemaVersion = 2`.
 
 ## Milestones
 

@@ -1065,6 +1065,7 @@ final class AppModel: ObservableObject {
     @Published var accountStatusMessage: String?
     @Published var approvalStatusMessage: String?
     @Published var serverRequestStatusMessage: String?
+    @Published var runtimeRequestSupportEvents: [RuntimeRequestSupportEvent] = []
     @Published var projectStatusMessage: String?
     @Published var skillStatusMessage: String?
     @Published var memoryStatusMessage: String?
@@ -1302,7 +1303,7 @@ final class AppModel: ObservableObject {
     var remoteControlLastSnapshotSignature: String?
     var remoteControlLastEventEntryIDsByThreadID: [UUID: Set<UUID>] = [:]
     var remoteControlLastTurnStateByThreadID: [UUID: Bool] = [:]
-    var remoteControlLastPendingApprovalRequestIDs: Set<Int> = []
+    var remoteControlLastPendingRuntimeRequestIDs: Set<Int> = []
     var remoteControlImmediateSyncTask: Task<Void, Never>?
     var remoteControlImmediateSyncRequested = false
     var remoteControlImmediateSyncForceSnapshot = false

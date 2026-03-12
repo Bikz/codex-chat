@@ -46,6 +46,38 @@ final class DiagnosticsBundleExporterTests: XCTestCase {
             runtimeIssue: nil,
             runtimeHandshake: handshake,
             accountSummary: "Signed in",
+            approvalStatusMessage: "Approval sent",
+            serverRequestStatusMessage: "Runtime request answered",
+            pendingRuntimeRequests: [
+                RuntimeRequestSupportSummary(
+                    requestID: "17",
+                    kind: .permissionsApproval,
+                    threadID: "thread-1",
+                    title: "Permission request pending",
+                    summary: "Need project.write",
+                    responseOptions: [
+                        RuntimeRequestSupportAction(id: "grant", label: "Grant"),
+                        RuntimeRequestSupportAction(id: "decline", label: "Decline"),
+                    ],
+                    permissions: ["project.write"],
+                    options: [],
+                    scopeHint: "workspace",
+                    toolName: nil,
+                    serverName: nil
+                ),
+            ],
+            runtimeRequestSupportEvents: [
+                RuntimeRequestSupportEvent(
+                    id: UUID(),
+                    timestamp: Date(timeIntervalSince1970: 1_700_000_050),
+                    phase: .requested,
+                    requestID: "17",
+                    kind: .permissionsApproval,
+                    threadID: "thread-1",
+                    title: "Permission request pending",
+                    summary: "Need project.write"
+                ),
+            ],
             logs: []
         )
 
@@ -61,5 +93,7 @@ final class DiagnosticsBundleExporterTests: XCTestCase {
         XCTAssertEqual(decoded.runtimeHandshake?.compatibility.supportLevel, .validated)
         XCTAssertEqual(decoded.runtimeHandshake?.negotiatedCapabilities.supportsServerRequestResolution, true)
         XCTAssertEqual(decoded.runtimeHandshake?.sentCapabilities.optOutNotificationMethods, ["experimental/ignored"])
+        XCTAssertEqual(decoded.pendingRuntimeRequests.first?.permissions, ["project.write"])
+        XCTAssertEqual(decoded.runtimeRequestSupportEvents.first?.phase, .requested)
     }
 }

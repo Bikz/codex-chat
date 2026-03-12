@@ -629,13 +629,21 @@ extension AppModel {
         guard let requestID = resolution.requestID else {
             return
         }
-        if resolvePendingApprovalRequest(id: requestID) != nil {
+        if let request = resolvePendingApprovalRequest(id: requestID) {
+            recordRuntimeRequestSupportEvent(
+                phase: .resolved,
+                summary: runtimeRequestSupportSummary(for: request)
+            )
             resolveRuntimeApprovalRequest(
                 id: requestID,
                 statusMessage: "Runtime resolved request \(requestID)."
             )
         }
-        if resolvePendingServerRequest(id: requestID) != nil {
+        if let request = resolvePendingServerRequest(id: requestID) {
+            recordRuntimeRequestSupportEvent(
+                phase: .resolved,
+                summary: runtimeRequestSupportSummary(for: request)
+            )
             resolveRuntimeServerRequest(
                 id: requestID,
                 statusMessage: "Runtime resolved request \(requestID)."
@@ -712,6 +720,10 @@ extension AppModel {
                 unscopedApprovalRequests.append(request)
             }
             syncApprovalPresentationState()
+            recordRuntimeRequestSupportEvent(
+                phase: .requested,
+                summary: runtimeRequestSupportSummary(for: request)
+            )
             appendLog(.warning, "Approval request arrived without local thread mapping")
             return
         }
@@ -790,6 +802,10 @@ extension AppModel {
     private func presentApprovalRequest(_ request: RuntimeApprovalRequest, localThreadID: UUID) {
         approvalStateMachine.enqueue(request, threadID: localThreadID)
         syncApprovalPresentationState()
+        recordRuntimeRequestSupportEvent(
+            phase: .requested,
+            summary: runtimeRequestSupportSummary(for: request, localThreadID: localThreadID)
+        )
 
         let summary = approvalSummary(for: request)
         appendEntry(
@@ -859,6 +875,10 @@ extension AppModel {
         if let localThreadID {
             serverRequestStateMachine.enqueue(request, threadID: localThreadID)
             syncApprovalPresentationState()
+            recordRuntimeRequestSupportEvent(
+                phase: .requested,
+                summary: runtimeRequestSupportSummary(for: request, localThreadID: localThreadID)
+            )
             appendPendingServerRequestAction(
                 threadID: localThreadID,
                 method: request.method,
@@ -871,6 +891,10 @@ extension AppModel {
         if !unscopedServerRequests.contains(where: { $0.id == request.id }) {
             unscopedServerRequests.append(request)
             syncApprovalPresentationState()
+            recordRuntimeRequestSupportEvent(
+                phase: .requested,
+                summary: runtimeRequestSupportSummary(for: request)
+            )
         }
         appendLog(.warning, "\(summary.title) arrived without local thread mapping")
     }
