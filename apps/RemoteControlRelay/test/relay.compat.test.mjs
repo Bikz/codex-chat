@@ -326,7 +326,7 @@ async function runScenario(relayKind) {
 
     mobileSocket.send(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sessionID,
         seq: 1,
         timestamp: new Date().toISOString(),

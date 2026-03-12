@@ -804,7 +804,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
     mobile_socket
         .send(Message::Text(
             json!({
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sessionID": session_id.clone(),
                 "seq": 10,
                 "payload": {
@@ -864,7 +864,7 @@ async fn pairing_requires_desktop_approval_rotates_mobile_token_and_handles_desk
     mobile_socket
         .send(Message::Text(
             json!({
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sessionID": session_id,
                 "seq": 11,
                 "payload": {
@@ -921,7 +921,7 @@ async fn mobile_receives_desktop_offline_status_and_command_rejection() {
     mobile_socket
         .send(Message::Text(
             json!({
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sessionID": session_id,
                 "seq": 11,
                 "payload": {
@@ -1794,7 +1794,7 @@ async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
     mobile_socket
         .send(Message::Text(
             json!({
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sessionID": session_id,
                 "seq": 1,
                 "payload": {
@@ -1847,7 +1847,7 @@ async fn mobile_command_with_unexpected_field_is_rejected_and_not_forwarded() {
     mobile_socket
         .send(Message::Text(
             json!({
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sessionID": session_id,
                 "seq": 1,
                 "payload": {
@@ -1900,7 +1900,7 @@ async fn mobile_command_ignores_spoofed_relay_metadata_and_forwards() {
     mobile_socket
         .send(Message::Text(
             json!({
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sessionID": session_id,
                 "seq": 1,
                 "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -2043,7 +2043,7 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
         mobile_socket
             .send(Message::Text(
                 json!({
-                    "schemaVersion": 1,
+                    "schemaVersion": 2,
                     "sessionID": session_id,
                     "seq": seq,
                     "payload": {
@@ -2118,7 +2118,7 @@ async fn per_session_command_rate_limit_blocks_excess_mobile_commands() {
         mobile_socket
             .send(Message::Text(
                 json!({
-                    "schemaVersion": 1,
+                    "schemaVersion": 2,
                     "sessionID": session_id,
                     "seq": seq,
                     "payload": {
@@ -2251,7 +2251,7 @@ async fn replayed_mobile_command_sequence_is_rejected() {
         pair_connected_mobile(|_| {}).await;
 
     let command_payload = json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sessionID": session_id,
         "seq": 1,
         "payload": {
@@ -2330,7 +2330,7 @@ async fn per_socket_websocket_message_rate_limit_disconnects_abusive_client() {
         mobile_socket
             .send(Message::Text(
                 json!({
-                    "schemaVersion": 1,
+                    "schemaVersion": 2,
                     "sessionID": session_id,
                     "seq": seq,
                     "payload": {

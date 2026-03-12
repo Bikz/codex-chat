@@ -235,10 +235,10 @@ function validateMobileRelayPayload(parsed, expectedSessionID) {
     };
   }
 
-  if (parsed.schemaVersion !== 1) {
+  if (parsed.schemaVersion !== 2) {
     return {
       error: "unsupported_schema",
-      message: "Only schemaVersion 1 is supported."
+      message: "Only schemaVersion 2 is supported."
     };
   }
 

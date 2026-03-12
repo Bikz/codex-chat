@@ -446,7 +446,7 @@ async fn relay_parallel_sessions_load_harness() {
 
             for seq in 1..=messages_per_session {
                 let payload = json!({
-                    "schemaVersion": 1,
+                    "schemaVersion": 2,
                     "sessionID": handles.session_id,
                     "seq": seq,
                     "payload": {

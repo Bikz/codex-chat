@@ -257,7 +257,7 @@ test("pair join requires desktop approval and rotates device session tokens", as
 
     mobileSocket.send(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sessionID,
         seq: 1,
         timestamp: new Date().toISOString(),
@@ -421,7 +421,7 @@ test("mobile receives desktop status updates and offline commands are rejected",
 
     mobileSocket.send(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sessionID,
         seq: 11,
         timestamp: new Date().toISOString(),
@@ -461,7 +461,7 @@ test("mobile receives desktop status updates and offline commands are rejected",
 
     mobileSocket.send(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sessionID,
         seq: 12,
         timestamp: new Date().toISOString(),
@@ -591,7 +591,7 @@ test("mobile commands without commandID are rejected and not forwarded", async (
     );
     mobileSocket.send(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sessionID,
         seq: 7,
         timestamp: new Date().toISOString(),

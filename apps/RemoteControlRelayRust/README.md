@@ -46,7 +46,7 @@ make remote-control-compat
 ## Notes
 
 - This service is being developed as the production relay replacement for `apps/RemoteControlRelay`.
-- Protocol compatibility remains `schemaVersion = 1`.
+- Protocol compatibility remains `schemaVersion = 2`.
 - Browser pairing routes are origin-gated and CORS-enabled for configured allowlisted origins.
 - Desktop websocket auth uses an indexed desktop-session-token lookup (no linear scan across sessions).
 - Request bodies are bounded by `MAX_JSON_BYTES` (default `65536`).

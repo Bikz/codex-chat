@@ -493,7 +493,7 @@ fn protocol_invariant_rejects_invalid_snapshot_last_sequence() {
 #[test]
 fn protocol_invariant_overwrites_spoofed_mobile_metadata() {
     let raw = json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sessionID": "session-1",
         "seq": 1,
         "relayConnectionID": "spoofed-connection",
