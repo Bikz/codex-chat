@@ -178,6 +178,8 @@ struct InlineActionNoticeRow: View {
     var body: some View {
         let state = RuntimeVisualStateClassifier.classify(card)
         let tint = toneColor(state.tone)
+        let backgroundTint = tint.opacity(state.tone == .error ? 0.08 : 0.05)
+        let borderTint = tint.opacity(state.tone == .error ? 0.18 : 0.1)
 
         DisclosureGroup(isExpanded: $isExpanded) {
             InlineActionDetailsList(
@@ -196,19 +198,32 @@ struct InlineActionNoticeRow: View {
                 Text(state.label)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(tint)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(tint.opacity(0.1), in: Capsule())
 
                 Text(RuntimeVisualStateClassifier.conciseTitle(for: card))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 Spacer(minLength: 8)
                 Text(isExpanded ? "Hide" : "Show")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary.opacity(0.66))
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(backgroundTint)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(borderTint)
+        )
         .accessibilityLabel("\(card.title). \(isExpanded ? "Hide details" : "Show details").")
     }
 
@@ -267,7 +282,7 @@ struct LiveTurnActivityRow: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 10) {
                 Circle()
                     .fill(Color.primary.opacity(compactStatusOpacity))
@@ -302,25 +317,18 @@ struct LiveTurnActivityRow: View {
                 }
             }
 
-            if let preview = livePreviewText {
+            if !collapsedActivityItems.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(collapsedActivityItems) { item in
+                        liveTimelineItem(item)
+                    }
+                }
+            } else if let preview = livePreviewText {
                 Text(preview)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .truncationMode(.tail)
-            }
-
-            if !isExpanded, !collapsedTraceLines.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(collapsedTraceLines) { line in
-                        Text(line.text)
-                            .font(.caption)
-                            .foregroundStyle(.secondary.opacity(0.9))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
             }
 
             if isExpanded, activity.milestoneCounts.hasAny {
@@ -400,6 +408,72 @@ struct LiveTurnActivityRow: View {
         Array(presentation.lines.suffix(2))
     }
 
+    private var collapsedActivityItems: [CollapsedActivityItem] {
+        var items = latestActionItems
+        if items.isEmpty {
+            items = collapsedTraceLines.map {
+                CollapsedActivityItem(id: $0.id, iconName: "circle.fill", text: $0.text, emphasis: .secondary)
+            }
+        }
+
+        if let preview = livePreviewText, !items.contains(where: { $0.text == preview }) {
+            items.append(
+                CollapsedActivityItem(
+                    id: UUID(),
+                    iconName: "text.bubble",
+                    text: preview,
+                    emphasis: .secondary
+                )
+            )
+        }
+
+        return Array(items.prefix(3))
+    }
+
+    private var latestActionItems: [CollapsedActivityItem] {
+        activity.actions
+            .suffix(3)
+            .map { action in
+                let state = RuntimeVisualStateClassifier.classify(action)
+                return CollapsedActivityItem(
+                    id: action.id,
+                    iconName: state.iconName,
+                    text: RuntimeVisualStateClassifier.conciseTitle(for: action),
+                    emphasis: emphasis(for: state.tone)
+                )
+            }
+    }
+
+    private func liveTimelineItem(_ item: CollapsedActivityItem) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: item.iconName)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(item.emphasis.color.opacity(0.9))
+                .frame(width: 14)
+                .accessibilityHidden(true)
+
+            Text(item.text)
+                .font(.caption)
+                .foregroundStyle(item.emphasis.textStyle)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func emphasis(for tone: RuntimeVisualStateTone) -> CollapsedActivityItem.Emphasis {
+        switch tone {
+        case .neutral:
+            .secondary
+        case .accent, .success:
+            .primary
+        case .warning:
+            .warning
+        case .error:
+            .error
+        }
+    }
+
     private var liveTraceBox: some View {
         Group {
             if presentation.lines.isEmpty {
@@ -449,6 +523,46 @@ struct LiveTurnActivityRow: View {
             compactStatusPulse = true
         }
     }
+}
+
+private struct CollapsedActivityItem: Identifiable {
+    enum Emphasis {
+        case primary
+        case secondary
+        case warning
+        case error
+
+        var color: Color {
+            switch self {
+            case .primary:
+                .primary
+            case .secondary:
+                .secondary
+            case .warning:
+                .orange
+            case .error:
+                .red
+            }
+        }
+
+        var textStyle: Color {
+            switch self {
+            case .primary:
+                .primary.opacity(0.92)
+            case .secondary:
+                .secondary.opacity(0.92)
+            case .warning:
+                .orange.opacity(0.96)
+            case .error:
+                .red.opacity(0.96)
+            }
+        }
+    }
+
+    let id: UUID
+    let iconName: String
+    let text: String
+    let emphasis: Emphasis
 }
 
 private struct InlineTerminalPreview: View {
@@ -541,41 +655,40 @@ struct TurnSummaryRow: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 8) {
-                Text(summaryLine)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(summaryTint)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 8)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(isExpanded ? "Hide details" : "Show details")
-                            .font(.caption2.weight(.medium))
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2.weight(.medium))
-                    }
-                    .foregroundStyle(.secondary.opacity(0.68))
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isExpanded.toggle()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Turn activity")
-                .accessibilityValue(summaryLine)
-                .accessibilityHint(isExpanded ? "Collapses details" : "Expands details")
+            } label: {
+                HStack(spacing: 14) {
+                    dividerLine
+
+                    HStack(spacing: 6) {
+                        Text(summaryLine)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(summaryTint)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary.opacity(0.58))
+                    }
+
+                    dividerLine
+                }
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Turn activity")
+            .accessibilityValue(summaryLine)
+            .accessibilityHint(isExpanded ? "Collapses details" : "Expands details")
 
             if isExpanded {
                 if let detailOverviewLine {
                     Text(detailOverviewLine)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary.opacity(0.88))
                 }
 
                 if summary.milestoneCounts.hasAny {
@@ -597,6 +710,12 @@ struct TurnSummaryRow: View {
 
     private var summaryTint: Color {
         summary.isFailure ? .red : .secondary.opacity(0.92)
+    }
+
+    private var dividerLine: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 1)
     }
 
     private var detailOverviewLine: String? {
@@ -681,47 +800,74 @@ private struct TurnSummaryDetailsList: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 6) {
+            LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(visibleActions) { action in
-                    HStack(alignment: .center, spacing: 8) {
-                        Circle()
-                            .fill(tint(for: action))
-                            .frame(width: 4, height: 4)
-                            .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .top, spacing: 10) {
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(tint(for: action))
+                                .frame(width: 4)
+                                .padding(.vertical, 2)
+                                .accessibilityHidden(true)
 
-                        Text(primaryLine(for: action))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text(primaryLine(for: action))
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.primary.opacity(0.92))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
 
-                        if model.workerTraceEntry(for: action) != nil {
-                            Button {
-                                selectedWorkerTrace = model.workerTraceEntry(for: action)
-                            } label: {
-                                Image(systemName: "doc.text.magnifyingglass")
-                                    .font(.caption2.weight(.semibold))
+                                    Text(RuntimeVisualStateClassifier.classify(action).label)
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(tint(for: action))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(tint(for: action).opacity(0.11), in: Capsule())
+                                }
+
+                                let detail = RuntimeVisualStateClassifier.detailPreview(for: action, maxLength: 240)
+                                if !detail.isEmpty {
+                                    Text(detail)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundStyle(.secondary.opacity(0.92))
+                                        .textSelection(.enabled)
+                                        .lineLimit(3)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel("Open worker trace for \(primaryLine(for: action))")
+
+                            Spacer(minLength: 8)
+
+                            if model.workerTraceEntry(for: action) != nil {
+                                Button {
+                                    selectedWorkerTrace = model.workerTraceEntry(for: action)
+                                } label: {
+                                    Image(systemName: "doc.text.magnifyingglass")
+                                        .font(.caption2.weight(.semibold))
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary.opacity(0.78))
+                                .accessibilityLabel("Open worker trace for \(primaryLine(for: action))")
+                            }
                         }
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.primary.opacity(0.03))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.06))
+                    )
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 2)
+            .padding(.vertical, 4)
         }
-        .frame(maxHeight: 96)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08))
-        )
+        .frame(maxHeight: 210)
         .sheet(item: $selectedWorkerTrace) { entry in
             WorkerTraceDetailsSheet(model: model, entry: entry)
         }
