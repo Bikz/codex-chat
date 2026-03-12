@@ -65,7 +65,27 @@ Production alert provisioning:
 - Spike in `pairJoinFailures`: inspect desktop connectivity, join token expiry, approval timeouts.
 - Spike in `outboundSendFailures` or `slowConsumerDisconnects`: inspect overload/backpressure and client reconnect behavior.
 
-4. Mitigate
+4. Triage websocket auth failures by root cause
+- Start with a logs filter scoped to the relay pods and `ws_auth_failure`.
+- Group findings by `reason` first so you can separate stale credentials from origin rejects or capacity pressure.
+- For stale/repeat auth failures, pivot on `remoteIp` and `userAgent` to see whether one device is looping or whether many clients regressed at once.
+- A common stale-session loop looks like repeated `reason=token_not_found`, `desktop_session_missing`, `mobile_session_missing`, `device_not_registered`, or `device_record_missing` from the same `remoteIp` and `userAgent` every 10-20 seconds.
+
+Example Logs Explorer query:
+
+```text
+resource.type="k8s_container"
+resource.labels.namespace_name="codexchat-remote-control"
+resource.labels.container_name="remote-control-relay"
+"ws_auth_failure"
+```
+
+Check the structured fields or rendered log line for:
+- `reason`
+- `remoteIp`
+- `userAgent`
+
+5. Mitigate
 - Scale up relay replicas (temporary) and verify HPA behavior.
 - Reduce ingress pressure with stricter rate limits if abuse is detected.
 - Restart degraded pods only after confirming Redis/NATS are healthy.

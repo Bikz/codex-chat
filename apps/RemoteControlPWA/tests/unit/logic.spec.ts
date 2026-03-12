@@ -216,7 +216,12 @@ describe('remote client lifecycle', () => {
 
   it('clears persisted credentials when disconnect reason requires re-pair', () => {
     const client = getRemoteClient();
-    const nonReconnectableReasons = ['device_revoked', 'stopped_by_desktop'] as const;
+    const nonReconnectableReasons = [
+      'device_revoked',
+      'stopped_by_desktop',
+      'session_expired',
+      'replaced_by_new_pair_start'
+    ] as const;
 
     for (const reason of nonReconnectableReasons) {
       window.localStorage.setItem(

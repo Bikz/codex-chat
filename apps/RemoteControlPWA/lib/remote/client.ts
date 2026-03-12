@@ -1297,7 +1297,7 @@ class RemoteClient {
       case 'idle_timeout':
         return 'Remote session timed out due to inactivity. Start a new session on desktop.';
       case 'session_expired':
-        return 'Remote session expired. Start a new session on desktop and pair again.';
+        return 'Saved pairing expired. Start a new session on desktop and pair again.';
       case 'replaced_by_new_pair_start':
         return 'Desktop started a new remote session. Scan the latest QR code to reconnect.';
       case 'relay_over_capacity':

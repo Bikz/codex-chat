@@ -24,6 +24,14 @@ private actor RemoteEnvelopeRecorder {
     }
 }
 
+private actor RemoteConnectionRecorder {
+    private(set) var sessionIDs: [String] = []
+
+    func record(_ sessionID: String) {
+        sessionIDs.append(sessionID)
+    }
+}
+
 private actor RestoreSessionRelayRegistrar: RemoteControlRelayRegistering {
     private(set) var startRequests: [RemoteControlPairStartRequest] = []
     private(set) var refreshRequests: [RemoteControlPairRefreshRequest] = []
@@ -31,9 +39,14 @@ private actor RestoreSessionRelayRegistrar: RemoteControlRelayRegistering {
     private(set) var listRequests: [RemoteControlDevicesListRequest] = []
     private(set) var revokeRequests: [RemoteControlDeviceRevokeRequest] = []
     private let listDevicesError: Error?
+    private let refreshPairingError: Error?
 
-    init(listDevicesError: Error? = nil) {
+    init(
+        listDevicesError: Error? = nil,
+        refreshPairingError: Error? = nil
+    ) {
         self.listDevicesError = listDevicesError
+        self.refreshPairingError = refreshPairingError
     }
 
     func startPairing(_ request: RemoteControlPairStartRequest) async throws -> RemoteControlPairStartResponse {
@@ -43,6 +56,9 @@ private actor RestoreSessionRelayRegistrar: RemoteControlRelayRegistering {
 
     func refreshPairing(_ request: RemoteControlPairRefreshRequest) async throws -> RemoteControlPairRefreshResponse {
         refreshRequests.append(request)
+        if let refreshPairingError {
+            throw refreshPairingError
+        }
         return RemoteControlPairRefreshResponse(accepted: true, relayWebSocketURL: request.relayWebSocketURL)
     }
 
@@ -813,7 +829,9 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertEqual(connectedSessionIDs, [descriptor.sessionID], "Persisted restore should reconnect exactly once.")
 
         let pairStartRequests = await registrar.startRequests
+        let refreshRequests = await registrar.refreshRequests
         XCTAssertEqual(pairStartRequests.count, 0, "Restore should not call pair/start again.")
+        XCTAssertEqual(refreshRequests.count, 1, "Restore should validate the session with pair/refresh before websocket reconnect.")
     }
 
     func testRestorePersistedRemoteControlSessionClearsExpiredCredentials() async throws {
@@ -839,7 +857,7 @@ final class RemoteControlSyncTests: XCTestCase {
             code: 404,
             userInfo: [NSLocalizedDescriptionKey: "session_not_found"]
         )
-        let registrar = RestoreSessionRelayRegistrar(listDevicesError: invalidSessionError)
+        let registrar = RestoreSessionRelayRegistrar(refreshPairingError: invalidSessionError)
         let broker = RemoteControlBroker(relayRegistrar: registrar)
         let model = AppModel(
             repositories: nil,
@@ -859,8 +877,115 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertFalse(didAttemptConnect, "Restore should not connect websocket when relay rejects session refresh.")
         XCTAssertEqual(model.remoteControlStatus.phase, .disconnected)
         XCTAssertEqual(model.remoteControlStatusMessage, "Session ended; start new session.")
+        let refreshRequests = await registrar.refreshRequests
+        let listRequests = await registrar.listRequests
+        XCTAssertEqual(refreshRequests.count, 1)
+        XCTAssertEqual(listRequests.count, 0, "Failed refresh should short-circuit before listing trusted devices.")
         let clearedDescriptor = try credentialStore.loadSessionDescriptor()
         XCTAssertNil(clearedDescriptor, "Invalid persisted session should be cleared.")
+    }
+
+    func testTerminalRelayDisconnectClearsPersistedSessionWithoutReconnect() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_150)
+        let joinURL = try XCTUnwrap(URL(string: "https://remote.example/rc#sid=session-terminal-disconnect&jt=join-token"))
+        let relayWebSocketURL = try XCTUnwrap(URL(string: "wss://remote.example/ws"))
+        let descriptor = RemoteControlSessionDescriptor(
+            sessionID: "session-terminal-disconnect",
+            joinTokenLease: RemoteControlJoinTokenLease(
+                token: "join-token",
+                issuedAt: now,
+                expiresAt: now.addingTimeInterval(120)
+            ),
+            joinURL: joinURL,
+            relayWebSocketURL: relayWebSocketURL,
+            desktopSessionToken: "desktop-token",
+            createdAt: now,
+            idleTimeout: 1800
+        )
+        let credentialStore = InMemoryRemoteControlSessionCredentialStore(descriptor: descriptor)
+        let registrar = RestoreSessionRelayRegistrar()
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        await broker.restoreSession(descriptor)
+
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            remoteControlBroker: broker,
+            remoteControlSessionCredentialStore: credentialStore
+        )
+        model.remoteControlStatus = await broker.currentStatus()
+
+        var connectedSessionIDs: [String] = []
+        model.remoteControlWebSocketConnector = { sessionDescriptor in
+            connectedSessionIDs.append(sessionDescriptor.sessionID)
+        }
+
+        await model.ingestRemoteRelaySignalForTesting(type: "disconnect", reason: "session_expired")
+
+        XCTAssertEqual(model.remoteControlStatus.phase, .disconnected)
+        XCTAssertEqual(model.remoteControlStatusMessage, "Session ended; start new session.")
+        XCTAssertNil(model.remoteControlReconnectTask, "Terminal relay disconnects should not queue reconnect attempts.")
+        XCTAssertTrue(connectedSessionIDs.isEmpty, "Terminal relay disconnects should not reopen the websocket.")
+        XCTAssertNil(try credentialStore.loadSessionDescriptor())
+    }
+
+    func testTransientWebSocketDisconnectStillReconnectsAfterRefreshValidation() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_175)
+        let joinURL = try XCTUnwrap(URL(string: "https://remote.example/rc#sid=session-reconnect&jt=join-token"))
+        let relayWebSocketURL = try XCTUnwrap(URL(string: "wss://remote.example/ws"))
+        let descriptor = RemoteControlSessionDescriptor(
+            sessionID: "session-reconnect",
+            joinTokenLease: RemoteControlJoinTokenLease(
+                token: "join-token",
+                issuedAt: now,
+                expiresAt: now.addingTimeInterval(120)
+            ),
+            joinURL: joinURL,
+            relayWebSocketURL: relayWebSocketURL,
+            desktopSessionToken: "desktop-token",
+            createdAt: now,
+            idleTimeout: 1800
+        )
+        let credentialStore = InMemoryRemoteControlSessionCredentialStore(descriptor: descriptor)
+        let registrar = RestoreSessionRelayRegistrar()
+        let broker = RemoteControlBroker(relayRegistrar: registrar)
+        await broker.restoreSession(descriptor)
+
+        let model = AppModel(
+            repositories: nil,
+            runtime: nil,
+            bootError: nil,
+            remoteControlBroker: broker,
+            remoteControlSessionCredentialStore: credentialStore
+        )
+        model.remoteControlStatus = await broker.currentStatus()
+
+        let connectionRecorder = RemoteConnectionRecorder()
+        model.remoteControlWebSocketConnector = { sessionDescriptor in
+            Task {
+                await connectionRecorder.record(sessionDescriptor.sessionID)
+            }
+        }
+
+        model.handleRemoteControlWebSocketDisconnectForTesting(
+            URLError(.networkConnectionLost),
+            closeCode: .goingAway
+        )
+
+        let didReconnect = await waitUntil(timeoutSeconds: 1.6) {
+            let connectedSessionIDs = await connectionRecorder.sessionIDs
+            return !connectedSessionIDs.isEmpty
+        }
+
+        XCTAssertTrue(didReconnect, "Transient websocket disconnects should retry after refresh validation.")
+        let connectedSessionIDs = await connectionRecorder.sessionIDs
+        XCTAssertEqual(connectedSessionIDs, [descriptor.sessionID])
+        XCTAssertEqual(model.remoteControlStatus.phase, .active)
+        XCTAssertNil(model.remoteControlReconnectTask, "Reconnect task should be cleared after a retry attempt finishes.")
+        let refreshRequests = await registrar.refreshRequests
+        XCTAssertEqual(refreshRequests.count, 1, "Reconnect should validate the session with pair/refresh before reopening the websocket.")
+        XCTAssertNotNil(try credentialStore.loadSessionDescriptor())
     }
 
     func testRemoteControlSessionConnectionLabelReflectsRelayState() async throws {

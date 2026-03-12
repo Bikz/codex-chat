@@ -29,6 +29,12 @@ enum RemoteControlSnapshotReason: String {
 extension AppModel {
     private static let defaultRemoteControlJoinURL = "https://remote.bikz.cc/rc"
     private static let defaultRemoteControlRelayWSURL = "wss://remote.bikz.cc/ws"
+    private static let remoteControlTerminalDisconnectReasons: Set<String> = [
+        "device_revoked",
+        "replaced_by_new_pair_start",
+        "session_expired",
+        "stopped_by_desktop",
+    ]
     private static let remoteControlSnapshotPumpNanoseconds: UInt64 = 700_000_000
     private static let remoteControlImmediateSyncDebounceNanoseconds: UInt64 = 80_000_000
     private static let remoteControlSnapshotMessageLimit = 160
@@ -113,6 +119,10 @@ extension AppModel {
         await remoteControlBroker.restoreSession(descriptor)
         remoteControlStatus = await remoteControlBroker.currentStatus()
 
+        guard let refreshedDescriptor = await refreshRemoteControlSessionDescriptorForReconnect() else {
+            return
+        }
+
         do {
             _ = try await remoteControlBroker.refreshTrustedDevices()
             remoteControlStatus = await remoteControlBroker.currentStatus()
@@ -125,9 +135,9 @@ extension AppModel {
 
         remoteControlReconnectAttempt = 0
         resetRemoteControlSyncState()
-        connectRemoteControlWebSocket(using: descriptor)
+        connectRemoteControlWebSocket(using: refreshedDescriptor)
         remoteControlStatusMessage = "Remote session restored. Reconnecting..."
-        appendLog(.info, "Restored persisted remote control session: \(descriptor.sessionID)")
+        appendLog(.info, "Restored persisted remote control session: \(refreshedDescriptor.sessionID)")
     }
 
     func startRemoteControlSession() {
@@ -383,6 +393,46 @@ extension AppModel {
             || lowercasedDescription.contains("session stale")
     }
 
+    private func shouldInvalidatePersistedRemoteControlSession(forRelayDisconnectReason reason: String?) -> Bool {
+        guard let reason = normalizedRemoteRelayDisconnectReason(reason) else {
+            return false
+        }
+        return Self.remoteControlTerminalDisconnectReasons.contains(reason)
+    }
+
+    private func normalizedRemoteRelayDisconnectReason(_ reason: String?) -> String? {
+        guard let trimmed = reason?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private func refreshRemoteControlSessionDescriptorForReconnect() async -> RemoteControlSessionDescriptor? {
+        guard let currentSession = remoteControlStatus.session else {
+            return nil
+        }
+
+        guard let urls = resolvedRemoteControlURLs() else {
+            return currentSession
+        }
+
+        do {
+            let descriptor = try await remoteControlBroker.refreshJoinToken(joinBaseURL: urls.joinURL)
+            savePersistedRemoteControlSessionDescriptor(descriptor)
+            remoteControlStatus = await remoteControlBroker.currentStatus()
+            return descriptor
+        } catch {
+            if await handleRemoteControlStatusRefreshFailure(error) {
+                return nil
+            }
+            remoteControlStatus = await remoteControlBroker.currentStatus()
+            appendLog(.warning, "Failed to refresh remote join token before reconnect: \(error.localizedDescription)")
+            return remoteControlStatus.session ?? currentSession
+        }
+    }
+
     private func invalidatePersistedRemoteControlSession(
         relayReason: String
     ) async {
@@ -436,15 +486,18 @@ extension AppModel {
         }
     }
 
-    private func handleRemoteControlWebSocketDisconnect(_ error: Error) {
+    private func handleRemoteControlWebSocketDisconnect(
+        _ error: Error,
+        closeCodeOverride: URLSessionWebSocketTask.CloseCode? = nil
+    ) {
         remoteControlReceiveTask?.cancel()
         remoteControlReceiveTask = nil
 
-        guard remoteControlWebSocketTask != nil else {
+        guard remoteControlWebSocketTask != nil || closeCodeOverride != nil else {
             return
         }
 
-        let closeCode = remoteControlWebSocketTask?.closeCode
+        let closeCode = closeCodeOverride ?? remoteControlWebSocketTask?.closeCode
         if closeCode == .policyViolation {
             Task { [weak self] in
                 guard let self else { return }
@@ -481,7 +534,10 @@ extension AppModel {
             remoteControlReconnectTask = nil
             await refreshRemoteControlStatus()
 
-            guard let session = remoteControlStatus.session else {
+            guard remoteControlStatus.session != nil else {
+                return
+            }
+            guard let session = await refreshRemoteControlSessionDescriptorForReconnect() else {
                 return
             }
             connectRemoteControlWebSocket(using: session)
@@ -587,9 +643,48 @@ extension AppModel {
             handleRemotePairRequestSignal(signal)
         case "relay.pair_result":
             handleRemotePairResultSignal(signal)
+        case "disconnect":
+            if shouldInvalidatePersistedRemoteControlSession(forRelayDisconnectReason: signal.reason) {
+                await invalidatePersistedRemoteControlSession(
+                    relayReason: normalizedRemoteRelayDisconnectReason(signal.reason) ?? "session_expired"
+                )
+                return
+            }
+            if let reason = normalizedRemoteRelayDisconnectReason(signal.reason) {
+                remoteControlStatusMessage = "Remote relay requested disconnect: \(reason)"
+                appendLog(.info, "Remote relay requested disconnect: \(reason)")
+            }
         default:
             break
         }
+    }
+
+    func ingestRemoteRelaySignalForTesting(
+        type: String,
+        reason: String? = nil,
+        connectedDeviceCount: Int? = nil
+    ) async {
+        let signal = RemoteRelayControlSignal(
+            type: type,
+            sessionID: nil,
+            connectedDeviceCount: connectedDeviceCount,
+            requestID: nil,
+            deviceName: nil,
+            requesterIP: nil,
+            requestedAt: nil,
+            expiresAt: nil,
+            approved: nil,
+            reason: reason,
+            lastSeq: nil
+        )
+        await handleRemoteRelaySignal(signal)
+    }
+
+    func handleRemoteControlWebSocketDisconnectForTesting(
+        _ error: Error,
+        closeCode: URLSessionWebSocketTask.CloseCode?
+    ) {
+        handleRemoteControlWebSocketDisconnect(error, closeCodeOverride: closeCode)
     }
 
     func approveRemoteControlPairRequest() {
