@@ -70,6 +70,9 @@ pnpm -s run check
 
 ## Issue Filing Requirements
 
+Usage questions and install help belong in GitHub Discussions as described in
+`SUPPORT.md`. Security issues must not be filed publicly; use `SECURITY.md`.
+
 Include:
 
 - `swift run CodexChatCLI doctor` output (from `apps/CodexChatApp`)

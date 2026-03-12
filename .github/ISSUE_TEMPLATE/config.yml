@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support and install help
+    url: https://github.com/Bikz/codex-chat/discussions
+    about: Ask usage questions, installation questions, and runtime compatibility questions here.
+  - name: Security vulnerability reporting
+    url: https://github.com/Bikz/codex-chat/security/advisories/new
+    about: Please use GitHub Private Vulnerability Reporting for security issues.
