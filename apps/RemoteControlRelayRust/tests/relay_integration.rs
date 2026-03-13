@@ -3304,3 +3304,212 @@ async fn redis_persistence_accepts_fresh_pair_mobile_token_on_second_pod_immedia
     task_b.abort();
     task_a.abort();
 }
+
+#[tokio::test]
+async fn nats_presence_probe_marks_second_pod_mobile_auth_online_and_forwards_commands() {
+    let Some(redis_url) = std::env::var("REMOTE_CONTROL_REDIS_TEST_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return;
+    };
+    let Some(nats_url) = std::env::var("REMOTE_CONTROL_NATS_TEST_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return;
+    };
+
+    let redis_key_prefix = format!("relay-test-{}", random_token(8));
+    let nats_subject_prefix = format!("relay-test-{}", random_token(8));
+    let client = reqwest::Client::new();
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let (base_a, task_a) = spawn_test_server_with_config(|config| {
+        config.redis_url = Some(redis_url.clone());
+        config.redis_key_prefix = redis_key_prefix.clone();
+        config.nats_url = Some(nats_url.clone());
+        config.nats_subject_prefix = nats_subject_prefix.clone();
+        config.token_rotation_grace_ms = 30_000;
+    })
+    .await;
+    let (base_b, task_b) = spawn_test_server_with_config(|config| {
+        config.redis_url = Some(redis_url.clone());
+        config.redis_key_prefix = redis_key_prefix.clone();
+        config.nats_url = Some(nats_url.clone());
+        config.nats_subject_prefix = nats_subject_prefix.clone();
+        config.token_rotation_grace_ms = 30_000;
+    })
+    .await;
+
+    let start_response = client
+        .post(format!("{base_a}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.auth",
+                "token": desktop_session_token
+            })
+            .to_string(),
+        ))
+        .await
+        .expect("desktop auth send");
+    let _desktop_auth = next_matching_json_message(&mut desktop_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+    })
+    .await;
+
+    let join_future = tokio::spawn({
+        let client = client.clone();
+        let base_a = base_a.clone();
+        let session_id = session_id.clone();
+        let join_token = join_token.clone();
+        async move {
+            client
+                .post(format!("{base_a}/pair/join"))
+                .header("Origin", "http://localhost:4173")
+                .json(&json!({
+                    "sessionID": session_id,
+                    "joinToken": join_token,
+                    "deviceName": "NATS Pod Hop iPhone",
+                }))
+                .send()
+                .await
+                .expect("pair join request")
+        }
+    });
+
+    let pair_request = next_matching_json_message(&mut desktop_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.pair_request")
+    })
+    .await;
+    let request_id = pair_request
+        .get("requestID")
+        .and_then(Value::as_str)
+        .expect("requestID")
+        .to_string();
+
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.pair_decision",
+                "sessionID": session_id,
+                "requestID": request_id,
+                "approved": true,
+            })
+            .to_string(),
+        ))
+        .await
+        .expect("desktop pair decision send");
+
+    let join_response = join_future.await.expect("join task");
+    assert_eq!(join_response.status(), StatusCode::OK);
+    let join_payload: Value = join_response.json().await.expect("join payload");
+    let first_device_token = join_payload
+        .get("deviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("device token")
+        .to_string();
+
+    let mut second_mobile_request = (base_b.replace("http://", "ws://") + "/ws")
+        .into_client_request()
+        .expect("second mobile request");
+    second_mobile_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut second_mobile_socket, _) = tokio_tungstenite::connect_async(second_mobile_request)
+        .await
+        .expect("second mobile websocket");
+    second_mobile_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": first_device_token }).to_string(),
+        ))
+        .await
+        .expect("second mobile auth send");
+
+    let second_mobile_auth =
+        next_matching_json_message(&mut second_mobile_socket, 1_500, |payload| {
+            payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+        })
+        .await;
+    assert_eq!(
+        second_mobile_auth.get("role").and_then(Value::as_str),
+        Some("mobile")
+    );
+    assert_eq!(
+        second_mobile_auth
+            .get("desktopConnected")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+
+    second_mobile_socket
+        .send(Message::Text(
+            json!({
+                "schemaVersion": 2,
+                "sessionID": session_id,
+                "seq": 1,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "payload": {
+                    "type": "command",
+                    "payload": {
+                        "name": "thread.select",
+                        "commandID": "cmd-cross-pod-1",
+                        "threadID": "11111111-1111-1111-1111-111111111111"
+                    }
+                }
+            })
+            .to_string(),
+        ))
+        .await
+        .expect("cross-pod command send");
+
+    let forwarded = next_matching_json_message(&mut desktop_socket, 1_500, |payload| {
+        payload
+            .pointer("/payload/payload/name")
+            .and_then(Value::as_str)
+            == Some("thread.select")
+    })
+    .await;
+    assert_eq!(
+        forwarded
+            .pointer("/payload/payload/commandID")
+            .and_then(Value::as_str),
+        Some("cmd-cross-pod-1")
+    );
+
+    second_mobile_socket
+        .close(None)
+        .await
+        .expect("second mobile socket close");
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop socket close");
+    task_b.abort();
+    task_a.abort();
+}

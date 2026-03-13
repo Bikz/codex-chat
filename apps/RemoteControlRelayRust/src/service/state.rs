@@ -661,6 +661,17 @@ pub(super) fn start_control_subscription(state: SharedRelayState) {
                     "session_refresh" => {
                         refresh_sessions_from_persistence(&state, true).await;
                     }
+                    "desktop_status_probe" => {
+                        handle_desktop_status_probe_from_envelope(&state, &envelope).await;
+                    }
+                    "desktop_status_response" => {
+                        apply_desktop_status_response_from_envelope(
+                            &state,
+                            &envelope,
+                            &bus.instance_id,
+                        )
+                        .await;
+                    }
                     _ => continue,
                 }
             }
@@ -716,6 +727,51 @@ pub(super) fn publish_cross_instance_control_session_refresh(
         json!({
             "type": "relay.session_refresh",
             "sessionID": session_id,
+        })
+        .to_string(),
+    );
+}
+
+pub(super) fn publish_cross_instance_control_desktop_status_probe(
+    state: &SharedRelayState,
+    session_id: &str,
+) {
+    let Some(bus) = state.cross_instance_bus.as_ref() else {
+        return;
+    };
+
+    publish_cross_instance_envelope(
+        state,
+        |bus, _| nats_control_subject(bus),
+        session_id,
+        "desktop_status_probe",
+        None,
+        json!({
+            "type": "relay.desktop_status_probe",
+            "sessionID": session_id,
+            "requestingInstanceID": bus.instance_id,
+        })
+        .to_string(),
+    );
+}
+
+pub(super) fn publish_cross_instance_control_desktop_status_response(
+    state: &SharedRelayState,
+    session_id: &str,
+    requesting_instance_id: &str,
+    desktop_connected: bool,
+) {
+    publish_cross_instance_envelope(
+        state,
+        |bus, _| nats_control_subject(bus),
+        session_id,
+        "desktop_status_response",
+        None,
+        json!({
+            "type": "relay.desktop_status_response",
+            "sessionID": session_id,
+            "requestingInstanceID": requesting_instance_id,
+            "desktopConnected": desktop_connected,
         })
         .to_string(),
     );
@@ -951,6 +1007,65 @@ pub(super) async fn apply_pair_decision_from_envelope(
         return;
     };
     apply_pair_decision(session, &decision, None);
+}
+
+pub(super) async fn handle_desktop_status_probe_from_envelope(
+    state: &SharedRelayState,
+    envelope: &CrossInstanceEnvelope,
+) {
+    let requesting_instance_id = serde_json::from_str::<Value>(&envelope.payload)
+        .ok()
+        .and_then(|value| {
+            (value.get("type").and_then(Value::as_str) == Some("relay.desktop_status_probe"))
+                .then(|| value.get("requestingInstanceID").and_then(Value::as_str))
+                .flatten()
+                .map(ToOwned::to_owned)
+        });
+    let Some(requesting_instance_id) = requesting_instance_id else {
+        return;
+    };
+
+    let desktop_connected = {
+        let relay = state.inner.lock().await;
+        relay
+            .sessions
+            .get(&envelope.session_id)
+            .is_some_and(|session| session.desktop_socket.is_some())
+    };
+    if !desktop_connected {
+        return;
+    }
+
+    publish_cross_instance_control_desktop_status_response(
+        state,
+        &envelope.session_id,
+        &requesting_instance_id,
+        true,
+    );
+}
+
+pub(super) async fn apply_desktop_status_response_from_envelope(
+    state: &SharedRelayState,
+    envelope: &CrossInstanceEnvelope,
+    local_instance_id: &str,
+) {
+    let Some(desktop_connected) = serde_json::from_str::<Value>(&envelope.payload)
+        .ok()
+        .and_then(|value| {
+            (value.get("type").and_then(Value::as_str) == Some("relay.desktop_status_response")
+                && value.get("requestingInstanceID").and_then(Value::as_str)
+                    == Some(local_instance_id))
+            .then(|| value.get("desktopConnected").and_then(Value::as_bool))
+            .flatten()
+        })
+    else {
+        return;
+    };
+
+    let mut relay = state.inner.lock().await;
+    if let Some(session) = relay.sessions.get_mut(&envelope.session_id) {
+        session.desktop_connected = desktop_connected;
+    }
 }
 
 pub(super) fn build_device_token_index(

@@ -1,5 +1,8 @@
 use super::*;
 
+const REMOTE_DESKTOP_STATUS_PROBE_TIMEOUT_MS: i64 = 150;
+const REMOTE_DESKTOP_STATUS_PROBE_POLL_INTERVAL_MS: u64 = 15;
+
 pub(super) enum SocketAuth {
     Desktop,
     Mobile {
@@ -53,7 +56,9 @@ fn rollback_mobile_auth_registration(
 ) {
     if let Some(session) = relay.sessions.get_mut(session_id) {
         session.mobile_sockets.remove(connection_id);
-        session.command_sequence_by_connection_id.remove(connection_id);
+        session
+            .command_sequence_by_connection_id
+            .remove(connection_id);
         session.last_activity_at_ms = now;
         if let Some(device) = session.devices.get_mut(device_id) {
             device.current_session_token = old_token.to_string();
@@ -73,6 +78,47 @@ fn rollback_mobile_auth_registration(
             expires_at_ms: None,
         },
     );
+}
+
+async fn resolve_cross_instance_desktop_presence(
+    state: &SharedRelayState,
+    session_id: &str,
+    has_local_desktop: bool,
+) -> bool {
+    if has_local_desktop {
+        return true;
+    }
+    if state.cross_instance_bus.is_none() {
+        return false;
+    }
+
+    {
+        let mut relay = state.inner.lock().await;
+        let Some(session) = relay.sessions.get_mut(session_id) else {
+            return false;
+        };
+        session.desktop_connected = false;
+    }
+
+    publish_cross_instance_control_desktop_status_probe(state, session_id);
+
+    let deadline = now_ms().saturating_add(REMOTE_DESKTOP_STATUS_PROBE_TIMEOUT_MS);
+    loop {
+        let is_connected = {
+            let relay = state.inner.lock().await;
+            relay
+                .sessions
+                .get(session_id)
+                .is_some_and(desktop_connected)
+        };
+        if is_connected || now_ms() >= deadline {
+            return is_connected;
+        }
+        sleep(Duration::from_millis(
+            REMOTE_DESKTOP_STATUS_PROBE_POLL_INTERVAL_MS,
+        ))
+        .await;
+    }
 }
 
 pub(super) async fn authenticate_socket(
@@ -241,13 +287,7 @@ pub(super) async fn authenticate_socket(
             let now = now_ms();
             let next_token = random_token(32);
 
-            let (
-                old_token,
-                connected_device_count,
-                device_count_event,
-                desktop_connected,
-                local_desktop,
-            ) = {
+            let (old_token, connected_device_count, device_count_event, local_desktop) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
                     warn!(
                         "[relay-rs] ws_auth_failure reason=mobile_session_missing remote_ip={} user_agent={}",
@@ -313,7 +353,6 @@ pub(super) async fn authenticate_socket(
                     old_token,
                     connected_device_count,
                     device_count_payload(session),
-                    desktop_connected(session),
                     session.desktop_socket.clone(),
                 )
             };
@@ -361,6 +400,12 @@ pub(super) async fn authenticate_socket(
                 return Err(SocketAuthFailure::Rejected);
             }
             sync_session_bus_subscription(state, &session_id).await;
+            let desktop_connected = resolve_cross_instance_desktop_presence(
+                state,
+                &session_id,
+                local_desktop.is_some(),
+            )
+            .await;
 
             let payload = RelayAuthOk {
                 message_type: "auth_ok".to_string(),
