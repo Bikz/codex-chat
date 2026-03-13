@@ -119,6 +119,13 @@ pub(super) struct RelayCrossInstanceBus {
     pub(super) client: async_nats::Client,
     pub(super) instance_id: String,
     pub(super) subject_prefix: String,
+    pub(super) publish_tx: mpsc::UnboundedSender<QueuedCrossInstancePublish>,
+}
+
+#[derive(Clone)]
+pub(super) struct QueuedCrossInstancePublish {
+    pub(super) subject: String,
+    pub(super) payload: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -476,10 +483,25 @@ pub(super) async fn build_cross_instance_bus(
         redacted_nats_url, config.nats_subject_prefix, instance_id
     );
 
+    let (publish_tx, mut publish_rx) = mpsc::unbounded_channel::<QueuedCrossInstancePublish>();
+    let publish_client = client.clone();
+    tokio::spawn(async move {
+        while let Some(message) = publish_rx.recv().await {
+            if let Err(error) = publish_client
+                .publish(message.subject, message.payload.into())
+                .await
+            {
+                warn!("[relay-rs] failed to publish cross-instance payload: {error}");
+            }
+        }
+        warn!("[relay-rs] cross-instance publish queue closed");
+    });
+
     Some(RelayCrossInstanceBus {
         client,
         instance_id,
         subject_prefix: config.nats_subject_prefix.clone(),
+        publish_tx,
     })
 }
 
@@ -807,19 +829,19 @@ pub(super) fn publish_cross_instance_envelope(
         .as_ref()
         .and_then(|secret| envelope_signature(secret, &signed_envelope));
     let subject = subject_builder(&bus, session_id);
-
-    tokio::spawn(async move {
-        let encoded = match serde_json::to_vec(&signed_envelope) {
-            Ok(encoded) => encoded,
-            Err(error) => {
-                warn!("[relay-rs] failed to encode cross-instance payload: {error}");
-                return;
-            }
-        };
-        if let Err(error) = bus.client.publish(subject, encoded.into()).await {
-            warn!("[relay-rs] failed to publish cross-instance payload: {error}");
+    let encoded = match serde_json::to_vec(&signed_envelope) {
+        Ok(encoded) => encoded,
+        Err(error) => {
+            warn!("[relay-rs] failed to encode cross-instance payload: {error}");
+            return;
         }
-    });
+    };
+    if let Err(error) = bus.publish_tx.send(QueuedCrossInstancePublish {
+        subject,
+        payload: encoded,
+    }) {
+        warn!("[relay-rs] failed to enqueue cross-instance payload: {error}");
+    }
 }
 
 pub(super) async fn sync_session_bus_subscription(state: &SharedRelayState, session_id: &str) {
