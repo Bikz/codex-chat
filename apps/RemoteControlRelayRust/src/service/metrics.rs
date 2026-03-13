@@ -48,6 +48,7 @@ pub(super) async fn metricsz(State(state): State<SharedRelayState>) -> impl Into
         ws_auth_attempts: stats.ws_auth_attempts,
         ws_auth_successes: stats.ws_auth_successes,
         ws_auth_failures: stats.ws_auth_failures,
+        ws_auth_failure_reasons: stats.ws_auth_failure_reasons.clone(),
         cross_instance_bus_enabled: state.cross_instance_bus.is_some(),
         redis_persistence_enabled: state.persistence.is_some(),
         now: Utc::now().to_rfc3339(),
@@ -79,6 +80,7 @@ pub(super) struct RelayRuntimeStats {
     pub(super) ws_auth_attempts: u64,
     pub(super) ws_auth_successes: u64,
     pub(super) ws_auth_failures: u64,
+    pub(super) ws_auth_failure_reasons: HashMap<String, u64>,
 }
 
 pub(super) fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
@@ -143,5 +145,6 @@ pub(super) fn relay_runtime_stats(relay: &RelayState) -> RelayRuntimeStats {
         ws_auth_attempts: relay.ws_auth_attempts,
         ws_auth_successes: relay.ws_auth_successes,
         ws_auth_failures,
+        ws_auth_failure_reasons: relay.ws_auth_failure_reasons.clone(),
     }
 }

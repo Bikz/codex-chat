@@ -73,6 +73,10 @@ pub(super) async fn handle_socket(
     };
 
     let Some(auth_message) = auth_message else {
+        {
+            let mut relay = state.inner.lock().await;
+            record_ws_auth_failure_reason(&mut relay, "auth_timeout_or_missing_payload");
+        }
         warn!(
             "[relay-rs] ws_auth_failure reason=auth_timeout_or_missing_payload remote_ip={} user_agent={}",
             client_ip,
@@ -84,6 +88,10 @@ pub(super) async fn handle_socket(
     };
 
     if auth_message.message_type != "relay.auth" || !is_opaque_token(&auth_message.token, 22) {
+        {
+            let mut relay = state.inner.lock().await;
+            record_ws_auth_failure_reason(&mut relay, "invalid_auth_payload");
+        }
         warn!(
             "[relay-rs] ws_auth_failure reason=invalid_auth_payload remote_ip={} user_agent={}",
             client_ip,

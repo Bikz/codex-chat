@@ -382,7 +382,14 @@ fn validate_runtime_request_response(
     };
     ensure_only_allowed_fields(
         runtime_response_object,
-        &["decision", "permissions", "scope", "text", "optionID", "approved"],
+        &[
+            "decision",
+            "permissions",
+            "scope",
+            "text",
+            "optionID",
+            "approved",
+        ],
         "invalid_command",
         "runtimeRequestResponse",
     )?;
@@ -396,8 +403,7 @@ fn validate_runtime_request_response(
     if !has_known_field {
         return Err(RelayValidationError {
             code: "invalid_command",
-            message: "runtimeRequestResponse must include at least one response field."
-                .to_string(),
+            message: "runtimeRequestResponse must include at least one response field.".to_string(),
         });
     }
 
@@ -420,8 +426,7 @@ fn validate_runtime_request_response(
             let Some(permission) = entry.as_str() else {
                 return Err(RelayValidationError {
                     code: "invalid_command",
-                    message: "runtimeRequestResponse.permissions must contain strings."
-                        .to_string(),
+                    message: "runtimeRequestResponse.permissions must contain strings.".to_string(),
                 });
             };
             if permission.trim().is_empty() || permission.len() > 256 {

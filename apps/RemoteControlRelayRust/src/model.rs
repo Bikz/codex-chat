@@ -197,6 +197,7 @@ pub struct RelayMetricsResponse {
     pub ws_auth_attempts: u64,
     pub ws_auth_successes: u64,
     pub ws_auth_failures: u64,
+    pub ws_auth_failure_reasons: std::collections::HashMap<String, u64>,
     pub cross_instance_bus_enabled: bool,
     pub redis_persistence_enabled: bool,
     pub now: String,

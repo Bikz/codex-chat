@@ -138,6 +138,13 @@ fn request_socket_disconnect(handle: &SocketHandle, reason: &str) {
     let _ = handle.shutdown.send(true);
 }
 
+fn record_ws_auth_failure_reason(relay: &mut RelayState, reason: &str) {
+    *relay
+        .ws_auth_failure_reasons
+        .entry(reason.to_string())
+        .or_insert(0) += 1;
+}
+
 fn try_send_payload(tx: &mpsc::Sender<Message>, payload: String) -> bool {
     try_send_message(tx, Message::Text(payload.into()))
 }

@@ -139,9 +139,10 @@ pub(super) async fn authenticate_socket(
         auth_context
     } else {
         refresh_sessions_from_persistence(state, true).await;
-        let relay = state.inner.lock().await;
+        let mut relay = state.inner.lock().await;
         let refreshed = resolve_auth_context(&relay, token);
         if refreshed.is_none() {
+            record_ws_auth_failure_reason(&mut relay, "token_not_found");
             warn!(
                 "[relay-rs] ws_auth_failure reason=token_not_found remote_ip={} user_agent={}",
                 remote_ip,
@@ -172,6 +173,7 @@ pub(super) async fn authenticate_socket(
     if current_active_connections >= state.config.max_active_websocket_connections
         && !reconnection_without_growth
     {
+        record_ws_auth_failure_reason(&mut relay, "relay_over_capacity");
         warn!(
             "[relay-rs] ws_auth_failure reason=relay_over_capacity active={} limit={} remote_ip={} user_agent={}",
             current_active_connections,
@@ -197,6 +199,7 @@ pub(super) async fn authenticate_socket(
                 desktop_status_slow_consumer_disconnects,
             ) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
+                    record_ws_auth_failure_reason(&mut relay, "desktop_session_missing");
                     warn!(
                         "[relay-rs] ws_auth_failure reason=desktop_session_missing remote_ip={} user_agent={}",
                         remote_ip,
@@ -275,6 +278,7 @@ pub(super) async fn authenticate_socket(
             device_id,
         } => {
             if !is_allowed_origin(&state.config.allowed_origins, origin) {
+                record_ws_auth_failure_reason(&mut relay, "mobile_origin_not_allowed");
                 warn!(
                     "[relay-rs] ws_auth_failure reason=mobile_origin_not_allowed remote_ip={} user_agent={}",
                     remote_ip,
@@ -289,6 +293,7 @@ pub(super) async fn authenticate_socket(
 
             let (old_token, connected_device_count, device_count_event, local_desktop) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
+                    record_ws_auth_failure_reason(&mut relay, "mobile_session_missing");
                     warn!(
                         "[relay-rs] ws_auth_failure reason=mobile_session_missing remote_ip={} user_agent={}",
                         remote_ip,
@@ -299,6 +304,7 @@ pub(super) async fn authenticate_socket(
                 session.last_activity_at_ms = now;
 
                 if !session.devices.contains_key(&device_id) {
+                    record_ws_auth_failure_reason(&mut relay, "device_not_registered");
                     warn!(
                         "[relay-rs] ws_auth_failure reason=device_not_registered remote_ip={} user_agent={}",
                         remote_ip,
@@ -310,6 +316,7 @@ pub(super) async fn authenticate_socket(
                 close_existing_mobile_socket_for_device(session, &device_id, "device_reconnected");
 
                 if session.mobile_sockets.len() >= state.config.max_devices_per_session {
+                    record_ws_auth_failure_reason(&mut relay, "device_cap_reached");
                     warn!(
                         "[relay-rs] ws_auth_failure reason=device_cap_reached remote_ip={} user_agent={}",
                         remote_ip,
@@ -319,6 +326,7 @@ pub(super) async fn authenticate_socket(
                 }
 
                 let Some(device) = session.devices.get_mut(&device_id) else {
+                    record_ws_auth_failure_reason(&mut relay, "device_record_missing");
                     warn!(
                         "[relay-rs] ws_auth_failure reason=device_record_missing remote_ip={} user_agent={}",
                         remote_ip,
@@ -391,6 +399,7 @@ pub(super) async fn authenticate_socket(
                     &next_token,
                     now,
                 );
+                record_ws_auth_failure_reason(&mut relay, "token_rotation_persist_failed");
                 warn!(
                     "[relay-rs] ws_auth_failure reason=token_rotation_persist_failed session={} remote_ip={} user_agent={} error={error}",
                     session_log_id(&session_id),

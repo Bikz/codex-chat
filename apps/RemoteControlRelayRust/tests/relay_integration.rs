@@ -382,6 +382,62 @@ async fn metricsz_reports_runtime_counters_for_connected_devices() {
 }
 
 #[tokio::test]
+async fn metricsz_reports_ws_auth_failure_reasons() {
+    let (base, task) = spawn_test_server().await;
+    let ws_url = base.replacen("http", "ws", 1) + "/ws";
+    let (mut socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("websocket connect");
+
+    socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": random_token(32) })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("auth send");
+
+    let next = socket
+        .next()
+        .await
+        .expect("disconnect or close frame")
+        .expect("websocket frame");
+    match next {
+        Message::Text(text) => {
+            let payload: Value = serde_json::from_str(&text).expect("disconnect payload");
+            assert_eq!(
+                payload.get("type").and_then(Value::as_str),
+                Some("disconnect")
+            );
+            assert_eq!(
+                payload.get("reason").and_then(Value::as_str),
+                Some("session_expired")
+            );
+        }
+        other => panic!("unexpected websocket frame: {other:?}"),
+    }
+
+    let response = reqwest::get(format!("{base}/metricsz"))
+        .await
+        .expect("metricsz request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("metricsz body");
+
+    assert_eq!(body.get("wsAuthAttempts").and_then(Value::as_u64), Some(1));
+    assert_eq!(body.get("wsAuthSuccesses").and_then(Value::as_u64), Some(0));
+    assert_eq!(body.get("wsAuthFailures").and_then(Value::as_u64), Some(1));
+    assert_eq!(
+        body.get("wsAuthFailureReasons")
+            .and_then(|value| value.get("token_not_found"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+
+    task.abort();
+}
+
+#[tokio::test]
 async fn pair_join_requires_desktop_connection() {
     let (base, task) = spawn_test_server().await;
     let client = reqwest::Client::new();
