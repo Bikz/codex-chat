@@ -654,11 +654,15 @@ pub(super) fn start_control_subscription(state: SharedRelayState) {
                 if !envelope_is_valid_for_processing(&state, &envelope, &bus.instance_id).await {
                     continue;
                 }
-                if envelope.target != "pair_decision" {
-                    continue;
+                match envelope.target.as_str() {
+                    "pair_decision" => {
+                        apply_pair_decision_from_envelope(&state, &envelope).await;
+                    }
+                    "session_refresh" => {
+                        refresh_sessions_from_persistence(&state, true).await;
+                    }
+                    _ => continue,
                 }
-
-                apply_pair_decision_from_envelope(&state, &envelope).await;
             }
 
             warn!("[relay-rs] control subscription ended; retrying");
@@ -696,6 +700,24 @@ pub(super) fn publish_cross_instance_control_pair_decision(
         "pair_decision",
         None,
         payload,
+    );
+}
+
+pub(super) fn publish_cross_instance_control_session_refresh(
+    state: &SharedRelayState,
+    session_id: &str,
+) {
+    publish_cross_instance_envelope(
+        state,
+        |bus, _| nats_control_subject(bus),
+        session_id,
+        "session_refresh",
+        None,
+        json!({
+            "type": "relay.session_refresh",
+            "sessionID": session_id,
+        })
+        .to_string(),
     );
 }
 
@@ -949,11 +971,13 @@ pub(super) fn build_device_token_index(
                 if now_ms() >= retired_token.expires_at_ms {
                     continue;
                 }
-                token_index.entry(retired_token.token.clone()).or_insert(DeviceTokenContext {
-                    session_id: session_id.clone(),
-                    device_id: device_id.clone(),
-                    expires_at_ms: Some(retired_token.expires_at_ms),
-                });
+                token_index
+                    .entry(retired_token.token.clone())
+                    .or_insert(DeviceTokenContext {
+                        session_id: session_id.clone(),
+                        device_id: device_id.clone(),
+                        expires_at_ms: Some(retired_token.expires_at_ms),
+                    });
             }
         }
     }

@@ -175,6 +175,7 @@ pub(super) async fn pair_start(
         );
     }
     persist_session_if_needed(&state, &request.session_id).await;
+    publish_cross_instance_control_session_refresh(&state, &request.session_id);
     {
         let mut relay = state.inner.lock().await;
         relay.pair_start_successes = relay.pair_start_successes.saturating_add(1);
@@ -525,6 +526,7 @@ pub(super) async fn pair_join(
     );
     drop(relay);
     persist_session_if_needed(&state, &request.session_id).await;
+    publish_cross_instance_control_session_refresh(&state, &request.session_id);
     {
         let mut relay = state.inner.lock().await;
         relay.pair_join_successes = relay.pair_join_successes.saturating_add(1);

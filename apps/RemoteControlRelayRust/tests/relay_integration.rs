@@ -297,11 +297,10 @@ async fn metricsz_reports_runtime_counters_for_connected_devices() {
         _session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|config| {
-            config.token_rotation_grace_ms = 0;
-        })
-        .await;
+    ) = pair_connected_mobile(|config| {
+        config.token_rotation_grace_ms = 0;
+    })
+    .await;
 
     let response = reqwest::get(format!("{base}/metricsz"))
         .await
@@ -1005,8 +1004,7 @@ async fn mobile_receives_desktop_offline_status_and_command_rejection() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|_| {}).await;
+    ) = pair_connected_mobile(|_| {}).await;
 
     desktop_socket
         .close(None)
@@ -1258,10 +1256,9 @@ async fn stale_mobile_device_token_emits_session_expired_disconnect_and_policy_c
         "Origin",
         "http://localhost:4173".parse().expect("origin header"),
     );
-    let (mut stale_reconnect_socket, _) =
-        tokio_tungstenite::connect_async(stale_reconnect_request)
-            .await
-            .expect("stale reconnect websocket");
+    let (mut stale_reconnect_socket, _) = tokio_tungstenite::connect_async(stale_reconnect_request)
+        .await
+        .expect("stale reconnect websocket");
     stale_reconnect_socket
         .send(Message::Text(
             json!({ "type": "relay.auth", "token": first_device_token }).to_string(),
@@ -2014,8 +2011,7 @@ async fn invalid_mobile_command_is_rejected_and_not_forwarded() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|_| {}).await;
+    ) = pair_connected_mobile(|_| {}).await;
 
     mobile_socket
         .send(Message::Text(
@@ -2075,8 +2071,7 @@ async fn mobile_command_with_unexpected_field_is_rejected_and_not_forwarded() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|_| {}).await;
+    ) = pair_connected_mobile(|_| {}).await;
 
     mobile_socket
         .send(Message::Text(
@@ -2136,8 +2131,7 @@ async fn mobile_command_ignores_spoofed_relay_metadata_and_forwards() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|_| {}).await;
+    ) = pair_connected_mobile(|_| {}).await;
 
     mobile_socket
         .send(Message::Text(
@@ -2199,8 +2193,7 @@ async fn invalid_snapshot_request_with_negative_last_seq_is_rejected() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|_| {}).await;
+    ) = pair_connected_mobile(|_| {}).await;
 
     mobile_socket
         .send(Message::Text(
@@ -2252,8 +2245,7 @@ async fn snapshot_request_accepts_numeric_string_last_seq_for_backward_compatibi
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|_| {}).await;
+    ) = pair_connected_mobile(|_| {}).await;
 
     mobile_socket
         .send(Message::Text(
@@ -2299,11 +2291,10 @@ async fn per_device_command_rate_limit_blocks_excess_mobile_commands() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|config| {
-            config.max_remote_commands_per_minute = 2;
-        })
-        .await;
+    ) = pair_connected_mobile(|config| {
+        config.max_remote_commands_per_minute = 2;
+    })
+    .await;
 
     for seq in 1..=3_u64 {
         mobile_socket
@@ -2381,12 +2372,11 @@ async fn per_session_command_rate_limit_blocks_excess_mobile_commands() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|config| {
-            config.max_remote_commands_per_minute = 10;
-            config.max_remote_session_commands_per_minute = 2;
-        })
-        .await;
+    ) = pair_connected_mobile(|config| {
+        config.max_remote_commands_per_minute = 10;
+        config.max_remote_session_commands_per_minute = 2;
+    })
+    .await;
 
     for seq in 1..=3_u64 {
         mobile_socket
@@ -2464,11 +2454,10 @@ async fn per_device_snapshot_request_rate_limit_blocks_excess_requests() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|config| {
-            config.max_snapshot_requests_per_minute = 2;
-        })
-        .await;
+    ) = pair_connected_mobile(|config| {
+        config.max_snapshot_requests_per_minute = 2;
+    })
+    .await;
 
     for request_number in 1..=3_u64 {
         mobile_socket
@@ -2537,8 +2526,7 @@ async fn replayed_mobile_command_sequence_is_rejected() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|_| {}).await;
+    ) = pair_connected_mobile(|_| {}).await;
 
     let command_payload = json!({
         "schemaVersion": 2,
@@ -2616,13 +2604,12 @@ async fn per_socket_websocket_message_rate_limit_disconnects_abusive_client() {
         session_id,
         _device_token,
         _rotated_device_token,
-    ) =
-        pair_connected_mobile(|config| {
-            config.max_ws_messages_per_minute = 2;
-            config.max_remote_commands_per_minute = 10_000;
-            config.max_remote_session_commands_per_minute = 10_000;
-        })
-        .await;
+    ) = pair_connected_mobile(|config| {
+        config.max_ws_messages_per_minute = 2;
+        config.max_remote_commands_per_minute = 10_000;
+        config.max_remote_session_commands_per_minute = 10_000;
+    })
+    .await;
 
     for seq in 1..=3_u64 {
         mobile_socket
@@ -2883,7 +2870,10 @@ async fn redis_persistence_preserves_rotated_mobile_grace_token_across_restart()
         .expect("device token")
         .to_string();
 
-    let mut mobile_request = ws_url.clone().into_client_request().expect("mobile request");
+    let mut mobile_request = ws_url
+        .clone()
+        .into_client_request()
+        .expect("mobile request");
     mobile_request.headers_mut().insert(
         "Origin",
         "http://localhost:4173".parse().expect("origin header"),
@@ -2907,8 +2897,14 @@ async fn redis_persistence_preserves_rotated_mobile_grace_token_across_restart()
         .expect("rotated device token")
         .to_string();
 
-    mobile_socket.close(None).await.expect("mobile socket close");
-    desktop_socket.close(None).await.expect("desktop socket close");
+    mobile_socket
+        .close(None)
+        .await
+        .expect("mobile socket close");
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop socket close");
     task_a.abort();
 
     let (base_b, task_b) = spawn_test_server_with_config(|config| {
@@ -3090,10 +3086,11 @@ async fn redis_persistence_accepts_rotated_mobile_token_on_second_pod_immediatel
         ))
         .await
         .expect("first mobile auth send");
-    let first_mobile_auth = next_matching_json_message(&mut first_mobile_socket, 1_000, |payload| {
-        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
-    })
-    .await;
+    let first_mobile_auth =
+        next_matching_json_message(&mut first_mobile_socket, 1_000, |payload| {
+            payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+        })
+        .await;
     let rotated_device_token = first_mobile_auth
         .get("nextDeviceSessionToken")
         .and_then(Value::as_str)
@@ -3117,10 +3114,11 @@ async fn redis_persistence_accepts_rotated_mobile_token_on_second_pod_immediatel
         .await
         .expect("second mobile auth send");
 
-    let second_mobile_auth = next_matching_json_message(&mut second_mobile_socket, 1_000, |payload| {
-        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
-    })
-    .await;
+    let second_mobile_auth =
+        next_matching_json_message(&mut second_mobile_socket, 1_000, |payload| {
+            payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+        })
+        .await;
     assert_eq!(
         second_mobile_auth.get("role").and_then(Value::as_str),
         Some("mobile")
@@ -3138,7 +3136,171 @@ async fn redis_persistence_accepts_rotated_mobile_token_on_second_pod_immediatel
         .close(None)
         .await
         .expect("first mobile socket close");
-    desktop_socket.close(None).await.expect("desktop socket close");
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop socket close");
+    task_b.abort();
+    task_a.abort();
+}
+
+#[tokio::test]
+async fn redis_persistence_accepts_fresh_pair_mobile_token_on_second_pod_immediately() {
+    let Some(redis_url) = std::env::var("REMOTE_CONTROL_REDIS_TEST_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return;
+    };
+
+    let redis_key_prefix = format!("relay-test-{}", random_token(8));
+    let client = reqwest::Client::new();
+    let session_id = random_token(16);
+    let join_token = random_token(32);
+    let desktop_session_token = random_token(32);
+
+    let (base_a, task_a) = spawn_test_server_with_config(|config| {
+        config.redis_url = Some(redis_url.clone());
+        config.redis_key_prefix = redis_key_prefix.clone();
+        config.token_rotation_grace_ms = 30_000;
+    })
+    .await;
+    let (base_b, task_b) = spawn_test_server_with_config(|config| {
+        config.redis_url = Some(redis_url.clone());
+        config.redis_key_prefix = redis_key_prefix.clone();
+        config.token_rotation_grace_ms = 30_000;
+    })
+    .await;
+
+    let start_response = client
+        .post(format!("{base_a}/pair/start"))
+        .json(&json!({
+            "sessionID": session_id,
+            "joinToken": join_token,
+            "desktopSessionToken": desktop_session_token,
+            "joinTokenExpiresAt": chrono::Utc::now().checked_add_signed(chrono::Duration::minutes(2)).unwrap().to_rfc3339(),
+            "idleTimeoutSeconds": 1800,
+        }))
+        .send()
+        .await
+        .expect("pair start request");
+    assert_eq!(start_response.status(), StatusCode::OK);
+    let start_payload: Value = start_response.json().await.expect("pair start payload");
+    let ws_url = start_payload
+        .get("wsURL")
+        .and_then(Value::as_str)
+        .expect("ws url")
+        .to_string();
+
+    let (mut desktop_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("desktop websocket");
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.auth",
+                "token": desktop_session_token
+            })
+            .to_string(),
+        ))
+        .await
+        .expect("desktop auth send");
+    let _desktop_auth = next_matching_json_message(&mut desktop_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+    })
+    .await;
+
+    let join_future = tokio::spawn({
+        let client = client.clone();
+        let base_a = base_a.clone();
+        let session_id = session_id.clone();
+        let join_token = join_token.clone();
+        async move {
+            client
+                .post(format!("{base_a}/pair/join"))
+                .header("Origin", "http://localhost:4173")
+                .json(&json!({
+                    "sessionID": session_id,
+                    "joinToken": join_token,
+                    "deviceName": "Fresh Pair Pod Hop iPhone",
+                }))
+                .send()
+                .await
+                .expect("pair join request")
+        }
+    });
+
+    let pair_request = next_matching_json_message(&mut desktop_socket, 1_000, |payload| {
+        payload.get("type").and_then(Value::as_str) == Some("relay.pair_request")
+    })
+    .await;
+    let request_id = pair_request
+        .get("requestID")
+        .and_then(Value::as_str)
+        .expect("requestID")
+        .to_string();
+
+    desktop_socket
+        .send(Message::Text(
+            json!({
+                "type": "relay.pair_decision",
+                "sessionID": session_id,
+                "requestID": request_id,
+                "approved": true,
+            })
+            .to_string(),
+        ))
+        .await
+        .expect("desktop pair decision send");
+
+    let join_response = join_future.await.expect("join task");
+    assert_eq!(join_response.status(), StatusCode::OK);
+    let join_payload: Value = join_response.json().await.expect("join payload");
+    let first_device_token = join_payload
+        .get("deviceSessionToken")
+        .and_then(Value::as_str)
+        .expect("device token")
+        .to_string();
+
+    let mut second_mobile_request = (base_b.replace("http://", "ws://") + "/ws")
+        .into_client_request()
+        .expect("second mobile request");
+    second_mobile_request.headers_mut().insert(
+        "Origin",
+        "http://localhost:4173".parse().expect("origin header"),
+    );
+    let (mut second_mobile_socket, _) = tokio_tungstenite::connect_async(second_mobile_request)
+        .await
+        .expect("second mobile websocket");
+    second_mobile_socket
+        .send(Message::Text(
+            json!({ "type": "relay.auth", "token": first_device_token }).to_string(),
+        ))
+        .await
+        .expect("second mobile auth send");
+
+    let second_mobile_auth =
+        next_matching_json_message(&mut second_mobile_socket, 1_000, |payload| {
+            payload.get("type").and_then(Value::as_str) == Some("auth_ok")
+        })
+        .await;
+    assert_eq!(
+        second_mobile_auth.get("role").and_then(Value::as_str),
+        Some("mobile")
+    );
+    assert!(second_mobile_auth
+        .get("nextDeviceSessionToken")
+        .and_then(Value::as_str)
+        .is_some());
+
+    second_mobile_socket
+        .close(None)
+        .await
+        .expect("second mobile socket close");
+    desktop_socket
+        .close(None)
+        .await
+        .expect("desktop socket close");
     task_b.abort();
     task_a.abort();
 }
