@@ -272,4 +272,41 @@ describe('remote client lifecycle', () => {
       expect(window.localStorage.getItem('codexchat.remote.pairedDevice.v1')).toBeNull();
     }
   });
+
+  it('treats websocket policy close as a terminal expired session', () => {
+    window.localStorage.setItem(
+      'codexchat.remote.pairedDevice.v1',
+      JSON.stringify({
+        sessionID: 'session-1',
+        deviceID: 'device-1',
+        relayBaseURL: 'https://relay.example',
+        deviceSessionToken: 'token-old',
+        wsURL: 'wss://relay.example/ws',
+        storedAt: new Date().toISOString()
+      })
+    );
+
+    remoteStoreApi.setState({
+      sessionID: 'session-1',
+      deviceID: 'device-1',
+      deviceSessionToken: 'token-old',
+      wsURL: 'wss://relay.example/ws'
+    });
+
+    const client = getRemoteClient();
+    client.connectSocket();
+
+    const socket = remoteStoreApi.getState().socket;
+    expect(socket).not.toBeNull();
+
+    socket?.onclose?.(new CloseEvent('close', { code: 1008 }));
+
+    const nextState = remoteStoreApi.getState();
+    expect(nextState.reconnectDisabledReason).toBe('session_expired');
+    expect(nextState.deviceSessionToken).toBeNull();
+    expect(nextState.wsURL).toBeNull();
+    expect(nextState.deviceID).toBeNull();
+    expect(nextState.reconnectTimer).toBeNull();
+    expect(window.localStorage.getItem('codexchat.remote.pairedDevice.v1')).toBeNull();
+  });
 });

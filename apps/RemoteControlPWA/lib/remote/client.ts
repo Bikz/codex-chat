@@ -1067,25 +1067,14 @@ class RemoteClient {
     if (message.type === 'disconnect') {
       const reason = typeof message.reason === 'string' ? message.reason : 'unknown';
 
-      remoteStoreApi.setState((state) => {
-        const shouldDisable = RECONNECT_DISABLED_REASONS.has(reason);
-        return {
+      if (RECONNECT_DISABLED_REASONS.has(reason)) {
+        this.disableReconnectForReason(reason);
+      } else {
+        remoteStoreApi.setState((state) => ({
           ...state,
           isAuthenticated: false,
-          desktopConnected: null,
-          reconnectDisabledReason: shouldDisable ? reason : state.reconnectDisabledReason,
-          deviceSessionToken: shouldDisable ? null : state.deviceSessionToken,
-          wsURL: shouldDisable ? null : state.wsURL,
-          deviceID: shouldDisable ? null : state.deviceID,
-          joinToken: shouldDisable ? null : state.joinToken,
-          queuedCommands: shouldDisable ? [] : state.queuedCommands,
-          queuedCommandsBytes: shouldDisable ? 0 : state.queuedCommandsBytes,
-          pendingSnapshotReason: shouldDisable ? null : state.pendingSnapshotReason
-        };
-      });
-
-      if (RECONNECT_DISABLED_REASONS.has(reason)) {
-        this.clearPersistedPairedDeviceState();
+          desktopConnected: null
+        }));
       }
 
       this.updateWorkspaceVisibility();
@@ -1307,6 +1296,35 @@ class RemoteClient {
     }
   }
 
+  private disableReconnectForReason(reason: string) {
+    remoteStoreApi.setState((state) => ({
+      ...state,
+      isAuthenticated: false,
+      desktopConnected: null,
+      reconnectDisabledReason: reason,
+      deviceSessionToken: null,
+      wsURL: null,
+      deviceID: null,
+      joinToken: null,
+      queuedCommands: [],
+      queuedCommandsBytes: 0,
+      pendingSnapshotReason: null
+    }));
+    this.clearPersistedPairedDeviceState();
+  }
+
+  private terminalReasonFromCloseEvent(event: CloseEvent) {
+    if (typeof event.reason === 'string' && RECONNECT_DISABLED_REASONS.has(event.reason)) {
+      return event.reason;
+    }
+
+    if (event.code === 1008) {
+      return 'session_expired';
+    }
+
+    return null;
+  }
+
   private clearReconnectTimer() {
     const { reconnectTimer } = remoteStoreApi.getState();
     if (reconnectTimer === null) {
@@ -1364,18 +1382,26 @@ class RemoteClient {
 
     socket.onmessage = this.onSocketMessage;
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       const latest = remoteStoreApi.getState();
-      remoteStoreApi.setState({
-        isAuthenticated: false,
-        desktopConnected: null,
-        isSyncStale: false
-      });
+      const terminalReason = this.terminalReasonFromCloseEvent(event);
+
+      if (terminalReason) {
+        this.disableReconnectForReason(terminalReason);
+      } else {
+        remoteStoreApi.setState({
+          isAuthenticated: false,
+          desktopConnected: null
+        });
+      }
+
+      remoteStoreApi.setState({ isSyncStale: false });
 
       this.updateWorkspaceVisibility();
 
-      if (latest.reconnectDisabledReason) {
-        this.setStatus(this.disconnectMessageForReason(latest.reconnectDisabledReason), 'warn');
+      const reconnectDisabledReason = terminalReason ?? latest.reconnectDisabledReason;
+      if (reconnectDisabledReason) {
+        this.setStatus(this.disconnectMessageForReason(reconnectDisabledReason), 'warn');
         return;
       }
 

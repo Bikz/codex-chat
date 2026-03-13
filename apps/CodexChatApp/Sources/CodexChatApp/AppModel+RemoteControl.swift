@@ -532,11 +532,6 @@ extension AppModel {
             try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
             guard !Task.isCancelled else { return }
             remoteControlReconnectTask = nil
-            await refreshRemoteControlStatus()
-
-            guard remoteControlStatus.session != nil else {
-                return
-            }
             guard let session = await refreshRemoteControlSessionDescriptorForReconnect() else {
                 return
             }

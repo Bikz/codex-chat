@@ -984,7 +984,9 @@ final class RemoteControlSyncTests: XCTestCase {
         XCTAssertEqual(model.remoteControlStatus.phase, .active)
         XCTAssertNil(model.remoteControlReconnectTask, "Reconnect task should be cleared after a retry attempt finishes.")
         let refreshRequests = await registrar.refreshRequests
+        let listRequests = await registrar.listRequests
         XCTAssertEqual(refreshRequests.count, 1, "Reconnect should validate the session with pair/refresh before reopening the websocket.")
+        XCTAssertEqual(listRequests.count, 0, "Reconnect should not list trusted devices before validating the saved session.")
         XCTAssertNotNil(try credentialStore.loadSessionDescriptor())
     }
 
