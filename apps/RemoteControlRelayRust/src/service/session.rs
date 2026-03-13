@@ -14,6 +14,7 @@ pub(super) async fn sweep_sessions(state: &SharedRelayState) {
     let mut relay = state.inner.lock().await;
 
     let mut close_ids = Vec::new();
+    let mut mutated_session_ids = HashSet::new();
     for (session_id, session) in &relay.sessions {
         let has_connected_sockets =
             session.desktop_socket.is_some() || !session.mobile_sockets.is_empty();
@@ -43,6 +44,23 @@ pub(super) async fn sweep_sessions(state: &SharedRelayState) {
         closed_session_ids.push(session_id);
     }
 
+    for (session_id, session) in &mut relay.sessions {
+        let mut session_mutated = false;
+        for device in session.devices.values_mut() {
+            let retired_count_before = device.retired_session_tokens.len();
+            device
+                .retired_session_tokens
+                .retain(|token| now < token.expires_at_ms);
+            if device.retired_session_tokens.len() != retired_count_before {
+                session_mutated = true;
+            }
+        }
+        if session_mutated {
+            did_mutate = true;
+            mutated_session_ids.insert(session_id.clone());
+        }
+    }
+
     let token_count_before = relay.device_token_index.len();
     relay.device_token_index.retain(|_, ctx| {
         ctx.expires_at_ms
@@ -68,6 +86,9 @@ pub(super) async fn sweep_sessions(state: &SharedRelayState) {
             publish_cross_instance_session(state, &session_id, "mobile", None, payload);
             persist_session_if_needed(state, &session_id).await;
             sync_session_bus_subscription(state, &session_id).await;
+        }
+        for session_id in mutated_session_ids {
+            persist_session_if_needed(state, &session_id).await;
         }
     }
 }

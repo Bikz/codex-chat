@@ -67,9 +67,17 @@ pub(super) struct SocketHandle {
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct DeviceRecord {
     pub(super) current_session_token: String,
+    #[serde(default)]
+    pub(super) retired_session_tokens: Vec<RetiredDeviceToken>,
     pub(super) name: String,
     pub(super) joined_at_ms: i64,
     pub(super) last_seen_at_ms: i64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(super) struct RetiredDeviceToken {
+    pub(super) token: String,
+    pub(super) expires_at_ms: i64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -937,6 +945,16 @@ pub(super) fn build_device_token_index(
                     expires_at_ms: None,
                 },
             );
+            for retired_token in &device.retired_session_tokens {
+                if now_ms() >= retired_token.expires_at_ms {
+                    continue;
+                }
+                token_index.entry(retired_token.token.clone()).or_insert(DeviceTokenContext {
+                    session_id: session_id.clone(),
+                    device_id: device_id.clone(),
+                    expires_at_ms: Some(retired_token.expires_at_ms),
+                });
+            }
         }
     }
     token_index
@@ -1026,8 +1044,13 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
     let mut relay = state.inner.lock().await;
     relay.last_persistence_refresh_at_ms = now;
 
-    for (session_id, loaded_session) in loaded_sessions {
+    for (session_id, mut loaded_session) in loaded_sessions {
         let loaded_version = loaded_versions.get(&session_id).copied().unwrap_or(0);
+        for device in loaded_session.devices.values_mut() {
+            device
+                .retired_session_tokens
+                .retain(|token| now < token.expires_at_ms);
+        }
         let mut replaced_desktop_token: Option<String> = None;
         match relay.sessions.get_mut(&session_id) {
             Some(existing) => {
@@ -1045,9 +1068,9 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
             relay.desktop_token_index.remove(&token);
         }
 
-        relay.device_token_index.retain(|_, context| {
-            !(context.session_id == session_id && context.expires_at_ms.is_none())
-        });
+        relay
+            .device_token_index
+            .retain(|_, context| context.session_id != session_id);
 
         let device_tokens = relay
             .sessions
@@ -1056,22 +1079,35 @@ pub(super) async fn refresh_sessions_from_persistence(state: &SharedRelayState, 
                 session
                     .devices
                     .iter()
-                    .map(|(device_id, device)| {
-                        (device_id.clone(), device.current_session_token.clone())
+                    .flat_map(|(device_id, device)| {
+                        let mut tokens = vec![(
+                            device.current_session_token.clone(),
+                            DeviceTokenContext {
+                                session_id: session_id.clone(),
+                                device_id: device_id.clone(),
+                                expires_at_ms: None,
+                            },
+                        )];
+                        tokens.extend(device.retired_session_tokens.iter().filter_map(|token| {
+                            (now < token.expires_at_ms).then(|| {
+                                (
+                                    token.token.clone(),
+                                    DeviceTokenContext {
+                                        session_id: session_id.clone(),
+                                        device_id: device_id.clone(),
+                                        expires_at_ms: Some(token.expires_at_ms),
+                                    },
+                                )
+                            })
+                        }));
+                        tokens
                     })
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
 
-        for (device_id, token) in device_tokens {
-            relay
-                .device_token_index
-                .entry(token)
-                .or_insert(DeviceTokenContext {
-                    session_id: session_id.clone(),
-                    device_id,
-                    expires_at_ms: None,
-                });
+        for (token, context) in device_tokens {
+            relay.device_token_index.insert(token, context);
         }
 
         relay

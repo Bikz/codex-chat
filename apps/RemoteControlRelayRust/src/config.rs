@@ -52,7 +52,7 @@ impl RelayConfig {
         let ws_auth_timeout_ms = parse_u64("WS_AUTH_TIMEOUT_MS", 10_000);
         let ws_heartbeat_interval_ms = parse_u64("WS_HEARTBEAT_INTERVAL_MS", 20_000);
         let ws_heartbeat_timeout_ms = parse_u64("WS_HEARTBEAT_TIMEOUT_MS", 60_000);
-        let token_rotation_grace_ms = parse_u64("TOKEN_ROTATION_GRACE_MS", 15_000);
+        let token_rotation_grace_ms = parse_u64("TOKEN_ROTATION_GRACE_MS", 30_000);
         let max_pending_join_waiters = parse_usize("MAX_PENDING_JOIN_WAITERS", 64);
         let max_ws_message_bytes = parse_usize("MAX_WS_MESSAGE_BYTES", 65_536);
         let max_socket_outbound_queue = parse_usize("MAX_SOCKET_OUTBOUND_QUEUE", 256);

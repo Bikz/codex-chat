@@ -54,6 +54,7 @@ fn make_test_session(session_id: &str, device_id: &str, token: &str) -> SessionR
             device_id.to_string(),
             DeviceRecord {
                 current_session_token: token.to_string(),
+                retired_session_tokens: vec![],
                 name: "Test Phone".to_string(),
                 joined_at_ms: now_ms(),
                 last_seen_at_ms: now_ms(),
@@ -89,6 +90,10 @@ fn persisted_runtime_round_trip_preserves_sessions_and_tokens() {
                 "device-1".to_string(),
                 DeviceRecord {
                     current_session_token: "device-token".to_string(),
+                    retired_session_tokens: vec![RetiredDeviceToken {
+                        token: "device-token-grace".to_string(),
+                        expires_at_ms: now_ms() + 30_000,
+                    }],
                     name: "Test Phone".to_string(),
                     joined_at_ms: 150,
                     last_seen_at_ms: 190,
@@ -116,12 +121,18 @@ fn persisted_runtime_round_trip_preserves_sessions_and_tokens() {
     let mut restored_sessions = HashMap::new();
     restored_sessions.insert("session-1".to_string(), restored_session);
     let token_index = build_device_token_index(&restored_sessions);
-    assert_eq!(token_index.len(), 1);
+    assert_eq!(token_index.len(), 2);
     let token_context = token_index
         .get("device-token")
         .expect("device token context should exist");
     assert_eq!(token_context.session_id, "session-1");
     assert_eq!(token_context.device_id, "device-1");
+    let retired_context = token_index
+        .get("device-token-grace")
+        .expect("retired device token context should exist");
+    assert_eq!(retired_context.session_id, "session-1");
+    assert_eq!(retired_context.device_id, "device-1");
+    assert!(retired_context.expires_at_ms.is_some());
 
     let desktop_index = build_desktop_token_index(&restored_sessions);
     assert_eq!(
@@ -347,6 +358,48 @@ async fn close_session_removes_all_device_tokens_for_closed_session() {
     assert!(
         relay.device_token_index.contains_key("other-session-token"),
         "other sessions should remain untouched"
+    );
+}
+
+#[tokio::test]
+async fn sweep_sessions_prunes_expired_retired_device_tokens() {
+    let session_id = "session-1";
+    let state =
+        make_test_state_with_session(make_test_session(session_id, "device-1", "device-token-1"));
+
+    {
+        let mut relay = state.inner.lock().await;
+        let session = relay.sessions.get_mut(session_id).expect("session exists");
+        let device = session.devices.get_mut("device-1").expect("device exists");
+        device.retired_session_tokens.push(RetiredDeviceToken {
+            token: "expired-grace-token".to_string(),
+            expires_at_ms: now_ms() - 1,
+        });
+        relay.device_token_index.insert(
+            "expired-grace-token".to_string(),
+            DeviceTokenContext {
+                session_id: session_id.to_string(),
+                device_id: "device-1".to_string(),
+                expires_at_ms: Some(now_ms() - 1),
+            },
+        );
+    }
+
+    sweep_sessions(&state).await;
+
+    let relay = state.inner.lock().await;
+    let session = relay.sessions.get(session_id).expect("session exists");
+    let device = session.devices.get("device-1").expect("device exists");
+    assert!(
+        device
+            .retired_session_tokens
+            .iter()
+            .all(|token| token.token != "expired-grace-token"),
+        "expired grace token should be pruned from persisted session state"
+    );
+    assert!(
+        !relay.device_token_index.contains_key("expired-grace-token"),
+        "expired grace token should be pruned from the auth index"
     );
 }
 

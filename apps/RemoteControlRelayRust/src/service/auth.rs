@@ -28,6 +28,8 @@ pub(super) async fn authenticate_socket(
     state: &SharedRelayState,
     token: &str,
     origin: Option<&str>,
+    remote_ip: &str,
+    user_agent: Option<&str>,
     tx: &mpsc::Sender<Message>,
     shutdown_tx: &watch::Sender<bool>,
 ) -> Result<AuthenticatedSocket, SocketAuthFailure> {
@@ -39,11 +41,15 @@ pub(super) async fn authenticate_socket(
     let auth_context = if let Some(auth_context) = auth_context {
         auth_context
     } else {
-        refresh_sessions_from_persistence(state, false).await;
+        refresh_sessions_from_persistence(state, true).await;
         let relay = state.inner.lock().await;
         let refreshed = resolve_auth_context(&relay, token);
         if refreshed.is_none() {
-            warn!("[relay-rs] ws_auth_failure reason=token_not_found");
+            warn!(
+                "[relay-rs] ws_auth_failure reason=token_not_found remote_ip={} user_agent={}",
+                remote_ip,
+                user_agent.unwrap_or("-")
+            );
         }
         refreshed.ok_or(SocketAuthFailure::SessionExpired)?
     };
@@ -70,8 +76,11 @@ pub(super) async fn authenticate_socket(
         && !reconnection_without_growth
     {
         warn!(
-            "[relay-rs] ws_auth_failure reason=relay_over_capacity active={} limit={}",
-            current_active_connections, state.config.max_active_websocket_connections
+            "[relay-rs] ws_auth_failure reason=relay_over_capacity active={} limit={} remote_ip={} user_agent={}",
+            current_active_connections,
+            state.config.max_active_websocket_connections,
+            remote_ip,
+            user_agent.unwrap_or("-")
         );
         if !try_send_payload(
             tx,
@@ -91,7 +100,11 @@ pub(super) async fn authenticate_socket(
                 desktop_status_slow_consumer_disconnects,
             ) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
-                    warn!("[relay-rs] ws_auth_failure reason=desktop_session_missing");
+                    warn!(
+                        "[relay-rs] ws_auth_failure reason=desktop_session_missing remote_ip={} user_agent={}",
+                        remote_ip,
+                        user_agent.unwrap_or("-")
+                    );
                     return Err(SocketAuthFailure::SessionExpired);
                 };
                 session.last_activity_at_ms = now_ms();
@@ -164,7 +177,11 @@ pub(super) async fn authenticate_socket(
             device_id,
         } => {
             if !is_allowed_origin(&state.config.allowed_origins, origin) {
-                warn!("[relay-rs] ws_auth_failure reason=mobile_origin_not_allowed");
+                warn!(
+                    "[relay-rs] ws_auth_failure reason=mobile_origin_not_allowed remote_ip={} user_agent={}",
+                    remote_ip,
+                    user_agent.unwrap_or("-")
+                );
                 return Err(SocketAuthFailure::Rejected);
             }
 
@@ -174,29 +191,54 @@ pub(super) async fn authenticate_socket(
 
             let (old_token, connected_device_count, device_count_event, desktop_connected) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
-                    warn!("[relay-rs] ws_auth_failure reason=mobile_session_missing");
+                    warn!(
+                        "[relay-rs] ws_auth_failure reason=mobile_session_missing remote_ip={} user_agent={}",
+                        remote_ip,
+                        user_agent.unwrap_or("-")
+                    );
                     return Err(SocketAuthFailure::SessionExpired);
                 };
                 session.last_activity_at_ms = now;
 
                 if !session.devices.contains_key(&device_id) {
-                    warn!("[relay-rs] ws_auth_failure reason=device_not_registered");
+                    warn!(
+                        "[relay-rs] ws_auth_failure reason=device_not_registered remote_ip={} user_agent={}",
+                        remote_ip,
+                        user_agent.unwrap_or("-")
+                    );
                     return Err(SocketAuthFailure::SessionExpired);
                 }
 
                 close_existing_mobile_socket_for_device(session, &device_id, "device_reconnected");
 
                 if session.mobile_sockets.len() >= state.config.max_devices_per_session {
-                    warn!("[relay-rs] ws_auth_failure reason=device_cap_reached");
+                    warn!(
+                        "[relay-rs] ws_auth_failure reason=device_cap_reached remote_ip={} user_agent={}",
+                        remote_ip,
+                        user_agent.unwrap_or("-")
+                    );
                     return Err(SocketAuthFailure::Rejected);
                 }
 
                 let Some(device) = session.devices.get_mut(&device_id) else {
-                    warn!("[relay-rs] ws_auth_failure reason=device_record_missing");
+                    warn!(
+                        "[relay-rs] ws_auth_failure reason=device_record_missing remote_ip={} user_agent={}",
+                        remote_ip,
+                        user_agent.unwrap_or("-")
+                    );
                     return Err(SocketAuthFailure::SessionExpired);
                 };
                 let old_token = device.current_session_token.clone();
                 device.current_session_token = next_token.clone();
+                device
+                    .retired_session_tokens
+                    .retain(|token| now < token.expires_at_ms && token.token != old_token);
+                if state.config.token_rotation_grace_ms > 0 {
+                    device.retired_session_tokens.push(RetiredDeviceToken {
+                        token: old_token.clone(),
+                        expires_at_ms: now + state.config.token_rotation_grace_ms as i64,
+                    });
+                }
                 device.last_seen_at_ms = now;
 
                 session.mobile_sockets.insert(

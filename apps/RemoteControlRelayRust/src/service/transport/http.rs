@@ -495,6 +495,7 @@ pub(super) async fn pair_join(
             device_id.clone(),
             DeviceRecord {
                 current_session_token: device_session_token.clone(),
+                retired_session_tokens: vec![],
                 name: device_name.clone(),
                 joined_at_ms: now,
                 last_seen_at_ms: now,

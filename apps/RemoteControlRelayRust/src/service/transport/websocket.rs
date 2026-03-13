@@ -36,6 +36,11 @@ pub(super) async fn handle_socket(
     let (mut writer, mut reader) = socket.split();
     let (tx, mut rx) = mpsc::channel::<Message>(state.config.max_socket_outbound_queue.max(8));
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    let client_ip = client_ip(&state.config, &headers, addr);
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
 
     {
         let mut relay = state.inner.lock().await;
@@ -68,14 +73,22 @@ pub(super) async fn handle_socket(
     };
 
     let Some(auth_message) = auth_message else {
-        warn!("[relay-rs] ws_auth_failure reason=auth_timeout_or_missing_payload");
+        warn!(
+            "[relay-rs] ws_auth_failure reason=auth_timeout_or_missing_payload remote_ip={} user_agent={}",
+            client_ip,
+            user_agent.as_deref().unwrap_or("-")
+        );
         let _ = try_send_payload(&tx, "{}".to_string());
         close_writer_task(writer_task, tx).await;
         return;
     };
 
     if auth_message.message_type != "relay.auth" || !is_opaque_token(&auth_message.token, 22) {
-        warn!("[relay-rs] ws_auth_failure reason=invalid_auth_payload");
+        warn!(
+            "[relay-rs] ws_auth_failure reason=invalid_auth_payload remote_ip={} user_agent={}",
+            client_ip,
+            user_agent.as_deref().unwrap_or("-")
+        );
         close_writer_task(writer_task, tx).await;
         return;
     }
@@ -84,6 +97,8 @@ pub(super) async fn handle_socket(
         &state,
         &auth_message.token,
         origin.as_deref(),
+        &client_ip,
+        user_agent.as_deref(),
         &tx,
         &shutdown_tx,
     )
@@ -364,8 +379,6 @@ pub(super) async fn handle_socket(
 
     disconnect_socket(&state, &auth).await;
     close_writer_task(writer_task, tx).await;
-
-    let _ = client_ip(&state.config, &headers, addr);
 }
 
 pub(super) async fn close_writer_task(
