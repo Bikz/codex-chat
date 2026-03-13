@@ -62,6 +62,11 @@ Defaults and non-secret runtime tunables are in:
 
 - `infra/remote-control-relay/gke/base/configmap.yaml`
 
+Recommended reliability baseline:
+
+- Keep `TOKEN_ROTATION_GRACE_MS` at `30000` or higher so rotated mobile tokens survive brief backgrounding and load-balancer pod changes.
+- Keep `WS_AUTH_TIMEOUT_MS` below the backend WebSocket idle timeout, but not so low that mobile foreground resumes regularly miss the auth window.
+
 ## Deploy
 
 1. Build and push images

@@ -56,6 +56,7 @@ Current release surface includes:
   - Runtime pressure and throughput counters on `/metricsz` (`outboundSendFailures`, `slowConsumerDisconnects`, plus `pairStart*` / `pairJoin*` / `pairRefresh*` / `wsAuth*`)
   - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
   - Optional NATS cross-instance routing (`NATS_URL`, `NATS_SUBJECT_PREFIX`, `NATS_HMAC_SECRET`, `NATS_REPLAY_WINDOW_MS`, `NATS_MAX_CLOCK_SKEW_MS`) for stateless relay fanout with signed envelopes and replay-window enforcement
+  - Mobile token rotation retains the previous device token for a bounded grace window and persists that grace token through Redis so reconnects can land on any healthy pod during rotation handoff
 - `apps/RemoteControlPWA`
   - Next.js App Router + TypeScript UI shell with shadcn/Radix primitives
   - Pair via QR fragment (`#sid=...&jt=...&relay=...`)

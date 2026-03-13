@@ -68,8 +68,10 @@ Production alert provisioning:
 4. Triage websocket auth failures by root cause
 - Start with a logs filter scoped to the relay pods and `ws_auth_failure`.
 - Group findings by `reason` first so you can separate stale credentials from origin rejects or capacity pressure.
-- For stale/repeat auth failures, pivot on `remoteIp` and `userAgent` to see whether one device is looping or whether many clients regressed at once.
-- A common stale-session loop looks like repeated `reason=token_not_found`, `desktop_session_missing`, `mobile_session_missing`, `device_not_registered`, or `device_record_missing` from the same `remoteIp` and `userAgent` every 10-20 seconds.
+- For stale/repeat auth failures, pivot on `remote_ip` and `user_agent` to see whether one device is looping or whether many clients regressed at once.
+- A common stale-session loop looks like repeated `reason=token_not_found`, `desktop_session_missing`, `mobile_session_missing`, `device_not_registered`, or `device_record_missing` from the same `remote_ip` and `user_agent` every 10-20 seconds.
+- `token_not_found` after a reconnect does not automatically mean “wrong pod.” The relay reloads persisted sessions from Redis on auth miss. If the same token keeps failing across retries, treat it as stale/retired unless Redis or NATS are also unhealthy.
+- Current production baseline keeps rotated mobile tokens valid for `30s` so reconnects can survive pod changes and brief mobile backgrounding during token handoff.
 
 Example Logs Explorer query:
 
@@ -82,8 +84,8 @@ resource.labels.container_name="remote-control-relay"
 
 Check the structured fields or rendered log line for:
 - `reason`
-- `remoteIp`
-- `userAgent`
+- `remote_ip`
+- `user_agent`
 
 5. Mitigate
 - Scale up relay replicas (temporary) and verify HPA behavior.
