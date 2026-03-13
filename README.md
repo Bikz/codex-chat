@@ -213,6 +213,7 @@ make release-prod
 
 Builds/signs/notarizes locally and publishes GitHub release assets from your machine.
 Set `USE_GITHUB_RELEASE_WORKFLOW=1` to opt into the manual GitHub-hosted release workflow path.
+When a release includes remote-control changes, also run `make remote-control-prod-e2e`, `make remote-control-deploy-verify`, and `make remote-control-post-deploy-monitor`.
 
 ## Test Layout
 

@@ -45,6 +45,16 @@ Optional controls:
 - Hosted workflow diagnostics: prints failing GitHub Actions run details and failed logs before local fallback.
 - Post-release verification: asserts release is not draft/prerelease and contains both required assets.
 
+If the release includes remote-control changes, run the remote-control checks before handing off the build:
+
+```sh
+make remote-control-prod-e2e
+make remote-control-deploy-verify
+RELAY_MONITOR_DURATION_SECONDS=900 make remote-control-post-deploy-monitor
+```
+
+Those commands validate the browser pair/send/reload/resume flow, confirm the expected relay deployment is actually serving traffic, and watch `/metricsz` plus recent relay logs for early regressions.
+
 - Version auto-increment helper (patch bump, starting at `v0.0.1` when no tags exist):
 
 ```sh

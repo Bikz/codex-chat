@@ -53,7 +53,7 @@ Current release surface includes:
   - `GET /healthz`, `GET /metricsz`, `GET /ws` (then `relay.auth` websocket message)
   - Pass-through websocket routing between desktop/mobile with payload validation and per-device/per-session command throttling
   - Per-device snapshot request throttling for reconnect abuse control
-  - Runtime pressure and throughput counters on `/metricsz` (`outboundSendFailures`, `slowConsumerDisconnects`, plus `pairStart*` / `pairJoin*` / `pairRefresh*` / `wsAuth*`)
+  - Runtime pressure and throughput counters on `/metricsz` (`outboundSendFailures`, `slowConsumerDisconnects`, plus `pairStart*` / `pairJoin*` / `pairRefresh*` / `wsAuth*` and `wsAuthFailureReasons`)
   - Optional Redis-backed runtime persistence (`REDIS_URL`, `REDIS_KEY_PREFIX`) for restart recovery
   - Optional NATS cross-instance routing (`NATS_URL`, `NATS_SUBJECT_PREFIX`, `NATS_HMAC_SECRET`, `NATS_REPLAY_WINDOW_MS`, `NATS_MAX_CLOCK_SKEW_MS`) for stateless relay fanout with signed envelopes and replay-window enforcement
   - Mobile token rotation retains the previous device token for a bounded grace window and persists that grace token through Redis so reconnects can land on any healthy pod during rotation handoff
@@ -126,9 +126,10 @@ Set environment variables before launching Codex Chat:
 - Protocol compatibility gate now runs via `make remote-control-compat` (`apps/RemoteControlRelay/test/relay.compat.test.mjs`) and compares normalized pairing/auth/forwarding behavior between Node and Rust relays.
 - Multi-instance soak/load tests with Redis + NATS under reconnect churn.
 - Manual relay load harness is available at `apps/RemoteControlRelayRust/tests/relay_load_harness.rs`, with wrappers `make remote-control-load`, `make remote-control-soak`, and `make remote-control-gate` (`make remote-control-load-gated` for one-shot load + gate). Gates enforce latency, backpressure, and websocket auth-failure budgets. Soak runs emit per-loop JSON artifacts and aggregate gate summary at `output/remote-control/relay-soak-summary.json`.
+- Production-style browser pairing/send/reload/resume coverage is available via `make remote-control-prod-e2e`, which stores artifacts under `output/remote-control/prod-e2e/`.
 - OpenTelemetry metrics/tracing export and SLO alerting runbooks.
 - Optional end-to-end payload encryption between desktop and phone.
 - Passkey-based account option for multi-device identity over time.
 - GKE deployment baseline is documented in `docs-public/REMOTE_CONTROL_GKE_DEPLOYMENT.md`.
 - Relay incident/rollback operations are documented in `docs-public/REMOTE_CONTROL_RELAY_RUNBOOK.md`.
-- Local rollout gate automation is available via `make remote-control-stage-gate` and now includes optional Node-vs-Rust compatibility validation (`RELAY_STAGE_GATE_REQUIRE_COMPAT=1` by default).
+- Local rollout gate automation is available via `make remote-control-stage-gate` and now includes optional Node-vs-Rust compatibility validation (`RELAY_STAGE_GATE_REQUIRE_COMPAT=1` by default). Deployment verification helpers are available via `make remote-control-deploy-verify` and `make remote-control-post-deploy-monitor`.

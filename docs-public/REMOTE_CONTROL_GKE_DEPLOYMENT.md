@@ -165,6 +165,7 @@ RELAY_GKE_KUSTOMIZE_DIR=infra/remote-control-relay/gke/overlays/staging make rem
 kubectl -n codexchat-remote-control rollout status deploy/remote-control-relay
 kubectl -n codexchat-remote-control rollout status deploy/remote-control-pwa
 kubectl -n codexchat-remote-control get pods,svc,hpa,pdb
+make remote-control-deploy-verify
 ```
 
 9. GA DNS + certificate gate
@@ -182,6 +183,14 @@ kubectl -n codexchat-remote-control get managedcertificate remote-control-relay-
 curl -i https://remote.bikz.cc/healthz
 curl -i https://remote.bikz.cc/rc
 ```
+
+Short post-deploy monitor:
+
+```bash
+make remote-control-post-deploy-monitor
+```
+
+This samples `/metricsz`, `/healthz`, and recent pod logs for 15 minutes by default, then writes a JSON summary to `output/remote-control/post-deploy-monitor-summary.json`.
 
 Canary-first rollout example:
 
@@ -206,6 +215,8 @@ make remote-control-stage-gate
 - Monitor `/metricsz` counters for:
   - backpressure (`outboundSendFailures`, `slowConsumerDisconnects`)
   - pairing/auth throughput (`pairStart*`, `pairJoin*`, `pairRefresh*`, `wsAuth*`)
+  - websocket auth root causes (`wsAuthFailureReasons`)
+- Use `make remote-control-prod-e2e` after relay/PWA changes when you want a production-style pair/send/reload/resume smoke before or after rollout.
 
 ## GA Checklist Tie-In
 

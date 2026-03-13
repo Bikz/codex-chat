@@ -17,6 +17,7 @@ High-signal counters:
 
 - `pairStartFailures`, `pairJoinFailures`, `pairRefreshFailures`
 - `wsAuthFailures`
+- `wsAuthFailureReasons`
 - `outboundSendFailures`
 - `slowConsumerDisconnects`
 
@@ -66,12 +67,14 @@ Production alert provisioning:
 - Spike in `outboundSendFailures` or `slowConsumerDisconnects`: inspect overload/backpressure and client reconnect behavior.
 
 4. Triage websocket auth failures by root cause
-- Start with a logs filter scoped to the relay pods and `ws_auth_failure`.
+- Start with `/metricsz` to see whether `wsAuthFailureReasons` is dominated by one root cause or split across several causes.
+- Then use a logs filter scoped to the relay pods and `ws_auth_failure`.
 - Group findings by `reason` first so you can separate stale credentials from origin rejects or capacity pressure.
 - For stale/repeat auth failures, pivot on `remote_ip` and `user_agent` to see whether one device is looping or whether many clients regressed at once.
 - A common stale-session loop looks like repeated `reason=token_not_found`, `desktop_session_missing`, `mobile_session_missing`, `device_not_registered`, or `device_record_missing` from the same `remote_ip` and `user_agent` every 10-20 seconds.
 - `token_not_found` after a reconnect does not automatically mean “wrong pod.” The relay reloads persisted sessions from Redis on auth miss. If the same token keeps failing across retries, treat it as stale/retired unless Redis or NATS are also unhealthy.
 - Current production baseline keeps rotated mobile tokens valid for `30s` so reconnects can survive pod changes and brief mobile backgrounding during token handoff.
+- For release verification or incident watch, run `make remote-control-post-deploy-monitor` to sample `/metricsz`, `/healthz`, and fresh `ws_auth_failure` logs for 15 minutes.
 
 Example Logs Explorer query:
 
