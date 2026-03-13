@@ -24,6 +24,57 @@ impl AuthenticatedSocket {
     }
 }
 
+fn rollback_desktop_auth_registration(
+    relay: &mut RelayState,
+    session_id: &str,
+    shutdown_tx: &watch::Sender<bool>,
+) {
+    let Some(session) = relay.sessions.get_mut(session_id) else {
+        return;
+    };
+    if session
+        .desktop_socket
+        .as_ref()
+        .is_some_and(|socket| socket.shutdown.same_channel(shutdown_tx))
+    {
+        session.desktop_socket = None;
+        session.desktop_connected = false;
+    }
+}
+
+fn rollback_mobile_auth_registration(
+    relay: &mut RelayState,
+    session_id: &str,
+    device_id: &str,
+    connection_id: &str,
+    old_token: &str,
+    next_token: &str,
+    now: i64,
+) {
+    if let Some(session) = relay.sessions.get_mut(session_id) {
+        session.mobile_sockets.remove(connection_id);
+        session.command_sequence_by_connection_id.remove(connection_id);
+        session.last_activity_at_ms = now;
+        if let Some(device) = session.devices.get_mut(device_id) {
+            device.current_session_token = old_token.to_string();
+            device
+                .retired_session_tokens
+                .retain(|token| token.token != old_token);
+            device.last_seen_at_ms = now;
+        }
+    }
+
+    relay.device_token_index.remove(next_token);
+    relay.device_token_index.insert(
+        old_token.to_string(),
+        DeviceTokenContext {
+            session_id: session_id.to_string(),
+            device_id: device_id.to_string(),
+            expires_at_ms: None,
+        },
+    );
+}
+
 pub(super) async fn authenticate_socket(
     state: &SharedRelayState,
     token: &str,
@@ -142,6 +193,7 @@ pub(super) async fn authenticate_socket(
                 tx,
                 serde_json::to_string(&auth_payload).unwrap_or_else(|_| "{}".to_string()),
             ) {
+                rollback_desktop_auth_registration(&mut relay, &session_id, shutdown_tx);
                 relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
                 return Err(SocketAuthFailure::Rejected);
             }
@@ -189,7 +241,13 @@ pub(super) async fn authenticate_socket(
             let now = now_ms();
             let next_token = random_token(32);
 
-            let (old_token, connected_device_count, device_count_event, desktop_connected) = {
+            let (
+                old_token,
+                connected_device_count,
+                device_count_event,
+                desktop_connected,
+                local_desktop,
+            ) = {
                 let Some(session) = relay.sessions.get_mut(&session_id) else {
                     warn!(
                         "[relay-rs] ws_auth_failure reason=mobile_session_missing remote_ip={} user_agent={}",
@@ -251,12 +309,12 @@ pub(super) async fn authenticate_socket(
                 );
 
                 let connected_device_count = session.mobile_sockets.len();
-                send_device_count(session);
                 (
                     old_token,
                     connected_device_count,
                     device_count_payload(session),
                     desktop_connected(session),
+                    session.desktop_socket.clone(),
                 )
             };
 
@@ -264,7 +322,7 @@ pub(super) async fn authenticate_socket(
                 relay.device_token_index.remove(&old_token);
             } else {
                 relay.device_token_index.insert(
-                    old_token,
+                    old_token.clone(),
                     DeviceTokenContext {
                         session_id: session_id.clone(),
                         device_id: device_id.clone(),
@@ -282,12 +340,34 @@ pub(super) async fn authenticate_socket(
                 },
             );
 
+            drop(relay);
+            if let Err(error) = persist_session_if_needed_checked(state, &session_id).await {
+                let mut relay = state.inner.lock().await;
+                rollback_mobile_auth_registration(
+                    &mut relay,
+                    &session_id,
+                    &device_id,
+                    &connection_id,
+                    &old_token,
+                    &next_token,
+                    now,
+                );
+                warn!(
+                    "[relay-rs] ws_auth_failure reason=token_rotation_persist_failed session={} remote_ip={} user_agent={} error={error}",
+                    session_log_id(&session_id),
+                    remote_ip,
+                    user_agent.unwrap_or("-")
+                );
+                return Err(SocketAuthFailure::Rejected);
+            }
+            sync_session_bus_subscription(state, &session_id).await;
+
             let payload = RelayAuthOk {
                 message_type: "auth_ok".to_string(),
                 role: "mobile".to_string(),
                 session_id: session_id.clone(),
                 device_id: Some(device_id.clone()),
-                next_device_session_token: Some(next_token),
+                next_device_session_token: Some(next_token.clone()),
                 connected_device_count,
                 desktop_connected,
             };
@@ -295,9 +375,38 @@ pub(super) async fn authenticate_socket(
                 tx,
                 serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
             ) {
+                let mut relay = state.inner.lock().await;
+                rollback_mobile_auth_registration(
+                    &mut relay,
+                    &session_id,
+                    &device_id,
+                    &connection_id,
+                    &old_token,
+                    &next_token,
+                    now,
+                );
                 relay.outbound_send_failures = relay.outbound_send_failures.saturating_add(1);
+                drop(relay);
+                persist_session_if_needed(state, &session_id).await;
                 return Err(SocketAuthFailure::Rejected);
             }
+            let mut outbound_send_failures = 0_u64;
+            let mut slow_consumer_disconnects = 0_u64;
+            if let Some(desktop) = &local_desktop {
+                if !try_send_payload(&desktop.tx, device_count_event.clone()) {
+                    outbound_send_failures = outbound_send_failures.saturating_add(1);
+                    slow_consumer_disconnects = slow_consumer_disconnects.saturating_add(1);
+                    request_socket_disconnect(desktop, "slow_consumer");
+                }
+            }
+
+            let mut relay = state.inner.lock().await;
+            relay.outbound_send_failures = relay
+                .outbound_send_failures
+                .saturating_add(outbound_send_failures);
+            relay.slow_consumer_disconnects = relay
+                .slow_consumer_disconnects
+                .saturating_add(slow_consumer_disconnects);
             relay.ws_auth_successes = relay.ws_auth_successes.saturating_add(1);
 
             info!(
@@ -307,8 +416,6 @@ pub(super) async fn authenticate_socket(
             );
             drop(relay);
             publish_cross_instance_session(state, &session_id, "desktop", None, device_count_event);
-            persist_session_if_needed(state, &session_id).await;
-            sync_session_bus_subscription(state, &session_id).await;
 
             Ok(AuthenticatedSocket {
                 session_id,

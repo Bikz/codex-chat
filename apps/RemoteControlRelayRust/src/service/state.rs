@@ -969,9 +969,12 @@ pub(super) fn build_desktop_token_index(
         .collect()
 }
 
-pub(super) async fn persist_session_if_needed(state: &SharedRelayState, session_id: &str) {
+pub(super) async fn persist_session_if_needed_checked(
+    state: &SharedRelayState,
+    session_id: &str,
+) -> Result<(), String> {
     let Some(persistence) = state.persistence.as_ref().cloned() else {
-        return;
+        return Ok(());
     };
 
     let (session, persistence_version) = {
@@ -997,25 +1000,35 @@ pub(super) async fn persist_session_if_needed(state: &SharedRelayState, session_
     if let Some(session) = session {
         let runtime_session = match session.into_runtime() {
             Some(value) => value,
-            None => return,
+            None => return Ok(()),
         };
-        if let Err(error) = persistence
+        persistence
             .save_session(&runtime_session, persistence_version)
             .await
-        {
-            warn!(
-                "[relay-rs] failed to persist relay session {}: {error}",
-                session_log_id(session_id)
-            );
-        }
-    } else if let Err(error) = persistence
-        .delete_session(session_id, persistence_version)
-        .await
-    {
-        warn!(
-            "[relay-rs] failed to remove relay session {} from persistence: {error}",
-            session_log_id(session_id)
-        );
+            .map_err(|error| {
+                format!(
+                    "failed to persist relay session {}: {error}",
+                    session_log_id(session_id)
+                )
+            })?;
+    } else {
+        persistence
+            .delete_session(session_id, persistence_version)
+            .await
+            .map_err(|error| {
+                format!(
+                    "failed to remove relay session {} from persistence: {error}",
+                    session_log_id(session_id)
+                )
+            })?;
+    }
+
+    Ok(())
+}
+
+pub(super) async fn persist_session_if_needed(state: &SharedRelayState, session_id: &str) {
+    if let Err(error) = persist_session_if_needed_checked(state, session_id).await {
+        warn!("[relay-rs] {error}");
     }
 }
 
