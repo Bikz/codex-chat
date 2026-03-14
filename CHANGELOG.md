@@ -9,6 +9,36 @@ names.
 
 No curated changes yet.
 
+## [0.0.10]
+
+### Added
+
+- Production verification tooling for remote control, including a browser-based
+  reliability harness, deployment verification, and post-deploy relay
+  monitoring scripts for release validation.
+- Expanded relay integration coverage for rotated-token restart recovery and
+  cross-pod remote-control behavior.
+
+### Changed
+
+- Relay auth and session handling now expose clearer websocket auth failure
+  reasons, durably rotate mobile websocket tokens, and keep fresh pair-token
+  state synchronized across pods.
+- Remote control reconnect flows on desktop and the PWA were tightened to
+  validate saved session state more aggressively and recover with fresher remote
+  credentials.
+- Release artifacts now emit portable `.sha256` files that reference the DMG
+  filename instead of a local build path.
+
+### Fixed
+
+- Cross-pod delivery ordering, desktop presence synchronization before mobile
+  auth, and stale websocket auth rejection handling in the Rust relay.
+- Reconnect bugs that could reuse stale saved remote-control sessions or lose
+  rotated-token state after pod restarts.
+- Remote-control release and deployment docs so the published operational flow
+  matches the shipped tooling.
+
 ## [0.0.9]
 
 ### Added
