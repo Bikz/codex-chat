@@ -1,5 +1,13 @@
 # Remote Control Relay: GKE Deployment
 
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+This deployment guide is retained as historical/self-hosting reference only.
+The hosted bridge environment is no longer maintained.
+
 This document describes the production baseline for deploying the Rust relay on GKE with shared Redis + NATS.
 
 ## Architecture

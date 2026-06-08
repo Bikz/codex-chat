@@ -1,5 +1,13 @@
 # Remote Control Relay (Rust)
 
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+This relay remains in the repository for historical context and local
+self-hosting experiments. The hosted bridge environment is no longer maintained.
+
 Rust implementation of the Codex Chat remote-control relay.
 
 ## Run locally
@@ -19,7 +27,7 @@ docker build -t remote-control-relay-rust:local .
 docker run --rm -p 8787:8787 remote-control-relay-rust:local
 ```
 
-Validate the production GKE bundle:
+Validate the historical GKE bundle:
 
 ```bash
 make remote-control-gke-validate
@@ -45,7 +53,7 @@ make remote-control-compat
 
 ## Notes
 
-- This service is being developed as the production relay replacement for `apps/RemoteControlRelay`.
+- This service was developed as the production relay replacement for `apps/RemoteControlRelay`.
 - Protocol compatibility remains `schemaVersion = 2`.
 - Browser pairing routes are origin-gated and CORS-enabled for configured allowlisted origins.
 - Desktop websocket auth uses an indexed desktop-session-token lookup (no linear scan across sessions).

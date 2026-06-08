@@ -1,7 +1,15 @@
-# Remote Control GA Plan (10k Users)
+# Remote Control GA Plan (Retired)
 
-Status: Approved execution plan (GKE + Rust relay + Redis + NATS JetStream)
+Status: Retired; retained as historical architecture/planning reference
 Date: 2026-02-26
+
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+The plan below is kept for historical context and self-hosting reference. The
+hosted bridge environment is no longer maintained.
 
 ## North Star
 

@@ -36,6 +36,14 @@ Core differentiators:
 - Keychain-backed secret handling for API keys.
 - Deterministic contributor workflows via CLI diagnostics and fixtures.
 
+## Hosted Remote Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+Local development and self-hosting references are kept for historical context,
+but the hosted bridge environment is no longer maintained.
+
 ## Install From Release
 
 1. Download the latest DMG from [GitHub Releases](https://github.com/Bikz/codex-chat/releases).
@@ -75,8 +83,8 @@ If you prefer to build from source, use the contributor path below.
 
 - `apps/CodexChatHost`: canonical GUI app target (`com.codexchat.app`) and release source.
 - `apps/CodexChatApp`: shared app/runtime module (`CodexChatShared`) and `CodexChatCLI`.
-- `apps/RemoteControlRelay`: outbound-only websocket relay scaffold for remote mobile control.
-- `apps/RemoteControlPWA`: installable mobile/web companion UI scaffold.
+- `apps/RemoteControlRelay`: historical outbound-only websocket relay scaffold for remote mobile control.
+- `apps/RemoteControlPWA`: historical installable mobile/web companion UI scaffold.
 - `packages/*`: modular Swift packages (`Core`, `Infra`, `UI`, `CodexKit`, `Skills`, `Memory`, `Mods`, `Extensions`).
 - `skills/first-party`: tracked first-party skill templates (including personal-action playbooks for macOS workflows).
 - `tests/fixtures`: shared fake runtime fixtures used by smoke/integration paths.

@@ -33,6 +33,14 @@ This folder contains contributor-facing documentation tracked in git.
 - `ADR-MODS-SCHEMA-RESET-V1.md` — clean-slate `ui.mod.json` schema reset + breaking-change policy.
 - `ADR-MODS-BAR-ACTIONS-AND-GITHUB-SUBDIR-INSTALL.md` — Mods bar actions + GitHub subdirectory install decision.
 
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+Local development and self-hosting references are kept for historical context,
+but the hosted bridge environment is no longer maintained.
+
 ## Notes
 
 - `docs/` is private planning memory and intentionally not part of public contributor docs.

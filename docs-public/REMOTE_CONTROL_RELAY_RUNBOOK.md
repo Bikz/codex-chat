@@ -1,5 +1,13 @@
 # Remote Control Relay Runbook
 
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+This runbook is retained as historical/self-hosting reference only. The hosted
+bridge environment is no longer maintained.
+
 This runbook covers basic operations for the production Rust relay service.
 
 ## Service Scope
