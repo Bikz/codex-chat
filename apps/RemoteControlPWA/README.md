@@ -1,5 +1,13 @@
 # Remote Control PWA (Next.js)
 
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+This PWA remains in the repository for historical context and local self-hosting
+experiments. The hosted bridge environment is no longer maintained.
+
 Mobile/web companion for Codex Chat remote control.
 
 ## Stack

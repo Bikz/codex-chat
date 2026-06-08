@@ -1,5 +1,16 @@
 # Remote Control
 
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+Local development and self-hosting references are kept for historical context,
+but the hosted bridge environment is no longer maintained.
+
+The material below documents the legacy bridge architecture and local/self-hosted
+components for contributors who need to inspect or adapt the old implementation.
+
 Remote Control lets a phone/web companion drive a local Codex Chat session without exposing Codex/OpenAI credentials outside the desktop boundary.
 
 ## Scope

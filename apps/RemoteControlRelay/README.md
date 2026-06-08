@@ -1,5 +1,13 @@
 # Remote Control Relay (MVP)
 
+## Hosted Bridge Status
+
+The hosted remote-control bridge has been retired now that the Codex app
+supports native remote access.
+
+This legacy relay remains in the repository for historical context and local
+self-hosting experiments. The hosted bridge environment is no longer maintained.
+
 Minimal outbound-only relay for Codex Chat remote control.
 
 ## Run locally
